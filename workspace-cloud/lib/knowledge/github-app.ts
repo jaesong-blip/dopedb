@@ -3,6 +3,7 @@
 import "server-only";
 
 import {
+  createHash,
   createHmac,
   createSign,
   timingSafeEqual,
@@ -15,11 +16,19 @@ const MAX_REPOSITORIES = 1_000;
 const MAX_SOURCE_FILES = 100_000;
 const MAX_SOURCE_BYTES = 2 * 1024 * 1024 * 1024;
 const MAX_SOURCE_FILE_BYTES = 16 * 1024 * 1024;
+const GITHUB_REQUEST_TIMEOUT_MS = 8_000;
 
 type GithubInstallationToken = {
   token: string;
   expires_at: string;
 };
+
+export class GithubKnowledgeRequestError extends Error {
+  constructor(readonly status: number) {
+    super("GitHub Knowledge request failed");
+    this.name = "GithubKnowledgeRequestError";
+  }
+}
 
 export type GithubInstallation = {
   id: number;
@@ -109,7 +118,7 @@ async function githubJson<T>(
   const response = await fetch(`${GITHUB_API}${path}`, {
     ...init,
     cache: "no-store",
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(GITHUB_REQUEST_TIMEOUT_MS),
     headers: {
       Accept: "application/vnd.github+json",
       Authorization: `Bearer ${authorization}`,
@@ -120,7 +129,7 @@ async function githubJson<T>(
     },
   });
   if (!response.ok) {
-    throw new Error(`GitHub request failed with status ${response.status}`);
+    throw new GithubKnowledgeRequestError(response.status);
   }
   return await response.json() as T;
 }
@@ -181,7 +190,11 @@ export async function listGithubRepositories(installationId: bigint) {
 }
 
 function checkedRepository(repository: string) {
-  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) {
+  const segments = repository.split("/");
+  if (
+    !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)
+    || segments.some((segment) => segment === "." || segment === "..")
+  ) {
     throw new Error("Invalid GitHub repository identity");
   }
   return repository;
@@ -220,8 +233,8 @@ export async function resolveGithubCommit(
 
 const SOURCE_EXTENSIONS = new Set([
   "c", "cc", "cjs", "cpp", "cs", "go", "h", "hpp", "java", "js", "json", "jsx",
-  "kt", "kts", "mjs", "php", "py", "rb", "rs", "sql", "svelte", "swift", "toml",
-  "ts", "tsx", "vue", "yaml", "yml",
+  "kt", "kts", "md", "mdx", "mjs", "php", "proto", "py", "rb", "rs", "sh", "sql",
+  "svelte", "swift", "toml", "ts", "tsx", "vue", "yaml", "yml",
 ]);
 const EXCLUDED_SEGMENTS = new Set([
   ".git", ".next", "build", "dist", "node_modules", "target", "vendor",
@@ -229,11 +242,15 @@ const EXCLUDED_SEGMENTS = new Set([
 
 function supportedSourcePath(path: string) {
   const segments = path.split("/");
-  const extension = segments.at(-1)?.split(".").at(-1)?.toLowerCase();
+  const fileName = segments.at(-1)?.toLowerCase();
+  const extension = fileName?.split(".").at(-1);
   return Boolean(
-    extension
-    && SOURCE_EXTENSIONS.has(extension)
+    fileName
+    && (fileName === "dockerfile"
+      || fileName.startsWith("dockerfile.")
+      || (extension && SOURCE_EXTENSIONS.has(extension)))
     && segments.every((segment) => segment && segment !== "." && segment !== "..")
+    && !/[\u0000-\u001f\u007f]/.test(path)
     && !segments.some((segment) => EXCLUDED_SEGMENTS.has(segment)),
   );
 }
@@ -269,20 +286,19 @@ export async function githubSourceManifest(
     }
     totalBytes += item.size ?? 0;
     if (files.length >= MAX_SOURCE_FILES || totalBytes > MAX_SOURCE_BYTES) {
-      throw new Error("GitHub repository exceeds the source snapshot budget");
+      throw new Error("GitHub repository exceeds the code-index manifest budget");
     }
     files.push({ path: item.path, blobSha: item.sha, bytes: item.size ?? 0 });
   }
   return files.sort((left, right) => left.path.localeCompare(right.path));
 }
 
-export async function readGithubBlob(
-  installationId: bigint,
+async function readGithubBlobWithToken(
+  token: string,
   repository: string,
   blobSha: string,
 ) {
   if (!/^[0-9a-f]{40}$/.test(blobSha)) throw new Error("Invalid GitHub blob identity");
-  const token = await installationToken(installationId);
   const blob = await githubJson<{ encoding: string; content: string; size: number }>(
     `/repos/${checkedRepository(repository)}/git/blobs/${blobSha}`,
     token,
@@ -297,7 +313,35 @@ export async function readGithubBlob(
   }
   const bytes = Buffer.from(blob.content.replaceAll("\n", ""), "base64");
   if (bytes.byteLength !== blob.size) throw new Error("GitHub source blob size changed");
+  const identity = createHash("sha1")
+    .update(`blob ${bytes.byteLength}\0`)
+    .update(bytes)
+    .digest("hex");
+  if (identity !== blobSha) throw new Error("GitHub source blob identity changed");
   return bytes;
+}
+
+export async function readGithubBlobs(
+  installationId: bigint,
+  repository: string,
+  files: ReadonlyArray<{ path: string; blobSha: string }>,
+) {
+  if (files.length < 1 || files.length > 50) throw new Error("Invalid GitHub blob batch");
+  const token = await installationToken(installationId);
+  const results = new Array<{ path: string; bytes: Buffer }>(files.length);
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(16, files.length) }, async () => {
+    while (cursor < files.length) {
+      const index = cursor;
+      cursor += 1;
+      const file = files[index]!;
+      results[index] = {
+        path: file.path,
+        bytes: await readGithubBlobWithToken(token, repository, file.blobSha),
+      };
+    }
+  }));
+  return results;
 }
 
 export function verifyGithubWebhook(rawBody: Buffer, signature: string | null) {

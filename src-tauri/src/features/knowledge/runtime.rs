@@ -1,7 +1,7 @@
 //! Process-local source watcher lifecycle.
 //!
-//! Watchers carry only source identities. Local roots remain inside the native
-//! adapter and GitHub polling remains behind the control-plane adapter.
+//! Only Local Folder sources are watched here. GitHub changes arrive through
+//! the GitHub App webhook and are incrementally indexed by the control plane.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,9 +17,8 @@ use crate::connection::keychain::fetch_knowledge_source_root;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
-use super::adapters::github::GithubSourceAdapter;
-use super::ports::{KnowledgeScopeRepositoryPort, SourceProviderAdapter};
-use super::transport::{selected_team_account, sync_knowledge_source_inner};
+use super::ports::{KnowledgeScopeRepositoryPort, LocalKnowledgeSourcePort};
+use super::transport::sync_knowledge_source_inner;
 
 const SOURCE_CHANGED_EVENT: &str = "knowledge-source:changed";
 const WATCH_DEBOUNCE: Duration = Duration::from_millis(750);
@@ -69,6 +68,7 @@ impl KnowledgeWatchRuntime {
             .scopes(scope.workspace_id)
             .await?
             .into_iter()
+            .filter(|source| source.binding.provider == KnowledgeSourceProvider::LocalFolder)
             .map(|source| source.binding.source_id)
             .collect::<Vec<_>>();
         drop(state);
@@ -90,18 +90,7 @@ async fn watch_source(app: AppHandle, source_id: Uuid) -> AppResult<()> {
         .find(|source| source.binding.source_id == source_id)
         .ok_or_else(|| AppError::NotFound("the Project Knowledge source".into()))?;
     match stored.binding.provider {
-        KnowledgeSourceProvider::Github => {
-            let account = selected_team_account(&active_scope)?;
-            let adapter = GithubSourceAdapter::new(
-                account,
-                stored.project.workspace_id,
-                stored.environment.clone(),
-            );
-            adapter.restore(stored.binding.clone(), stored.environment.revision)?;
-            let mut watch = adapter.watch(&stored.binding).await?;
-            drop(state);
-            drive_changes(&app, source_id, &mut watch.changes).await;
-        }
+        KnowledgeSourceProvider::Github => return Ok(()),
         KnowledgeSourceProvider::LocalFolder => {
             let root = fetch_knowledge_source_root(source_id)?.ok_or_else(|| {
                 AppError::NotFound("the Local Folder capability on this device".into())

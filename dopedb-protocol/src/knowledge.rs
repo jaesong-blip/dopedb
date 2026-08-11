@@ -22,20 +22,6 @@ pub enum KnowledgeSourceProvider {
     LocalFolder,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SourceProviderCapability {
-    Discover,
-    Bind,
-    ResolveRevision,
-    Snapshot,
-    ListChanges,
-    ReadFileAtRevision,
-    Watch,
-    Health,
-    Revoke,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum KnowledgeSourceVisibility {

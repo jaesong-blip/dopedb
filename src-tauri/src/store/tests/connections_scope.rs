@@ -271,8 +271,6 @@ async fn assert_current_store_migration_is_write_free() {
         store.exact_grant(grant.id).await.unwrap(),
         Some(grant.clone())
     );
-    store.revoke_grant(grant.id).await.unwrap();
-    assert_eq!(store.exact_grant(grant.id).await.unwrap(), None);
 
     let mapping = KnowledgeMappingProposal {
         id: Uuid::from_u128(0x1261),

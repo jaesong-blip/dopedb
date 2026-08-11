@@ -96,7 +96,7 @@ import { useCatalogTree } from "./useCatalogTree";
 
 function knowledgeSourceTone(source: KnowledgeSource): StatusTone {
   if (source.health === "ready") return "success";
-  if (source.health === "failed" || source.health === "revoked") return "danger";
+  if (source.health === "failed") return "danger";
   return "warning";
 }
 

@@ -13,8 +13,10 @@ import {
   listGithubRepositories,
   resolveGithubCommit,
 } from "@/lib/knowledge/github-app";
+import { enqueueInitialGithubKnowledgeSync } from "@/lib/knowledge/sync-queue";
 import {
   knowledgeGithubInstallation,
+  knowledgeEnvironmentHead,
   knowledgeProjectEnvironment,
   knowledgeSource,
 } from "@/lib/schema";
@@ -25,7 +27,7 @@ type RouteContext = { params: Promise<{ workspaceId: string }> };
 export async function GET(request: Request, context: RouteContext) {
   const { workspaceId } = await context.params;
   if (!isUuid(workspaceId)) return jsonError("Invalid workspace id", 400);
-  const authorization = await authorizeWorkspace(request, workspaceId, "manage");
+  const authorization = await authorizeWorkspace(request, workspaceId, "view");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
   const sources = await db.select({
     id: knowledgeSource.id,
@@ -42,8 +44,12 @@ export async function GET(request: Request, context: RouteContext) {
     syncState: knowledgeSource.syncState,
     syncRevision: knowledgeSource.syncRevision,
     lastFailureCode: knowledgeSource.lastFailureCode,
-    updatedAt: knowledgeSource.updatedAt,
-  }).from(knowledgeSource).where(and(
+    graphRevisionId: knowledgeEnvironmentHead.graphRevisionId,
+  }).from(knowledgeSource).leftJoin(knowledgeEnvironmentHead, and(
+    eq(knowledgeEnvironmentHead.organizationId, knowledgeSource.organizationId),
+    eq(knowledgeEnvironmentHead.projectEnvironmentId, knowledgeSource.projectEnvironmentId),
+    eq(knowledgeEnvironmentHead.sourceId, knowledgeSource.id),
+  )).where(and(
     eq(knowledgeSource.organizationId, workspaceId),
     isNull(knowledgeSource.revokedAt),
   ));
@@ -60,7 +66,7 @@ export async function POST(request: Request, context: RouteContext) {
   const body = parsed.ok ? parsed.value as Record<string, unknown> : null;
   if (
     !body
-    || (body.provider !== "github" && body.provider !== "local_folder")
+    || body.provider !== "github"
     || typeof body.sourceId !== "string"
     || !isUuid(body.sourceId)
     || typeof body.projectId !== "string"
@@ -83,57 +89,6 @@ export async function POST(request: Request, context: RouteContext) {
   )).limit(1);
   if (!environment) {
     return jsonError("Project Environment was not found", 404);
-  }
-  if (body.provider === "local_folder") {
-    if (
-      body.publishApproved !== true
-      || body.exposure !== "normalized_graph_only"
-      || typeof body.rootFingerprint !== "string"
-      || !/^[0-9a-f]{64}$/.test(body.rootFingerprint)
-      || typeof body.snapshotSha256 !== "string"
-      || !/^[0-9a-f]{64}$/.test(body.snapshotSha256)
-    ) {
-      return jsonError("Local Folder sharing requires explicit normalized-graph approval", 400);
-    }
-    const [inserted] = await db.insert(knowledgeSource).values({
-      id: body.sourceId,
-      organizationId: workspaceId,
-      projectId: body.projectId,
-      projectEnvironmentId: body.projectEnvironmentId,
-      environmentRevision: environment.revision,
-      provider: "local_folder",
-      displayName: body.displayName.trim(),
-      visibility: "shared_graph",
-      rootFingerprint: body.rootFingerprint,
-      snapshotSha256: body.snapshotSha256,
-      syncState: "pending",
-    }).onConflictDoNothing().returning({
-      id: knowledgeSource.id,
-      syncRevision: knowledgeSource.syncRevision,
-    });
-    const [source] = inserted ? [inserted] : await db.select({
-      id: knowledgeSource.id,
-      syncRevision: knowledgeSource.syncRevision,
-      projectId: knowledgeSource.projectId,
-      projectEnvironmentId: knowledgeSource.projectEnvironmentId,
-      provider: knowledgeSource.provider,
-      rootFingerprint: knowledgeSource.rootFingerprint,
-      snapshotSha256: knowledgeSource.snapshotSha256,
-    }).from(knowledgeSource).where(and(
-      eq(knowledgeSource.organizationId, workspaceId),
-      eq(knowledgeSource.id, body.sourceId),
-    )).limit(1);
-    if (
-      !source
-      || ("provider" in source && (
-        source.projectId !== body.projectId
-        || source.projectEnvironmentId !== body.projectEnvironmentId
-        || source.provider !== "local_folder"
-        || source.rootFingerprint !== body.rootFingerprint
-        || source.snapshotSha256 !== body.snapshotSha256
-      ))
-    ) return jsonError("Knowledge source id is already bound", 409);
-    return privateJson({ source }, { status: 201 });
   }
   if (
     typeof body.installationId !== "string"
@@ -192,10 +147,14 @@ export async function POST(request: Request, context: RouteContext) {
     }).onConflictDoNothing().returning({
       id: knowledgeSource.id,
       syncRevision: knowledgeSource.syncRevision,
+      environmentRevision: knowledgeSource.environmentRevision,
+      commitSha: knowledgeSource.commitSha,
     });
     const [source] = inserted ? [inserted] : await db.select({
       id: knowledgeSource.id,
       syncRevision: knowledgeSource.syncRevision,
+      environmentRevision: knowledgeSource.environmentRevision,
+      commitSha: knowledgeSource.commitSha,
       projectId: knowledgeSource.projectId,
       projectEnvironmentId: knowledgeSource.projectEnvironmentId,
       provider: knowledgeSource.provider,
@@ -219,6 +178,11 @@ export async function POST(request: Request, context: RouteContext) {
         || source.refName !== body.refName
       ))
     ) return jsonError("Knowledge source id is already bound", 409);
+    await enqueueInitialGithubKnowledgeSync({
+      organizationId: workspaceId,
+      sourceId: body.sourceId,
+      commitSha,
+    });
     return privateJson({ source }, { status: 201 });
   } catch {
     return jsonError("GitHub source verification failed", 424);

@@ -71,7 +71,8 @@ export type KnowledgeSource = {
   displayName: string;
   visibility: "local_only" | "shared_graph";
   revision: KnowledgeRevision;
-  health: "ready" | "syncing" | "stale" | "failed" | "revoked";
+  health: "ready" | "syncing" | "stale" | "failed";
+  graphRevisionId: string | null;
   localCapabilityAvailable: boolean;
 };
 
@@ -104,7 +105,8 @@ export type LocalKnowledgeSourceInput = {
 
 export type KnowledgeSyncResult = {
   sourceId: string;
-  graphRevisionId: string;
+  state: "ready" | "syncing";
+  graphRevisionId: string | null;
   parsedFiles: number;
   skippedFiles: number;
   changedFiles: string[];

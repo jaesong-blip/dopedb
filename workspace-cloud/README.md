@@ -12,7 +12,7 @@ exact Better Auth URL, and a random 32-byte base64url `WORKSPACE_CREDENTIAL_KEY`
 PlanetScale managed access additionally requires `PLANETSCALE_CLIENT_ID` and
 `PLANETSCALE_CLIENT_SECRET`; Neon and GCP Cloud SQL do not add application
 environment secrets. Set a separate random `CRON_SECRET` for the authenticated
-credential-cleanup route. The committed one-minute schedule requires Vercel Pro or
+credential-cleanup and Project Knowledge routes. The committed one-minute schedules require Vercel Pro or
 Enterprise; do not deploy Neon managed access with a daily-only Hobby cron. Register
 this PlanetScale callback:
 
@@ -41,6 +41,42 @@ clients resolve configuration on the first request, where missing values fail cl
 Production Vercel builds run that migration before the Next.js build; a migration
 failure stops the deployment instead of serving code against an older control-plane
 schema.
+
+## Shared Project Knowledge
+
+GitHub Project Knowledge is workspace-owned. An Admin installs the single DopeDB
+GitHub App and selects repositories through GitHub's installation screen; ordinary
+workspace members do not paste a token, create a webhook, or keep a Desktop online.
+The App needs only repository **Contents: read** permission and the `push`,
+`installation`, `installation_repositories`, and `repository` events. Configure its
+webhook once, centrally, at:
+
+```text
+https://app.dopedb.dev/api/v1/knowledge/github/webhook
+```
+
+The Vercel control plane verifies the raw-body signature, records the delivery id,
+and coalesces work by source and immutable commit. The one-minute authenticated
+Vercel cron advances a durable job in bounded manifest, file-index, and activation
+steps. Each invocation downloads only a small batch with a one-hour installation
+token held in memory, extracts deterministic symbols, imports, calls, routes, events,
+and SQL table references, then stores bounded normalized fragments in PostgreSQL.
+Blob bytes are discarded after extraction; stored nodes retain declarations, paths,
+line ranges, and provenance rather than source bodies. Unchanged Git blobs reuse their
+previous fragment. No repository checkout, model call, container, or separate worker
+deployment is required.
+
+Activation assembles those fragments into the existing `GraphBuildArtifactV1`
+contract and atomically advances the Environment head. A failed, expired, or stale
+lease never replaces the last-good index. Existing Agent grants remain pinned to
+their exact graph revision; a new head is used only by a subsequent grant/session
+boundary. The same cron also checks least-recently-reconciled refs in small batches,
+so a missed GitHub webhook is repaired without asking a workspace member to configure
+anything.
+
+Local Folder remains strictly device-local because the cloud cannot observe an
+offline path. Desktop indexes and watches it locally; the hosted source inventory and
+Vercel queue accept GitHub sources only.
 
 ## Neon managed access
 

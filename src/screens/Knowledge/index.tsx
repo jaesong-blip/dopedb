@@ -117,6 +117,7 @@ export default function Knowledge({
       {
         state: "syncing" | "ready" | "failed";
         errorKind: string | null;
+        previousGraphRevisionId?: string | null;
       }
     >(),
   );
@@ -296,6 +297,54 @@ export default function Knowledge({
     };
   }, [queryClient]);
 
+  useEffect(() => {
+    const waitingForCloudIndex = sources.data?.some(
+      (source) => source.provider === "github" && source.health === "syncing",
+    ) || [...sourceActivity.values()].some(
+      (activity) => activity.state === "syncing"
+        && activity.previousGraphRevisionId !== undefined,
+    );
+    if (!waitingForCloudIndex) return;
+    const timer = window.setInterval(() => {
+      void sources.refetch();
+    }, 10_000);
+    return () => window.clearInterval(timer);
+  }, [sourceActivity, sources.data, sources.refetch]);
+
+  useEffect(() => {
+    if (!sources.data) return;
+    setSourceActivity((current) => {
+      let changed = false;
+      const next = new Map(current);
+      for (const [sourceId, activity] of current) {
+        if (
+          activity.state !== "syncing"
+          || activity.previousGraphRevisionId === undefined
+        ) continue;
+        const source = sources.data.find((candidate) => candidate.sourceId === sourceId);
+        if (!source) {
+          next.delete(sourceId);
+          changed = true;
+          continue;
+        }
+        if (source?.health === "failed" || source?.health === "stale") {
+          next.set(sourceId, { state: "failed", errorKind: "cloud_index" });
+          changed = true;
+          continue;
+        }
+        if (
+          source?.provider === "github"
+          && source.graphRevisionId !== null
+          && source.graphRevisionId !== activity.previousGraphRevisionId
+        ) {
+          next.set(sourceId, { state: "ready", errorKind: null });
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [sources.data]);
+
   const refreshInventory = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: sourceKey }),
@@ -308,7 +357,16 @@ export default function Knowledge({
 
   const connectGithub = useMutation({
     mutationFn: connectKnowledgeGithubSource,
-    onSuccess: async () => {
+    onSuccess: async (source) => {
+      setSourceActivity((current) => {
+        const next = new Map(current);
+        next.set(source.sourceId, {
+          state: "syncing",
+          errorKind: null,
+          previousGraphRevisionId: null,
+        });
+        return next;
+      });
       setActionError(null);
       await refreshInventory();
     },
@@ -352,10 +410,15 @@ export default function Knowledge({
         return next;
       });
     },
-    onSuccess: async (_, sourceId) => {
+    onSuccess: async (result, sourceId) => {
       setSourceActivity((current) => {
         const next = new Map(current);
-        next.set(sourceId, { state: "ready", errorKind: null });
+        next.set(sourceId, {
+          state: result.state,
+          errorKind: null,
+          previousGraphRevisionId:
+            result.state === "syncing" ? result.graphRevisionId : undefined,
+        });
         return next;
       });
       setActionError(null);

@@ -1956,11 +1956,10 @@ export const knowledgeSource = workspaceControl.table(
     repositoryFullName: text("repository_full_name"),
     refName: text("ref_name"),
     commitSha: text("commit_sha"),
-    rootFingerprint: text("root_fingerprint"),
-    snapshotSha256: text("snapshot_sha256"),
     syncState: text("sync_state").notNull().default("pending"),
     syncRevision: bigint("sync_revision", { mode: "number" }).notNull().default(1),
     lastFailureCode: text("last_failure_code"),
+    lastReconciledAt: timestamp("last_reconciled_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
@@ -1993,8 +1992,8 @@ export const knowledgeSource = workspaceControl.table(
       ],
       name: "knowledge_source_org_github_installation_fk",
     }).onDelete("restrict"),
-    check("knowledge_source_provider", sql`${table.provider} IN ('github', 'local_folder')`),
-    check("knowledge_source_visibility", sql`${table.visibility} IN ('local_only', 'shared_graph')`),
+    check("knowledge_source_provider", sql`${table.provider} = 'github'`),
+    check("knowledge_source_visibility", sql`${table.visibility} = 'shared_graph'`),
     check("knowledge_source_name_length", sql`char_length(${table.displayName}) BETWEEN 1 AND 512`),
     check("knowledge_source_environment_revision_positive", sql`${table.environmentRevision} >= 1`),
     check("knowledge_source_sync_revision_positive", sql`${table.syncRevision} >= 1`),
@@ -2011,22 +2010,7 @@ export const knowledgeSource = workspaceControl.table(
         AND ${table.repositoryFullName} IS NOT NULL
         AND ${table.refName} IS NOT NULL
         AND ${table.commitSha} ~ '^[0-9a-f]{40}$'
-        AND ${table.rootFingerprint} IS NULL
-        AND ${table.snapshotSha256} IS NULL
-      ) OR (
-        ${table.provider} = 'local_folder'
-        AND ${table.githubInstallationId} IS NULL
-        AND ${table.repositoryId} IS NULL
-        AND ${table.repositoryFullName} IS NULL
-        AND ${table.refName} IS NULL
-        AND ${table.commitSha} IS NULL
-        AND ${table.rootFingerprint} ~ '^[0-9a-f]{64}$'
-        AND ${table.snapshotSha256} ~ '^[0-9a-f]{64}$'
       )`,
-    ),
-    check(
-      "knowledge_source_local_share_only",
-      sql`${table.provider} <> 'local_folder' OR ${table.visibility} = 'shared_graph'`,
     ),
   ],
 );
@@ -2954,6 +2938,161 @@ export const knowledgeSourceEvent = workspaceControl.table(
         AND (${table.afterCommitSha} IS NULL OR ${table.afterCommitSha} ~ '^[0-9a-f]{40}$')`,
     ),
     check("knowledge_source_event_files_array", sql`jsonb_typeof(${table.changedFiles}) = 'array'`),
+  ],
+);
+
+export const knowledgeSourceSyncJob = workspaceControl.table(
+  "knowledge_source_sync_job",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    sourceId: uuid("source_id").notNull().references(() => knowledgeSource.id, {
+      onDelete: "cascade",
+    }),
+    desiredCommitSha: text("desired_commit_sha").notNull(),
+    sourceSyncRevision: bigint("source_sync_revision", { mode: "number" }).notNull(),
+    triggerEventId: uuid("trigger_event_id").references(() => knowledgeSourceEvent.id, {
+      onDelete: "set null",
+    }),
+    phase: text("phase").notNull().default("manifest"),
+    state: text("state").notNull().default("queued"),
+    attempt: integer("attempt").notNull().default(0),
+    totalFiles: integer("total_files").notNull().default(0),
+    processedFiles: integer("processed_files").notNull().default(0),
+    availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    workerId: text("worker_id"),
+    failureCode: text("failure_code"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("knowledge_source_sync_job_org_id_idx").on(table.organizationId, table.id),
+    uniqueIndex("knowledge_source_sync_job_revision_idx").on(
+      table.sourceId,
+      table.desiredCommitSha,
+    ),
+    index("knowledge_source_sync_job_claim_idx").on(
+      table.state,
+      table.availableAt,
+      table.createdAt,
+    ),
+    index("knowledge_source_sync_job_source_idx").on(
+      table.organizationId,
+      table.sourceId,
+      table.createdAt,
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.sourceId],
+      foreignColumns: [knowledgeSource.organizationId, knowledgeSource.id],
+      name: "knowledge_source_sync_job_org_source_fk",
+    }).onDelete("cascade"),
+    check(
+      "knowledge_source_sync_job_state",
+      sql`${table.state} IN ('queued', 'claimed', 'succeeded', 'failed', 'superseded')`,
+    ),
+    check(
+      "knowledge_source_sync_job_phase",
+      sql`${table.phase} IN ('manifest', 'indexing', 'activating')`,
+    ),
+    check(
+      "knowledge_source_sync_job_commit",
+      sql`${table.desiredCommitSha} ~ '^[0-9a-f]{40}$'`,
+    ),
+    check(
+      "knowledge_source_sync_job_revision_positive",
+      sql`${table.sourceSyncRevision} >= 1`,
+    ),
+    check(
+      "knowledge_source_sync_job_attempt",
+      sql`${table.attempt} >= 0 AND ${table.attempt} <= 20`,
+    ),
+    check(
+      "knowledge_source_sync_job_progress",
+      sql`${table.totalFiles} >= 0
+        AND ${table.processedFiles} >= 0
+        AND ${table.processedFiles} <= ${table.totalFiles}`,
+    ),
+    check(
+      "knowledge_source_sync_job_claim_shape",
+      sql`(
+        ${table.state} = 'claimed'
+        AND ${table.claimedAt} IS NOT NULL
+        AND ${table.leaseExpiresAt} IS NOT NULL
+        AND ${table.workerId} IS NOT NULL
+      ) OR ${table.state} <> 'claimed'`,
+    ),
+  ],
+);
+
+export const knowledgeCodeIndexFile = workspaceControl.table(
+  "knowledge_code_index_file",
+  {
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    jobId: uuid("job_id").notNull().references(() => knowledgeSourceSyncJob.id, {
+      onDelete: "cascade",
+    }),
+    sourceId: uuid("source_id").notNull().references(() => knowledgeSource.id, {
+      onDelete: "cascade",
+    }),
+    commitSha: text("commit_sha").notNull(),
+    path: text("path").notNull(),
+    blobSha: text("blob_sha").notNull(),
+    bytes: integer("bytes").notNull(),
+    language: text("language").notNull(),
+    state: text("state").notNull().default("pending"),
+    analysis: jsonb("analysis"),
+    failureCode: text("failure_code"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.jobId, table.path] }),
+    index("knowledge_code_index_file_pending_idx").on(table.jobId, table.state, table.path),
+    index("knowledge_code_index_file_reuse_idx").on(
+      table.organizationId,
+      table.sourceId,
+      table.blobSha,
+      table.updatedAt,
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.jobId],
+      foreignColumns: [knowledgeSourceSyncJob.organizationId, knowledgeSourceSyncJob.id],
+      name: "knowledge_code_index_file_org_job_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.sourceId],
+      foreignColumns: [knowledgeSource.organizationId, knowledgeSource.id],
+      name: "knowledge_code_index_file_org_source_fk",
+    }).onDelete("cascade"),
+    check(
+      "knowledge_code_index_file_commit",
+      sql`${table.commitSha} ~ '^[0-9a-f]{40}$' AND ${table.blobSha} ~ '^[0-9a-f]{40}$'`,
+    ),
+    check(
+      "knowledge_code_index_file_path",
+      sql`char_length(${table.path}) BETWEEN 1 AND 4096
+        AND ${table.path} !~ '(^/|\\\\|(^|/)\\.\\.?(/|$)|//)'`,
+    ),
+    check(
+      "knowledge_code_index_file_bytes",
+      sql`${table.bytes} BETWEEN 0 AND 1048576`,
+    ),
+    check(
+      "knowledge_code_index_file_state",
+      sql`${table.state} IN ('pending', 'ready', 'skipped')`,
+    ),
+    check(
+      "knowledge_code_index_file_analysis",
+      sql`(${table.state} = 'ready' AND jsonb_typeof(${table.analysis}) = 'object')
+        OR (${table.state} <> 'ready' AND ${table.analysis} IS NULL)`,
+    ),
   ],
 );
 

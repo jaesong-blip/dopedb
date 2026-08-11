@@ -6,6 +6,10 @@
     {
       "path": "/api/internal/cron/credential-leases",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/internal/cron/knowledge",
+      "schedule": "* * * * *"
     }
   ]
 }

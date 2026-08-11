@@ -7,7 +7,8 @@
 use dopedb_protocol::{
     DashboardKind as ProtocolDashboardKind, FunnelAnalysisArtifactRecord, FunnelAnalysisFreshness,
     FunnelMetricComposition, FunnelMetricOperation, FunnelTileAvailability, FunnelTileKind,
-    KnowledgeSourceProvider, KnowledgeSourceVisibility, SourceRevisionIdentity,
+    KnowledgeSourceBindingV1, KnowledgeSourceProvider, KnowledgeSourceVisibility,
+    SourceRevisionIdentity,
 };
 use futures::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -26,11 +27,12 @@ use crate::features::workspaces::adapters::control_plane::{
     list_current_knowledge_grants,
     list_environment_connections as list_remote_environment_connections,
     list_knowledge_github_repositories, list_knowledge_projects, list_remote_knowledge_mappings,
-    publish_funnel_analysis, publish_knowledge_graph, remote_funnel_analyses,
+    list_remote_knowledge_sources, publish_funnel_analysis, remote_funnel_analyses,
+    request_knowledge_source_sync,
     revoke_environment_connection as revoke_remote_environment_connection,
     AppendKnowledgeEnvironmentRequest, CreateKnowledgeEnvironmentRequest,
     CreateKnowledgeProjectRequest, RemoteGithubRepository, RemoteKnowledgeEnvironment,
-    RemoteKnowledgeProject,
+    RemoteKnowledgeProject, RemoteKnowledgeSource,
 };
 use crate::features::workspaces::WorkspaceKind;
 use crate::kernel::identity::{AccountId, ConnectionId, QueryExecutionId, WorkspaceId};
@@ -38,7 +40,7 @@ use crate::model::QueryResult;
 use crate::state::AppState;
 use crate::store::ActiveResourceScope;
 
-use super::adapters::github::GithubSourceAdapter;
+use super::adapters::github::GithubSourceControlPlane;
 use super::application::{graph_path, search_graphs, KnowledgePathResult, KnowledgeSearchResult};
 use super::domain::{
     validate_graph_publish, EnvironmentRiskClass, KnowledgeMappingProposal, MappingProposalState,
@@ -48,7 +50,7 @@ use super::domain::{
 use super::extractor::build_graph;
 use super::ports::{
     KnowledgeGrantPort, KnowledgeGraphRepositoryPort, KnowledgeMappingRepositoryPort,
-    KnowledgeScopeRepositoryPort, SourceProviderAdapter,
+    KnowledgeScopeRepositoryPort, LocalKnowledgeSourcePort,
 };
 
 use crate::features::dashboards::{
@@ -71,6 +73,7 @@ pub(crate) struct KnowledgeSourceProjection {
     visibility: KnowledgeSourceVisibility,
     revision: SourceRevisionIdentity,
     health: SourceHealthState,
+    graph_revision_id: Option<Uuid>,
     local_capability_available: bool,
 }
 
@@ -113,7 +116,8 @@ pub(crate) struct LocalFolderSourceInput {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct KnowledgeSyncProjection {
     source_id: Uuid,
-    graph_revision_id: Uuid,
+    state: SourceHealthState,
+    graph_revision_id: Option<Uuid>,
     parsed_files: u64,
     skipped_files: u64,
     changed_files: Vec<String>,
@@ -322,13 +326,77 @@ fn domain_scope(
     ))
 }
 
-fn project_source(scope: StoredKnowledgeScope) -> KnowledgeSourceProjection {
+fn remote_github_binding(source: &RemoteKnowledgeSource) -> AppResult<KnowledgeSourceBindingV1> {
+    let (Some(repository_id), Some(repository), Some(ref_name), Some(commit_sha)) = (
+        source.repository_id.as_ref(),
+        source.repository_full_name.as_ref(),
+        source.ref_name.as_ref(),
+        source.commit_sha.as_ref(),
+    ) else {
+        return Err(AppError::Network(
+            "Project Knowledge omitted GitHub source identity".into(),
+        ));
+    };
+    let binding = KnowledgeSourceBindingV1 {
+        source_id: source.id,
+        project_id: source.project_id,
+        project_environment_id: source.project_environment_id,
+        provider: KnowledgeSourceProvider::Github,
+        display_name: source.display_name.clone(),
+        visibility: KnowledgeSourceVisibility::SharedGraph,
+        revision: SourceRevisionIdentity::Github {
+            repository_id: repository_id.clone(),
+            repository: repository.clone(),
+            ref_name: ref_name.clone(),
+            commit_sha: commit_sha.clone(),
+        },
+    };
+    if source.provider != "github" || !binding.validate() {
+        return Err(AppError::Network(
+            "Project Knowledge returned invalid GitHub source identity".into(),
+        ));
+    }
+    Ok(binding)
+}
+
+async fn project_source(
+    state: &AppState,
+    scope: StoredKnowledgeScope,
+    remote: Option<&RemoteKnowledgeSource>,
+) -> AppResult<KnowledgeSourceProjection> {
     let local_capability_available = scope.binding.provider != KnowledgeSourceProvider::LocalFolder
         || fetch_knowledge_source_root(scope.binding.source_id)
             .ok()
             .flatten()
             .is_some();
-    KnowledgeSourceProjection {
+    let active_index = state
+        .knowledge_store()
+        .active_for_source(scope.binding.source_id)
+        .await?;
+    let active_index_available = active_index.is_some();
+    let (health, graph_revision_id) = match scope.binding.provider {
+        KnowledgeSourceProvider::Github => (
+            match remote.map(|source| source.sync_state.as_str()) {
+                Some("ready") => SourceHealthState::Ready,
+                Some("failed") => SourceHealthState::Failed,
+                Some("stale") => SourceHealthState::Stale,
+                _ => SourceHealthState::Syncing,
+            },
+            remote.and_then(|source| source.graph_revision_id),
+        ),
+        KnowledgeSourceProvider::LocalFolder
+            if local_capability_available && active_index_available =>
+        {
+            (
+                SourceHealthState::Ready,
+                active_index
+                    .as_ref()
+                    .map(|artifact| artifact.graph_revision_id),
+            )
+        }
+        KnowledgeSourceProvider::LocalFolder => (SourceHealthState::Stale, None),
+    };
+    Ok(KnowledgeSourceProjection {
         source_id: scope.binding.source_id,
         project_id: scope.project.id,
         project_name: scope.project.name,
@@ -340,15 +408,10 @@ fn project_source(scope: StoredKnowledgeScope) -> KnowledgeSourceProjection {
         display_name: scope.binding.display_name,
         visibility: scope.binding.visibility,
         revision: scope.binding.revision,
-        health: if local_capability_available
-            || scope.binding.visibility == KnowledgeSourceVisibility::SharedGraph
-        {
-            SourceHealthState::Ready
-        } else {
-            SourceHealthState::Stale
-        },
+        health,
+        graph_revision_id,
         local_capability_available,
-    }
+    })
 }
 
 fn unchanged_graph(
@@ -586,7 +649,6 @@ pub(crate) async fn list_knowledge_github_repositories_command(
 #[tauri::command]
 pub(crate) async fn connect_knowledge_github_source(
     state: State<'_, AppState>,
-    app: tauri::AppHandle,
     input: GithubSourceInput,
 ) -> AppResult<KnowledgeSourceProjection> {
     let (scope, account) = active_remote_scope(&state).await?;
@@ -597,7 +659,7 @@ pub(crate) async fn connect_knowledge_github_source(
         input.project_id,
         input.project_environment_id,
     )?;
-    let adapter = GithubSourceAdapter::new(account, project.workspace_id, environment.clone());
+    let adapter = GithubSourceControlPlane::new(account, project.workspace_id, environment.clone());
     let draft = SourceBindingDraft {
         source_id: Uuid::new_v4(),
         project_id: project.id,
@@ -613,26 +675,20 @@ pub(crate) async fn connect_knowledge_github_source(
         },
     };
     let binding = adapter.bind(&draft).await?;
-    let snapshot = adapter.snapshot(&binding, None).await?;
     state
         .knowledge_store()
-        .save_scope(
-            &project,
-            &environment,
-            &snapshot.binding,
-            snapshot.environment_revision,
-        )
+        .save_scope(&project, &environment, &binding, environment.revision)
         .await?;
-    state.knowledge_store().save_snapshot(&snapshot).await?;
-    let projection = project_source(StoredKnowledgeScope {
-        project,
-        environment,
-        binding: snapshot.binding,
-    });
-    let sync = sync_knowledge_source_inner(&state, projection.source_id).await;
-    state.knowledge_watches.start(app, projection.source_id);
-    sync?;
-    Ok(projection)
+    project_source(
+        &state,
+        StoredKnowledgeScope {
+            project,
+            environment,
+            binding,
+        },
+        None,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -701,17 +757,20 @@ pub(crate) async fn connect_knowledge_local_folder(
         let _ = state.local_knowledge_sources.revoke(&binding).await;
         return Err(error);
     }
-    let projection = project_source(StoredKnowledgeScope {
-        project,
-        environment,
-        binding: snapshot.binding,
-    });
-    let sync = sync_knowledge_source_inner(&state, projection.source_id).await;
-    state
-        .knowledge_watches
-        .start(app.clone(), projection.source_id);
-    sync?;
-    Ok(Some(projection))
+    sync_knowledge_source_inner(&state, source_id).await?;
+    state.knowledge_watches.start(app.clone(), source_id);
+    Ok(Some(
+        project_source(
+            &state,
+            StoredKnowledgeScope {
+                project,
+                environment,
+                binding: snapshot.binding,
+            },
+            None,
+        )
+        .await?,
+    ))
 }
 
 #[tauri::command]
@@ -719,8 +778,48 @@ pub(crate) async fn list_knowledge_sources(
     state: State<'_, AppState>,
 ) -> AppResult<Vec<KnowledgeSourceProjection>> {
     let scope = state.knowledge_store().active_resource_scope().await?;
+    let remote_sources = if scope.workspace_kind == WorkspaceKind::Team {
+        let account = selected_team_account(&scope)?;
+        let projects = list_knowledge_projects(account.as_str(), scope.workspace_id).await?;
+        let sources = list_remote_knowledge_sources(account.as_str(), scope.workspace_id).await?;
+        for source in sources.iter().filter(|source| source.provider == "github") {
+            let (project, environment) = domain_scope(
+                WorkspaceId::from(scope.workspace_id),
+                &projects,
+                source.project_id,
+                source.project_environment_id,
+            )?;
+            if source.environment_revision != environment.revision {
+                return Err(AppError::Network(
+                    "Project Knowledge source crossed its Environment revision".into(),
+                ));
+            }
+            let binding = remote_github_binding(source)?;
+            state
+                .knowledge_store()
+                .save_scope(&project, &environment, &binding, environment.revision)
+                .await?;
+        }
+        sources
+    } else {
+        Vec::new()
+    };
     let sources = state.knowledge_store().scopes(scope.workspace_id).await?;
-    Ok(sources.into_iter().map(project_source).collect())
+    let mut projections = Vec::with_capacity(sources.len());
+    for source in sources {
+        let remote = remote_sources
+            .iter()
+            .find(|candidate| candidate.id == source.binding.source_id);
+        if source.binding.provider == KnowledgeSourceProvider::Github && remote.is_none() {
+            state
+                .knowledge_store()
+                .remove_scope(source.binding.source_id)
+                .await?;
+            continue;
+        }
+        projections.push(project_source(&state, source, remote).await?);
+    }
+    Ok(projections)
 }
 
 #[tauri::command]
@@ -771,48 +870,37 @@ pub(super) async fn sync_knowledge_source_inner(
         .find(|candidate| candidate.binding.source_id == source_id)
         .ok_or_else(|| AppError::NotFound("the Project Knowledge source".into()))?;
     let previous_artifact = state.knowledge_store().active_for_source(source_id).await?;
+    if stored.binding.provider == KnowledgeSourceProvider::Github {
+        let account = selected_team_account(&active_scope)?;
+        let previous_graph_revision_id =
+            request_knowledge_source_sync(account.as_str(), active_scope.workspace_id, source_id)
+                .await?;
+        return Ok(KnowledgeSyncProjection {
+            source_id,
+            state: SourceHealthState::Syncing,
+            graph_revision_id: previous_graph_revision_id,
+            parsed_files: previous_artifact
+                .as_ref()
+                .map_or(0, |artifact| artifact.health.parsed_files),
+            skipped_files: previous_artifact
+                .as_ref()
+                .map_or(0, |artifact| artifact.health.skipped_files),
+            changed_files: previous_artifact
+                .as_ref()
+                .map_or_else(Vec::new, |artifact| artifact.changed_files.clone()),
+            node_count: previous_artifact
+                .as_ref()
+                .map_or(0, |artifact| artifact.nodes.len()),
+            edge_count: previous_artifact
+                .as_ref()
+                .map_or(0, |artifact| artifact.edges.len()),
+        });
+    }
     let parent = previous_artifact
         .as_ref()
         .map(|artifact| artifact.graph_revision_id);
     let previous_snapshot = state.knowledge_store().source_snapshot(source_id).await?;
     let artifact = match stored.binding.provider {
-        KnowledgeSourceProvider::Github => {
-            let account = selected_team_account(&active_scope)?;
-            let adapter = GithubSourceAdapter::new(
-                account.clone(),
-                stored.project.workspace_id,
-                stored.environment.clone(),
-            );
-            adapter.restore(stored.binding.clone(), stored.environment.revision)?;
-            let snapshot = adapter
-                .snapshot(&stored.binding, previous_snapshot.as_ref())
-                .await?;
-            if let Some(artifact) = unchanged_graph(
-                previous_snapshot.as_ref(),
-                &snapshot,
-                previous_artifact.as_ref(),
-            ) {
-                artifact
-            } else {
-                let artifact =
-                    build_graph(&adapter, &snapshot, parent, previous_artifact.as_ref()).await?;
-                validate_graph_publish(&artifact, &stored.environment)?;
-                state.knowledge_store().stage(&artifact).await?;
-                publish_knowledge_graph(account.as_str(), active_scope.workspace_id, &artifact)
-                    .await?;
-                state
-                    .knowledge_store()
-                    .save_scope(
-                        &stored.project,
-                        &stored.environment,
-                        &snapshot.binding,
-                        snapshot.environment_revision,
-                    )
-                    .await?;
-                state.knowledge_store().save_snapshot(&snapshot).await?;
-                artifact
-            }
-        }
         KnowledgeSourceProvider::LocalFolder => {
             let root = fetch_knowledge_source_root(source_id)?.ok_or_else(|| {
                 AppError::NotFound("the Local Folder capability on this device".into())
@@ -855,13 +943,17 @@ pub(super) async fn sync_knowledge_source_inner(
                 artifact
             }
         }
+        KnowledgeSourceProvider::Github => {
+            unreachable!("GitHub sync is owned by the control plane")
+        }
     };
     if parent != Some(artifact.graph_revision_id) {
         state.knowledge_store().activate(&artifact).await?;
     }
     Ok(KnowledgeSyncProjection {
         source_id,
-        graph_revision_id: artifact.graph_revision_id,
+        state: SourceHealthState::Ready,
+        graph_revision_id: Some(artifact.graph_revision_id),
         parsed_files: artifact.health.parsed_files,
         skipped_files: artifact.health.skipped_files,
         changed_files: artifact.changed_files,

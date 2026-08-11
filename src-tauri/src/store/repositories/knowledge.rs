@@ -1919,14 +1919,6 @@ impl KnowledgeGrantPort for Store {
             expires_at,
         }))
     }
-
-    async fn revoke_grant(&self, grant_id: Uuid) -> AppResult<()> {
-        sqlx::query("DELETE FROM knowledge_grants WHERE id = ?1")
-            .bind(grant_id.to_string())
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
 }
 
 impl KnowledgeMappingRepositoryPort for Store {

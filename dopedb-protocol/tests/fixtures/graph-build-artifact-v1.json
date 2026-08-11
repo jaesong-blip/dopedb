@@ -20,7 +20,7 @@
   "sourceRevisionSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   "parentGraphRevisionId": null,
   "extractor": {
-    "id": "dopedb.graphify-code",
+    "id": "dopedb.code-index",
     "version": "1.0.0",
     "sourceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
   },

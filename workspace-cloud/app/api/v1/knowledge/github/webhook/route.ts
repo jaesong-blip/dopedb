@@ -1,10 +1,13 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { verifyGithubWebhook } from "@/lib/knowledge/github-app";
 import {
+  reconcileGithubKnowledgeCommit,
+  recordGithubKnowledgePush,
+} from "@/lib/knowledge/sync-queue";
+import {
   knowledgeGithubInstallation,
   knowledgeSource,
-  knowledgeSourceEvent,
 } from "@/lib/schema";
 
 const MAX_WEBHOOK_BYTES = 2 * 1024 * 1024;
@@ -43,6 +46,7 @@ function safePath(value: unknown): value is string {
     && value.length <= 4_096
     && !value.startsWith("/")
     && !value.includes("\\")
+    && !/[\u0000-\u001f\u007f]/.test(value)
     && value.split("/").every((segment) => segment && segment !== "." && segment !== "..");
 }
 
@@ -66,6 +70,37 @@ function changedFiles(payload: Record<string, unknown>) {
 function positiveInteger(value: unknown): bigint | null {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) return null;
   return BigInt(value);
+}
+
+function repositories(value: unknown) {
+  if (!Array.isArray(value) || value.length > 10_000) return [];
+  const result: Array<{ id: string; fullName: string | null }> = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const repository = item as Record<string, unknown>;
+    const id = positiveInteger(repository.id);
+    const fullName = typeof repository.full_name === "string"
+      && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository.full_name)
+      && repository.full_name.split("/").every((segment) => segment !== "." && segment !== "..")
+      ? repository.full_name
+      : null;
+    if (id) result.push({ id: id.toString(), fullName });
+  }
+  return result;
+}
+
+async function requeueSources(
+  organizationId: string,
+  sources: Array<{ id: string; commitSha: string | null }>,
+) {
+  for (const source of sources) {
+    if (!source.commitSha) continue;
+    await reconcileGithubKnowledgeCommit({
+      organizationId,
+      sourceId: source.id,
+      observedCommitSha: source.commitSha,
+    });
+  }
 }
 
 export async function POST(request: Request) {
@@ -117,38 +152,29 @@ export async function POST(request: Request) {
       : null;
     if (!repositoryId || !refName || !before) return new Response(null, { status: 202 });
     const files = changedFiles(payload);
-    await db.transaction(async (transaction) => {
-      for (const installation of installations) {
-        const sources = await transaction.select({ id: knowledgeSource.id }).from(knowledgeSource)
-          .where(and(
-            eq(knowledgeSource.organizationId, installation.organizationId),
-            eq(knowledgeSource.githubInstallationId, installation.id),
-            eq(knowledgeSource.repositoryId, repositoryId.toString()),
+    const shortRef = refName.replace(/^refs\/(?:heads|tags)\//, "");
+    for (const installation of installations) {
+      const sources = await db.select({ id: knowledgeSource.id }).from(knowledgeSource)
+        .where(and(
+          eq(knowledgeSource.organizationId, installation.organizationId),
+          eq(knowledgeSource.githubInstallationId, installation.id),
+          eq(knowledgeSource.repositoryId, repositoryId.toString()),
+          or(
             eq(knowledgeSource.refName, refName),
-          ));
-        for (const source of sources) {
-          await transaction.insert(knowledgeSourceEvent).values({
-            organizationId: installation.organizationId,
-            sourceId: source.id,
-            deliveryId,
-            eventKind: "push",
-            beforeCommitSha: before,
-            afterCommitSha: after,
-            changedFiles: files,
-          }).onConflictDoNothing();
-          await transaction.update(knowledgeSource).set({
-            ...(after ? { commitSha: after } : {}),
-            syncState: after ? "pending" : "stale",
-            syncRevision: sqlIncrement(knowledgeSource.syncRevision),
-            lastFailureCode: after ? null : "tracked_ref_deleted",
-            updatedAt: new Date(),
-          }).where(and(
-            eq(knowledgeSource.organizationId, installation.organizationId),
-            eq(knowledgeSource.id, source.id),
-          ));
-        }
+            eq(knowledgeSource.refName, shortRef),
+          ),
+        ));
+      for (const source of sources) {
+        await recordGithubKnowledgePush({
+          organizationId: installation.organizationId,
+          sourceId: source.id,
+          deliveryId,
+          beforeCommitSha: before,
+          afterCommitSha: after,
+          changedFiles: files,
+        });
       }
-    });
+    }
   } else if (event === "installation") {
     const action = typeof payload.action === "string" ? payload.action : "";
     const status = action === "deleted"
@@ -159,34 +185,102 @@ export async function POST(request: Request) {
           ? "active"
           : null;
     if (status) {
-      await db.transaction(async (transaction) => {
-        await transaction.update(knowledgeGithubInstallation).set({
-          status,
+      await db.update(knowledgeGithubInstallation).set({
+        status,
+        updatedAt: new Date(),
+      }).where(eq(knowledgeGithubInstallation.installationId, installationId));
+      if (status !== "active") {
+        for (const installation of installations) {
+          await db.update(knowledgeSource).set({
+            syncState: status === "revoked" ? "revoked" : "stale",
+            lastFailureCode: status === "revoked"
+              ? "github_installation_revoked"
+              : "github_installation_suspended",
+            revokedAt: status === "revoked" ? new Date() : null,
+            updatedAt: new Date(),
+          }).where(and(
+            eq(knowledgeSource.organizationId, installation.organizationId),
+            eq(knowledgeSource.githubInstallationId, installation.id),
+          ));
+        }
+      } else {
+        for (const installation of installations) {
+          const sources = await db.update(knowledgeSource).set({
+            syncState: "pending",
+            syncRevision: sql`${knowledgeSource.syncRevision} + 1`,
+            lastFailureCode: null,
+            revokedAt: null,
+            updatedAt: new Date(),
+          }).where(and(
+            eq(knowledgeSource.organizationId, installation.organizationId),
+            eq(knowledgeSource.githubInstallationId, installation.id),
+          )).returning({
+            id: knowledgeSource.id,
+            commitSha: knowledgeSource.commitSha,
+          });
+          await requeueSources(installation.organizationId, sources);
+        }
+      }
+    }
+  } else if (event === "installation_repositories") {
+    const action = typeof payload.action === "string" ? payload.action : "";
+    const changed = action === "removed"
+      ? repositories(payload.repositories_removed)
+      : action === "added"
+        ? repositories(payload.repositories_added)
+        : [];
+    for (const installation of installations) {
+      for (const repository of changed) {
+        const sources = await db.update(knowledgeSource).set({
+          syncState: action === "removed" ? "stale" : "pending",
+          syncRevision: sql`${knowledgeSource.syncRevision} + 1`,
+          lastFailureCode: action === "removed"
+            ? "github_repository_access_removed"
+            : null,
           updatedAt: new Date(),
-        }).where(eq(knowledgeGithubInstallation.installationId, installationId));
-        if (status !== "active") {
-          for (const installation of installations) {
-            await transaction.update(knowledgeSource).set({
-              syncState: status === "revoked" ? "revoked" : "stale",
-              lastFailureCode: status === "revoked"
-                ? "github_installation_revoked"
-                : "github_installation_suspended",
-              revokedAt: status === "revoked" ? new Date() : null,
-              updatedAt: new Date(),
-            }).where(and(
-              eq(knowledgeSource.organizationId, installation.organizationId),
-              eq(knowledgeSource.githubInstallationId, installation.id),
-            ));
+        }).where(and(
+          eq(knowledgeSource.organizationId, installation.organizationId),
+          eq(knowledgeSource.githubInstallationId, installation.id),
+          eq(knowledgeSource.repositoryId, repository.id),
+        )).returning({
+          id: knowledgeSource.id,
+          commitSha: knowledgeSource.commitSha,
+        });
+        if (action === "added") {
+          await requeueSources(installation.organizationId, sources);
+        }
+      }
+    }
+  } else if (event === "repository") {
+    const action = typeof payload.action === "string" ? payload.action : "";
+    const [repository] = repositories(payload.repository ? [payload.repository] : []);
+    if (repository) {
+      const unavailable = action === "deleted" || action === "archived" || action === "transferred";
+      const available = action === "renamed" || action === "unarchived";
+      if (unavailable || available) {
+        for (const installation of installations) {
+          const sources = await db.update(knowledgeSource).set({
+            ...(available && repository.fullName
+              ? { repositoryFullName: repository.fullName }
+              : {}),
+            syncState: unavailable ? "stale" : "pending",
+            syncRevision: sql`${knowledgeSource.syncRevision} + 1`,
+            lastFailureCode: unavailable ? "github_repository_unavailable" : null,
+            updatedAt: new Date(),
+          }).where(and(
+            eq(knowledgeSource.organizationId, installation.organizationId),
+            eq(knowledgeSource.githubInstallationId, installation.id),
+            eq(knowledgeSource.repositoryId, repository.id),
+          )).returning({
+            id: knowledgeSource.id,
+            commitSha: knowledgeSource.commitSha,
+          });
+          if (available) {
+            await requeueSources(installation.organizationId, sources);
           }
         }
-      });
+      }
     }
   }
   return new Response(null, { status: 202 });
-}
-
-// Drizzle's SQL fragment preserves an atomic monotonic webhook cursor.
-import { sql } from "drizzle-orm";
-function sqlIncrement(column: typeof knowledgeSource.syncRevision) {
-  return sql`${column} + 1`;
 }

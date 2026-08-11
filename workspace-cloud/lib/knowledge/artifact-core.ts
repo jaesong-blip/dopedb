@@ -1,6 +1,6 @@
-// Structural validator for the provider-neutral GraphBuildArtifact v1 contract.
-// It deliberately accepts only deterministic, provenance-backed code extraction.
-import "server-only";
+// Runtime-neutral structural validator for the GitHub code-index artifact
+// stored by the Next.js control plane. It deliberately accepts only
+// deterministic, provenance-backed extraction.
 
 import { createHash } from "node:crypto";
 
@@ -75,35 +75,15 @@ function uniqueStrings(values: unknown, max: number, predicate: (value: unknown)
   return true;
 }
 
-function validRevision(value: unknown, provider: string) {
+function validRevision(value: unknown) {
   if (!object(value) || typeof value.kind !== "string") return false;
   if (value.kind === "github") {
-    return provider === "github"
-      && exactKeys(value, ["kind", "repository_id", "repository", "ref_name", "commit_sha"])
+    return exactKeys(value, ["kind", "repository_id", "repository", "ref_name", "commit_sha"])
       && text(value.repository_id)
       && typeof value.repository === "string"
       && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value.repository)
       && safeRef(value.ref_name)
       && sha1(value.commit_sha);
-  }
-  if (value.kind === "local_git") {
-    return provider === "local_folder"
-      && exactKeys(value, [
-        "kind", "root_fingerprint", "git_root_fingerprint", "ref_name",
-        "commit_sha", "dirty", "worktree",
-      ])
-      && sha256(value.root_fingerprint)
-      && sha256(value.git_root_fingerprint)
-      && safeRef(value.ref_name)
-      && sha1(value.commit_sha)
-      && typeof value.dirty === "boolean"
-      && typeof value.worktree === "boolean";
-  }
-  if (value.kind === "local_snapshot") {
-    return provider === "local_folder"
-      && exactKeys(value, ["kind", "root_fingerprint", "snapshot_sha256"])
-      && sha256(value.root_fingerprint)
-      && sha256(value.snapshot_sha256);
   }
   return false;
 }
@@ -118,22 +98,18 @@ function validBinding(value: unknown) {
     || !uuid(value.sourceId)
     || !uuid(value.projectId)
     || !uuid(value.projectEnvironmentId)
-    || (value.provider !== "github" && value.provider !== "local_folder")
+    || value.provider !== "github"
     || !text(value.displayName)
-    || (value.visibility !== "local_only" && value.visibility !== "shared_graph")
-    || !validRevision(value.revision, value.provider)
+    || value.visibility !== "shared_graph"
+    || !validRevision(value.revision)
   ) {
     return false;
   }
-  if (value.visibility !== "shared_graph") return false;
-  return !(object(value.revision)
-    && value.revision.kind === "local_git"
-    && value.revision.dirty === true);
+  return true;
 }
 
 const NODE_KINDS = new Set([
-  "file", "module", "type", "function", "route", "table", "column", "migration",
-  "event", "funnel", "dashboard", "report",
+  "file", "module", "type", "function", "route", "table", "column", "migration", "event",
 ]);
 const RELATIONS = new Set([
   "defines", "imports", "calls", "handles_route", "reads_table", "writes_table",
@@ -151,7 +127,7 @@ export type ValidGraphArtifact = JsonObject & {
     sourceId: string;
     projectId: string;
     projectEnvironmentId: string;
-    provider: "github" | "local_folder";
+    provider: "github";
     revision: JsonObject;
   };
 };

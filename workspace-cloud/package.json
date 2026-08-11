@@ -11,12 +11,14 @@
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
     "db:migrate": "drizzle-kit migrate --config=drizzle.config.ts",
     "db:check": "drizzle-kit check --config=drizzle.config.ts",
+    "test:code-index": "vitest run --config vitest.code-index.config.ts",
     "test:postgres-harness-guard": "node --test scripts/provider-import-postgres-harness-guard.node.mjs",
     "test:postgres-import": "node scripts/run-provider-import-postgres-harness.mjs"
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "^1.6.25",
     "@neondatabase/serverless": "^1.1.0",
+    "@typescript/typescript6": "^6.0.2",
     "better-auth": "^1.6.25",
     "cron-parser": "^5.7.0",
     "drizzle-orm": "^0.45.2",
@@ -29,7 +31,6 @@
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "@typescript/typescript6": "^6.0.2",
     "drizzle-kit": "^0.31.10",
     "postcss": "8.5.23",
     "postgres": "3.4.9",

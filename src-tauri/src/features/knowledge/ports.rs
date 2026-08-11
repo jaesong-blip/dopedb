@@ -11,7 +11,7 @@ use crate::error::AppResult;
 
 use super::domain::{
     KnowledgeGrant, KnowledgeMappingProposal, MappingProposalState, Project, ProjectEnvironment,
-    SourceBindingDraft, SourceHealth, SourceSnapshot, StoredKnowledgeScope,
+    SourceSnapshot, StoredKnowledgeScope,
 };
 
 pub(crate) trait KnowledgeScopeRepositoryPort: Clone + Send + Sync + 'static {
@@ -39,28 +39,16 @@ pub(crate) trait KnowledgeScopeRepositoryPort: Clone + Send + Sync + 'static {
     ) -> impl Future<Output = AppResult<Option<SourceSnapshot>>> + Send;
 }
 
-pub(crate) trait SourceProviderAdapter: Clone + Send + Sync + 'static {
+/// Device-local source operations used only by the Local Folder extractor.
+/// Hosted providers are registered and indexed by the workspace control plane.
+pub(crate) trait LocalKnowledgeSourcePort: Clone + Send + Sync + 'static {
     type Watch: Send + 'static;
 
-    fn discover(&self) -> impl Future<Output = AppResult<Vec<String>>> + Send;
-    fn bind(
-        &self,
-        draft: &SourceBindingDraft,
-    ) -> impl Future<Output = AppResult<KnowledgeSourceBindingV1>> + Send;
-    fn resolve_revision(
-        &self,
-        binding: &KnowledgeSourceBindingV1,
-    ) -> impl Future<Output = AppResult<SourceRevisionIdentity>> + Send;
     fn snapshot(
         &self,
         binding: &KnowledgeSourceBindingV1,
         previous: Option<&SourceSnapshot>,
     ) -> impl Future<Output = AppResult<SourceSnapshot>> + Send;
-    fn list_changes(
-        &self,
-        before: &SourceRevisionIdentity,
-        after: &SourceRevisionIdentity,
-    ) -> impl Future<Output = AppResult<Vec<String>>> + Send;
     fn read_file_at_revision(
         &self,
         binding: &KnowledgeSourceBindingV1,
@@ -71,10 +59,6 @@ pub(crate) trait SourceProviderAdapter: Clone + Send + Sync + 'static {
         &self,
         binding: &KnowledgeSourceBindingV1,
     ) -> impl Future<Output = AppResult<Self::Watch>> + Send;
-    fn health(
-        &self,
-        binding: &KnowledgeSourceBindingV1,
-    ) -> impl Future<Output = AppResult<SourceHealth>> + Send;
     fn revoke(
         &self,
         binding: &KnowledgeSourceBindingV1,
@@ -115,7 +99,6 @@ pub(crate) trait KnowledgeGrantPort: Clone + Send + Sync + 'static {
         &self,
         grant_id: Uuid,
     ) -> impl Future<Output = AppResult<Option<KnowledgeGrant>>> + Send;
-    fn revoke_grant(&self, grant_id: Uuid) -> impl Future<Output = AppResult<()>> + Send;
 }
 
 pub(crate) trait KnowledgeMappingRepositoryPort: Clone + Send + Sync + 'static {

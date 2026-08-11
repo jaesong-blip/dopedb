@@ -7,8 +7,6 @@ use crate::features::knowledge::domain::{
 };
 use dopedb_protocol::GraphBuildArtifactV1;
 use sha2::{Digest, Sha256};
-const MAX_SOURCE_FILES: usize = 100_000;
-const MAX_SOURCE_FILE_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -54,22 +52,10 @@ pub(crate) struct CreateKnowledgeSourceRequest<'a> {
     pub(crate) project_id: Uuid,
     pub(crate) project_environment_id: Uuid,
     pub(crate) display_name: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) installation_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) repository_id: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) repository_full_name: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) ref_name: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) root_fingerprint: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) snapshot_sha256: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) publish_approved: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) exposure: Option<&'static str>,
+    pub(crate) installation_id: Uuid,
+    pub(crate) repository_id: &'a str,
+    pub(crate) repository_full_name: &'a str,
+    pub(crate) ref_name: &'a str,
 }
 
 #[derive(Deserialize)]
@@ -80,53 +66,45 @@ struct CreatedKnowledgeSourceResponse {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct CreatedKnowledgeSource {
-    id: Uuid,
-    sync_revision: u64,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct PublishedKnowledgeGraph {
-    pub(crate) graph_revision_id: Uuid,
-    pub(crate) artifact_sha256: String,
-    pub(crate) active: bool,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct RemoteKnowledgeSourceFile {
-    pub(crate) path: String,
-    pub(crate) blob_sha: String,
-    pub(crate) bytes: u64,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct RemoteKnowledgeSourceSnapshot {
-    pub(crate) source_id: Uuid,
-    pub(crate) environment_revision: u64,
-    pub(crate) sync_revision: u64,
-    pub(crate) repository: String,
-    pub(crate) commit_sha: String,
-    pub(crate) files: Vec<RemoteKnowledgeSourceFile>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct RemoteKnowledgeSourceEvent {
-    pub(crate) id: Uuid,
-    pub(crate) event_kind: String,
-    pub(crate) before_commit_sha: Option<String>,
-    pub(crate) after_commit_sha: Option<String>,
-    pub(crate) changed_files: Vec<String>,
-    pub(crate) created_at: String,
+struct QueuedKnowledgeSourceResponse {
+    queued: bool,
+    job_id: Uuid,
+    graph_revision_id: Option<Uuid>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct KnowledgeSourceEventsResponse {
-    events: Vec<RemoteKnowledgeSourceEvent>,
+struct RemoteKnowledgeSourcesResponse {
+    sources: Vec<RemoteKnowledgeSource>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct RemoteKnowledgeSource {
+    pub(crate) id: Uuid,
+    pub(crate) project_id: Uuid,
+    pub(crate) project_environment_id: Uuid,
+    pub(crate) environment_revision: u64,
+    pub(crate) provider: String,
+    pub(crate) display_name: String,
+    pub(crate) visibility: String,
+    pub(crate) repository_id: Option<String>,
+    pub(crate) repository_full_name: Option<String>,
+    pub(crate) ref_name: Option<String>,
+    pub(crate) commit_sha: Option<String>,
+    pub(crate) sync_state: String,
+    pub(crate) sync_revision: u64,
+    pub(crate) last_failure_code: Option<String>,
+    pub(crate) graph_revision_id: Option<Uuid>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct CreatedKnowledgeSource {
+    pub(crate) id: Uuid,
+    pub(crate) sync_revision: u64,
+    pub(crate) environment_revision: u64,
+    pub(crate) commit_sha: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -830,7 +808,7 @@ pub(crate) async fn create_knowledge_source(
     user_id: &str,
     workspace_id: Uuid,
     request: &CreateKnowledgeSourceRequest<'_>,
-) -> AppResult<u64> {
+) -> AppResult<CreatedKnowledgeSource> {
     let token = bearer(user_id)?;
     let response = client()?
         .post(format!(
@@ -850,125 +828,96 @@ pub(crate) async fn create_knowledge_source(
         .await
         .map_err(|error| request_error("reading the Project Knowledge source", error))?
         .source;
-    if created.id != request.source_id || created.sync_revision == 0 {
+    if created.id != request.source_id
+        || created.sync_revision == 0
+        || created.environment_revision == 0
+        || created.commit_sha.as_ref().is_some_and(|value| {
+            value.len() != 40 || !value.chars().all(|character| character.is_ascii_hexdigit())
+        })
+    {
         return Err(AppError::Network(
             "Project Knowledge changed source identity".into(),
         ));
     }
-    Ok(created.sync_revision)
+    Ok(created)
 }
 
-pub(crate) async fn knowledge_source_snapshot(
+pub(crate) async fn list_remote_knowledge_sources(
     user_id: &str,
     workspace_id: Uuid,
-    source_id: Uuid,
-) -> AppResult<RemoteKnowledgeSourceSnapshot> {
+) -> AppResult<Vec<RemoteKnowledgeSource>> {
     let token = bearer(user_id)?;
     let response = client()?
         .get(format!(
-            "{}/api/v1/workspaces/{workspace_id}/knowledge/sources/{source_id}/snapshot",
+            "{}/api/v1/workspaces/{workspace_id}/knowledge/sources",
             origin()?
         ))
         .bearer_auth(token.as_str())
         .send()
         .await
-        .map_err(|error| request_error("loading a GitHub Knowledge snapshot", error))?;
+        .map_err(|error| request_error("loading workspace Knowledge sources", error))?;
     if !response.status().is_success() {
         return Err(oauth_error(response).await);
     }
-    let snapshot = response
-        .json::<RemoteKnowledgeSourceSnapshot>()
+    let sources = response
+        .json::<RemoteKnowledgeSourcesResponse>()
         .await
-        .map_err(|error| request_error("reading a GitHub Knowledge snapshot", error))?;
-    if snapshot.source_id != source_id
-        || snapshot.environment_revision == 0
-        || snapshot.sync_revision == 0
-        || snapshot.files.len() > MAX_SOURCE_FILES
-        || snapshot.repository.len() > 512
-        || !snapshot
-            .files
-            .iter()
-            .all(|file| file.path.len() <= 4_096 && file.blob_sha.len() == 40)
-    {
-        return Err(AppError::Network(
-            "GitHub Knowledge returned an invalid snapshot".into(),
-        ));
-    }
-    Ok(snapshot)
-}
-
-pub(crate) async fn read_knowledge_source_blob(
-    user_id: &str,
-    workspace_id: Uuid,
-    source_id: Uuid,
-    path: &str,
-    blob_sha: &str,
-) -> AppResult<Vec<u8>> {
-    let token = bearer(user_id)?;
-    let response = client()?
-        .post(format!(
-            "{}/api/v1/workspaces/{workspace_id}/knowledge/sources/{source_id}/blob",
-            origin()?
-        ))
-        .bearer_auth(token.as_str())
-        .json(&json!({ "path": path, "blobSha": blob_sha }))
-        .send()
-        .await
-        .map_err(|error| request_error("reading a GitHub Knowledge file", error))?;
-    if !response.status().is_success() {
-        return Err(oauth_error(response).await);
-    }
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|error| request_error("reading a GitHub Knowledge file", error))?;
-    if bytes.len() > MAX_SOURCE_FILE_BYTES {
-        return Err(AppError::Blocked {
-            reason: "GitHub Knowledge source file exceeds the safety limit".into(),
-        });
-    }
-    Ok(bytes.to_vec())
-}
-
-pub(crate) async fn knowledge_source_events(
-    user_id: &str,
-    workspace_id: Uuid,
-    source_id: Uuid,
-) -> AppResult<Vec<RemoteKnowledgeSourceEvent>> {
-    let token = bearer(user_id)?;
-    let response = client()?
-        .get(format!(
-            "{}/api/v1/workspaces/{workspace_id}/knowledge/events?sourceId={source_id}",
-            origin()?
-        ))
-        .bearer_auth(token.as_str())
-        .send()
-        .await
-        .map_err(|error| request_error("loading Project Knowledge changes", error))?;
-    if !response.status().is_success() {
-        return Err(oauth_error(response).await);
-    }
-    let events = response
-        .json::<KnowledgeSourceEventsResponse>()
-        .await
-        .map_err(|error| request_error("reading Project Knowledge changes", error))?
-        .events;
-    if events.len() > 100
-        || events.iter().any(|event| {
-            event.event_kind != "push"
-                || event.changed_files.len() > MAX_SOURCE_FILES
-                || event
-                    .changed_files
-                    .iter()
-                    .any(|path| path.is_empty() || path.len() > 4_096)
-                || chrono::DateTime::parse_from_rfc3339(&event.created_at).is_err()
+        .map_err(|error| request_error("reading workspace Knowledge sources", error))?
+        .sources;
+    if sources.len() > 10_000
+        || sources.iter().any(|source| {
+            source.environment_revision == 0
+                || source.sync_revision == 0
+                || source.display_name.trim().is_empty()
+                || source.display_name.len() > 512
+                || source.visibility != "shared_graph"
+                || !matches!(
+                    source.sync_state.as_str(),
+                    "pending" | "syncing" | "ready" | "stale" | "failed"
+                )
+                || source
+                    .last_failure_code
+                    .as_ref()
+                    .is_some_and(|value| value.is_empty() || value.len() > 255)
         })
     {
         return Err(AppError::Network(
-            "Project Knowledge returned invalid change events".into(),
+            "Project Knowledge returned invalid source inventory".into(),
         ));
     }
-    Ok(events)
+    Ok(sources)
+}
+
+pub(crate) async fn request_knowledge_source_sync(
+    user_id: &str,
+    workspace_id: Uuid,
+    source_id: Uuid,
+) -> AppResult<Option<Uuid>> {
+    let token = bearer(user_id)?;
+    let response = client()?
+        .post(format!(
+            "{}/api/v1/workspaces/{workspace_id}/knowledge/sources/{source_id}",
+            origin()?
+        ))
+        .bearer_auth(token.as_str())
+        .json(&json!({}))
+        .send()
+        .await
+        .map_err(|error| request_error("queueing the workspace code index", error))?;
+    if !response.status().is_success() {
+        return Err(oauth_error(response).await);
+    }
+    let queued = response
+        .json::<QueuedKnowledgeSourceResponse>()
+        .await
+        .map_err(|error| request_error("reading the queued workspace code index", error))?;
+    if !queued.queued {
+        return Err(AppError::Network(
+            "Project Knowledge did not queue the code index".into(),
+        ));
+    }
+    let _ = queued.job_id;
+    Ok(queued.graph_revision_id)
 }
 
 pub(crate) async fn delete_knowledge_source(
@@ -990,62 +939,4 @@ pub(crate) async fn delete_knowledge_source(
         return Err(oauth_error(response).await);
     }
     Ok(())
-}
-
-pub(crate) async fn publish_knowledge_graph(
-    user_id: &str,
-    workspace_id: Uuid,
-    artifact: &GraphBuildArtifactV1,
-) -> AppResult<PublishedKnowledgeGraph> {
-    if !artifact.validate() {
-        return Err(AppError::Blocked {
-            reason: "an unhealthy Knowledge graph cannot be published".into(),
-        });
-    }
-    // Hash the exact Value projection sent over the wire. serde_json structs keep
-    // declaration order while Value maps are canonical key ordered in this build;
-    // the control plane hashes JSON.parse(request).artifact with that wire order.
-    let artifact_value = serde_json::to_value(artifact)?;
-    let artifact_json = serde_json::to_vec(&artifact_value)?;
-    if artifact_json.len() > 256 * 1024 * 1024 {
-        return Err(AppError::Config(
-            "the Knowledge graph exceeds the publish limit".into(),
-        ));
-    }
-    let artifact_sha256 = hex::encode(Sha256::digest(&artifact_json));
-    let token = bearer(user_id)?;
-    let response = client()?
-        .post(format!(
-            "{}/api/v1/workspaces/{workspace_id}/knowledge/sources/{}/graph",
-            origin()?,
-            artifact.binding.source_id,
-        ))
-        .bearer_auth(token.as_str())
-        .json(&json!({
-            "artifact": artifact_value,
-            "approval": {
-                "sourceId": artifact.binding.source_id,
-                "exposure": "normalized_graph_only",
-                "artifactSha256": artifact_sha256,
-            },
-        }))
-        .send()
-        .await
-        .map_err(|error| request_error("publishing a Knowledge graph", error))?;
-    if !response.status().is_success() {
-        return Err(oauth_error(response).await);
-    }
-    let published = response
-        .json::<PublishedKnowledgeGraph>()
-        .await
-        .map_err(|error| request_error("reading the Knowledge graph receipt", error))?;
-    if published.graph_revision_id != artifact.graph_revision_id
-        || published.artifact_sha256 != artifact_sha256
-        || !published.active
-    {
-        return Err(AppError::Network(
-            "Project Knowledge returned an invalid publish receipt".into(),
-        ));
-    }
-    Ok(published)
 }

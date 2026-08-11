@@ -2,10 +2,22 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import { isUuid, jsonError, mutationAllowed, privateJson } from "@/lib/http";
+import { requeueGithubKnowledgeSync } from "@/lib/knowledge/sync-queue";
 import { knowledgeSource } from "@/lib/schema";
 import { authorizeWorkspace } from "@/lib/workspace-authorization";
 
 type RouteContext = { params: Promise<{ workspaceId: string; sourceId: string }> };
+
+export async function POST(request: Request, context: RouteContext) {
+  if (!mutationAllowed(request, env.appOrigin())) return jsonError("Invalid request origin", 403);
+  const { workspaceId, sourceId } = await context.params;
+  if (!isUuid(workspaceId) || !isUuid(sourceId)) return jsonError("Invalid source id", 400);
+  const authorization = await authorizeWorkspace(request, workspaceId, "manage");
+  if (!authorization.ok) return jsonError(authorization.error, authorization.status);
+  const queued = await requeueGithubKnowledgeSync({ organizationId: workspaceId, sourceId });
+  if (!queued) return jsonError("GitHub Knowledge source not found", 404);
+  return privateJson({ queued: true, ...queued }, { status: 202 });
+}
 
 export async function DELETE(request: Request, context: RouteContext) {
   if (!mutationAllowed(request, env.appOrigin())) return jsonError("Invalid request origin", 403);

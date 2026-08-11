@@ -23,8 +23,8 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 
-use super::domain::{SourceContentHashAlgorithm, SourceSnapshot};
-use super::ports::SourceProviderAdapter;
+use super::domain::SourceSnapshot;
+use super::ports::LocalKnowledgeSourcePort;
 
 const EXTRACTOR_ID: &str = "dopedb.structural-code";
 const EXTRACTOR_VERSION: &str = "1.0.0";
@@ -134,7 +134,7 @@ impl Extraction {
     }
 }
 
-pub(crate) async fn build_graph<A: SourceProviderAdapter>(
+pub(crate) async fn build_graph<A: LocalKnowledgeSourcePort>(
     adapter: &A,
     snapshot: &SourceSnapshot,
     parent_graph_revision_id: Option<Uuid>,
@@ -184,10 +184,7 @@ pub(crate) async fn build_graph<A: SourceProviderAdapter>(
         let bytes = adapter
             .read_file_at_revision(&snapshot.binding, &snapshot.binding.revision, &file.path)
             .await?;
-        let content_hash = match file.hash_algorithm {
-            SourceContentHashAlgorithm::Sha256 => hash_bytes(&bytes),
-            SourceContentHashAlgorithm::GitSha1 => git_blob_hash(&bytes),
-        };
+        let content_hash = hash_bytes(&bytes);
         if u64::try_from(bytes.len()).unwrap_or(u64::MAX) != file.bytes
             || content_hash != file.content_hash
         {
@@ -867,15 +864,6 @@ fn uuid_from_hash(hash: &str) -> Uuid {
     bytes[6] = (bytes[6] & 0x0f) | 0x50;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     Uuid::from_bytes(bytes)
-}
-
-fn git_blob_hash(bytes: &[u8]) -> String {
-    use sha1::{Digest as Sha1Digest, Sha1};
-
-    let mut digest = Sha1::new();
-    digest.update(format!("blob {}\0", bytes.len()).as_bytes());
-    digest.update(bytes);
-    hex::encode(digest.finalize())
 }
 
 #[cfg(test)]

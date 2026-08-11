@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 use dopedb_protocol::{
     GraphBuildArtifactV1, KnowledgeSourceBindingV1, KnowledgeSourceProvider,
-    KnowledgeSourceVisibility, SourceProviderCapability, SourceRevisionIdentity,
+    KnowledgeSourceVisibility, SourceRevisionIdentity,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -13,23 +13,6 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::kernel::identity::{AccountId, WorkspaceId};
-
-pub(crate) const INITIAL_SOURCE_PROVIDERS: [KnowledgeSourceProvider; 2] = [
-    KnowledgeSourceProvider::Github,
-    KnowledgeSourceProvider::LocalFolder,
-];
-
-pub(crate) const SOURCE_PROVIDER_CAPABILITIES: [SourceProviderCapability; 9] = [
-    SourceProviderCapability::Discover,
-    SourceProviderCapability::Bind,
-    SourceProviderCapability::ResolveRevision,
-    SourceProviderCapability::Snapshot,
-    SourceProviderCapability::ListChanges,
-    SourceProviderCapability::ReadFileAtRevision,
-    SourceProviderCapability::Watch,
-    SourceProviderCapability::Health,
-    SourceProviderCapability::Revoke,
-];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -118,7 +101,6 @@ pub(crate) struct SourceFileManifest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum SourceContentHashAlgorithm {
-    GitSha1,
     Sha256,
 }
 
@@ -128,10 +110,7 @@ pub(crate) fn source_snapshot_digest(files: &[SourceFileManifest]) -> String {
         hash.update((file.path.len() as u64).to_be_bytes());
         hash.update(file.path.as_bytes());
         hash.update(file.bytes.to_be_bytes());
-        hash.update(match file.hash_algorithm {
-            SourceContentHashAlgorithm::GitSha1 => b"git-sha1".as_slice(),
-            SourceContentHashAlgorithm::Sha256 => b"sha256".as_slice(),
-        });
+        hash.update(b"sha256");
         hash.update(hex::decode(&file.content_hash).expect("validated source inventory hash"));
     }
     hex::encode(hash.finalize())
@@ -154,16 +133,6 @@ pub(crate) enum SourceHealthState {
     Syncing,
     Stale,
     Failed,
-    Revoked,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct SourceHealth {
-    pub(crate) state: SourceHealthState,
-    pub(crate) last_good_graph_revision_id: Option<Uuid>,
-    pub(crate) checked_at: DateTime<Utc>,
-    pub(crate) failure_code: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -299,9 +268,6 @@ pub(crate) fn validate_graph_publish(
 #[cfg(test)]
 pub(crate) fn assert_knowledge_domain_contract() {
     super::extractor::assert_extractor_contract();
-    assert_eq!(INITIAL_SOURCE_PROVIDERS.len(), 2);
-    assert_eq!(SOURCE_PROVIDER_CAPABILITIES.len(), 9);
-    assert!(!format!("{INITIAL_SOURCE_PROVIDERS:?}").contains("Bitbucket"));
     let environment = ProjectEnvironment {
         id: Uuid::from_u128(3),
         project_id: Uuid::from_u128(2),

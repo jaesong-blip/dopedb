@@ -13,7 +13,7 @@
     "generate:skills": "node scripts/generate-skill-bundle.mjs",
     "check:skills": "node scripts/generate-skill-bundle.mjs --check",
     "check:agent-runtime": "node scripts/prepare-agent-runtime.mjs --check-config && node scripts/agent-runtime/build-acp-plugin.mjs --check-config",
-    "check:knowledge": "node scripts/knowledge/convert-graphify-artifact.mjs --check",
+    "check:knowledge": "pnpm --dir workspace-cloud test:code-index",
     "check:issue-review": "node scripts/issue-review/local-issue-review.mjs --self-test",
     "check:workspace-logs": "node scripts/check-workspace-server-logs.mjs",
     "check:release-notes": "node scripts/release/generate-release-notes.mjs check",

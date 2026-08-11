@@ -25,10 +25,9 @@ use crate::error::{AppError, AppResult};
 
 use super::super::domain::{
     source_snapshot_digest, validate_binding_draft, ProjectEnvironment, SourceBindingDraft,
-    SourceContentHashAlgorithm, SourceFileManifest, SourceHealth, SourceHealthState, SourceLocator,
-    SourceSnapshot,
+    SourceContentHashAlgorithm, SourceFileManifest, SourceLocator, SourceSnapshot,
 };
-use super::super::ports::SourceProviderAdapter;
+use super::super::ports::LocalKnowledgeSourcePort;
 
 const MAX_SOURCE_FILES: usize = 100_000;
 const MAX_SOURCE_FILE_BYTES: u64 = 16 * 1024 * 1024;
@@ -142,34 +141,8 @@ impl LocalFolderAdapter {
     }
 }
 
-impl SourceProviderAdapter for LocalFolderAdapter {
+impl LocalKnowledgeSourcePort for LocalFolderAdapter {
     type Watch = LocalFolderWatch;
-
-    async fn discover(&self) -> AppResult<Vec<String>> {
-        let mut names = self
-            .bindings
-            .iter()
-            .map(|entry| entry.binding.display_name.clone())
-            .collect::<Vec<_>>();
-        names.sort();
-        names.dedup();
-        Ok(names)
-    }
-
-    async fn bind(&self, _draft: &SourceBindingDraft) -> AppResult<KnowledgeSourceBindingV1> {
-        Err(AppError::Config(
-            "Local Folder binding requires an exact ProjectEnvironment revision".into(),
-        ))
-    }
-
-    async fn resolve_revision(
-        &self,
-        binding: &KnowledgeSourceBindingV1,
-    ) -> AppResult<SourceRevisionIdentity> {
-        let local = self.local_binding(binding.source_id)?;
-        require_same_binding(binding, &local.binding)?;
-        resolve_local_revision(&local.root).await
-    }
 
     async fn snapshot(
         &self,
@@ -233,54 +206,6 @@ impl SourceProviderAdapter for LocalFolderAdapter {
             files,
             changed_files,
         })
-    }
-
-    async fn list_changes(
-        &self,
-        before: &SourceRevisionIdentity,
-        after: &SourceRevisionIdentity,
-    ) -> AppResult<Vec<String>> {
-        let (
-            SourceRevisionIdentity::LocalGit {
-                git_root_fingerprint: before_root,
-                commit_sha: before_commit,
-                ..
-            },
-            SourceRevisionIdentity::LocalGit {
-                git_root_fingerprint: after_root,
-                commit_sha: after_commit,
-                ..
-            },
-        ) = (before, after)
-        else {
-            return Err(AppError::Config(
-                "non-Git Local Folder changes require adjacent snapshot manifests".into(),
-            ));
-        };
-        if before_root != after_root {
-            return Err(AppError::Blocked {
-                reason: "Local Git change comparison crossed repository identity".into(),
-            });
-        }
-        let local = self
-            .bindings
-            .iter()
-            .find(|entry| revision_git_root(&entry.binding.revision) == Some(before_root.as_str()))
-            .map(|entry| entry.value().clone())
-            .ok_or_else(|| AppError::NotFound("the Local Git binding".into()))?;
-        let output = run_git_bounded(
-            &local.root,
-            &[
-                "diff",
-                "--name-only",
-                "--no-renames",
-                before_commit,
-                after_commit,
-                "--",
-            ],
-        )
-        .await?;
-        bounded_paths(&output)
     }
 
     async fn read_file_at_revision(
@@ -351,24 +276,6 @@ impl SourceProviderAdapter for LocalFolderAdapter {
         Ok(LocalFolderWatch {
             _watcher: watcher,
             changes,
-        })
-    }
-
-    async fn health(&self, binding: &KnowledgeSourceBindingV1) -> AppResult<SourceHealth> {
-        let local = self.local_binding(binding.source_id)?;
-        let state = if require_same_binding(binding, &local.binding).is_ok()
-            && resolve_local_revision(&local.root).await.is_ok()
-        {
-            SourceHealthState::Ready
-        } else {
-            SourceHealthState::Failed
-        };
-        Ok(SourceHealth {
-            state,
-            last_good_graph_revision_id: None,
-            checked_at: chrono::Utc::now(),
-            failure_code: (state == SourceHealthState::Failed)
-                .then(|| "local_source_changed".into()),
         })
     }
 
@@ -666,31 +573,6 @@ fn relative_source_path(root: &Path, path: &Path) -> AppResult<String> {
         .ok_or_else(|| AppError::Config("the Knowledge source path is not Unicode".into()))
 }
 
-fn bounded_paths(value: &str) -> AppResult<Vec<String>> {
-    let paths = value
-        .lines()
-        .filter(|line| !line.is_empty())
-        .map(|line| {
-            let path = Path::new(line);
-            if path
-                .components()
-                .any(|component| !matches!(component, Component::Normal(_)))
-            {
-                return Err(AppError::Blocked {
-                    reason: "system Git returned an unsafe path".into(),
-                });
-            }
-            Ok(line.replace('\\', "/"))
-        })
-        .collect::<AppResult<BTreeSet<_>>>()?;
-    if paths.len() > MAX_SOURCE_FILES {
-        return Err(AppError::Blocked {
-            reason: "system Git returned too many changed files".into(),
-        });
-    }
-    Ok(paths.into_iter().collect())
-}
-
 fn path_fingerprint(path: &Path) -> String {
     hex::encode(Sha256::digest(
         path.as_os_str().to_string_lossy().as_bytes(),
@@ -707,16 +589,6 @@ fn require_same_binding(
         });
     }
     Ok(())
-}
-
-fn revision_git_root(revision: &SourceRevisionIdentity) -> Option<&str> {
-    match revision {
-        SourceRevisionIdentity::LocalGit {
-            git_root_fingerprint,
-            ..
-        } => Some(git_root_fingerprint),
-        _ => None,
-    }
 }
 
 fn revision_root_fingerprint(revision: &SourceRevisionIdentity) -> Option<&str> {

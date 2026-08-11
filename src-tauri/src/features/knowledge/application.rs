@@ -65,6 +65,10 @@ pub(crate) fn search_graphs(
                 2
             } else if qualified.contains(&needle) {
                 3
+            } else if node.attributes.iter().any(|(key, value)| {
+                key.to_lowercase().contains(&needle) || value.to_lowercase().contains(&needle)
+            }) {
+                4
             } else {
                 return None;
             };
@@ -172,15 +176,4 @@ pub(crate) fn graph_path(
             .cloned()
             .collect(),
     })
-}
-
-#[cfg(test)]
-pub(crate) fn assert_query_contract(graph: &GraphBuildArtifactV1) {
-    if let Some(node) = graph.nodes.first() {
-        let found = search_graphs(std::slice::from_ref(graph), &node.name, 5).unwrap();
-        assert_eq!(found.graph_revision_ids, vec![graph.graph_revision_id]);
-        assert!(found.matches.iter().any(|value| value.node.id == node.id));
-    }
-    assert!(search_graphs(std::slice::from_ref(graph), "", 5).is_err());
-    assert!(search_graphs(std::slice::from_ref(graph), "a", MAX_SEARCH_RESULTS + 1).is_err());
 }
