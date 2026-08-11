@@ -115,14 +115,30 @@ export async function POST(request: Request, context: RouteContext) {
         eq(knowledgeEnvironmentConnection.organizationId, workspaceId),
         eq(knowledgeEnvironmentConnection.id, existing.id),
         isNull(knowledgeEnvironmentConnection.revokedAt),
-      )).returning()
+      )).returning({
+        id: knowledgeEnvironmentConnection.id,
+        projectEnvironmentId: knowledgeEnvironmentConnection.projectEnvironmentId,
+        environmentRevision: knowledgeEnvironmentConnection.environmentRevision,
+        connectionId: knowledgeEnvironmentConnection.connectionId,
+        connectionRevision: knowledgeEnvironmentConnection.connectionRevision,
+        role: knowledgeEnvironmentConnection.role,
+        alias: knowledgeEnvironmentConnection.alias,
+      })
     : await db.insert(knowledgeEnvironmentConnection).values({
         id: body.bindingId,
         organizationId: workspaceId,
         projectEnvironmentId: environmentId,
         connectionId: body.connectionId,
         ...values,
-      }).returning();
+      }).returning({
+        id: knowledgeEnvironmentConnection.id,
+        projectEnvironmentId: knowledgeEnvironmentConnection.projectEnvironmentId,
+        environmentRevision: knowledgeEnvironmentConnection.environmentRevision,
+        connectionId: knowledgeEnvironmentConnection.connectionId,
+        connectionRevision: knowledgeEnvironmentConnection.connectionRevision,
+        role: knowledgeEnvironmentConnection.role,
+        alias: knowledgeEnvironmentConnection.alias,
+      });
   return privateJson({
     binding: {
       ...binding,
