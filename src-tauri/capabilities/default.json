@@ -15,6 +15,9 @@
         },
         {
           "url": "https://app.dopedb.dev/settings*"
+        },
+        {
+          "url": "https://github.com/apps/dopedb-knowledge/installations/new?state=*"
         }
       ]
     },

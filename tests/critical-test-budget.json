@@ -39,7 +39,7 @@
     },
     "src/features/workspaces/authPolicy.test.ts": {
       "tests": 3,
-      "protects": "Workspace authentication cooldown and request deduplication"
+      "protects": "Workspace authentication cooldown, request deduplication, and exact external authentication URL scope"
     }
   },
   "rust": {

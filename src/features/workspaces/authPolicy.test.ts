@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import capability from "../../../src-tauri/capabilities/default.json";
 import {
   shouldRevalidateWorkspaceAuth,
   WORKSPACE_AUTH_RECHECK_MS,
@@ -20,8 +21,19 @@ describe("workspace auth lifecycle", () => {
     ).toBe(true);
   });
 
-  it("does not duplicate an in-flight check or poll anonymous state", () => {
+  it("deduplicates checks and restricts external workspace auth URLs", () => {
     expect(shouldRevalidateWorkspaceAuth(true, 0, true, WORKSPACE_AUTH_RECHECK_MS)).toBe(false);
     expect(shouldRevalidateWorkspaceAuth(false, 0, false, WORKSPACE_AUTH_RECHECK_MS)).toBe(false);
+
+    const opener = capability.permissions.find((permission) => (
+      typeof permission !== "string" && permission.identifier === "opener:allow-open-url"
+    ));
+    const allowedUrls = typeof opener === "string"
+      ? []
+      : opener?.allow?.flatMap((entry) => entry.url ?? []) ?? [];
+    expect(allowedUrls).toContain(
+      "https://github.com/apps/dopedb-knowledge/installations/new?state=*",
+    );
+    expect(allowedUrls).not.toContain("https://github.com/*");
   });
 });
