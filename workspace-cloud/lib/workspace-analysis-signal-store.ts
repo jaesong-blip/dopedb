@@ -363,12 +363,12 @@ export async function commitAnalysisSignalReceipt(input: {
        AND connection."revision" = pin."connection_revision"
        AND connection."deleted_at" IS NULL
        AND connection."revocation_pending_at" IS NULL
-      JOIN ${workspaceConnectionGrant} grant
-        ON grant."organization_id" = connection."organization_id"
-       AND grant."connection_id" = connection."id"
-       AND grant."member_id" = ${input.authority.membershipId}
-       AND grant."capability" IN ('use', 'manage')
-      FOR UPDATE OF connection, grant
+      JOIN ${workspaceConnectionGrant} access_grant
+        ON access_grant."organization_id" = connection."organization_id"
+       AND access_grant."connection_id" = connection."id"
+       AND access_grant."member_id" = ${input.authority.membershipId}
+       AND access_grant."capability" IN ('use', 'manage')
+      FOR UPDATE OF connection, access_grant
     ), previous AS MATERIALIZED (
       SELECT receipt."state", receipt."created_at"
       FROM ${workspaceAnalysisSignalReceipt} receipt

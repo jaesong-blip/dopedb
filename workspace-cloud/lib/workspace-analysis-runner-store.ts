@@ -65,7 +65,7 @@ export async function registerAnalysisRunner(input: {
         AND member."revocation_claim_id" IS NULL
       FOR UPDATE OF session, member
     ), stored AS MATERIALIZED (
-      INSERT INTO ${workspaceAnalysisRunner} runner
+      INSERT INTO ${workspaceAnalysisRunner} AS inserted_runner
         ("organization_id", "member_id", "device_id", "display_name",
          "background_allowed", "last_seen_at", "revoked_at")
       SELECT ${input.organizationId}, authority."id", ${input.registration.deviceId},
@@ -75,9 +75,9 @@ export async function registerAnalysisRunner(input: {
         "display_name" = excluded."display_name",
         "background_allowed" = excluded."background_allowed",
         "last_seen_at" = now()
-      WHERE runner."member_id" = excluded."member_id"
-        AND runner."revoked_at" IS NULL
-      RETURNING runner.*
+      WHERE inserted_runner."member_id" = excluded."member_id"
+        AND inserted_runner."revoked_at" IS NULL
+      RETURNING inserted_runner.*
     ), audit AS MATERIALIZED (
       INSERT INTO ${workspaceAuditEvent}
         ("organization_id", "actor_user_id", "action", "resource_type", "resource_id",

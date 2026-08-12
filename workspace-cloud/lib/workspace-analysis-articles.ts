@@ -1268,7 +1268,15 @@ export function analysisArticleVersionPayload(input: SharedAnalysisArticleCreate
   ownerMemberId: string;
   deleted?: boolean;
 }): AnalysisArticleVersionPayload {
-  const parsed = parseSharedAnalysisArticleCreate(input);
+  const parsed = parseSharedAnalysisArticleCreate({
+    id: input.id,
+    projectEnvironmentId: input.projectEnvironmentId,
+    environmentRevision: input.environmentRevision,
+    sourceKnowledgeGrantId: input.sourceKnowledgeGrantId,
+    graphRevisionIds: input.graphRevisionIds,
+    connections: input.connections,
+    definition: input.definition,
+  });
   if (!isAnalysisArticleState(input.state) || !input.ownerMemberId) {
     throw new Error("Invalid Analysis Article version authority");
   }

@@ -211,25 +211,27 @@ export async function commitAnalysisRunCreate(input: {
         AND pin."article_id" = ${input.articleId}::uuid
         AND pin."article_revision" = ${input.run.articleRevision}
       FOR UPDATE OF connection, connection_grant
+    ), lease_lock AS MATERIALIZED (
+      SELECT lease."runner_id"
+      FROM ${workspaceAnalysisRefreshLease} lease
+      JOIN runner_authority ON runner_authority."id" = lease."runner_id"
+      WHERE lease."organization_id" = ${input.organizationId}
+        AND lease."id" = ${input.leaseId ?? null}::uuid
+        AND lease."article_id" = ${input.articleId}::uuid
+        AND lease."article_revision" = ${input.run.articleRevision}
+        AND lease."lease_capability_hash" = ${input.leaseCapabilityHash ?? null}
+        AND lease."parameter_hash" = ${input.parameterHash}
+        AND lease."expires_at" > now()
+        AND lease."completed_at" IS NULL AND lease."revoked_at" IS NULL
+      FOR UPDATE OF lease
     ), lease_authority AS MATERIALIZED (
       SELECT runner_authority."id"
       FROM runner_authority
-      WHERE ${input.leaseId ?? null}::uuid IS NULL
-        AND ${input.run.trigger} <> 'schedule'
-      UNION ALL
-      SELECT runner_authority."id"
-      FROM runner_authority
-      JOIN ${workspaceAnalysisRefreshLease} lease
-        ON lease."organization_id" = ${input.organizationId}
-       AND lease."id" = ${input.leaseId ?? null}::uuid
-       AND lease."article_id" = ${input.articleId}::uuid
-       AND lease."article_revision" = ${input.run.articleRevision}
-       AND lease."runner_id" = runner_authority."id"
-       AND lease."lease_capability_hash" = ${input.leaseCapabilityHash ?? null}
-       AND lease."parameter_hash" = ${input.parameterHash}
-       AND lease."expires_at" > now()
-       AND lease."completed_at" IS NULL AND lease."revoked_at" IS NULL
-      FOR UPDATE OF lease
+      WHERE (${input.leaseId ?? null}::uuid IS NULL
+          AND ${input.run.trigger} <> 'schedule')
+        OR EXISTS (
+          SELECT 1 FROM lease_lock WHERE lease_lock."runner_id" = runner_authority."id"
+        )
     ), inserted AS MATERIALIZED (
       INSERT INTO ${workspaceAnalysisArticleRun}
         ("id", "organization_id", "article_id", "article_revision", "runner_id",

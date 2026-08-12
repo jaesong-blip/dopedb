@@ -204,14 +204,14 @@ export async function commitAnalysisArticleCreate(input: {
       UNION ALL
       SELECT authority."id"
       FROM authority
-      JOIN ${knowledgeGrant} grant
-        ON grant."organization_id" = ${input.organizationId}
-       AND grant."id" = ${input.article.sourceKnowledgeGrantId}::uuid
-       AND grant."member_id" = authority."id"
-       AND grant."project_environment_id" = ${input.article.projectEnvironmentId}::uuid
-       AND grant."environment_revision" = ${input.article.environmentRevision}
-       AND grant."revoked_at" IS NULL
-       AND grant."expires_at" > now()
+      JOIN ${knowledgeGrant} knowledge_grant
+        ON knowledge_grant."organization_id" = ${input.organizationId}
+       AND knowledge_grant."id" = ${input.article.sourceKnowledgeGrantId}::uuid
+       AND knowledge_grant."member_id" = authority."id"
+       AND knowledge_grant."project_environment_id" = ${input.article.projectEnvironmentId}::uuid
+       AND knowledge_grant."environment_revision" = ${input.article.environmentRevision}
+       AND knowledge_grant."revoked_at" IS NULL
+       AND knowledge_grant."expires_at" > now()
     ), requested_graph AS MATERIALIZED (
       SELECT value::uuid AS graph_revision_id
       FROM jsonb_array_elements_text(${JSON.stringify(graphs)}::jsonb)
@@ -270,23 +270,25 @@ export async function commitAnalysisArticleCreate(input: {
        AND mapping."state" = 'approved'
       JOIN knowledge_authority ON TRUE
       FOR UPDATE OF mapping
+    ), runner_lock AS MATERIALIZED (
+      SELECT runner."member_id"
+      FROM ${workspaceAnalysisRunner} runner
+      JOIN authority ON authority."id" = runner."member_id"
+      WHERE runner."organization_id" = ${input.organizationId}
+        AND runner."id" = ${scheduledRunnerId}::uuid
+        AND runner."background_allowed" = TRUE
+        AND runner."revoked_at" IS NULL
+        AND runner."last_seen_at" > now() - interval '2 minutes'
+      FOR UPDATE OF runner
     ), runner_authority AS MATERIALIZED (
       SELECT authority."id"
       FROM authority
       WHERE ${scheduledRunnerId}::uuid IS NULL
-      UNION ALL
-      SELECT authority."id"
-      FROM authority
-      JOIN ${workspaceAnalysisRunner} runner
-        ON runner."organization_id" = ${input.organizationId}
-       AND runner."id" = ${scheduledRunnerId}::uuid
-       AND runner."member_id" = authority."id"
-       AND runner."background_allowed" = TRUE
-       AND runner."revoked_at" IS NULL
-       AND runner."last_seen_at" > now() - interval '2 minutes'
-      FOR UPDATE OF runner
+        OR EXISTS (
+          SELECT 1 FROM runner_lock WHERE runner_lock."member_id" = authority."id"
+        )
     ), inserted AS MATERIALIZED (
-      INSERT INTO ${workspaceAnalysisArticle} article
+      INSERT INTO ${workspaceAnalysisArticle} AS inserted_article
         ("id", "organization_id", "project_environment_id", "environment_revision",
          "source_knowledge_grant_id", "definition", "state", "owner_member_id",
          "updated_by_member_id", "revision")
@@ -301,7 +303,7 @@ export async function commitAnalysisArticleCreate(input: {
       WHERE (SELECT count(*) FROM graph_authority) = ${graphs.length}
         AND (SELECT count(*) FROM connection_authority) = ${connections.length}
         AND (SELECT count(*) FROM mapping_authority) = ${mappings.length}
-      RETURNING article.*
+      RETURNING inserted_article.*
     ), inserted_connections AS MATERIALIZED (
       INSERT INTO ${workspaceAnalysisArticleConnection}
         ("organization_id", "article_id", "article_revision", "connection_id",
@@ -336,10 +338,10 @@ export async function commitAnalysisArticleCreate(input: {
         jsonb_build_object(
           'environmentId', inserted."project_environment_id",
           'environmentRevision', inserted."environment_revision",
-          'connectionCount', ${connections.length},
-          'graphCount', ${graphs.length},
-          'queryCount', ${input.article.definition.queries.length},
-          'blockCount', ${input.article.definition.blocks.length},
+          'connectionCount', ${connections.length}::integer,
+          'graphCount', ${graphs.length}::integer,
+          'queryCount', ${input.article.definition.queries.length}::integer,
+          'blockCount', ${input.article.definition.blocks.length}::integer,
           'revision', 1
         ), ${requestId}::uuid
       FROM inserted JOIN revision ON revision."article_id" = inserted."id"
@@ -438,13 +440,13 @@ export async function commitAnalysisArticleMutation(input: {
       UNION ALL
       SELECT authority."id"
       FROM authority
-      JOIN ${knowledgeGrant} grant
-        ON grant."organization_id" = ${input.organizationId}
-       AND grant."id" = ${input.article.sourceKnowledgeGrantId}::uuid
-       AND grant."member_id" = authority."id"
-       AND grant."project_environment_id" = ${input.article.projectEnvironmentId}::uuid
-       AND grant."environment_revision" = ${input.article.environmentRevision}
-       AND grant."revoked_at" IS NULL AND grant."expires_at" > now()
+      JOIN ${knowledgeGrant} knowledge_grant
+        ON knowledge_grant."organization_id" = ${input.organizationId}
+       AND knowledge_grant."id" = ${input.article.sourceKnowledgeGrantId}::uuid
+       AND knowledge_grant."member_id" = authority."id"
+       AND knowledge_grant."project_environment_id" = ${input.article.projectEnvironmentId}::uuid
+       AND knowledge_grant."environment_revision" = ${input.article.environmentRevision}
+       AND knowledge_grant."revoked_at" IS NULL AND knowledge_grant."expires_at" > now()
     ), requested_graph AS MATERIALIZED (
       SELECT value::uuid AS graph_revision_id
       FROM jsonb_array_elements_text(${JSON.stringify(graphs)}::jsonb)
@@ -501,19 +503,23 @@ export async function commitAnalysisArticleMutation(input: {
        AND mapping."state" = 'approved'
       JOIN knowledge_authority ON TRUE
       FOR UPDATE OF mapping
+    ), runner_lock AS MATERIALIZED (
+      SELECT runner."member_id"
+      FROM ${workspaceAnalysisRunner} runner
+      JOIN authority ON authority."id" = runner."member_id"
+      WHERE runner."organization_id" = ${input.organizationId}
+        AND runner."id" = ${scheduledRunnerId}::uuid
+        AND runner."background_allowed" = TRUE
+        AND runner."revoked_at" IS NULL
+        AND runner."last_seen_at" > now() - interval '2 minutes'
+      FOR UPDATE OF runner
     ), runner_authority AS MATERIALIZED (
-      SELECT authority."id" FROM authority WHERE ${scheduledRunnerId}::uuid IS NULL
-      UNION ALL
       SELECT authority."id"
       FROM authority
-      JOIN ${workspaceAnalysisRunner} runner
-        ON runner."organization_id" = ${input.organizationId}
-       AND runner."id" = ${scheduledRunnerId}::uuid
-       AND runner."member_id" = authority."id"
-       AND runner."background_allowed" = TRUE
-       AND runner."revoked_at" IS NULL
-       AND runner."last_seen_at" > now() - interval '2 minutes'
-      FOR UPDATE OF runner
+      WHERE ${scheduledRunnerId}::uuid IS NULL
+        OR EXISTS (
+          SELECT 1 FROM runner_lock WHERE runner_lock."member_id" = authority."id"
+        )
     ), updated AS MATERIALIZED (
       UPDATE ${workspaceAnalysisArticle} article
       SET "project_environment_id" = ${input.article.projectEnvironmentId}::uuid,
@@ -579,7 +585,8 @@ export async function commitAnalysisArticleMutation(input: {
           'environmentId', updated."project_environment_id",
           'state', updated."state", 'revision', updated."revision",
           'ownerMemberId', updated."owner_member_id",
-          'connectionCount', ${connections.length}, 'graphCount', ${graphs.length}
+          'connectionCount', ${connections.length}::integer,
+          'graphCount', ${graphs.length}::integer
         ), ${requestId}::uuid
       FROM updated JOIN revision ON revision."article_id" = updated."id"
       RETURNING "resource_id"
