@@ -71,8 +71,10 @@ export async function POST(request: Request, context: RouteContext) {
       eq(knowledgeEnvironmentHead.environmentRevision, authorization.grant.environmentRevision),
     )).limit(1);
   if (!head) return jsonError("Knowledge grant graph is no longer active", 409);
-  const mapping = await db.transaction(async (transaction) => {
-    const [created] = await transaction.insert(knowledgeMappingProposal).values({
+  const mappingId = crypto.randomUUID();
+  const [createdRows] = await db.batch([
+    db.insert(knowledgeMappingProposal).values({
+      id: mappingId,
       organizationId: workspaceId,
       projectEnvironmentId: authorization.grant.projectEnvironmentId,
       graphRevisionId: body.graphRevisionId as string,
@@ -92,22 +94,23 @@ export async function POST(request: Request, context: RouteContext) {
       targetIdentity: knowledgeMappingProposal.targetIdentity,
       state: knowledgeMappingProposal.state,
       proposedAt: knowledgeMappingProposal.proposedAt,
-    });
-    await transaction.insert(workspaceAuditEvent).values({
+    }),
+    db.insert(workspaceAuditEvent).values({
       organizationId: workspaceId,
       actorUserId: authorization.session.user.id,
       action: "knowledge.mapping.propose",
       resourceType: "knowledge_mapping",
-      resourceId: created.id,
+      resourceId: mappingId,
       redactedSummary: {
-        projectEnvironmentId: created.projectEnvironmentId,
-        graphRevisionId: created.graphRevisionId,
-        targetKind: created.targetKind,
+        projectEnvironmentId: authorization.grant.projectEnvironmentId,
+        graphRevisionId: body.graphRevisionId,
+        targetKind: body.targetKind,
       },
       requestId: crypto.randomUUID(),
-    });
-    return created;
-  });
+    }),
+  ]);
+  const mapping = createdRows[0];
+  if (!mapping) throw new Error("Knowledge mapping insert returned no row");
   return privateJson({ mapping }, { status: 201 });
 }
 
@@ -130,43 +133,47 @@ export async function PATCH(request: Request, context: RouteContext) {
   const mappingId = body.mappingId;
   const expectedGraphRevisionId = body.expectedGraphRevisionId;
   const decision = body.decision;
-  const updated = await db.transaction(async (transaction) => {
-    const rows = await transaction.update(knowledgeMappingProposal).set({
-      state: decision,
-      decidedByMemberId: authorization.membership.id,
-      decidedAt: new Date(),
-    }).where(and(
-      eq(knowledgeMappingProposal.organizationId, workspaceId),
-      eq(knowledgeMappingProposal.id, mappingId),
-      eq(knowledgeMappingProposal.graphRevisionId, expectedGraphRevisionId),
-      eq(knowledgeMappingProposal.state, "proposed"),
-      sql`EXISTS (
-        SELECT 1 FROM ${knowledgeEnvironmentHead} head
-        WHERE head.organization_id = ${workspaceId}
-          AND head.project_environment_id = ${knowledgeMappingProposal.projectEnvironmentId}
-          AND head.graph_revision_id = ${knowledgeMappingProposal.graphRevisionId}
-      )`,
-    )).returning({
-      id: knowledgeMappingProposal.id,
-      state: knowledgeMappingProposal.state,
-      projectEnvironmentId: knowledgeMappingProposal.projectEnvironmentId,
-      graphRevisionId: knowledgeMappingProposal.graphRevisionId,
-    });
-    if (rows.length !== 1) return rows;
-    await transaction.insert(workspaceAuditEvent).values({
-      organizationId: workspaceId,
-      actorUserId: authorization.session.user.id,
-      action: `knowledge.mapping.${decision}`,
-      resourceType: "knowledge_mapping",
-      resourceId: rows[0]!.id,
-      redactedSummary: {
-        projectEnvironmentId: rows[0]!.projectEnvironmentId,
-        graphRevisionId: rows[0]!.graphRevisionId,
-      },
-      requestId: crypto.randomUUID(),
-    });
-    return rows;
-  });
+  const decidedAt = new Date();
+  const updatedResult = await db.execute<{
+    id: string;
+    state: string;
+    projectEnvironmentId: string;
+    graphRevisionId: string;
+  }>(sql`
+    WITH updated AS MATERIALIZED (
+      UPDATE ${knowledgeMappingProposal} AS proposal
+      SET "state" = ${decision},
+          "decided_by_member_id" = ${authorization.membership.id},
+          "decided_at" = ${decidedAt}
+      WHERE proposal."organization_id" = ${workspaceId}
+        AND proposal."id" = ${mappingId}::uuid
+        AND proposal."graph_revision_id" = ${expectedGraphRevisionId}::uuid
+        AND proposal."state" = 'proposed'
+        AND EXISTS (
+          SELECT 1 FROM ${knowledgeEnvironmentHead} head
+          WHERE head."organization_id" = ${workspaceId}
+            AND head."project_environment_id" = proposal."project_environment_id"
+            AND head."graph_revision_id" = proposal."graph_revision_id"
+        )
+      RETURNING proposal."id"::text AS "id", proposal."state" AS "state",
+        proposal."project_environment_id"::text AS "projectEnvironmentId",
+        proposal."graph_revision_id"::text AS "graphRevisionId"
+    ), audited AS (
+      INSERT INTO ${workspaceAuditEvent}
+        ("organization_id", "actor_user_id", "action", "resource_type",
+         "resource_id", "redacted_summary", "request_id")
+      SELECT ${workspaceId}, ${authorization.session.user.id},
+        ${`knowledge.mapping.${decision}`}, 'knowledge_mapping', updated."id",
+        jsonb_build_object(
+          'projectEnvironmentId', updated."projectEnvironmentId",
+          'graphRevisionId', updated."graphRevisionId"
+        ), ${crypto.randomUUID()}::uuid
+      FROM updated
+      RETURNING "id"
+    )
+    SELECT updated.* FROM updated, audited
+  `);
+  const updated = updatedResult.rows;
   if (updated.length !== 1) return jsonError("Knowledge mapping is stale or already decided", 409);
   return privateJson({ mapping: updated[0] });
 }

@@ -1,4 +1,4 @@
-import { and, asc, count, eq, gt, inArray, isNull } from "drizzle-orm";
+import { and, asc, count, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import { boundedJsonBody, isUuid, jsonError, mutationAllowed, privateJson } from "@/lib/http";
@@ -176,14 +176,17 @@ export async function POST(request: Request, context: RouteContext) {
   if (scopes.length > 100) return jsonError("Knowledge environment has too many active graphs", 409);
   const scope = scopes[0]!;
   const graphRevisionIds = scopes.map((candidate) => candidate.graphRevisionId);
-  const grant = await db.transaction(async (transaction) => {
-    await transaction.update(knowledgeGrant).set({ revokedAt: new Date() }).where(and(
+  const grantId = crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + ttlSeconds * 1_000);
+  const [, createdRows] = await db.batch([
+    db.update(knowledgeGrant).set({ revokedAt: new Date() }).where(and(
       eq(knowledgeGrant.organizationId, workspaceId),
       eq(knowledgeGrant.memberId, scope.memberId),
       eq(knowledgeGrant.projectEnvironmentId, projectEnvironmentId),
       isNull(knowledgeGrant.revokedAt),
-    ));
-    const [created] = await transaction.insert(knowledgeGrant).values({
+    )),
+    db.insert(knowledgeGrant).values({
+      id: grantId,
       organizationId: workspaceId,
       memberId: scope.memberId,
       projectId: scope.projectId,
@@ -191,24 +194,24 @@ export async function POST(request: Request, context: RouteContext) {
       environmentRevision: scope.environmentRevision,
       // Kept as the compatibility anchor while the set table is authoritative.
       graphRevisionId: graphRevisionIds[0],
-      expiresAt: new Date(Date.now() + ttlSeconds * 1_000),
+      expiresAt,
     }).returning({
       id: knowledgeGrant.id,
       expiresAt: knowledgeGrant.expiresAt,
-    });
-    await transaction.insert(knowledgeGrantGraphRevision).values(graphRevisionIds.map(
+    }),
+    db.insert(knowledgeGrantGraphRevision).values(graphRevisionIds.map(
       (graphRevisionId) => ({
         organizationId: workspaceId,
-        grantId: created.id,
+        grantId,
         graphRevisionId,
       }),
-    ));
-    await transaction.insert(workspaceAuditEvent).values({
+    )),
+    db.insert(workspaceAuditEvent).values({
       organizationId: workspaceId,
       actorUserId: authorization.session.user.id,
       action: "knowledge.grant.issue",
       resourceType: "knowledge_grant",
-      resourceId: created.id,
+      resourceId: grantId,
       redactedSummary: {
         memberId: scope.memberId,
         projectEnvironmentId,
@@ -217,9 +220,11 @@ export async function POST(request: Request, context: RouteContext) {
         ttlSeconds,
       },
       requestId: crypto.randomUUID(),
-    });
-    return { ...created, graphRevisionIds };
-  });
+    }),
+  ]);
+  const created = createdRows[0];
+  if (!created) throw new Error("Knowledge grant insert returned no row");
+  const grant = { ...created, graphRevisionIds };
   return privateJson({ grant }, { status: 201 });
 }
 
@@ -235,31 +240,36 @@ export async function DELETE(request: Request, context: RouteContext) {
     return jsonError("Invalid Knowledge grant revocation", 400);
   }
   const grantId = body.grantId;
-  const revoked = await db.transaction(async (transaction) => {
-    const rows = await transaction.update(knowledgeGrant).set({ revokedAt: new Date() }).where(and(
-      eq(knowledgeGrant.organizationId, workspaceId),
-      eq(knowledgeGrant.id, grantId),
-      isNull(knowledgeGrant.revokedAt),
-    )).returning({
-      id: knowledgeGrant.id,
-      memberId: knowledgeGrant.memberId,
-      projectEnvironmentId: knowledgeGrant.projectEnvironmentId,
-    });
-    if (rows.length !== 1) return rows;
-    await transaction.insert(workspaceAuditEvent).values({
-      organizationId: workspaceId,
-      actorUserId: authorization.session.user.id,
-      action: "knowledge.grant.revoke",
-      resourceType: "knowledge_grant",
-      resourceId: rows[0]!.id,
-      redactedSummary: {
-        memberId: rows[0]!.memberId,
-        projectEnvironmentId: rows[0]!.projectEnvironmentId,
-      },
-      requestId: crypto.randomUUID(),
-    });
-    return rows;
-  });
+  const revokedResult = await db.execute<{
+    id: string;
+    memberId: string;
+    projectEnvironmentId: string;
+  }>(sql`
+    WITH revoked AS MATERIALIZED (
+      UPDATE ${knowledgeGrant} AS issued_grant
+      SET "revoked_at" = ${new Date()}
+      WHERE issued_grant."organization_id" = ${workspaceId}
+        AND issued_grant."id" = ${grantId}::uuid
+        AND issued_grant."revoked_at" IS NULL
+      RETURNING issued_grant."id"::text AS "id",
+        issued_grant."member_id" AS "memberId",
+        issued_grant."project_environment_id"::text AS "projectEnvironmentId"
+    ), audited AS (
+      INSERT INTO ${workspaceAuditEvent}
+        ("organization_id", "actor_user_id", "action", "resource_type",
+         "resource_id", "redacted_summary", "request_id")
+      SELECT ${workspaceId}, ${authorization.session.user.id},
+        'knowledge.grant.revoke', 'knowledge_grant', revoked."id",
+        jsonb_build_object(
+          'memberId', revoked."memberId",
+          'projectEnvironmentId', revoked."projectEnvironmentId"
+        ), ${crypto.randomUUID()}::uuid
+      FROM revoked
+      RETURNING "id"
+    )
+    SELECT revoked.* FROM revoked, audited
+  `);
+  const revoked = revokedResult.rows;
   if (revoked.length !== 1) return jsonError("Knowledge grant was not found", 404);
   return privateJson({ revoked: true });
 }

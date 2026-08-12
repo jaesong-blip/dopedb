@@ -23,15 +23,15 @@ export async function POST(request: Request, context: RouteContext) {
   }
   const state = randomBytes(32).toString("base64url");
   const stateHash = createHash("sha256").update(state).digest("hex");
-  await db.transaction(async (transaction) => {
-    await transaction.delete(knowledgeGithubSetupState)
-      .where(lt(knowledgeGithubSetupState.expiresAt, new Date()));
-    await transaction.insert(knowledgeGithubSetupState).values({
+  await db.batch([
+    db.delete(knowledgeGithubSetupState)
+      .where(lt(knowledgeGithubSetupState.expiresAt, new Date())),
+    db.insert(knowledgeGithubSetupState).values({
       stateHash,
       organizationId: workspaceId,
       userId: authorization.session.user.id,
       expiresAt: new Date(Date.now() + 10 * 60 * 1_000),
-    });
-  });
+    }),
+  ]);
   return privateJson({ authorizationUrl: githubInstallationUrl(state) });
 }

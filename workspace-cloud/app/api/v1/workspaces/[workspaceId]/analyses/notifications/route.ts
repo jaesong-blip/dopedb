@@ -1,6 +1,6 @@
 // Workspace-web inbox for Analysis Article signal transitions. Entries carry
 // categorical state and article/block identity only, never measured values.
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 
 import { db } from "../../../../../../../lib/db";
 import { env } from "../../../../../../../lib/env";
@@ -112,29 +112,32 @@ export async function PATCH(request: Request, context: RouteContext) {
     return jsonError("Invalid Analysis notification selection", 400);
   }
   const ids = row.notificationIds as string[];
-  const updated = await db.transaction(async (tx) => {
-    const notifications = await tx.update(workspaceAnalysisSignalNotification).set({
-      readAt: new Date(),
-      deliveredAt: new Date(),
-      state: "delivered",
-    }).where(and(
-      eq(workspaceAnalysisSignalNotification.organizationId, workspaceId),
-      eq(workspaceAnalysisSignalNotification.recipientMemberId, authorization.membership.id),
-      eq(workspaceAnalysisSignalNotification.channel, requestedChannel),
-      inArray(workspaceAnalysisSignalNotification.id, ids),
-    )).returning({ id: workspaceAnalysisSignalNotification.id });
-    if (notifications.length > 0) {
-      await tx.insert(workspaceAuditEvent).values({
-        organizationId: workspaceId,
-        actorUserId: authorization.session.user.id,
-        action: "analysis_signal.notifications_read",
-        resourceType: "analysis_signal_notification",
-        resourceId: authorization.membership.id,
-        redactedSummary: { count: notifications.length },
-        requestId: crypto.randomUUID(),
-      });
-    }
-    return notifications;
-  });
+  const updatedAt = new Date();
+  const notificationIds = sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `);
+  const updatedResult = await db.execute<{ id: string }>(sql`
+    WITH updated AS MATERIALIZED (
+      UPDATE ${workspaceAnalysisSignalNotification} AS notification
+      SET "read_at" = ${updatedAt}, "delivered_at" = ${updatedAt},
+          "state" = 'delivered'
+      WHERE notification."organization_id" = ${workspaceId}
+        AND notification."recipient_member_id" = ${authorization.membership.id}
+        AND notification."channel" = ${requestedChannel}
+        AND notification."id" IN (${notificationIds})
+      RETURNING notification."id"::text AS "id"
+    ), audited AS (
+      INSERT INTO ${workspaceAuditEvent}
+        ("organization_id", "actor_user_id", "action", "resource_type",
+         "resource_id", "redacted_summary", "request_id")
+      SELECT ${workspaceId}, ${authorization.session.user.id},
+        'analysis_signal.notifications_read', 'analysis_signal_notification',
+        ${authorization.membership.id},
+        jsonb_build_object('count', (SELECT count(*)::integer FROM updated)),
+        ${crypto.randomUUID()}::uuid
+      WHERE EXISTS (SELECT 1 FROM updated)
+      RETURNING "id"
+    )
+    SELECT updated."id" FROM updated, audited
+  `);
+  const updated = updatedResult.rows;
   return privateJson({ read: updated.map((notification) => notification.id) });
 }

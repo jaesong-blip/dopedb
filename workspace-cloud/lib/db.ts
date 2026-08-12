@@ -5,7 +5,7 @@ import { env } from "./env";
 import * as schema from "./schema";
 
 type NeonSql = NeonQueryFunction<false, false>;
-type WorkspaceDb = ReturnType<typeof createDb>;
+type WorkspaceDb = Omit<ReturnType<typeof createDb>, "transaction">;
 
 const globalForDb = globalThis as typeof globalThis & {
   workspaceDb?: WorkspaceDb;
