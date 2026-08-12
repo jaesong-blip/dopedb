@@ -23,6 +23,7 @@ import {
 import type { AccountId, WorkspaceLoginPoll } from "../domain";
 import { workspaceAuthStateQuery } from "../queries";
 import { shouldRevalidateWorkspaceAuth } from "../authPolicy";
+import { onWorkspaceLoginRequested } from "../loginRequest";
 import { errMessage } from "../../../ipc/types";
 import { useI18n } from "../../../lib/i18n";
 import { Icon } from "../../../components/Icon";
@@ -62,6 +63,7 @@ export default function WorkspaceAccount({
   const providerCredentialAuthorityVersion = useRef<number | null>(null);
   const focusReturnHandler = useRef<() => void>(() => undefined);
   const membershipRefreshHandler = useRef<() => void>(() => undefined);
+  const loginRequestHandler = useRef<() => void>(() => undefined);
   const workspaceDataRefreshHandler = useRef<() => void | Promise<void>>(
     () => undefined,
   );
@@ -89,6 +91,8 @@ export default function WorkspaceAccount({
       pendingLogin.current = null;
     };
   }, []);
+
+  useEffect(() => onWorkspaceLoginRequested(() => loginRequestHandler.current()), []);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -282,6 +286,11 @@ export default function WorkspaceAccount({
       if (loginAttempt.current === attempt) setLoginPhase("idle");
     }
   }
+
+  loginRequestHandler.current = () => {
+    if (auth.data?.authenticated || loginPhase !== "idle") return;
+    void login();
+  };
 
   async function logout(userId: AccountId) {
     if (loggingOut) return;

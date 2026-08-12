@@ -155,35 +155,9 @@ pub(super) async fn repair_active_scope_after_membership_change(
         return Ok(account_setting_repaired);
     }
 
-    let fallback_workspace_id = if let Some(user_id) = selected_account_id.as_deref() {
-        sqlx::query_scalar::<_, Option<String>>(
-            "SELECT COALESCE(
-                 (SELECT a.last_workspace_id FROM workspace_accounts a
-                  JOIN workspace_members m
-                    ON m.workspace_id = a.last_workspace_id
-                   AND m.user_id = a.user_id
-                   AND m.status = 'active'
-                  JOIN workspaces w
-                    ON w.id = m.workspace_id
-                   AND w.lifecycle_state = 'active'
-                  WHERE a.user_id = ?1),
-                 (SELECT m.workspace_id FROM workspace_members m
-                  JOIN workspaces w
-                    ON w.id = m.workspace_id
-                   AND w.lifecycle_state = 'active'
-                  WHERE m.user_id = ?1
-                    AND m.status = 'active'
-                  ORDER BY w.name
-                  LIMIT 1)
-             )",
-        )
-        .bind(user_id)
-        .fetch_one(&mut **tx)
-        .await?
-        .unwrap_or_else(|| migrations::PERSONAL_WORKSPACE_ID.to_owned())
-    } else {
-        migrations::PERSONAL_WORKSPACE_ID.to_owned()
-    };
+    // Membership repair never chooses a different Team on the user's behalf.
+    // Authentication and workspace navigation are independent decisions.
+    let fallback_workspace_id = migrations::PERSONAL_WORKSPACE_ID.to_owned();
 
     sqlx::query(
         "UPDATE app_settings SET value = ?1

@@ -377,11 +377,16 @@ impl AcpRuntime {
             )?;
         }
         if let Some(scope) = &knowledge_scope {
+            let knowledge_account_scope = connection
+                .scope
+                .selected_account_id
+                .as_deref()
+                .unwrap_or_else(|| connection.scope.account_scope.storage_key());
             self.store
                 .exact_knowledge_session_graphs(
                     scope,
                     connection.scope.workspace_id,
-                    connection.scope.account_scope.storage_key(),
+                    knowledge_account_scope,
                 )
                 .await?;
         }
@@ -2126,6 +2131,7 @@ async fn wait_for_session_termination(session: &AcpSession) {
 fn same_storage_scope(left: &ActiveResourceScope, right: &ActiveResourceScope) -> bool {
     left.workspace_id == right.workspace_id
         && left.account_scope.storage_key() == right.account_scope.storage_key()
+        && left.selected_account_id == right.selected_account_id
 }
 
 pub(crate) fn narrow_knowledge_scope(

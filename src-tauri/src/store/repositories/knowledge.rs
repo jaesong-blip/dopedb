@@ -341,24 +341,18 @@ impl Store {
         &self,
         connection: &PinnedConnection,
     ) -> AppResult<Vec<AgentKnowledgeEnvironment>> {
-        let rows: Vec<(String, String, String, String, i64, i64)> = sqlx::query_as(
+        let rows: Vec<(String, String, String, String, i64)> = sqlx::query_as(
             "SELECT environment.id, project.name, environment.name,
-                    environment.risk_class, environment.revision,
-                    COUNT(head.graph_revision_id)
+                    environment.risk_class, environment.revision
              FROM knowledge_environment_connections binding
              JOIN knowledge_project_environments environment
                ON environment.id = binding.project_environment_id
               AND environment.revision = binding.environment_revision
              JOIN knowledge_projects project ON project.id = environment.project_id
-             LEFT JOIN knowledge_environment_heads head
-               ON head.project_environment_id = environment.id
-              AND head.environment_revision = environment.revision
              WHERE binding.connection_id = ?1
                AND binding.connection_revision = ?2
                AND binding.revoked_at IS NULL
                AND project.workspace_id = ?3
-             GROUP BY environment.id, project.name, environment.name,
-                      environment.risk_class, environment.revision
              ORDER BY project.name, environment.name, environment.id",
         )
         .bind(connection.connection_id.to_string())
@@ -367,10 +361,14 @@ impl Store {
         .fetch_all(&self.pool)
         .await?;
         let mut environments = Vec::new();
-        for (id, project_name, name, risk_class, environment_revision, graph_revision_count) in rows
-        {
+        for (id, project_name, name, risk_class, environment_revision) in rows {
             let id = parse_uuid(id)?;
-            let graphs = self.active_set(id).await?;
+            let mut graphs = self.active_set(id).await?;
+            if connection.scope.selected_account_id.is_none() {
+                graphs.retain(|graph| {
+                    graph.binding.provider != dopedb_protocol::KnowledgeSourceProvider::Github
+                });
+            }
             let environment_revision = u64::try_from(environment_revision).map_err(|_| {
                 AppError::Config("the stored Project Environment revision is invalid".into())
             })?;
@@ -380,11 +378,14 @@ impl Store {
             {
                 continue;
             }
-            let graph_revision_ids = graphs
+            let remote_graph_revision_ids = graphs
                 .iter()
+                .filter(|graph| {
+                    graph.binding.provider == dopedb_protocol::KnowledgeSourceProvider::Github
+                })
                 .map(|graph| graph.graph_revision_id)
                 .collect::<Vec<_>>();
-            if !graph_revision_ids.is_empty() {
+            if !remote_graph_revision_ids.is_empty() {
                 let Some(account_id) = connection.scope.selected_account_id.as_deref() else {
                     continue;
                 };
@@ -394,7 +395,7 @@ impl Store {
                         account_id,
                         id,
                         environment_revision,
-                        &graph_revision_ids,
+                        &remote_graph_revision_ids,
                     )
                     .await?
                     .is_none()
@@ -407,7 +408,7 @@ impl Store {
                 project_name,
                 name,
                 risk_class: parse_risk_class(&risk_class)?,
-                graph_revision_count: u64::try_from(graph_revision_count)
+                graph_revision_count: u64::try_from(graphs.len())
                     .map_err(|_| AppError::Config("the Knowledge graph count is invalid".into()))?,
             });
         }
@@ -458,7 +459,12 @@ impl Store {
         let environment_revision = u64::try_from(*environment_revision).map_err(|_| {
             AppError::Config("the stored Project Environment revision is invalid".into())
         })?;
-        let graphs = self.active_set(project_environment_id).await?;
+        let mut graphs = self.active_set(project_environment_id).await?;
+        if connection.scope.selected_account_id.is_none() {
+            graphs.retain(|graph| {
+                graph.binding.provider != dopedb_protocol::KnowledgeSourceProvider::Github
+            });
+        }
         if graphs
             .iter()
             .any(|graph| graph.environment_revision != environment_revision)
@@ -471,7 +477,14 @@ impl Store {
             .iter()
             .map(|graph| graph.graph_revision_id)
             .collect::<Vec<_>>();
-        let knowledge_grant_id = if graph_revision_ids.is_empty() {
+        let remote_graph_revision_ids = graphs
+            .iter()
+            .filter(|graph| {
+                graph.binding.provider == dopedb_protocol::KnowledgeSourceProvider::Github
+            })
+            .map(|graph| graph.graph_revision_id)
+            .collect::<Vec<_>>();
+        let knowledge_grant_id = if remote_graph_revision_ids.is_empty() {
             None
         } else {
             let account_id = connection
@@ -487,7 +500,7 @@ impl Store {
                     account_id,
                     project_environment_id,
                     environment_revision,
-                    &graph_revision_ids,
+                    &remote_graph_revision_ids,
                 )
                 .await?
                 .ok_or_else(|| AppError::Blocked {
@@ -597,7 +610,12 @@ impl Store {
         expected_workspace_id: Uuid,
         expected_account_id: &str,
     ) -> AppResult<Vec<GraphBuildArtifactV1>> {
-        let graphs = self.active_set(scope.project_environment_id).await?;
+        let mut graphs = self.active_set(scope.project_environment_id).await?;
+        if expected_account_id == AccountScope::Personal.storage_key() {
+            graphs.retain(|graph| {
+                graph.binding.provider != dopedb_protocol::KnowledgeSourceProvider::Github
+            });
+        }
         let active_ids = graphs
             .iter()
             .map(|graph| graph.graph_revision_id)
@@ -612,9 +630,16 @@ impl Store {
                     .into(),
             });
         }
+        let remote_graph_revision_ids = graphs
+            .iter()
+            .filter(|graph| {
+                graph.binding.provider == dopedb_protocol::KnowledgeSourceProvider::Github
+            })
+            .map(|graph| graph.graph_revision_id)
+            .collect::<Vec<_>>();
         match (
             scope.knowledge_grant_id,
-            scope.graph_revision_ids.is_empty(),
+            remote_graph_revision_ids.is_empty(),
         ) {
             (None, true) => {}
             (Some(grant_id), false) => {
@@ -628,7 +653,7 @@ impl Store {
                     || grant.account_id.as_str() != expected_account_id
                     || grant.project_environment_id != scope.project_environment_id
                     || grant.environment_revision != scope.environment_revision
-                    || grant.graph_revision_ids != scope.graph_revision_ids
+                    || grant.graph_revision_ids != remote_graph_revision_ids
                 {
                     return Err(AppError::Blocked {
                         reason: "the Agent Knowledge grant changed; start a new session".into(),
@@ -759,8 +784,11 @@ impl Store {
         graph_revision_ids: &[Uuid],
     ) -> AppResult<()> {
         let heads: Vec<(String, String)> = sqlx::query_as(
-            "SELECT source_id, graph_revision_id FROM knowledge_environment_heads
-             WHERE project_environment_id = ?1",
+            "SELECT head.source_id, head.graph_revision_id
+             FROM knowledge_environment_heads head
+             JOIN knowledge_sources source ON source.id = head.source_id
+             WHERE head.project_environment_id = ?1
+               AND source.provider = 'github'",
         )
         .bind(project_environment_id.to_string())
         .fetch_all(&self.pool)
@@ -1792,6 +1820,9 @@ impl KnowledgeGrantPort for Store {
                 "SELECT EXISTS(
                  SELECT 1
                  FROM knowledge_projects project
+                 JOIN workspaces workspace
+                   ON workspace.id = project.workspace_id
+                  AND workspace.lifecycle_state = 'active'
                  JOIN knowledge_project_environments environment
                    ON environment.project_id = project.id
                   AND environment.id = ?4
@@ -1806,12 +1837,21 @@ impl KnowledgeGrantPort for Store {
                   AND head.source_id = graph.source_id
                  JOIN knowledge_sources source
                    ON source.id = graph.source_id
+                  AND source.provider = 'github'
                   AND source.revoked_at IS NULL
-                 JOIN workspace_members member
-                   ON member.workspace_id = project.workspace_id
-                  AND member.user_id = ?2
-                  AND member.status = 'active'
                  WHERE project.id = ?3 AND project.workspace_id = ?1
+                   AND (
+                     (workspace.kind = 'team' AND EXISTS(
+                       SELECT 1 FROM workspace_members member
+                       WHERE member.workspace_id = project.workspace_id
+                         AND member.user_id = ?2
+                         AND member.status = 'active'
+                     ))
+                     OR (workspace.kind = 'personal' AND EXISTS(
+                       SELECT 1 FROM workspace_accounts account
+                       WHERE account.user_id = ?2
+                     ))
+                   )
              )",
             )
             .bind(grant.workspace_id.to_string())
@@ -1870,15 +1910,26 @@ impl KnowledgeGrantPort for Store {
                  JOIN knowledge_projects project
                    ON project.id = grant.project_id
                   AND project.workspace_id = grant.workspace_id
+                 JOIN workspaces workspace
+                   ON workspace.id = grant.workspace_id
+                  AND workspace.lifecycle_state = 'active'
                  JOIN knowledge_project_environments environment
                    ON environment.id = grant.project_environment_id
                   AND environment.project_id = project.id
                   AND environment.revision = grant.environment_revision
-                 JOIN workspace_members member
-                   ON member.workspace_id = grant.workspace_id
-                  AND member.user_id = grant.account_user_id
-                  AND member.status = 'active'
-                 WHERE grant.id = ?1 AND grant.expires_at > ?2",
+                 WHERE grant.id = ?1 AND grant.expires_at > ?2
+                   AND (
+                     (workspace.kind = 'team' AND EXISTS(
+                       SELECT 1 FROM workspace_members member
+                       WHERE member.workspace_id = grant.workspace_id
+                         AND member.user_id = grant.account_user_id
+                         AND member.status = 'active'
+                     ))
+                     OR (workspace.kind = 'personal' AND EXISTS(
+                       SELECT 1 FROM workspace_accounts account
+                       WHERE account.user_id = grant.account_user_id
+                     ))
+                   )",
         )
         .bind(grant_id.to_string())
         .bind(Utc::now())
@@ -1905,7 +1956,9 @@ impl KnowledgeGrantPort for Store {
               AND head.source_id = revision.source_id
               AND head.project_environment_id = revision.project_environment_id
              JOIN knowledge_sources source
-               ON source.id = revision.source_id AND source.revoked_at IS NULL
+               ON source.id = revision.source_id
+              AND source.provider = 'github'
+              AND source.revoked_at IS NULL
              WHERE grant_revision.grant_id = ?1
                AND revision.project_environment_id = ?2
                AND revision.environment_revision = ?3

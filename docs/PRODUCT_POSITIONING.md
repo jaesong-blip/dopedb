@@ -45,6 +45,11 @@ Their job is not merely "generate SQL." It is:
 
 Local-only users remain supported. Personal Workspace is the zero-account entry
 path and the offline fallback, not the product's differentiating market position.
+Signing in may add an account-bound GitHub Knowledge source to that local
+workspace, but does not turn Personal Workspace databases, credentials, or Local
+Folder paths into shared cloud records.
+Signing in or switching accounts never selects a Team Workspace. Personal remains
+active until the user explicitly chooses a Team from the workspace switcher.
 
 ## Competitive boundary
 

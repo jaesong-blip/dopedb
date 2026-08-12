@@ -70,15 +70,16 @@ use connections::{
     release_managed_connection_lease, remote_connections, share_connection, update_connection,
 };
 pub(crate) use knowledge::{
-    begin_knowledge_github_install, bind_environment_connection, create_knowledge_environment,
-    create_knowledge_project, create_knowledge_source, decide_remote_knowledge_mapping,
-    delete_knowledge_source, download_knowledge_graph, list_current_knowledge_grants,
-    list_environment_connections, list_knowledge_github_repositories, list_knowledge_projects,
-    list_remote_knowledge_mappings, list_remote_knowledge_sources,
-    propose_remote_knowledge_mapping, request_knowledge_source_sync, revoke_environment_connection,
-    AppendKnowledgeEnvironmentRequest, CreateKnowledgeEnvironmentRequest,
-    CreateKnowledgeProjectRequest, CreateKnowledgeSourceRequest, RemoteGithubRepository,
-    RemoteKnowledgeEnvironment, RemoteKnowledgeProject, RemoteKnowledgeSource,
+    begin_knowledge_github_install, bind_environment_connection, create_current_knowledge_grant,
+    create_knowledge_environment, create_knowledge_project, create_knowledge_source,
+    decide_remote_knowledge_mapping, delete_knowledge_source, download_knowledge_graph,
+    ensure_personal_knowledge_scope, list_current_knowledge_grants, list_environment_connections,
+    list_knowledge_github_repositories, list_knowledge_projects, list_remote_knowledge_mappings,
+    list_remote_knowledge_sources, propose_remote_knowledge_mapping, request_knowledge_source_sync,
+    revoke_environment_connection, AppendKnowledgeEnvironmentRequest,
+    CreateKnowledgeEnvironmentRequest, CreateKnowledgeProjectRequest, CreateKnowledgeSourceRequest,
+    RemoteGithubRepository, RemoteKnowledgeEnvironment, RemoteKnowledgeGrant,
+    RemoteKnowledgeProject, RemoteKnowledgeSource,
 };
 use provider_local_target::provider_local_target;
 use sync::workspace_pull_page;
@@ -324,10 +325,39 @@ pub(crate) fn assert_shared_http_client_contract() {
     let first = client().expect("the control-plane HTTP client is available");
     let second = client().expect("the control-plane HTTP client remains available");
     assert!(std::ptr::eq(first, second));
+    assert!(is_json_media_type(Some("application/json")));
+    assert!(is_json_media_type(Some(
+        "application/problem+json; charset=utf-8"
+    )));
+    assert!(!is_json_media_type(Some("text/html; charset=utf-8")));
 }
 
 fn request_error(action: &str, error: reqwest::Error) -> AppError {
     AppError::Network(format!("{action} failed: {error}"))
+}
+
+fn is_json_media_type(value: Option<&str>) -> bool {
+    value
+        .and_then(|value| value.split(';').next())
+        .map(str::trim)
+        .is_some_and(|media_type| {
+            media_type.eq_ignore_ascii_case("application/json")
+                || media_type.to_ascii_lowercase().ends_with("+json")
+        })
+}
+
+fn require_json_response(response: &Response, action: &str) -> AppResult<()> {
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok());
+    if is_json_media_type(content_type) {
+        return Ok(());
+    }
+    Err(AppError::Network(format!(
+        "{action} returned an unexpected {} response; the connected workspace service does not support this app feature yet",
+        response.status()
+    )))
 }
 
 async fn oauth_error(response: Response) -> AppError {

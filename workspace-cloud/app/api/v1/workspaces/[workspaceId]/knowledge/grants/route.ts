@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, isNull } from "drizzle-orm";
+import { and, asc, count, eq, gt, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import { boundedJsonBody, isUuid, jsonError, mutationAllowed, privateJson } from "@/lib/http";
@@ -48,12 +48,41 @@ export async function GET(request: Request, context: RouteContext) {
       eq(knowledgeGraphRevision.organizationId, knowledgeGrantGraphRevision.organizationId),
       eq(knowledgeGraphRevision.id, knowledgeGrantGraphRevision.graphRevisionId),
     ),
+  ).innerJoin(
+    knowledgeEnvironmentHead,
+    and(
+      eq(knowledgeEnvironmentHead.organizationId, knowledgeGraphRevision.organizationId),
+      eq(knowledgeEnvironmentHead.projectEnvironmentId, knowledgeGraphRevision.projectEnvironmentId),
+      eq(knowledgeEnvironmentHead.sourceId, knowledgeGraphRevision.sourceId),
+      eq(knowledgeEnvironmentHead.graphRevisionId, knowledgeGraphRevision.id),
+      eq(knowledgeEnvironmentHead.environmentRevision, knowledgeGraphRevision.environmentRevision),
+    ),
+  ).innerJoin(
+    knowledgeSource,
+    and(
+      eq(knowledgeSource.organizationId, knowledgeGraphRevision.organizationId),
+      eq(knowledgeSource.id, knowledgeGraphRevision.sourceId),
+      isNull(knowledgeSource.revokedAt),
+    ),
   ).where(and(
     eq(knowledgeGrant.organizationId, workspaceId),
     ownOnly ? eq(knowledgeGrant.memberId, authorization.membership.id) : undefined,
     isNull(knowledgeGrant.revokedAt),
     gt(knowledgeGrant.expiresAt, new Date()),
   )).orderBy(asc(knowledgeGrant.id), asc(knowledgeGraphRevision.sourceId));
+  const activeGrantIds = Array.from(new Set(rows.map((row) => row.id)));
+  const graphCounts = activeGrantIds.length > 0
+    ? await db.select({
+        grantId: knowledgeGrantGraphRevision.grantId,
+        graphCount: count(),
+      }).from(knowledgeGrantGraphRevision).where(and(
+        eq(knowledgeGrantGraphRevision.organizationId, workspaceId),
+        inArray(knowledgeGrantGraphRevision.grantId, activeGrantIds),
+      )).groupBy(knowledgeGrantGraphRevision.grantId)
+    : [];
+  const expectedGraphCount = new Map(
+    graphCounts.map((row) => [row.grantId, Number(row.graphCount)]),
+  );
   const grants = Array.from(rows.reduce((grouped, row) => {
     const current = grouped.get(row.id);
     if (current) {
@@ -86,7 +115,9 @@ export async function GET(request: Request, context: RouteContext) {
     graphScopes: Array<{ sourceId: string; graphRevisionId: string }>;
     expiresAt: Date;
     revokedAt: Date | null;
-  }>()).values());
+  }>()).values()).filter((grant) => (
+    expectedGraphCount.get(grant.id) === grant.graphRevisionIds.length
+  ));
   return privateJson({ grants });
 }
 

@@ -75,7 +75,8 @@ pub struct Store {
 
 /// Stable, non-secret identity for local execution artifacts. Team resources are
 /// partitioned by the exact Better Auth account; Personal resources remain
-/// account-free even while an account is selected in the switcher.
+/// account-free even while an account is selected in the switcher. Account-backed
+/// Personal GitHub Knowledge grants carry their separate account pin explicitly.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum AccountScope {
     Personal,

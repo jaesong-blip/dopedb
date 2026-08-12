@@ -74,6 +74,7 @@ const WORKSPACE_KMS_FAILURE_KINDS = new Set([
 const KNOWLEDGE_MUTATIONS = new Set([
   "project_create",
   "environment_create",
+  "personal_scope_sync",
 ]);
 
 type SafeLogScalar = string | number | boolean | null;

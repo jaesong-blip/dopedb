@@ -6,6 +6,10 @@ import { redirect } from "next/navigation";
 import { auth } from "../../lib/auth";
 import { db } from "../../lib/db";
 import { acceptPendingWorkspaceInvitations } from "../../lib/pending-invitations";
+import {
+  isPersonalKnowledgeMetadata,
+  isPersonalKnowledgeOrganization,
+} from "../../lib/knowledge/personal-scope";
 import { member, workspaceProfile } from "../../lib/schema";
 import { Brand } from "../components/Brand";
 import { LocaleSwitcher } from "../components/LocaleSwitcher";
@@ -121,10 +125,14 @@ export default async function SettingsPage({
     roleRows.map((row) => [row.organizationId, row.lifecycleState]),
   );
   const visibleWorkspaces = workspaces.filter((workspace) => (
-    workspaceLifecycleStates.get(workspace.id) === "active"
-    || (
-      workspaceLifecycleStates.get(workspace.id) === "deletion_pending"
-      && workspaceRoles.get(workspace.id) === "owner"
+    !isPersonalKnowledgeOrganization(session.user.id, workspace.id)
+    && !isPersonalKnowledgeMetadata(workspace.metadata)
+    && (
+      workspaceLifecycleStates.get(workspace.id) === "active"
+      || (
+        workspaceLifecycleStates.get(workspace.id) === "deletion_pending"
+        && workspaceRoles.get(workspace.id) === "owner"
+      )
     )
   ));
   const requestedWorkspace = visibleWorkspaces.find(

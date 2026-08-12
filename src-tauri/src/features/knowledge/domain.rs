@@ -149,12 +149,14 @@ pub(crate) struct KnowledgeGrant {
 }
 
 /// Immutable Knowledge authority copied into one ACP session. The ordered
-/// revision set is the complete active graph set for that Environment revision.
+/// revision set is the complete visible graph set for that Environment revision;
+/// the optional hosted grant covers its GitHub subset while Local Folder graphs
+/// remain authorized only by the device-local owner capability.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct KnowledgeSessionScope {
-    /// Exact graph authority when this Environment has active source-code
-    /// knowledge. Database-only Environments deliberately carry no graph grant.
+    /// Exact hosted authority when this Environment has active GitHub knowledge.
+    /// Local-only and database-only Environments deliberately carry no cloud grant.
     pub(crate) knowledge_grant_id: Option<Uuid>,
     pub(crate) project_environment_id: Uuid,
     pub(crate) environment_revision: u64,

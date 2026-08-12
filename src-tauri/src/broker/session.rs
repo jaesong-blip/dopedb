@@ -66,6 +66,10 @@ pub(crate) struct AuthenticatedSession {
     pub(crate) runtime_id: RuntimeId,
     pub(crate) workspace_id: WorkspaceId,
     pub(crate) account_scope: AccountScopeId,
+    /// Database access stays in the Personal/Team storage partition, while a
+    /// Personal Workspace GitHub graph is additionally pinned to the exact
+    /// signed-in account that received its short-lived Knowledge grant.
+    pub(crate) knowledge_account_scope: AccountScopeId,
     pub(crate) scope_generation: i64,
     pub(crate) connection_id: ConnectionId,
     pub(crate) connection_revision: i64,
@@ -235,13 +239,22 @@ impl BrokerSessionRegistry {
         let agent_plugin_id = agent_registration
             .as_ref()
             .map(|registration| registration.plugin_id);
+        let account_scope = AccountScopeId::new(pin.scope.account_scope.storage_key())
+            .expect("active resource scope has a non-empty account partition");
+        let knowledge_account_scope = AccountScopeId::new(
+            pin.scope
+                .selected_account_id
+                .as_deref()
+                .unwrap_or_else(|| pin.scope.account_scope.storage_key()),
+        )
+        .expect("active resource scope has a non-empty Knowledge account partition");
         let metadata = AuthenticatedSession {
             terminal_session_id,
             agent_plugin_id,
             runtime_id: self.runtime_id,
             workspace_id: pin.scope.workspace_id.into(),
-            account_scope: AccountScopeId::new(pin.scope.account_scope.storage_key())
-                .expect("active resource scope has a non-empty account partition"),
+            account_scope,
+            knowledge_account_scope,
             scope_generation: pin.scope.generation,
             connection_id: pin.connection_id.into(),
             connection_revision: pin.connection_revision,
@@ -540,6 +553,7 @@ mod tests {
         assert_eq!(authenticated.connection_id, connection_id);
         assert_eq!(authenticated.connection_revision, 11);
         assert_eq!(authenticated.scope_generation, 7);
+        assert_eq!(authenticated.knowledge_account_scope.as_str(), "personal");
         assert!(authenticated.require(BrokerCapability::QueryPlan).is_ok());
         assert!(authenticated.require(BrokerCapability::SqlPropose).is_err());
 
@@ -600,6 +614,30 @@ mod tests {
         assert!(registry.authenticate(&process_bound, Some(&root)).is_err());
         assert!(registry.revoke(terminal_session_id));
         assert!(registry.authenticate(&authentication, None).is_err());
+
+        let mut signed_in_personal = pin(connection_id.into());
+        signed_in_personal.scope.selected_account_id = Some("account-123".into());
+        let signed_in_session_id = TerminalSessionId::from(Uuid::new_v4());
+        let signed_in = registry
+            .issue(
+                signed_in_session_id,
+                &signed_in_personal,
+                [BrokerCapability::KnowledgeRead],
+                Duration::from_secs(60),
+            )
+            .unwrap();
+        let signed_in_authentication = SessionAuthentication::new(
+            signed_in.terminal_session_id.into(),
+            signed_in.token().to_owned(),
+        );
+        let signed_in_authenticated = registry
+            .authenticate(&signed_in_authentication, None)
+            .unwrap();
+        assert_eq!(signed_in_authenticated.account_scope.as_str(), "personal");
+        assert_eq!(
+            signed_in_authenticated.knowledge_account_scope.as_str(),
+            "account-123"
+        );
     }
 
     #[test]

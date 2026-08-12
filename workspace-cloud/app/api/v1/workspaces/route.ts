@@ -10,6 +10,10 @@ import {
   privateJson,
 } from "../../../../lib/http";
 import { acceptPendingWorkspaceInvitations } from "../../../../lib/pending-invitations";
+import {
+  isPersonalKnowledgeMetadata,
+  isPersonalKnowledgeOrganization,
+} from "../../../../lib/knowledge/personal-scope";
 import { member, workspaceProfile } from "../../../../lib/schema";
 
 export async function GET(request: Request) {
@@ -41,7 +45,11 @@ export async function GET(request: Request) {
     membership.role,
   ]));
   return privateJson({
-    workspaces: workspaces.filter((workspace) => roleByWorkspace.has(workspace.id)).map((workspace) => ({
+    workspaces: workspaces.filter((workspace) => (
+      roleByWorkspace.has(workspace.id)
+      && !isPersonalKnowledgeOrganization(session.user.id, workspace.id)
+      && !isPersonalKnowledgeMetadata(workspace.metadata)
+    )).map((workspace) => ({
       ...workspace,
       role: roleByWorkspace.get(workspace.id) ?? "viewer",
     })),

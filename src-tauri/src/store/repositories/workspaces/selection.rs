@@ -94,24 +94,30 @@ impl Store {
         Ok(workspace)
     }
 
-    /// Switch to an account's last active team workspace, or Personal when the account
-    /// currently has no memberships.
+    /// Select an authenticated account without selecting a different workspace.
+    /// Personal always remains active; a Team remains active only when the new account
+    /// is a current member. Losing that exact authority falls back to Personal rather
+    /// than guessing another Team from the account's membership list.
     pub async fn activate_workspace_account(&self, user_id: &str) -> AppResult<Workspace> {
         let workspace_id: Option<String> = sqlx::query_scalar(
-            "SELECT COALESCE(
-                 (SELECT a.last_workspace_id FROM workspace_accounts a
-                  JOIN workspace_members m
-                    ON m.workspace_id = a.last_workspace_id
-                   AND m.user_id = a.user_id AND m.status = 'active'
-                  JOIN workspaces w ON w.id = m.workspace_id AND w.lifecycle_state = 'active'
-                  WHERE a.user_id = ?1),
-                 (SELECT m.workspace_id FROM workspace_members m
-                  JOIN workspaces w ON w.id = m.workspace_id AND w.lifecycle_state = 'active'
-                  WHERE m.user_id = ?1 AND m.status = 'active'
-                  ORDER BY w.name LIMIT 1)
-             )",
+            "SELECT CASE
+                 WHEN w.kind = 'personal' THEN w.id
+                 WHEN EXISTS(
+                     SELECT 1 FROM workspace_members m
+                     WHERE m.workspace_id = w.id
+                       AND m.user_id = ?1
+                       AND m.status = 'active'
+                 ) THEN w.id
+                 ELSE ?2
+             END
+             FROM app_settings active
+             JOIN workspaces w
+               ON active.key = 'active_workspace_id'
+              AND active.value = w.id
+              AND w.lifecycle_state = 'active'",
         )
         .bind(user_id)
+        .bind(migrations::PERSONAL_WORKSPACE_ID)
         .fetch_one(&self.pool)
         .await?;
         let id = Uuid::parse_str(
@@ -166,22 +172,25 @@ impl Store {
                 .execute(&mut *tx)
                 .await?;
                 let fallback_workspace: Option<String> = sqlx::query_scalar(
-                    "SELECT COALESCE(
-                         (SELECT a.last_workspace_id FROM workspace_accounts a
-                          JOIN workspace_members m ON m.workspace_id = a.last_workspace_id
-                           AND m.user_id = a.user_id AND m.status = 'active'
-                          JOIN workspaces w ON w.id = m.workspace_id
-                           AND w.lifecycle_state = 'active'
-                          WHERE a.user_id = ?1),
-                         (SELECT m.workspace_id FROM workspace_members m
-                          JOIN workspaces w ON w.id = m.workspace_id
-                           AND w.lifecycle_state = 'active'
-                          WHERE m.user_id = ?1 AND m.status = 'active'
-                          ORDER BY w.name LIMIT 1)
-                     )",
+                    "SELECT CASE
+                         WHEN w.kind = 'personal' THEN w.id
+                         WHEN EXISTS(
+                             SELECT 1 FROM workspace_members m
+                             WHERE m.workspace_id = w.id
+                               AND m.user_id = ?1
+                               AND m.status = 'active'
+                         ) THEN w.id
+                         ELSE ?2
+                     END
+                     FROM app_settings active
+                     JOIN workspaces w
+                       ON active.key = 'active_workspace_id'
+                      AND active.value = w.id
+                      AND w.lifecycle_state = 'active'",
                 )
                 .bind(fallback_account)
-                .fetch_one(&mut *tx)
+                .bind(personal_id)
+                .fetch_optional(&mut *tx)
                 .await?;
                 sqlx::query("UPDATE app_settings SET value = ?1 WHERE key = 'active_workspace_id'")
                     .bind(fallback_workspace.as_deref().unwrap_or(personal_id))

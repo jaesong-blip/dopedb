@@ -852,8 +852,9 @@ Every milestone must include:
 - Initial Analysis Article result-fragment and public-publication byte, row, and
   retention limits within ADR 0007's fixed safety boundary.
 - Data residency requirements beyond the initial US-East deployment.
-- Whether Personal Workspace resources can remain permanently local or optionally sync
-  across the owner's devices.
+- Cross-device Personal Workspace sync beyond the decided account-bound GitHub
+  Knowledge overlay. Database records, credentials, and Local Folder paths remain
+  local unless a later product decision explicitly changes that boundary.
 
 These decisions do not block Milestone 0 because the local schema should support both
 hosted and self-hosted sync implementations.

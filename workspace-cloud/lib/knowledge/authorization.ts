@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, count, eq, gt, isNull } from "drizzle-orm";
 import { db } from "../db";
 import {
   knowledgeGrant,
@@ -72,7 +72,16 @@ export async function authorizeKnowledgeGrant(
     eq(knowledgeGrantGraphRevision.organizationId, organizationId),
     eq(knowledgeGrantGraphRevision.grantId, grant.id),
   ));
-  if (revisions.length < 1) {
+  const [storedRevisionCount] = await db.select({ value: count() })
+    .from(knowledgeGrantGraphRevision)
+    .where(and(
+      eq(knowledgeGrantGraphRevision.organizationId, organizationId),
+      eq(knowledgeGrantGraphRevision.grantId, grant.id),
+    ));
+  if (
+    revisions.length < 1
+    || revisions.length !== Number(storedRevisionCount?.value ?? 0)
+  ) {
     return { ok: false as const, status: 409, error: "Knowledge grant graph is no longer active" };
   }
   return {

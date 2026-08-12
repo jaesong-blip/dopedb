@@ -9,6 +9,7 @@ import { cliCatalog } from "./catalogs/cli";
 import { connectionsCatalog } from "./catalogs/connections";
 import { documentsCatalog } from "./catalogs/documents";
 import { jobsCatalog } from "./catalogs/jobs";
+import { knowledgeCatalog } from "./catalogs/knowledge";
 import { localHistoryCatalog } from "./catalogs/localHistory";
 import { onboardingCatalog } from "./catalogs/onboarding";
 import { resultsCatalog } from "./catalogs/results";
@@ -34,6 +35,7 @@ export const catalogParts = [
   connectionsCatalog,
   documentsCatalog,
   jobsCatalog,
+  knowledgeCatalog,
   localHistoryCatalog,
   onboardingCatalog,
   resultsCatalog,

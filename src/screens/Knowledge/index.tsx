@@ -18,7 +18,10 @@ import {
   type StatusTone,
 } from "../../design-system/components/Status";
 import { errMessage } from "../../ipc/types";
+import { useI18n } from "../../lib/i18n";
 import { useCatalogScope } from "../../lib/queries";
+import { workspaceAuthStateQuery } from "../../features/workspaces/queries";
+import { requestWorkspaceLogin } from "../../features/workspaces/loginRequest";
 import { listConnections } from "../../features/connections/tauriAdapter";
 import type {
   GithubKnowledgeRepository,
@@ -65,25 +68,53 @@ export default function Knowledge({
   ) => void;
   onNewConnection?: () => void;
 }) {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const catalogScope = useCatalogScope();
+  const workspaceAuth = useQuery(workspaceAuthStateQuery());
+  const signedInPersonalAccount =
+    catalogScope.accountScope === "personal" &&
+    workspaceAuth.data?.authenticated === true
+      ? workspaceAuth.data.user
+      : null;
+  const personalWorkspace = catalogScope.accountScope === "personal";
+  const personalAuthResolved =
+    !personalWorkspace || workspaceAuth.data !== undefined || workspaceAuth.isError;
+  const knowledgeAccountKey = signedInPersonalAccount?.id ??
+    (catalogScope.accountScope === "personal"
+      ? personalAuthResolved
+        ? "offline"
+        : "resolving"
+      : catalogScope.accountScope ?? "unresolved");
   const projectKey = ["knowledge", "projects", catalogScope.key] as const;
-  const sourceKey = ["knowledge", "sources", catalogScope.key] as const;
+  const sourceKey = [
+    "knowledge",
+    "sources",
+    catalogScope.key,
+    knowledgeAccountKey,
+  ] as const;
   const repositoryKey = [
     "knowledge",
     "github-repositories",
     catalogScope.key,
+    knowledgeAccountKey,
   ] as const;
   const sharedWorkspace =
     catalogScope.accountScope !== null &&
     catalogScope.accountScope !== "personal";
+  const githubProviderVisible = sharedWorkspace || personalWorkspace;
+  const githubAvailable = sharedWorkspace || signedInPersonalAccount !== null;
   const connectionsKey = ["connections", catalogScope.key] as const;
   const projects = useQuery({ queryKey: projectKey, queryFn: listKnowledgeProjects });
-  const sources = useQuery({ queryKey: sourceKey, queryFn: listKnowledgeSources });
+  const sources = useQuery({
+    queryKey: sourceKey,
+    queryFn: listKnowledgeSources,
+    enabled: personalAuthResolved,
+  });
   const repositories = useQuery({
     queryKey: repositoryKey,
     queryFn: listKnowledgeGithubRepositories,
-    enabled: sharedWorkspace,
+    enabled: githubAvailable,
     retry: false,
   });
   const connections = useQuery({ queryKey: connectionsKey, queryFn: listConnections });
@@ -176,9 +207,9 @@ export default function Knowledge({
     setProjectId("");
     setEnvironmentId("");
     setView("sources");
-    setProvider(sharedWorkspace ? "github" : "local_folder");
+    setProvider(githubProviderVisible ? "github" : "local_folder");
     setActionError(null);
-  }, [catalogScope.key, sharedWorkspace]);
+  }, [catalogScope.key, githubProviderVisible, knowledgeAccountKey]);
 
   useEffect(() => {
     if (!projects.data?.length || projectId) return;
@@ -240,7 +271,7 @@ export default function Knowledge({
         return next;
       });
       if (change.state === "ready") {
-        void queryClient.invalidateQueries({ queryKey: sourceKey });
+        void queryClient.invalidateQueries({ queryKey: ["knowledge", "sources"] });
         void queryClient.invalidateQueries({
           queryKey: ["agentKnowledgeEnvironments"],
         });
@@ -533,19 +564,36 @@ export default function Knowledge({
               </p>
             </div>
             <div className="tw:inline-flex tw:gap-1" role="group" aria-label="Source provider">
-              {sharedWorkspace ? (
+              {githubProviderVisible ? (
                 <Button size="compact" variant={provider === "github" ? "selected" : "ghost"} onClick={() => setProvider("github")}>GitHub</Button>
               ) : null}
               <Button size="compact" variant={provider === "local_folder" ? "selected" : "ghost"} onClick={() => setProvider("local_folder")}><Icon name="folder" />Local Folder</Button>
             </div>
           </div>
 
-          {provider === "github" ? (
-            repositories.isPending ? (
+          {provider === "github" && githubProviderVisible ? (
+            !personalAuthResolved ? (
+              <LoadingLabel>{t("workspace.loginChecking")}</LoadingLabel>
+            ) : !githubAvailable ? (
+              <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:justify-between tw:gap-3 tw:rounded-md tw:border tw:border-border-subtle tw:bg-surface-subtle tw:p-3">
+                <div className="tw:grid tw:min-w-0 tw:gap-1">
+                  <strong className="tw:text-sm tw:font-semibold">
+                    {t("knowledge.githubSignInTitle")}
+                  </strong>
+                  <span className="tw:text-sm tw:leading-relaxed tw:text-muted-foreground">
+                    {t("knowledge.githubSignInHint")}
+                  </span>
+                </div>
+                <Button variant="primary" onClick={requestWorkspaceLogin}>
+                  <Icon name="user" />
+                  {t("workspace.login")}
+                </Button>
+              </div>
+            ) : repositories.isPending ? (
               <LoadingLabel>Loading GitHub repositories…</LoadingLabel>
             ) : repositories.error || (repositories.data?.length ?? 0) === 0 ? (
               <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-3">
-                <span className="tw:text-sm tw:text-muted-foreground">Install the read-only DopeDB GitHub App, then refresh this list.</span>
+                <span className="tw:text-sm tw:text-muted-foreground">{t("knowledge.githubAccessHint")}</span>
                 <Button onClick={async () => {
                   try {
                     setActionError(null);
@@ -553,7 +601,7 @@ export default function Knowledge({
                   } catch (error) {
                     setActionError(errMessage(error));
                   }
-                }}>Install GitHub App</Button>
+                }}>{t("knowledge.githubAccessAction")}</Button>
                 <Button variant="ghost" onClick={() => void repositories.refetch()}><Icon name="refresh" />Refresh</Button>
               </div>
             ) : (

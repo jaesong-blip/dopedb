@@ -125,6 +125,25 @@ pub(crate) struct RemoteKnowledgeProject {
     pub(crate) environments: Vec<RemoteKnowledgeEnvironment>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct RemotePersonalKnowledgeScope {
+    pub(crate) workspace_id: Uuid,
+    pub(crate) member_id: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PersonalKnowledgeScopeRequest<'a> {
+    projects: &'a [RemoteKnowledgeProject],
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PersonalKnowledgeScopeResponse {
+    workspace_id: Uuid,
+    member_id: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct RemoteKnowledgeGraphScope {
@@ -150,6 +169,28 @@ pub(crate) struct RemoteKnowledgeGrant {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct KnowledgeGrantsResponse {
     grants: Vec<RemoteKnowledgeGrant>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateKnowledgeGrantRequest<'a> {
+    member_id: &'a str,
+    project_environment_id: Uuid,
+    ttl_seconds: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CreatedKnowledgeGrantResponse {
+    grant: CreatedKnowledgeGrant,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CreatedKnowledgeGrant {
+    id: Uuid,
+    expires_at: chrono::DateTime<chrono::Utc>,
+    graph_revision_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -264,6 +305,55 @@ fn bearer(user_id: &str) -> AppResult<Zeroizing<String>> {
         .ok_or_else(|| {
             AppError::Config("Project Knowledge requires an authenticated session".into())
         })
+}
+
+pub(crate) async fn ensure_personal_knowledge_scope(
+    user_id: &str,
+    projects: &[RemoteKnowledgeProject],
+) -> AppResult<RemotePersonalKnowledgeScope> {
+    if projects.len() > 100
+        || projects.iter().any(|project| {
+            project.name.trim().is_empty()
+                || project.name.len() > 512
+                || project.revision == 0
+                || project.environments.is_empty()
+                || project.environments.len() > 20
+                || project.environments.iter().any(|environment| {
+                    environment.name.trim().is_empty()
+                        || environment.name.len() > 512
+                        || environment.revision == 0
+                })
+        })
+    {
+        return Err(AppError::Config(
+            "the Personal Knowledge scope inventory is invalid".into(),
+        ));
+    }
+    let token = bearer(user_id)?;
+    let response = client()?
+        .post(format!("{}/api/v1/personal/knowledge/scope", origin()?))
+        .bearer_auth(token.as_str())
+        .json(&PersonalKnowledgeScopeRequest { projects })
+        .send()
+        .await
+        .map_err(|error| request_error("preparing Personal Knowledge", error))?;
+    if !response.status().is_success() {
+        return Err(oauth_error(response).await);
+    }
+    require_json_response(&response, "preparing Personal Knowledge")?;
+    let scope = response
+        .json::<PersonalKnowledgeScopeResponse>()
+        .await
+        .map_err(|error| request_error("reading the Personal Knowledge scope", error))?;
+    if scope.member_id.trim().is_empty() || scope.member_id.len() > 255 {
+        return Err(AppError::Network(
+            "Personal Knowledge returned an invalid authority".into(),
+        ));
+    }
+    Ok(RemotePersonalKnowledgeScope {
+        workspace_id: scope.workspace_id,
+        member_id: scope.member_id,
+    })
 }
 
 pub(crate) async fn list_knowledge_projects(
@@ -425,6 +515,52 @@ pub(crate) async fn list_current_knowledge_grants(
         ));
     }
     Ok(grants)
+}
+
+pub(crate) async fn create_current_knowledge_grant(
+    user_id: &str,
+    workspace_id: Uuid,
+    member_id: &str,
+    project_environment_id: Uuid,
+) -> AppResult<()> {
+    if member_id.trim().is_empty() || member_id.len() > 255 {
+        return Err(AppError::Config(
+            "the Personal Knowledge member authority is invalid".into(),
+        ));
+    }
+    let token = bearer(user_id)?;
+    let response = client()?
+        .post(format!(
+            "{}/api/v1/workspaces/{workspace_id}/knowledge/grants",
+            origin()?
+        ))
+        .bearer_auth(token.as_str())
+        .json(&CreateKnowledgeGrantRequest {
+            member_id,
+            project_environment_id,
+            ttl_seconds: 60 * 60,
+        })
+        .send()
+        .await
+        .map_err(|error| request_error("issuing Personal Knowledge authority", error))?;
+    if !response.status().is_success() {
+        return Err(oauth_error(response).await);
+    }
+    let created = response
+        .json::<CreatedKnowledgeGrantResponse>()
+        .await
+        .map_err(|error| request_error("reading Personal Knowledge authority", error))?
+        .grant;
+    if created.expires_at <= chrono::Utc::now()
+        || created.graph_revision_ids.is_empty()
+        || created.graph_revision_ids.len() > 100
+    {
+        return Err(AppError::Network(
+            "Personal Knowledge returned an invalid grant".into(),
+        ));
+    }
+    let _ = created.id;
+    Ok(())
 }
 
 fn valid_remote_mapping(mapping: &KnowledgeMappingProposal) -> bool {

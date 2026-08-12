@@ -1,6 +1,7 @@
 //! Store migration, shared connection binding, and catalog scope-isolation tests.
 
 use super::fixtures::*;
+use crate::features::workspaces::WorkspaceKind;
 
 async fn assert_legacy_sql_document_database_scope_migrates() {
     let legacy_pool = memory_pool().await;
@@ -122,7 +123,10 @@ async fn assert_current_store_migration_is_write_free() {
         KnowledgeScopeRepositoryPort,
     };
     use crate::kernel::identity::{AccountId, WorkspaceId};
-    use dopedb_protocol::GraphBuildArtifactV1;
+    use dopedb_protocol::{
+        GraphBuildArtifactV1, KnowledgeSourceProvider, KnowledgeSourceVisibility,
+        SourceRevisionIdentity,
+    };
 
     let store = Store::from_pool_for_test(pool.clone());
     let personal_workspace_id = Uuid::parse_str(migrations::PERSONAL_WORKSPACE_ID).unwrap();
@@ -218,6 +222,12 @@ async fn assert_current_store_migration_is_write_free() {
     let mut second = artifact.clone();
     second.binding.source_id = Uuid::from_u128(0x126);
     second.binding.display_name = "Web".into();
+    second.binding.provider = KnowledgeSourceProvider::LocalFolder;
+    second.binding.visibility = KnowledgeSourceVisibility::LocalOnly;
+    second.binding.revision = SourceRevisionIdentity::LocalSnapshot {
+        root_fingerprint: "b".repeat(64),
+        snapshot_sha256: "c".repeat(64),
+    };
     second.graph_revision_id = Uuid::from_u128(0x1260);
     second.parent_graph_revision_id = None;
     for evidence in &mut second.evidence {
@@ -244,15 +254,14 @@ async fn assert_current_store_migration_is_write_free() {
         .any(|candidate| candidate.graph_revision_id == second.graph_revision_id));
 
     let account_id = AccountId::new("knowledge-member").unwrap();
-    sqlx::query(
-        "UPDATE workspace_members SET user_id = ?1
-         WHERE workspace_id = ?2 AND status = 'active'",
-    )
-    .bind(account_id.as_str())
-    .bind(project.workspace_id.to_string())
-    .execute(&pool)
-    .await
-    .unwrap();
+    store
+        .remember_workspace_account(&crate::features::workspaces::WorkspaceAuthUser {
+            id: account_id.clone(),
+            email: "knowledge@example.com".into(),
+            display_name: "Knowledge owner".into(),
+        })
+        .await
+        .unwrap();
     let grant = KnowledgeGrant {
         id: Uuid::from_u128(0x1262),
         workspace_id: project.workspace_id,
@@ -262,6 +271,7 @@ async fn assert_current_store_migration_is_write_free() {
         environment_revision: environment.revision,
         graph_revision_ids: active_set
             .iter()
+            .filter(|candidate| candidate.binding.provider == KnowledgeSourceProvider::Github)
             .map(|candidate| candidate.graph_revision_id)
             .collect(),
         expires_at: Utc::now() + chrono::Duration::hours(1),
@@ -271,6 +281,11 @@ async fn assert_current_store_migration_is_write_free() {
         store.exact_grant(grant.id).await.unwrap(),
         Some(grant.clone())
     );
+    store
+        .retain_granted_environment_heads(environment.id, &grant.graph_revision_ids)
+        .await
+        .unwrap();
+    assert_eq!(store.active_set(environment.id).await.unwrap().len(), 2);
 
     let mapping = KnowledgeMappingProposal {
         id: Uuid::from_u128(0x1261),
@@ -783,6 +798,22 @@ async fn remote_template_sync_preserves_member_local_credential_binding() {
         )
         .await
         .unwrap();
+
+    // Authentication is independent from workspace navigation: selecting the
+    // account exposes its memberships but leaves the current Personal scope active.
+    let personal_before_login = store.active_workspace().await.unwrap();
+    assert_eq!(personal_before_login.kind, WorkspaceKind::Personal);
+    let personal_after_login = store.activate_workspace_account(&user.id).await.unwrap();
+    assert_eq!(personal_after_login.id, personal_before_login.id);
+    assert_eq!(personal_after_login.kind, WorkspaceKind::Personal);
+    assert_eq!(
+        store
+            .active_workspace_account_id()
+            .await
+            .unwrap()
+            .as_deref(),
+        Some(user.id.as_str())
+    );
 
     let cursor_page = crate::features::workspaces::WorkspacePullPage {
         next_cursor: 4,

@@ -49,7 +49,7 @@ pub(super) async fn handle(
         .exact_knowledge_session_graphs(
             scope,
             Uuid::from(session.workspace_id),
-            session.account_scope.as_str(),
+            session.knowledge_account_scope.as_str(),
         )
         .await
     {
@@ -312,6 +312,13 @@ async fn propose_mapping(
     arguments: KnowledgeMappingProposeArguments,
     client_protocol_version: u16,
 ) -> Result<KnowledgeMappingProposalResult, ErrorCode> {
+    // Personal GitHub graphs use a hidden account-backed cloud authority, while
+    // Personal database bindings deliberately remain device-local. Until those
+    // identities have one explicit shared mapping boundary, do not send a local
+    // workspace id to the hosted mapping endpoint.
+    if session.account_scope.as_str() == "personal" {
+        return Err(ErrorCode::ScopeDenied);
+    }
     let connection = scope
         .connections
         .iter()
