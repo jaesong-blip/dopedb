@@ -10,6 +10,7 @@ import {
   TextInput,
 } from "../../design-system/components/FormControls";
 import { InlineNotice, StatusBadge } from "../../design-system/components/Status";
+import { useI18n } from "../../lib/i18n";
 import {
   analysisBlockKinds,
   analysisColumnMasking,
@@ -143,6 +144,7 @@ function BuilderCard({
   onRemove: () => void;
   children: ReactNode;
 }) {
+  const { t } = useI18n();
   return (
     <article className="tw:grid tw:min-w-0 tw:gap-4 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3">
       <header className="tw:flex tw:min-w-0 tw:items-center tw:gap-2">
@@ -150,13 +152,13 @@ function BuilderCard({
           <strong className="tw:block tw:truncate tw:text-sm tw:font-medium">{title}</strong>
           <small className="tw:block tw:truncate tw:font-mono tw:text-2xs tw:text-muted-foreground">{metadata}</small>
         </span>
-        <Button iconOnly size="xs" variant="ghost" aria-label="Move up" disabled={index === 0 || moveUpDisabled} onClick={() => onMove(-1)}>
+        <Button iconOnly size="xs" variant="ghost" aria-label={t("analysis.builderMoveUp")} disabled={index === 0 || moveUpDisabled} onClick={() => onMove(-1)}>
           <Icon name="caretUp" />
         </Button>
-        <Button iconOnly size="xs" variant="ghost" aria-label="Move down" disabled={index === count - 1 || moveDownDisabled} onClick={() => onMove(1)}>
+        <Button iconOnly size="xs" variant="ghost" aria-label={t("analysis.builderMoveDown")} disabled={index === count - 1 || moveDownDisabled} onClick={() => onMove(1)}>
           <Icon name="caretDown" />
         </Button>
-        <Button iconOnly size="xs" variant="dangerGhost" aria-label={`Remove ${title}`} title={removeDisabledReason} disabled={removeDisabled} onClick={onRemove}>
+        <Button iconOnly size="xs" variant="dangerGhost" aria-label={t("analysis.builderRemove", { title })} title={removeDisabledReason} disabled={removeDisabled} onClick={onRemove}>
           <Icon name="trash" />
         </Button>
       </header>
@@ -184,38 +186,39 @@ function ColumnEditor({
   columns: readonly AnalysisColumn[];
   onChange: (columns: AnalysisColumn[]) => void;
 }) {
+  const { t } = useI18n();
   const update = (index: number, patch: Partial<AnalysisColumn>) => {
     onChange(replaceAt(columns, index, normalizeColumn({ ...columns[index]!, ...patch })));
   };
   return (
     <details className="tw:min-w-0 tw:rounded-md tw:border tw:border-border-subtle tw:bg-background" open>
       <summary className="tw:flex tw:cursor-pointer tw:items-center tw:justify-between tw:gap-3 tw:px-3 tw:py-2 tw:text-xs tw:font-medium">
-        <span>Declared output schema · {columns.length} columns</span>
+        <span>{t("analysis.builderDeclaredSchema", { count: columns.length })}</span>
       </summary>
       <div className="tw:grid tw:gap-2 tw:border-t tw:border-border-subtle tw:p-3">
         {columns.map((column, index) => (
           <div className="tw:grid tw:grid-cols-[minmax(120px,1.3fr)_repeat(4,minmax(92px,1fr))_auto_auto] tw:items-center tw:gap-2 tw:@max-[900px]:grid-cols-2" key={`${index}:${column.name}`}>
-            <TextInput density="compact" aria-label="Column name" value={column.name} onChange={(event) => update(index, { name: event.target.value })} />
-            <SelectInput density="compact" aria-label="Column type" value={column.type} onChange={(event) => update(index, { type: event.target.value as AnalysisColumn["type"] })}>
+            <TextInput density="compact" aria-label={t("analysis.builderColumnName")} value={column.name} onChange={(event) => update(index, { name: event.target.value })} />
+            <SelectInput density="compact" aria-label={t("analysis.builderColumnType")} value={column.type} onChange={(event) => update(index, { type: event.target.value as AnalysisColumn["type"] })}>
               {analysisColumnTypes.map((value) => <option value={value} key={value}>{value}</option>)}
             </SelectInput>
-            <SelectInput density="compact" aria-label="Column role" value={column.role} onChange={(event) => update(index, { role: event.target.value as AnalysisColumn["role"] })}>
+            <SelectInput density="compact" aria-label={t("analysis.builderColumnRole")} value={column.role} onChange={(event) => update(index, { role: event.target.value as AnalysisColumn["role"] })}>
               {analysisColumnRoles.map((value) => <option value={value} key={value}>{humanize(value)}</option>)}
             </SelectInput>
-            <SelectInput density="compact" aria-label="Column sensitivity" value={column.sensitivity} onChange={(event) => update(index, { sensitivity: event.target.value as AnalysisColumn["sensitivity"] })}>
+            <SelectInput density="compact" aria-label={t("analysis.builderColumnSensitivity")} value={column.sensitivity} onChange={(event) => update(index, { sensitivity: event.target.value as AnalysisColumn["sensitivity"] })}>
               {analysisColumnSensitivities.map((value) => <option value={value} key={value}>{value}</option>)}
             </SelectInput>
-            <SelectInput density="compact" aria-label="Column masking" value={column.masking} onChange={(event) => update(index, { masking: event.target.value as AnalysisColumn["masking"] })}>
+            <SelectInput density="compact" aria-label={t("analysis.builderColumnMasking")} value={column.masking} onChange={(event) => update(index, { masking: event.target.value as AnalysisColumn["masking"] })}>
               {analysisColumnMasking.map((value) => <option value={value} key={value}>{value}</option>)}
             </SelectInput>
-            <CheckboxField label="Nullable" checked={column.nullable} onChange={(event) => update(index, { nullable: event.target.checked })} />
-            <Button iconOnly size="xs" variant="dangerGhost" aria-label={`Remove ${column.name}`} disabled={columns.length === 1} onClick={() => onChange(removeAt(columns, index))}>
+            <CheckboxField label={t("analysis.builderNullable")} checked={column.nullable} onChange={(event) => update(index, { nullable: event.target.checked })} />
+            <Button iconOnly size="xs" variant="dangerGhost" aria-label={t("analysis.builderRemove", { title: column.name })} disabled={columns.length === 1} onClick={() => onChange(removeAt(columns, index))}>
               <Icon name="trash" />
             </Button>
           </div>
         ))}
         <Button size="compact" onClick={() => onChange([...columns, defaultColumn(uniqueIdentifier("column", "column", columns.map((column) => column.name)))])}>
-          <Icon name="plus" /> Add column
+          <Icon name="plus" /> {t("analysis.builderAddColumn")}
         </Button>
       </div>
     </details>
@@ -357,6 +360,7 @@ export function AnalysisDataContractEditor({
   connections: readonly AnalysisArticleConnection[];
   onChange: (definition: AnalysisArticleDefinition) => void;
 }) {
+  const { t } = useI18n();
   const addParameter = () => {
     const id = uniqueIdentifier("parameter", "parameter", definition.parameters.map((parameter) => parameter.id));
     onChange({
@@ -394,11 +398,11 @@ export function AnalysisDataContractEditor({
   return (
     <div className="tw:grid tw:gap-7">
       <Section
-        title="Parameters"
-        description="Only declared values can vary between runs. SQL tokens use {{parameter_id}} and never become string templates."
-        action={<Button size="compact" onClick={addParameter}><Icon name="plus" /> Add parameter</Button>}
+        title={t("analysis.builderParameters")}
+        description={t("analysis.builderParametersBody")}
+        action={<Button size="compact" onClick={addParameter}><Icon name="plus" /> {t("analysis.builderAddParameter")}</Button>}
       >
-        {definition.parameters.length === 0 ? <EmptyBuilder>This Article has no viewer-controlled parameters.</EmptyBuilder> : (
+        {definition.parameters.length === 0 ? <EmptyBuilder>{t("analysis.builderParametersEmpty")}</EmptyBuilder> : (
           <div className="tw:grid tw:gap-3">
             {definition.parameters.map((parameter, index) => (
               <BuilderCard
@@ -408,16 +412,16 @@ export function AnalysisDataContractEditor({
                 index={index}
                 count={definition.parameters.length}
                 removeDisabled={parameterReferenced(definition, parameter.id)}
-                removeDisabledReason="Remove this parameter from SQL and control blocks first."
+                removeDisabledReason={t("analysis.builderParameterRemoveBlocked")}
                 onMove={(direction) => onChange({ ...definition, parameters: move(definition.parameters, index, direction) })}
                 onRemove={() => onChange({ ...definition, parameters: removeAt(definition.parameters, index) })}
               >
                 <FormGrid>
-                  <Field label="ID" validation={!IDENTIFIER.test(parameter.id) ? { tone: "danger", message: "Start with a letter; use letters, digits, _ or -." } : undefined}>
+                  <Field label="ID" validation={!IDENTIFIER.test(parameter.id) ? { tone: "danger", message: t("analysis.builderIdentifierRule") } : undefined}>
                     <TextInput value={parameter.id} onChange={(event) => onChange(renameParameter(definition, parameter.id, event.target.value))} />
                   </Field>
-                  <Field label="Label"><TextInput value={parameter.label} onChange={(event) => onChange({ ...definition, parameters: replaceAt(definition.parameters, index, { ...parameter, label: event.target.value }) })} /></Field>
-                  <Field label="Type">
+                  <Field label={t("analysis.builderLabel")}><TextInput value={parameter.label} onChange={(event) => onChange({ ...definition, parameters: replaceAt(definition.parameters, index, { ...parameter, label: event.target.value }) })} /></Field>
+                  <Field label={t("analysis.builderType")}>
                     <SelectInput value={parameter.type} onChange={(event) => {
                       const type = event.target.value as AnalysisParameterType;
                       const options = type === "enum" ? parameter.options.length ? parameter.options : ["all"] : [];
@@ -432,19 +436,19 @@ export function AnalysisDataContractEditor({
                     </SelectInput>
                   </Field>
                   {parameter.type === "boolean" ? (
-                    <Field label="Default">
+                    <Field label={t("analysis.builderDefault")}>
                       <SelectInput value={String(parameter.defaultValue)} onChange={(event) => onChange({ ...definition, parameters: replaceAt(definition.parameters, index, { ...parameter, defaultValue: event.target.value === "true" }) })}>
                         <option value="true">true</option><option value="false">false</option>
                       </SelectInput>
                     </Field>
                   ) : parameter.type === "enum" ? (
-                    <Field label="Default">
+                    <Field label={t("analysis.builderDefault")}>
                       <SelectInput value={String(parameter.defaultValue ?? "")} onChange={(event) => onChange({ ...definition, parameters: replaceAt(definition.parameters, index, { ...parameter, defaultValue: event.target.value }) })}>
                         {parameter.options.map((option) => <option value={option} key={option}>{option}</option>)}
                       </SelectInput>
                     </Field>
                   ) : (
-                    <Field label="Default">
+                    <Field label={t("analysis.builderDefault")}>
                       <TextInput
                         type={parameter.type === "number" ? "number" : parameter.type === "date" ? "date" : parameter.type === "datetime" ? "datetime-local" : "text"}
                         value={typeof parameter.defaultValue === "string" || typeof parameter.defaultValue === "number" ? parameter.defaultValue : ""}
@@ -453,7 +457,7 @@ export function AnalysisDataContractEditor({
                     </Field>
                   )}
                   {parameter.type === "enum" ? (
-                    <Field label="Allowed options" hint={<span className="tw:text-xs tw:font-normal">comma-separated</span>}>
+                    <Field label={t("analysis.builderAllowedOptions")} hint={<span className="tw:text-xs tw:font-normal">{t("analysis.builderCommaSeparated")}</span>}>
                       <TextInput value={parameter.options.join(", ")} onChange={(event) => {
                         const options = csv(event.target.value);
                         onChange({ ...definition, parameters: replaceAt(definition.parameters, index, {
@@ -465,7 +469,7 @@ export function AnalysisDataContractEditor({
                     </Field>
                   ) : null}
                 </FormGrid>
-                <CheckboxField label="Required for every run" checked={parameter.required} onChange={(event) => onChange({ ...definition, parameters: replaceAt(definition.parameters, index, { ...parameter, required: event.target.checked }) })} />
+                <CheckboxField label={t("analysis.builderRequiredEveryRun")} checked={parameter.required} onChange={(event) => onChange({ ...definition, parameters: replaceAt(definition.parameters, index, { ...parameter, required: event.target.checked }) })} />
               </BuilderCard>
             ))}
           </div>
@@ -473,9 +477,9 @@ export function AnalysisDataContractEditor({
       </Section>
 
       <Section
-        title="Read queries"
-        description="Each node is one bounded read-only statement against one exact Environment connection role, with a declared privacy contract."
-        action={<Button size="compact" onClick={addQuery}><Icon name="plus" /> Add query</Button>}
+        title={t("analysis.builderReadQueries")}
+        description={t("analysis.builderReadQueriesBody")}
+        action={<Button size="compact" onClick={addQuery}><Icon name="plus" /> {t("analysis.builderAddQuery")}</Button>}
       >
         <div className="tw:grid tw:gap-3">
           {definition.queries.map((query, index) => {
@@ -485,32 +489,32 @@ export function AnalysisDataContractEditor({
               <BuilderCard
                 key={`${index}:${query.id}`}
                 title={query.title || query.id}
-                metadata={`${query.id} · ${query.connectionRole} · ${query.columns.length} columns`}
+                metadata={`${query.id} · ${query.connectionRole} · ${t("analysis.builderColumnsCount", { count: query.columns.length })}`}
                 index={index}
                 count={definition.queries.length}
                 removeDisabled={definition.queries.length === 1 || nodeReferenced(definition, query.id)}
-                removeDisabledReason={definition.queries.length === 1 ? "An Article requires at least one query." : "Remove node, metric, block, and claim references first."}
+                removeDisabledReason={definition.queries.length === 1 ? t("analysis.builderQueryRequired") : t("analysis.builderNodeRemoveBlocked")}
                 onMove={(direction) => onChange({ ...definition, queries: move(definition.queries, index, direction) })}
                 onRemove={() => onChange({ ...definition, queries: removeAt(definition.queries, index) })}
               >
                 <FormGrid>
-                  <Field label="Node ID" validation={!IDENTIFIER.test(query.id) ? { tone: "danger", message: "Invalid node ID." } : undefined}>
+                  <Field label={t("analysis.builderNodeId")} validation={!IDENTIFIER.test(query.id) ? { tone: "danger", message: t("analysis.builderInvalidNodeId") } : undefined}>
                     <TextInput value={query.id} onChange={(event) => onChange(renameNode(definition, query.id, event.target.value))} />
                   </Field>
-                  <Field label="Title"><TextInput value={query.title} onChange={(event) => onChange({ ...definition, queries: replaceAt(definition.queries, index, { ...query, title: event.target.value }) })} /></Field>
-                  <Field label="Connection role">
+                  <Field label={t("analysis.fieldTitle")}><TextInput value={query.title} onChange={(event) => onChange({ ...definition, queries: replaceAt(definition.queries, index, { ...query, title: event.target.value }) })} /></Field>
+                  <Field label={t("analysis.builderConnectionRole")}>
                     <SelectInput value={query.connectionRole} onChange={(event) => onChange({ ...definition, queries: replaceAt(definition.queries, index, { ...query, connectionRole: event.target.value }) })}>
                       {connections.map((connection) => <option value={connection.role} key={connection.connectionId}>{connection.alias} · {connection.role}</option>)}
                     </SelectInput>
                   </Field>
-                  <Field label="Maximum rows"><TextInput type="number" min={1} max={50_000} value={query.maxRows} onChange={(event) => onChange({ ...definition, queries: replaceAt(definition.queries, index, { ...query, maxRows: event.target.valueAsNumber }) })} /></Field>
-                  <Field label="Maximum result bytes"><TextInput type="number" min={1_024} max={16 * 1024 * 1024} value={query.maxBytes} onChange={(event) => onChange({ ...definition, queries: replaceAt(definition.queries, index, { ...query, maxBytes: event.target.valueAsNumber }) })} /></Field>
-                  <Field label="Cache TTL seconds"><TextInput type="number" min={0} max={7 * 24 * 60 * 60} value={query.cacheTtlSeconds} onChange={(event) => onChange({ ...definition, queries: replaceAt(definition.queries, index, { ...query, cacheTtlSeconds: event.target.valueAsNumber }) })} /></Field>
+                  <Field label={t("analysis.builderMaximumRows")}><TextInput type="number" min={1} max={50_000} value={query.maxRows} onChange={(event) => onChange({ ...definition, queries: replaceAt(definition.queries, index, { ...query, maxRows: event.target.valueAsNumber }) })} /></Field>
+                  <Field label={t("analysis.builderMaximumBytes")}><TextInput type="number" min={1_024} max={16 * 1024 * 1024} value={query.maxBytes} onChange={(event) => onChange({ ...definition, queries: replaceAt(definition.queries, index, { ...query, maxBytes: event.target.valueAsNumber }) })} /></Field>
+                  <Field label={t("analysis.builderCacheTtl")}><TextInput type="number" min={0} max={7 * 24 * 60 * 60} value={query.cacheTtlSeconds} onChange={(event) => onChange({ ...definition, queries: replaceAt(definition.queries, index, { ...query, cacheTtlSeconds: event.target.valueAsNumber }) })} /></Field>
                 </FormGrid>
                 <Field
-                  label="Read-only SQL"
-                  hint={<span className="tw:text-xs tw:font-normal tw:text-muted-foreground">Use declared tokens such as {"{{date_from}}"}.</span>}
-                  validation={unknown.length ? { tone: "danger", message: `Unknown parameters: ${unknown.join(", ")}` } : undefined}
+                  label={t("analysis.builderReadOnlySql")}
+                  hint={<span className="tw:text-xs tw:font-normal tw:text-muted-foreground">{t("analysis.builderSqlTokenHint")}</span>}
+                  validation={unknown.length ? { tone: "danger", message: t("analysis.builderUnknownParameters", { parameters: unknown.join(", ") }) } : undefined}
                 >
                   <TextAreaInput
                     spellCheck={false}
@@ -735,13 +739,14 @@ function TransformConfigEditor({
   inputs: readonly NodeOption[];
   onChange: (config: Record<string, unknown>) => void;
 }) {
+  const { t } = useI18n();
   const config = transform.config;
   const first = inputs[0]?.columns ?? [];
   const second = inputs[1]?.columns ?? [];
   const patch = (value: Record<string, unknown>) => onChange({ ...config, ...value });
   if (transform.operation === "project" || transform.operation === "group") {
     return (
-      <Field label={transform.operation === "project" ? "Projected columns" : "Group columns"}>
+      <Field label={transform.operation === "project" ? t("analysis.builderProjectedColumns") : t("analysis.builderGroupColumns")}>
         <ColumnChecklist columns={first} selected={configStrings(config, "columns")} onChange={(columns) => patch({ columns })} />
       </Field>
     );
@@ -752,9 +757,9 @@ function TransformConfigEditor({
     const value = config.value;
     return (
       <FormGrid>
-        <Field label="Column"><SelectInput value={configString(config, "column")} onChange={(event) => patch({ column: event.target.value })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
-        <Field label="Operator"><SelectInput value={operator} onChange={(event) => patch({ operator: event.target.value, value: ["is_null", "not_null"].includes(event.target.value) ? null : value })}>{["eq", "neq", "gt", "gte", "lt", "lte", "contains", "in", "is_null", "not_null"].map((item) => <option value={item} key={item}>{humanize(item)}</option>)}</SelectInput></Field>
-        {!['is_null', 'not_null'].includes(operator) ? <Field label="Value"><TextInput value={Array.isArray(value) ? value.join(", ") : value === null || value === undefined ? "" : String(value)} onChange={(event) => {
+        <Field label={t("analysis.builderColumn")}><SelectInput value={configString(config, "column")} onChange={(event) => patch({ column: event.target.value })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
+        <Field label={t("analysis.builderOperator")}><SelectInput value={operator} onChange={(event) => patch({ operator: event.target.value, value: ["is_null", "not_null"].includes(event.target.value) ? null : value })}>{["eq", "neq", "gt", "gte", "lt", "lte", "contains", "in", "is_null", "not_null"].map((item) => <option value={item} key={item}>{humanize(item)}</option>)}</SelectInput></Field>
+        {!['is_null', 'not_null'].includes(operator) ? <Field label={t("analysis.builderValue")}><TextInput value={Array.isArray(value) ? value.join(", ") : value === null || value === undefined ? "" : String(value)} onChange={(event) => {
           const raw = event.target.value;
           const parsed = operator === "in" ? csv(raw) : selectedColumn?.type === "number" ? Number(raw) : selectedColumn?.type === "boolean" ? raw === "true" : raw;
           patch({ value: parsed });
@@ -765,26 +770,26 @@ function TransformConfigEditor({
   if (transform.operation === "sort") {
     const rows = configRows<{ column: string; direction: string }>(config, "columns");
     return (
-      <Field label="Sort order">
+      <Field label={t("analysis.builderSortOrder")}>
         <div className="tw:grid tw:gap-2">
           {rows.map((row, index) => <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_140px_auto] tw:gap-2" key={index}>
             <SelectInput value={row.column} onChange={(event) => patch({ columns: replaceAt(rows, index, { ...row, column: event.target.value }) })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput>
-            <SelectInput value={row.direction} onChange={(event) => patch({ columns: replaceAt(rows, index, { ...row, direction: event.target.value }) })}><option value="asc">Ascending</option><option value="desc">Descending</option></SelectInput>
-            <Button iconOnly variant="dangerGhost" aria-label="Remove sort" disabled={rows.length === 1} onClick={() => patch({ columns: removeAt(rows, index) })}><Icon name="trash" /></Button>
+            <SelectInput value={row.direction} onChange={(event) => patch({ columns: replaceAt(rows, index, { ...row, direction: event.target.value }) })}><option value="asc">{t("analysis.builderAscending")}</option><option value="desc">{t("analysis.builderDescending")}</option></SelectInput>
+            <Button iconOnly variant="dangerGhost" aria-label={t("analysis.builderRemoveSort")} disabled={rows.length === 1} onClick={() => patch({ columns: removeAt(rows, index) })}><Icon name="trash" /></Button>
           </div>)}
-          <Button size="compact" onClick={() => patch({ columns: [...rows, { column: first[0]?.name ?? "", direction: "asc" }] })}><Icon name="plus" /> Add sort</Button>
+          <Button size="compact" onClick={() => patch({ columns: [...rows, { column: first[0]?.name ?? "", direction: "asc" }] })}><Icon name="plus" /> {t("analysis.builderAddSort")}</Button>
         </div>
       </Field>
     );
   }
   if (transform.operation === "limit") {
-    return <Field label="Maximum rows"><TextInput type="number" min={1} max={50_000} value={configNumber(config, "count", 100)} onChange={(event) => patch({ count: event.target.valueAsNumber })} /></Field>;
+    return <Field label={t("analysis.builderMaximumRows")}><TextInput type="number" min={1} max={50_000} value={configNumber(config, "count", 100)} onChange={(event) => patch({ count: event.target.valueAsNumber })} /></Field>;
   }
   if (transform.operation === "union") {
     return (
       <FormGrid>
-        <Field label="Approved mapping proposal ID" validation={!/^[0-9a-f-]{36}$/i.test(configString(config, "mappingProposalId")) ? { tone: "danger", message: "Select or paste an approved Knowledge mapping UUID." } : undefined}><TextInput value={configString(config, "mappingProposalId")} onChange={(event) => patch({ mappingProposalId: event.target.value })} /></Field>
-        <CheckboxField label="Keep duplicate rows (UNION ALL)" checked={configBoolean(config, "all", true)} onChange={(event) => patch({ all: event.target.checked })} />
+        <Field label={t("analysis.builderMappingId")} validation={!/^[0-9a-f-]{36}$/i.test(configString(config, "mappingProposalId")) ? { tone: "danger", message: t("analysis.builderMappingIdHint") } : undefined}><TextInput value={configString(config, "mappingProposalId")} onChange={(event) => patch({ mappingProposalId: event.target.value })} /></Field>
+        <CheckboxField label={t("analysis.builderUnionAll")} checked={configBoolean(config, "all", true)} onChange={(event) => patch({ all: event.target.checked })} />
       </FormGrid>
     );
   }
@@ -792,16 +797,16 @@ function TransformConfigEditor({
     const measures = configRows<{ column: string; function: string; as: string }>(config, "measures");
     return (
       <div className="tw:grid tw:gap-3">
-        <Field label="Group by"><ColumnChecklist columns={first} selected={configStrings(config, "groupBy")} onChange={(groupBy) => patch({ groupBy })} /></Field>
-        <Field label="Measures">
+        <Field label={t("analysis.builderGroupBy")}><ColumnChecklist columns={first} selected={configStrings(config, "groupBy")} onChange={(groupBy) => patch({ groupBy })} /></Field>
+        <Field label={t("analysis.builderMeasures")}>
           <div className="tw:grid tw:gap-2">
             {measures.map((measure, index) => <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_160px_minmax(120px,1fr)_auto] tw:gap-2 tw:@max-[700px]:grid-cols-1" key={index}>
               <SelectInput value={measure.column} onChange={(event) => patch({ measures: replaceAt(measures, index, { ...measure, column: event.target.value }) })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput>
               <SelectInput value={measure.function} onChange={(event) => patch({ measures: replaceAt(measures, index, { ...measure, function: event.target.value }) })}>{["count", "count_distinct", "sum", "avg", "min", "max"].map((value) => <option value={value} key={value}>{humanize(value)}</option>)}</SelectInput>
-              <TextInput aria-label="Output column" value={measure.as} onChange={(event) => patch({ measures: replaceAt(measures, index, { ...measure, as: event.target.value }) })} />
-              <Button iconOnly variant="dangerGhost" aria-label="Remove measure" disabled={measures.length === 1} onClick={() => patch({ measures: removeAt(measures, index) })}><Icon name="trash" /></Button>
+              <TextInput aria-label={t("analysis.builderOutputColumn")} value={measure.as} onChange={(event) => patch({ measures: replaceAt(measures, index, { ...measure, as: event.target.value }) })} />
+              <Button iconOnly variant="dangerGhost" aria-label={t("analysis.builderRemoveMeasure")} disabled={measures.length === 1} onClick={() => patch({ measures: removeAt(measures, index) })}><Icon name="trash" /></Button>
             </div>)}
-            <Button size="compact" onClick={() => patch({ measures: [...measures, { column: first[0]?.name ?? "", function: "sum", as: uniqueIdentifier("measure", "measure", measures.map((measure) => measure.as)) }] })}><Icon name="plus" /> Add measure</Button>
+            <Button size="compact" onClick={() => patch({ measures: [...measures, { column: first[0]?.name ?? "", function: "sum", as: uniqueIdentifier("measure", "measure", measures.map((measure) => measure.as)) }] })}><Icon name="plus" /> {t("analysis.builderAddMeasure")}</Button>
           </div>
         </Field>
       </div>
@@ -811,16 +816,16 @@ function TransformConfigEditor({
     const keys = configRows<{ left: string; right: string }>(config, "keys");
     return (
       <div className="tw:grid tw:gap-3">
-        <Field label="Approved mapping proposal ID" validation={!/^[0-9a-f-]{36}$/i.test(configString(config, "mappingProposalId")) ? { tone: "danger", message: "An approved Knowledge mapping UUID is required." } : undefined}><TextInput value={configString(config, "mappingProposalId")} onChange={(event) => patch({ mappingProposalId: event.target.value })} /></Field>
-        <Field label="Join keys">
+        <Field label={t("analysis.builderMappingId")} validation={!/^[0-9a-f-]{36}$/i.test(configString(config, "mappingProposalId")) ? { tone: "danger", message: t("analysis.builderMappingIdRequired") } : undefined}><TextInput value={configString(config, "mappingProposalId")} onChange={(event) => patch({ mappingProposalId: event.target.value })} /></Field>
+        <Field label={t("analysis.builderJoinKeys")}>
           <div className="tw:grid tw:gap-2">
             {keys.map((key, index) => <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto] tw:items-center tw:gap-2" key={index}>
               <SelectInput value={key.left} onChange={(event) => patch({ keys: replaceAt(keys, index, { ...key, left: event.target.value }) })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput>
               <span className="tw:text-xs tw:text-muted-foreground">=</span>
               <SelectInput value={key.right} onChange={(event) => patch({ keys: replaceAt(keys, index, { ...key, right: event.target.value }) })}>{second.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput>
-              <Button iconOnly variant="dangerGhost" aria-label="Remove join key" disabled={keys.length === 1} onClick={() => patch({ keys: removeAt(keys, index) })}><Icon name="trash" /></Button>
+              <Button iconOnly variant="dangerGhost" aria-label={t("analysis.builderRemoveJoinKey")} disabled={keys.length === 1} onClick={() => patch({ keys: removeAt(keys, index) })}><Icon name="trash" /></Button>
             </div>)}
-            <Button size="compact" onClick={() => patch({ keys: [...keys, { left: first[0]?.name ?? "", right: second[0]?.name ?? "" }] })}><Icon name="plus" /> Add key</Button>
+            <Button size="compact" onClick={() => patch({ keys: [...keys, { left: first[0]?.name ?? "", right: second[0]?.name ?? "" }] })}><Icon name="plus" /> {t("analysis.builderAddKey")}</Button>
           </div>
         </Field>
       </div>
@@ -830,17 +835,17 @@ function TransformConfigEditor({
     const measures = configRows<{ column: string | null; function: string; as: string }>(config, "measures");
     return (
       <div className="tw:grid tw:gap-3">
-        <Field label="Partition by"><ColumnChecklist columns={first} selected={configStrings(config, "partitionBy")} onChange={(partitionBy) => patch({ partitionBy })} /></Field>
-        <Field label="Order by"><SelectInput value={configString(config, "orderBy")} onChange={(event) => patch({ orderBy: event.target.value })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
-        <Field label="Window measures">
+        <Field label={t("analysis.builderPartitionBy")}><ColumnChecklist columns={first} selected={configStrings(config, "partitionBy")} onChange={(partitionBy) => patch({ partitionBy })} /></Field>
+        <Field label={t("analysis.builderOrderBy")}><SelectInput value={configString(config, "orderBy")} onChange={(event) => patch({ orderBy: event.target.value })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
+        <Field label={t("analysis.builderWindowMeasures")}>
           <div className="tw:grid tw:gap-2">
             {measures.map((measure, index) => <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_180px_minmax(120px,1fr)_auto] tw:gap-2 tw:@max-[700px]:grid-cols-1" key={index}>
-              <SelectInput value={measure.column ?? ""} onChange={(event) => patch({ measures: replaceAt(measures, index, { ...measure, column: event.target.value || null }) })}><option value="">No source column</option>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput>
+              <SelectInput value={measure.column ?? ""} onChange={(event) => patch({ measures: replaceAt(measures, index, { ...measure, column: event.target.value || null }) })}><option value="">{t("analysis.builderNoSourceColumn")}</option>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput>
               <SelectInput value={measure.function} onChange={(event) => patch({ measures: replaceAt(measures, index, { ...measure, function: event.target.value }) })}>{["row_number", "rank", "dense_rank", "running_sum", "running_avg"].map((value) => <option value={value} key={value}>{humanize(value)}</option>)}</SelectInput>
-              <TextInput aria-label="Output column" value={measure.as} onChange={(event) => patch({ measures: replaceAt(measures, index, { ...measure, as: event.target.value }) })} />
-              <Button iconOnly variant="dangerGhost" aria-label="Remove window measure" disabled={measures.length === 1} onClick={() => patch({ measures: removeAt(measures, index) })}><Icon name="trash" /></Button>
+              <TextInput aria-label={t("analysis.builderOutputColumn")} value={measure.as} onChange={(event) => patch({ measures: replaceAt(measures, index, { ...measure, as: event.target.value }) })} />
+              <Button iconOnly variant="dangerGhost" aria-label={t("analysis.builderRemoveWindowMeasure")} disabled={measures.length === 1} onClick={() => patch({ measures: removeAt(measures, index) })}><Icon name="trash" /></Button>
             </div>)}
-            <Button size="compact" onClick={() => patch({ measures: [...measures, { column: null, function: "row_number", as: uniqueIdentifier("window_value", "window_value", measures.map((measure) => measure.as)) }] })}><Icon name="plus" /> Add window measure</Button>
+            <Button size="compact" onClick={() => patch({ measures: [...measures, { column: null, function: "row_number", as: uniqueIdentifier("window_value", "window_value", measures.map((measure) => measure.as)) }] })}><Icon name="plus" /> {t("analysis.builderAddWindowMeasure")}</Button>
           </div>
         </Field>
       </div>
@@ -849,41 +854,41 @@ function TransformConfigEditor({
   if (transform.operation === "lag") {
     return (
       <FormGrid>
-        <Field label="Value column"><SelectInput value={configString(config, "column")} onChange={(event) => patch({ column: event.target.value })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
-        <Field label="Offset"><TextInput type="number" min={1} max={1_000} value={configNumber(config, "offset", 1)} onChange={(event) => patch({ offset: event.target.valueAsNumber })} /></Field>
-        <Field label="Partition by"><TextInput value={configStrings(config, "partitionBy").join(", ")} onChange={(event) => patch({ partitionBy: csv(event.target.value) })} /></Field>
-        <Field label="Order by"><SelectInput value={configString(config, "orderBy")} onChange={(event) => patch({ orderBy: event.target.value })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
-        <Field label="Output column"><TextInput value={configString(config, "as")} onChange={(event) => patch({ as: event.target.value })} /></Field>
+        <Field label={t("analysis.builderValueColumn")}><SelectInput value={configString(config, "column")} onChange={(event) => patch({ column: event.target.value })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
+        <Field label={t("analysis.builderOffset")}><TextInput type="number" min={1} max={1_000} value={configNumber(config, "offset", 1)} onChange={(event) => patch({ offset: event.target.valueAsNumber })} /></Field>
+        <Field label={t("analysis.builderPartitionBy")}><TextInput value={configStrings(config, "partitionBy").join(", ")} onChange={(event) => patch({ partitionBy: csv(event.target.value) })} /></Field>
+        <Field label={t("analysis.builderOrderBy")}><SelectInput value={configString(config, "orderBy")} onChange={(event) => patch({ orderBy: event.target.value })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
+        <Field label={t("analysis.builderOutputColumn")}><TextInput value={configString(config, "as")} onChange={(event) => patch({ as: event.target.value })} /></Field>
       </FormGrid>
     );
   }
   if (["ratio", "difference", "rate"].includes(transform.operation)) {
     return (
       <FormGrid>
-        <Field label="Numerator"><SelectInput value={configString(config, "numerator")} onChange={(event) => patch({ numerator: event.target.value })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
-        <Field label="Denominator"><SelectInput value={configString(config, "denominator")} onChange={(event) => patch({ denominator: event.target.value })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
-        <Field label="Output column"><TextInput value={configString(config, "as")} onChange={(event) => patch({ as: event.target.value })} /></Field>
+        <Field label={t("analysis.builderNumerator")}><SelectInput value={configString(config, "numerator")} onChange={(event) => patch({ numerator: event.target.value })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
+        <Field label={t("analysis.builderDenominator")}><SelectInput value={configString(config, "denominator")} onChange={(event) => patch({ denominator: event.target.value })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
+        <Field label={t("analysis.builderOutputColumn")}><TextInput value={configString(config, "as")} onChange={(event) => patch({ as: event.target.value })} /></Field>
       </FormGrid>
     );
   }
   if (transform.operation === "cohort") {
     return (
       <FormGrid>
-        <Field label="Entity column"><SelectInput value={configString(config, "entityColumn")} onChange={(event) => patch({ entityColumn: event.target.value })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
-        <Field label="Event time"><SelectInput value={configString(config, "eventTimeColumn")} onChange={(event) => patch({ eventTimeColumn: event.target.value })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
-        <Field label="Cohort unit"><SelectInput value={configString(config, "cohortUnit")} onChange={(event) => patch({ cohortUnit: event.target.value })}>{["day", "week", "month"].map((value) => <option value={value} key={value}>{value}</option>)}</SelectInput></Field>
-        <Field label="Output column"><TextInput value={configString(config, "as")} onChange={(event) => patch({ as: event.target.value })} /></Field>
+        <Field label={t("analysis.builderEntityColumn")}><SelectInput value={configString(config, "entityColumn")} onChange={(event) => patch({ entityColumn: event.target.value })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
+        <Field label={t("analysis.builderEventTime")}><SelectInput value={configString(config, "eventTimeColumn")} onChange={(event) => patch({ eventTimeColumn: event.target.value })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
+        <Field label={t("analysis.builderCohortUnit")}><SelectInput value={configString(config, "cohortUnit")} onChange={(event) => patch({ cohortUnit: event.target.value })}>{["day", "week", "month"].map((value) => <option value={value} key={value}>{value}</option>)}</SelectInput></Field>
+        <Field label={t("analysis.builderOutputColumn")}><TextInput value={configString(config, "as")} onChange={(event) => patch({ as: event.target.value })} /></Field>
       </FormGrid>
     );
   }
   return (
     <FormGrid>
-      <Field label="Entity column"><SelectInput value={configString(config, "entityColumn")} onChange={(event) => patch({ entityColumn: event.target.value })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
-      <Field label="Cohort column"><SelectInput value={configString(config, "cohortColumn")} onChange={(event) => patch({ cohortColumn: event.target.value })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
-      <Field label="Event time"><SelectInput value={configString(config, "eventTimeColumn")} onChange={(event) => patch({ eventTimeColumn: event.target.value })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
-      <Field label="Period unit"><SelectInput value={configString(config, "periodUnit")} onChange={(event) => patch({ periodUnit: event.target.value })}>{["day", "week", "month"].map((value) => <option value={value} key={value}>{value}</option>)}</SelectInput></Field>
-      <Field label="Periods"><TextInput type="number" min={1} max={365} value={configNumber(config, "periods", 12)} onChange={(event) => patch({ periods: event.target.valueAsNumber })} /></Field>
-      <Field label="Output column"><TextInput value={configString(config, "as")} onChange={(event) => patch({ as: event.target.value })} /></Field>
+      <Field label={t("analysis.builderEntityColumn")}><SelectInput value={configString(config, "entityColumn")} onChange={(event) => patch({ entityColumn: event.target.value })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
+      <Field label={t("analysis.builderCohortColumn")}><SelectInput value={configString(config, "cohortColumn")} onChange={(event) => patch({ cohortColumn: event.target.value })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
+      <Field label={t("analysis.builderEventTime")}><SelectInput value={configString(config, "eventTimeColumn")} onChange={(event) => patch({ eventTimeColumn: event.target.value })}>{first.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
+      <Field label={t("analysis.builderPeriodUnit")}><SelectInput value={configString(config, "periodUnit")} onChange={(event) => patch({ periodUnit: event.target.value })}>{["day", "week", "month"].map((value) => <option value={value} key={value}>{value}</option>)}</SelectInput></Field>
+      <Field label={t("analysis.builderPeriods")}><TextInput type="number" min={1} max={365} value={configNumber(config, "periods", 12)} onChange={(event) => patch({ periods: event.target.valueAsNumber })} /></Field>
+      <Field label={t("analysis.builderOutputColumn")}><TextInput value={configString(config, "as")} onChange={(event) => patch({ as: event.target.value })} /></Field>
     </FormGrid>
   );
 }
@@ -895,6 +900,7 @@ export function AnalysisTransformEditor({
   definition: AnalysisArticleDefinition;
   onChange: (definition: AnalysisArticleDefinition) => void;
 }) {
+  const { t } = useI18n();
   const [newOperation, setNewOperation] = useState<AnalysisTransformOperation>("filter");
   const allNodes = availableNodes(definition);
   const addTransform = () => {
@@ -928,12 +934,12 @@ export function AnalysisTransformEditor({
   return (
     <div className="tw:grid tw:gap-4">
       <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
-        <SelectInput density="compact" aria-label="New transform operation" value={newOperation} onChange={(event) => setNewOperation(event.target.value as AnalysisTransformOperation)}>
+        <SelectInput density="compact" aria-label={t("analysis.builderNewTransformOperation")} value={newOperation} onChange={(event) => setNewOperation(event.target.value as AnalysisTransformOperation)}>
           {analysisTransformOperations.map((operation) => <option value={operation} key={operation}>{humanize(operation)}</option>)}
         </SelectInput>
-        <Button size="compact" disabled={allNodes.length < (["inner_join", "left_join", "union"].includes(newOperation) ? 2 : 1)} onClick={addTransform}><Icon name="plus" /> Add transform</Button>
+        <Button size="compact" disabled={allNodes.length < (["inner_join", "left_join", "union"].includes(newOperation) ? 2 : 1)} onClick={addTransform}><Icon name="plus" /> {t("analysis.builderAddTransform")}</Button>
       </div>
-      {definition.transforms.length === 0 ? <EmptyBuilder>Add a typed operation when a query result needs filtering, aggregation, joining, cohorting, or retention logic.</EmptyBuilder> : (
+      {definition.transforms.length === 0 ? <EmptyBuilder>{t("analysis.builderTransformEmpty")}</EmptyBuilder> : (
         <div className="tw:grid tw:gap-3">
           {definition.transforms.map((transform, index) => {
             const nodes = availableNodes(definition, index);
@@ -949,20 +955,20 @@ export function AnalysisTransformEditor({
               <BuilderCard
                 key={`${index}:${transform.id}`}
                 title={transform.title || transform.id}
-                metadata={`${humanize(transform.operation)} · ${transform.inputNodeIds.join(" + ")} → ${transform.columns.length} columns`}
+                metadata={`${humanize(transform.operation)} · ${transform.inputNodeIds.join(" + ")} → ${t("analysis.builderColumnsCount", { count: transform.columns.length })}`}
                 index={index}
                 count={definition.transforms.length}
                 moveUpDisabled={!transformOrderValid(definition, movedUp)}
                 moveDownDisabled={!transformOrderValid(definition, movedDown)}
                 removeDisabled={nodeReferenced(definition, transform.id)}
-                removeDisabledReason="Remove later transform, metric, block, and claim references first."
+                removeDisabledReason={t("analysis.builderTransformRemoveBlocked")}
                 onMove={(direction) => onChange({ ...definition, transforms: move(definition.transforms, index, direction) })}
                 onRemove={() => onChange({ ...definition, transforms: removeAt(definition.transforms, index) })}
               >
                 <FormGrid>
-                  <Field label="Node ID" validation={!IDENTIFIER.test(transform.id) ? { tone: "danger", message: "Invalid node ID." } : undefined}><TextInput value={transform.id} onChange={(event) => onChange(renameNode(definition, transform.id, event.target.value))} /></Field>
-                  <Field label="Title"><TextInput value={transform.title} onChange={(event) => patchTransform(index, { title: event.target.value })} /></Field>
-                  <Field label="Operation">
+                  <Field label={t("analysis.builderNodeId")} validation={!IDENTIFIER.test(transform.id) ? { tone: "danger", message: t("analysis.builderInvalidNodeId") } : undefined}><TextInput value={transform.id} onChange={(event) => onChange(renameNode(definition, transform.id, event.target.value))} /></Field>
+                  <Field label={t("analysis.fieldTitle")}><TextInput value={transform.title} onChange={(event) => patchTransform(index, { title: event.target.value })} /></Field>
+                  <Field label={t("analysis.builderOperation")}>
                     <SelectInput value={transform.operation} onChange={(event) => {
                       const operation = event.target.value as AnalysisTransformOperation;
                       const needsTwo = ["inner_join", "left_join", "union"].includes(operation);
@@ -974,7 +980,7 @@ export function AnalysisTransformEditor({
                     </SelectInput>
                   </Field>
                   {Array.from({ length: binary ? 2 : 1 }, (_, inputIndex) => (
-                    <Field label={binary ? `Input ${inputIndex + 1}` : "Input"} key={inputIndex}>
+                    <Field label={binary ? t("analysis.builderInputNumber", { number: inputIndex + 1 }) : t("analysis.builderInput")} key={inputIndex}>
                       <SelectInput value={transform.inputNodeIds[inputIndex] ?? ""} onChange={(event) => {
                         const inputNodeIds = transform.inputNodeIds.map((id, itemIndex) => itemIndex === inputIndex ? event.target.value : id);
                         patchTransform(index, { inputNodeIds }, true);
@@ -985,7 +991,7 @@ export function AnalysisTransformEditor({
                   ))}
                 </FormGrid>
                 <TransformConfigEditor transform={transform} inputs={inputOptions} onChange={(config) => patchTransform(index, { config }, true)} />
-                {duplicateColumns.size ? <InlineNotice tone="danger" icon="alert">Rename duplicate join output columns before saving: {[...duplicateColumns].join(", ")}</InlineNotice> : null}
+                {duplicateColumns.size ? <InlineNotice tone="danger" icon="alert">{t("analysis.builderDuplicateColumns", { columns: [...duplicateColumns].join(", ") })}</InlineNotice> : null}
                 <ColumnEditor columns={transform.columns.length ? transform.columns : [defaultColumn()]} onChange={(columns) => patchTransform(index, { columns })} />
               </BuilderCard>
             );
@@ -1017,9 +1023,10 @@ function FormatEditor({
   format: AnalysisNumberFormat;
   onChange: (format: AnalysisNumberFormat) => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="tw:grid tw:grid-cols-3 tw:gap-2 tw:@max-[640px]:grid-cols-1">
-      <Field label="Number style">
+      <Field label={t("analysis.builderNumberStyle")}>
         <SelectInput value={format.style} onChange={(event) => {
           const style = event.target.value as AnalysisNumberFormat["style"];
           onChange({ ...format, style, currency: style === "currency" ? format.currency ?? "USD" : null });
@@ -1027,8 +1034,8 @@ function FormatEditor({
           {["number", "percent", "currency", "duration", "compact"].map((style) => <option value={style} key={style}>{style}</option>)}
         </SelectInput>
       </Field>
-      <Field label="Decimals"><TextInput type="number" min={0} max={8} value={format.decimals} onChange={(event) => onChange({ ...format, decimals: event.target.valueAsNumber })} /></Field>
-      {format.style === "currency" ? <Field label="Currency"><TextInput value={format.currency ?? "USD"} maxLength={3} onChange={(event) => onChange({ ...format, currency: event.target.value.toUpperCase() })} /></Field> : null}
+      <Field label={t("analysis.builderDecimals")}><TextInput type="number" min={0} max={8} value={format.decimals} onChange={(event) => onChange({ ...format, decimals: event.target.valueAsNumber })} /></Field>
+      {format.style === "currency" ? <Field label={t("analysis.builderCurrency")}><TextInput value={format.currency ?? "USD"} maxLength={3} onChange={(event) => onChange({ ...format, currency: event.target.value.toUpperCase() })} /></Field> : null}
     </div>
   );
 }
@@ -1095,19 +1102,20 @@ function BlockConfigEditor({
   block: AnalysisBlock;
   onChange: (block: AnalysisBlock) => void;
 }) {
+  const { t } = useI18n();
   const config = block.config;
   const columns = block.sourceNodeId ? nodeColumns(definition, block.sourceNodeId) : [];
   const patch = (value: Record<string, unknown>) => onChange({ ...block, config: { ...config, ...value } });
   const format = (config.format && typeof config.format === "object" && !Array.isArray(config.format)
     ? config.format : defaultNumberFormat) as AnalysisNumberFormat;
-  if (block.kind === "heading") return <FormGrid><Field label="Heading level"><SelectInput value={configNumber(config, "level", 2)} onChange={(event) => patch({ level: Number(event.target.value) })}><option value="1">H1</option><option value="2">H2</option><option value="3">H3</option></SelectInput></Field><Field label="Text"><TextInput value={configString(config, "text")} onChange={(event) => patch({ text: event.target.value })} /></Field></FormGrid>;
+  if (block.kind === "heading") return <FormGrid><Field label={t("analysis.builderHeadingLevel")}><SelectInput value={configNumber(config, "level", 2)} onChange={(event) => patch({ level: Number(event.target.value) })}><option value="1">H1</option><option value="2">H2</option><option value="3">H3</option></SelectInput></Field><Field label={t("analysis.builderText")}><TextInput value={configString(config, "text")} onChange={(event) => patch({ text: event.target.value })} /></Field></FormGrid>;
   if (block.kind === "markdown") return <Field label="Markdown"><TextAreaInput value={configString(config, "markdown")} onChange={(event) => patch({ markdown: event.target.value })} /></Field>;
-  if (block.kind === "callout") return <div className="tw:grid tw:gap-3"><Field label="Tone"><SelectInput value={configString(config, "tone")} onChange={(event) => patch({ tone: event.target.value })}>{["info", "success", "warning", "danger"].map((tone) => <option value={tone} key={tone}>{tone}</option>)}</SelectInput></Field><Field label="Markdown"><TextAreaInput value={configString(config, "markdown")} onChange={(event) => patch({ markdown: event.target.value })} /></Field></div>;
-  if (block.kind === "divider") return <p className="tw:m-0 tw:text-xs tw:text-muted-foreground">Divider has no executable or presentation properties.</p>;
+  if (block.kind === "callout") return <div className="tw:grid tw:gap-3"><Field label={t("analysis.builderTone")}><SelectInput value={configString(config, "tone")} onChange={(event) => patch({ tone: event.target.value })}>{["info", "success", "warning", "danger"].map((tone) => <option value={tone} key={tone}>{tone}</option>)}</SelectInput></Field><Field label="Markdown"><TextAreaInput value={configString(config, "markdown")} onChange={(event) => patch({ markdown: event.target.value })} /></Field></div>;
+  if (block.kind === "divider") return <p className="tw:m-0 tw:text-xs tw:text-muted-foreground">{t("analysis.builderDividerBody")}</p>;
   if (block.kind === "metric") {
     return (
       <div className="tw:grid tw:gap-3">
-        <Field label="Metric">
+        <Field label={t("analysis.builderMetric")}>
           <SelectInput value={configString(config, "metricId")} onChange={(event) => {
             const metric = definition.metrics.find((candidate) => candidate.id === event.target.value);
             if (metric) onChange({ ...block, sourceNodeId: metric.sourceNodeId, title: block.title || metric.label, config: { ...config, metricId: metric.id } });
@@ -1116,7 +1124,7 @@ function BlockConfigEditor({
           </SelectInput>
         </Field>
         <FormGrid>
-          {(["comparisonColumn", "sparklineColumn", "sampleCountColumn"] as const).map((key) => <Field label={humanize(key)} key={key}><SelectInput value={configNullableString(config, key) ?? ""} onChange={(event) => patch({ [key]: event.target.value || null })}><option value="">None</option>{columns.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>)}
+          {(["comparisonColumn", "sparklineColumn", "sampleCountColumn"] as const).map((key) => <Field label={humanize(key)} key={key}><SelectInput value={configNullableString(config, key) ?? ""} onChange={(event) => patch({ [key]: event.target.value || null })}><option value="">{t("analysis.none")}</option>{columns.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>)}
         </FormGrid>
       </div>
     );
@@ -1125,22 +1133,22 @@ function BlockConfigEditor({
     return (
       <div className="tw:grid tw:gap-3">
         <FormGrid>
-          <Field label="X column"><SelectInput value={configString(config, "xColumn")} onChange={(event) => patch({ xColumn: event.target.value })}>{columns.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
-          <Field label="Series column"><SelectInput value={configNullableString(config, "seriesColumn") ?? ""} onChange={(event) => patch({ seriesColumn: event.target.value || null })}><option value="">None</option>{columns.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
+          <Field label={t("analysis.builderXColumn")}><SelectInput value={configString(config, "xColumn")} onChange={(event) => patch({ xColumn: event.target.value })}>{columns.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
+          <Field label={t("analysis.builderSeriesColumn")}><SelectInput value={configNullableString(config, "seriesColumn") ?? ""} onChange={(event) => patch({ seriesColumn: event.target.value || null })}><option value="">{t("analysis.none")}</option>{columns.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
         </FormGrid>
-        <Field label="Y columns"><ColumnChecklist columns={numericColumns(columns)} selected={configStrings(config, "yColumns")} onChange={(yColumns) => patch({ yColumns })} /></Field>
-        <CheckboxField label="Stack series" checked={configBoolean(config, "stacked")} disabled={block.kind === "scatter"} onChange={(event) => patch({ stacked: event.target.checked })} />
+        <Field label={t("analysis.builderYColumns")}><ColumnChecklist columns={numericColumns(columns)} selected={configStrings(config, "yColumns")} onChange={(yColumns) => patch({ yColumns })} /></Field>
+        <CheckboxField label={t("analysis.builderStackSeries")} checked={configBoolean(config, "stacked")} disabled={block.kind === "scatter"} onChange={(event) => patch({ stacked: event.target.checked })} />
         <FormatEditor format={format} onChange={(next) => patch({ format: next })} />
       </div>
     );
   }
-  if (block.kind === "table") return <div className="tw:grid tw:gap-3"><Field label="Visible columns"><ColumnChecklist columns={columns} selected={configStrings(config, "columns")} onChange={(selected) => patch({ columns: selected })} /></Field><Field label="Rows per page"><TextInput type="number" min={10} max={500} value={configNumber(config, "pageSize", 50)} onChange={(event) => patch({ pageSize: event.target.valueAsNumber })} /></Field></div>;
-  if (block.kind === "funnel") return <div className="tw:grid tw:gap-3"><FormGrid><Field label="Stage column"><SelectInput value={configString(config, "stageColumn")} onChange={(event) => patch({ stageColumn: event.target.value })}>{columns.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field><Field label="Value column"><SelectInput value={configString(config, "valueColumn")} onChange={(event) => patch({ valueColumn: event.target.value })}>{numericColumns(columns).map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field><Field label="Rate column"><SelectInput value={configNullableString(config, "rateColumn") ?? ""} onChange={(event) => patch({ rateColumn: event.target.value || null })}><option value="">None</option>{numericColumns(columns).map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field></FormGrid><FormatEditor format={format} onChange={(next) => patch({ format: next })} /></div>;
-  if (block.kind === "retention_cohort") return <div className="tw:grid tw:gap-3"><FormGrid><Field label="Cohort column"><SelectInput value={configString(config, "cohortColumn")} onChange={(event) => patch({ cohortColumn: event.target.value })}>{columns.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field><Field label="Period column"><SelectInput value={configString(config, "periodColumn")} onChange={(event) => patch({ periodColumn: event.target.value })}>{columns.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field><Field label="Value column"><SelectInput value={configString(config, "valueColumn")} onChange={(event) => patch({ valueColumn: event.target.value })}>{numericColumns(columns).map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field></FormGrid><FormatEditor format={format} onChange={(next) => patch({ format: next })} /></div>;
-  if (block.kind === "heatmap") return <div className="tw:grid tw:gap-3"><FormGrid><Field label="X column"><SelectInput value={configString(config, "xColumn")} onChange={(event) => patch({ xColumn: event.target.value })}>{columns.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field><Field label="Y column"><SelectInput value={configString(config, "yColumn")} onChange={(event) => patch({ yColumn: event.target.value })}>{columns.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field><Field label="Value column"><SelectInput value={configString(config, "valueColumn")} onChange={(event) => patch({ valueColumn: event.target.value })}>{numericColumns(columns).map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field></FormGrid><FormatEditor format={format} onChange={(next) => patch({ format: next })} /></div>;
+  if (block.kind === "table") return <div className="tw:grid tw:gap-3"><Field label={t("analysis.builderVisibleColumns")}><ColumnChecklist columns={columns} selected={configStrings(config, "columns")} onChange={(selected) => patch({ columns: selected })} /></Field><Field label={t("analysis.builderRowsPerPage")}><TextInput type="number" min={10} max={500} value={configNumber(config, "pageSize", 50)} onChange={(event) => patch({ pageSize: event.target.valueAsNumber })} /></Field></div>;
+  if (block.kind === "funnel") return <div className="tw:grid tw:gap-3"><FormGrid><Field label={t("analysis.builderStageColumn")}><SelectInput value={configString(config, "stageColumn")} onChange={(event) => patch({ stageColumn: event.target.value })}>{columns.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field><Field label={t("analysis.builderValueColumn")}><SelectInput value={configString(config, "valueColumn")} onChange={(event) => patch({ valueColumn: event.target.value })}>{numericColumns(columns).map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field><Field label={t("analysis.builderRateColumn")}><SelectInput value={configNullableString(config, "rateColumn") ?? ""} onChange={(event) => patch({ rateColumn: event.target.value || null })}><option value="">{t("analysis.none")}</option>{numericColumns(columns).map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field></FormGrid><FormatEditor format={format} onChange={(next) => patch({ format: next })} /></div>;
+  if (block.kind === "retention_cohort") return <div className="tw:grid tw:gap-3"><FormGrid><Field label={t("analysis.builderCohortColumn")}><SelectInput value={configString(config, "cohortColumn")} onChange={(event) => patch({ cohortColumn: event.target.value })}>{columns.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field><Field label={t("analysis.builderPeriodColumn")}><SelectInput value={configString(config, "periodColumn")} onChange={(event) => patch({ periodColumn: event.target.value })}>{columns.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field><Field label={t("analysis.builderValueColumn")}><SelectInput value={configString(config, "valueColumn")} onChange={(event) => patch({ valueColumn: event.target.value })}>{numericColumns(columns).map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field></FormGrid><FormatEditor format={format} onChange={(next) => patch({ format: next })} /></div>;
+  if (block.kind === "heatmap") return <div className="tw:grid tw:gap-3"><FormGrid><Field label={t("analysis.builderXColumn")}><SelectInput value={configString(config, "xColumn")} onChange={(event) => patch({ xColumn: event.target.value })}>{columns.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field><Field label={t("analysis.builderYColumn")}><SelectInput value={configString(config, "yColumn")} onChange={(event) => patch({ yColumn: event.target.value })}>{columns.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field><Field label={t("analysis.builderValueColumn")}><SelectInput value={configString(config, "valueColumn")} onChange={(event) => patch({ valueColumn: event.target.value })}>{numericColumns(columns).map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field></FormGrid><FormatEditor format={format} onChange={(next) => patch({ format: next })} /></div>;
   const required = block.kind === "date_range_control" ? 2 : 1;
   const selected = configStrings(config, "parameterIds");
-  return <Field label={`Parameters · select ${required}`}><ColumnChecklist columns={definition.parameters.map((parameter) => ({ ...defaultColumn(parameter.id), name: parameter.id }))} selected={selected} onChange={(parameterIds) => patch({ parameterIds: parameterIds.slice(0, required) })} /></Field>;
+  return <Field label={t("analysis.builderSelectParameters", { count: required })}><ColumnChecklist columns={definition.parameters.map((parameter) => ({ ...defaultColumn(parameter.id), name: parameter.id }))} selected={selected} onChange={(parameterIds) => patch({ parameterIds: parameterIds.slice(0, required) })} /></Field>;
 }
 
 export function AnalysisLayoutEditor({
@@ -1150,6 +1158,7 @@ export function AnalysisLayoutEditor({
   definition: AnalysisArticleDefinition;
   onChange: (definition: AnalysisArticleDefinition) => void;
 }) {
+  const { t } = useI18n();
   const [newBlockKind, setNewBlockKind] = useState<AnalysisBlockKind>("metric");
   const nodes = useMemo(() => availableNodes(definition), [definition.queries, definition.transforms]);
   const addMetric = () => {
@@ -1162,38 +1171,38 @@ export function AnalysisLayoutEditor({
   };
   return (
     <div className="tw:grid tw:gap-7">
-      <Section title="Semantic metrics" description="Metrics give stable identity, unit, direction, and formatting to numeric measures used by blocks and Signals." action={<Button size="compact" disabled={!defaultMetric(definition)} onClick={addMetric}><Icon name="plus" /> Add metric</Button>}>
-        {definition.metrics.length === 0 ? <EmptyBuilder>No numeric measure is registered as a reusable metric.</EmptyBuilder> : <div className="tw:grid tw:gap-3">{definition.metrics.map((metric, index) => {
+      <Section title={t("analysis.builderSemanticMetrics")} description={t("analysis.builderSemanticMetricsBody")} action={<Button size="compact" disabled={!defaultMetric(definition)} onClick={addMetric}><Icon name="plus" /> {t("analysis.builderAddMetric")}</Button>}>
+        {definition.metrics.length === 0 ? <EmptyBuilder>{t("analysis.builderMetricsEmpty")}</EmptyBuilder> : <div className="tw:grid tw:gap-3">{definition.metrics.map((metric, index) => {
           const columns = numericColumns(nodeColumns(definition, metric.sourceNodeId));
-          return <BuilderCard key={`${index}:${metric.id}`} title={metric.label || metric.id} metadata={`${metric.id} · ${metric.sourceNodeId}.${metric.valueColumn}`} index={index} count={definition.metrics.length} removeDisabled={metricReferenced(definition, metric.id)} removeDisabledReason="Remove metric blocks that use this metric first." onMove={(direction) => onChange({ ...definition, metrics: move(definition.metrics, index, direction) })} onRemove={() => onChange({ ...definition, metrics: removeAt(definition.metrics, index) })}>
+          return <BuilderCard key={`${index}:${metric.id}`} title={metric.label || metric.id} metadata={`${metric.id} · ${metric.sourceNodeId}.${metric.valueColumn}`} index={index} count={definition.metrics.length} removeDisabled={metricReferenced(definition, metric.id)} removeDisabledReason={t("analysis.builderMetricRemoveBlocked")} onMove={(direction) => onChange({ ...definition, metrics: move(definition.metrics, index, direction) })} onRemove={() => onChange({ ...definition, metrics: removeAt(definition.metrics, index) })}>
             <FormGrid>
-              <Field label="Metric ID" validation={!IDENTIFIER.test(metric.id) ? { tone: "danger", message: "Invalid metric ID." } : undefined}><TextInput value={metric.id} onChange={(event) => onChange(renameMetric(definition, metric.id, event.target.value))} /></Field>
-              <Field label="Label"><TextInput value={metric.label} onChange={(event) => onChange({ ...definition, metrics: replaceAt(definition.metrics, index, { ...metric, label: event.target.value }) })} /></Field>
-              <Field label="Source node"><SelectInput value={metric.sourceNodeId} onChange={(event) => {
+              <Field label={t("analysis.builderMetricId")} validation={!IDENTIFIER.test(metric.id) ? { tone: "danger", message: t("analysis.builderInvalidMetricId") } : undefined}><TextInput value={metric.id} onChange={(event) => onChange(renameMetric(definition, metric.id, event.target.value))} /></Field>
+              <Field label={t("analysis.builderLabel")}><TextInput value={metric.label} onChange={(event) => onChange({ ...definition, metrics: replaceAt(definition.metrics, index, { ...metric, label: event.target.value }) })} /></Field>
+              <Field label={t("analysis.builderSourceNode")}><SelectInput value={metric.sourceNodeId} onChange={(event) => {
                 const sourceNodeId = event.target.value;
                 const valueColumn = numericColumns(nodeColumns(definition, sourceNodeId))[0]?.name ?? "";
                 onChange({ ...definition, metrics: replaceAt(definition.metrics, index, { ...metric, sourceNodeId, valueColumn }) });
               }}>{nodes.filter((node) => numericColumns(node.columns).length).map((node) => <option value={node.id} key={node.id}>{node.title} · {node.id}</option>)}</SelectInput></Field>
-              <Field label="Value column"><SelectInput value={metric.valueColumn} onChange={(event) => onChange({ ...definition, metrics: replaceAt(definition.metrics, index, { ...metric, valueColumn: event.target.value }) })}>{columns.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
-              <Field label="Unit"><TextInput value={metric.unit} onChange={(event) => onChange({ ...definition, metrics: replaceAt(definition.metrics, index, { ...metric, unit: event.target.value }) })} /></Field>
-              <Field label="Goal direction"><SelectInput value={metric.lowerIsBetter === null ? "neutral" : metric.lowerIsBetter ? "lower" : "higher"} onChange={(event) => onChange({ ...definition, metrics: replaceAt(definition.metrics, index, { ...metric, lowerIsBetter: event.target.value === "neutral" ? null : event.target.value === "lower" }) })}><option value="neutral">Neutral</option><option value="higher">Higher is better</option><option value="lower">Lower is better</option></SelectInput></Field>
+              <Field label={t("analysis.builderValueColumn")}><SelectInput value={metric.valueColumn} onChange={(event) => onChange({ ...definition, metrics: replaceAt(definition.metrics, index, { ...metric, valueColumn: event.target.value }) })}>{columns.map((column) => <option value={column.name} key={column.name}>{column.name}</option>)}</SelectInput></Field>
+              <Field label={t("analysis.builderUnit")}><TextInput value={metric.unit} onChange={(event) => onChange({ ...definition, metrics: replaceAt(definition.metrics, index, { ...metric, unit: event.target.value }) })} /></Field>
+              <Field label={t("analysis.builderGoalDirection")}><SelectInput value={metric.lowerIsBetter === null ? "neutral" : metric.lowerIsBetter ? "lower" : "higher"} onChange={(event) => onChange({ ...definition, metrics: replaceAt(definition.metrics, index, { ...metric, lowerIsBetter: event.target.value === "neutral" ? null : event.target.value === "lower" }) })}><option value="neutral">{t("analysis.builderNeutral")}</option><option value="higher">{t("analysis.builderHigherBetter")}</option><option value="lower">{t("analysis.builderLowerBetter")}</option></SelectInput></Field>
             </FormGrid>
-            <Field label="Description"><TextAreaInput value={metric.description} onChange={(event) => onChange({ ...definition, metrics: replaceAt(definition.metrics, index, { ...metric, description: event.target.value }) })} /></Field>
+            <Field label={t("analysis.publicationDescription")}><TextAreaInput value={metric.description} onChange={(event) => onChange({ ...definition, metrics: replaceAt(definition.metrics, index, { ...metric, description: event.target.value }) })} /></Field>
             <FormatEditor format={metric.format} onChange={(format) => onChange({ ...definition, metrics: replaceAt(definition.metrics, index, { ...metric, format }) })} />
           </BuilderCard>;
         })}</div>}
       </Section>
 
-      <Section title="Article blocks" description="Compose narrative, metrics, charts, tables, funnels, retention, and bounded controls. Width is a responsive 12-column span." action={<div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2"><SelectInput density="compact" value={newBlockKind} onChange={(event) => setNewBlockKind(event.target.value as AnalysisBlockKind)}>{analysisBlockKinds.map((kind) => <option value={kind} key={kind}>{humanize(kind)}</option>)}</SelectInput><Button size="compact" disabled={!defaultBlock(definition, newBlockKind)} onClick={addBlock}><Icon name="plus" /> Add block</Button></div>}>
-        <div className="tw:grid tw:grid-cols-12 tw:gap-2 tw:rounded-md tw:border tw:border-dashed tw:border-border-subtle tw:bg-muted/30 tw:p-3" aria-label="Article layout preview">
+      <Section title={t("analysis.builderArticleBlocks")} description={t("analysis.builderArticleBlocksBody")} action={<div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2"><SelectInput density="compact" value={newBlockKind} onChange={(event) => setNewBlockKind(event.target.value as AnalysisBlockKind)}>{analysisBlockKinds.map((kind) => <option value={kind} key={kind}>{humanize(kind)}</option>)}</SelectInput><Button size="compact" disabled={!defaultBlock(definition, newBlockKind)} onClick={addBlock}><Icon name="plus" /> {t("analysis.builderAddBlock")}</Button></div>}>
+        <div className="tw:grid tw:grid-cols-12 tw:gap-2 tw:rounded-md tw:border tw:border-dashed tw:border-border-subtle tw:bg-muted/30 tw:p-3" aria-label={t("analysis.builderLayoutPreview")}>
           {definition.blocks.map((block) => <div className="tw:min-w-0 tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:px-2 tw:py-3" style={{ gridColumn: `span ${Math.max(1, Math.min(12, block.width))}` }} key={block.id}><strong className="tw:block tw:truncate tw:text-xs">{block.title || humanize(block.kind)}</strong><small className="tw:block tw:truncate tw:font-mono tw:text-2xs tw:text-muted-foreground">{humanize(block.kind)} · {block.width}/12</small></div>)}
         </div>
-        <div className="tw:grid tw:gap-3">{definition.blocks.map((block, index) => <BuilderCard key={`${index}:${block.id}`} title={block.title || humanize(block.kind)} metadata={`${block.id} · ${humanize(block.kind)} · ${block.width}/12`} index={index} count={definition.blocks.length} removeDisabled={definition.blocks.length === 1 || blockReferenced(definition, block.id)} removeDisabledReason={definition.blocks.length === 1 ? "An Article requires at least one block." : "Remove evidence claims that reference this block first."} onMove={(direction) => onChange({ ...definition, blocks: move(definition.blocks, index, direction) })} onRemove={() => onChange({ ...definition, blocks: removeAt(definition.blocks, index) })}>
+        <div className="tw:grid tw:gap-3">{definition.blocks.map((block, index) => <BuilderCard key={`${index}:${block.id}`} title={block.title || humanize(block.kind)} metadata={`${block.id} · ${humanize(block.kind)} · ${block.width}/12`} index={index} count={definition.blocks.length} removeDisabled={definition.blocks.length === 1 || blockReferenced(definition, block.id)} removeDisabledReason={definition.blocks.length === 1 ? t("analysis.builderBlockRequired") : t("analysis.builderBlockRemoveBlocked")} onMove={(direction) => onChange({ ...definition, blocks: move(definition.blocks, index, direction) })} onRemove={() => onChange({ ...definition, blocks: removeAt(definition.blocks, index) })}>
           <FormGrid>
-            <Field label="Block ID" validation={!IDENTIFIER.test(block.id) ? { tone: "danger", message: "Invalid block ID." } : undefined}><TextInput value={block.id} onChange={(event) => onChange(renameBlock(definition, block.id, event.target.value))} /></Field>
-            <Field label="Title"><TextInput value={block.title} onChange={(event) => onChange({ ...definition, blocks: replaceAt(definition.blocks, index, { ...block, title: event.target.value }) })} /></Field>
-            <Field label="Width"><TextInput type="number" min={1} max={12} value={block.width} onChange={(event) => onChange({ ...definition, blocks: replaceAt(definition.blocks, index, { ...block, width: event.target.valueAsNumber }) })} /></Field>
-            {blockNeedsSource(block.kind) && block.kind !== "metric" ? <Field label="Source node"><SelectInput value={block.sourceNodeId ?? ""} onChange={(event) => {
+            <Field label={t("analysis.builderBlockId")} validation={!IDENTIFIER.test(block.id) ? { tone: "danger", message: t("analysis.builderInvalidBlockId") } : undefined}><TextInput value={block.id} onChange={(event) => onChange(renameBlock(definition, block.id, event.target.value))} /></Field>
+            <Field label={t("analysis.fieldTitle")}><TextInput value={block.title} onChange={(event) => onChange({ ...definition, blocks: replaceAt(definition.blocks, index, { ...block, title: event.target.value }) })} /></Field>
+            <Field label={t("analysis.builderWidth")}><TextInput type="number" min={1} max={12} value={block.width} onChange={(event) => onChange({ ...definition, blocks: replaceAt(definition.blocks, index, { ...block, width: event.target.valueAsNumber }) })} /></Field>
+            {blockNeedsSource(block.kind) && block.kind !== "metric" ? <Field label={t("analysis.builderSourceNode")}><SelectInput value={block.sourceNodeId ?? ""} onChange={(event) => {
               const sourceNodeId = event.target.value;
               const base = defaultBlock(
                 { ...definition, blocks: definition.blocks.filter((candidate) => candidate.id !== block.id) },
@@ -1213,6 +1222,7 @@ export function AnalysisLayoutEditor({
 }
 
 function EvidenceEditor({ definition, onChange }: { definition: AnalysisArticleDefinition; onChange: (definition: AnalysisArticleDefinition) => void }) {
+  const { t } = useI18n();
   const nodes = availableNodes(definition);
   const addClaim = () => {
     const id = uniqueIdentifier("claim", "claim", definition.claims.map((claim) => claim.id));
@@ -1222,9 +1232,9 @@ function EvidenceEditor({ definition, onChange }: { definition: AnalysisArticleD
     onChange({ ...definition, claims: [...definition.claims, { id, text: "Evidence-backed observation", blockIds: blockId ? [blockId] : [], nodeIds: nodeId ? [nodeId] : [] }] });
   };
   return (
-    <Section title="Review evidence" description="Claims point to exact nodes and blocks. Warnings stay visible through review instead of being hidden in prose." action={<Button size="compact" disabled={!definition.blocks.length && !nodes.length} onClick={addClaim}><Icon name="plus" /> Add claim</Button>}>
+    <Section title={t("analysis.builderReviewEvidence")} description={t("analysis.builderReviewEvidenceBody")} action={<Button size="compact" disabled={!definition.blocks.length && !nodes.length} onClick={addClaim}><Icon name="plus" /> {t("analysis.builderAddClaim")}</Button>}>
       {definition.claims.length === 0 ? (
-        <EmptyBuilder>No explicit evidence claim has been added.</EmptyBuilder>
+        <EmptyBuilder>{t("analysis.builderClaimsEmpty")}</EmptyBuilder>
       ) : (
         <div className="tw:grid tw:gap-3">
           {definition.claims.map((claim, index) => (
@@ -1237,19 +1247,19 @@ function EvidenceEditor({ definition, onChange }: { definition: AnalysisArticleD
               onMove={(direction) => onChange({ ...definition, claims: move(definition.claims, index, direction) })}
               onRemove={() => onChange({ ...definition, claims: removeAt(definition.claims, index) })}
             >
-              <Field label="Claim ID">
+              <Field label={t("analysis.builderClaimId")}>
                 <TextInput value={claim.id} onChange={(event) => onChange({
                   ...definition,
                   claims: replaceAt(definition.claims, index, { ...claim, id: event.target.value }),
                 })} />
               </Field>
-              <Field label="Claim">
+              <Field label={t("analysis.builderClaim")}>
                 <TextAreaInput value={claim.text} onChange={(event) => onChange({
                   ...definition,
                   claims: replaceAt(definition.claims, index, { ...claim, text: event.target.value }),
                 })} />
               </Field>
-              <Field label="Evidence blocks">
+              <Field label={t("analysis.builderEvidenceBlocks")}>
                 <div className="tw:flex tw:flex-wrap tw:gap-x-4 tw:gap-y-2">
                   {definition.blocks.map((block) => (
                     <CheckboxField
@@ -1269,7 +1279,7 @@ function EvidenceEditor({ definition, onChange }: { definition: AnalysisArticleD
                   ))}
                 </div>
               </Field>
-              <Field label="Evidence nodes">
+              <Field label={t("analysis.builderEvidenceNodes")}>
                 <div className="tw:flex tw:flex-wrap tw:gap-x-4 tw:gap-y-2">
                   {nodes.map((node) => (
                     <CheckboxField
@@ -1294,8 +1304,8 @@ function EvidenceEditor({ definition, onChange }: { definition: AnalysisArticleD
         </div>
       )}
       <div className="tw:grid tw:gap-2">
-        <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2"><strong className="tw:text-xs">Review warnings</strong><Button size="compact" onClick={() => onChange({ ...definition, warnings: [...definition.warnings, "Review required"] })}><Icon name="plus" /> Add warning</Button></div>
-        {definition.warnings.map((warning, index) => <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:gap-2" key={index}><TextInput value={warning} onChange={(event) => onChange({ ...definition, warnings: replaceAt(definition.warnings, index, event.target.value) })} /><Button iconOnly variant="dangerGhost" aria-label="Remove warning" onClick={() => onChange({ ...definition, warnings: removeAt(definition.warnings, index) })}><Icon name="trash" /></Button></div>)}
+        <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2"><strong className="tw:text-xs">{t("analysis.builderReviewWarnings")}</strong><Button size="compact" onClick={() => onChange({ ...definition, warnings: [...definition.warnings, t("analysis.builderReviewRequired")] })}><Icon name="plus" /> {t("analysis.builderAddWarning")}</Button></div>
+        {definition.warnings.map((warning, index) => <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:gap-2" key={index}><TextInput value={warning} onChange={(event) => onChange({ ...definition, warnings: replaceAt(definition.warnings, index, event.target.value) })} /><Button iconOnly variant="dangerGhost" aria-label={t("analysis.builderRemoveWarning")} onClick={() => onChange({ ...definition, warnings: removeAt(definition.warnings, index) })}><Icon name="trash" /></Button></div>)}
       </div>
     </Section>
   );

@@ -58,7 +58,11 @@ export default function Knowledge({
   onNewConnection,
 }: {
   environmentFocus?: KnowledgeEnvironmentFocus | null;
-  onOpenAgent?: (connectionId: string) => void;
+  onOpenAgent?: (
+    connectionId: string,
+    environmentId?: string,
+    prompt?: string,
+  ) => void;
   onNewConnection?: () => void;
 }) {
   const queryClient = useQueryClient();

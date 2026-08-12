@@ -10,6 +10,7 @@ import {
   SelectInput,
   TextInput,
 } from "../../design-system/components/FormControls";
+import { useI18n } from "../../lib/i18n";
 import type {
   AnalysisArticleDefinition,
   AnalysisBlock,
@@ -29,18 +30,6 @@ const PAD_BOTTOM = 48;
 const PLOT_WIDTH = VIEW_WIDTH - PAD_LEFT - PAD_RIGHT;
 const PLOT_HEIGHT = VIEW_HEIGHT - PAD_TOP - PAD_BOTTOM;
 const MAX_CHART_ROWS = 160;
-
-const richTextLabels = {
-  copied: "Copied",
-  copyCode: "Copy code",
-  diagram: "Diagram",
-  diagramError: "Could not render diagram",
-  diagramLoading: "Rendering diagram",
-  diagramSource: "Diagram source",
-  imageOmitted: "Remote image omitted",
-  openLink: "Open link",
-  plainTextFallback: "Shown as plain text because this content is too large",
-};
 
 type ArticleParameterValues = Record<string, AnalysisParameterValue>;
 
@@ -403,6 +392,7 @@ function MetricBlock({ block, data, metric }: {
 }
 
 function TableBlock({ block, data }: { block: AnalysisBlock; data: AnalysisBlockData }) {
+  const { t } = useI18n();
   const requestedPageSize = configNumber(block, "pageSize") ?? 50;
   const pageSize = Math.max(10, Math.min(500, Math.trunc(requestedPageSize)));
   const [page, setPage] = useState(0);
@@ -441,11 +431,11 @@ function TableBlock({ block, data }: { block: AnalysisBlock; data: AnalysisBlock
       </div>
       {pageCount > 1 ? (
         <div className="tw:flex tw:items-center tw:justify-end tw:gap-2 tw:text-xs tw:text-muted-foreground">
-          <Button iconOnly size="xs" variant="ghost" disabled={safePage === 0} title="Previous page" onClick={() => setPage((value) => Math.max(0, value - 1))}>
+          <Button iconOnly size="xs" variant="ghost" disabled={safePage === 0} title={t("analysis.tablePrevious")} onClick={() => setPage((value) => Math.max(0, value - 1))}>
             <Icon name="chevronRight" className="tw:rotate-180" />
           </Button>
           <span className="tw:font-mono tw:tabular-nums">{safePage + 1} / {pageCount}</span>
-          <Button iconOnly size="xs" variant="ghost" disabled={safePage + 1 >= pageCount} title="Next page" onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))}>
+          <Button iconOnly size="xs" variant="ghost" disabled={safePage + 1 >= pageCount} title={t("analysis.tableNext")} onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))}>
             <Icon name="chevronRight" />
           </Button>
         </div>
@@ -536,6 +526,7 @@ function ParameterField({ parameter, value, onChange }: {
   value: AnalysisParameterValue;
   onChange: (value: AnalysisParameterValue) => void;
 }) {
+  const { t } = useI18n();
   if (parameter.type === "boolean") {
     return (
       <CheckboxField
@@ -549,7 +540,7 @@ function ParameterField({ parameter, value, onChange }: {
     return (
       <Field label={parameter.label}>
         <SelectInput density="compact" value={typeof value === "string" ? value : ""} onChange={(event) => onChange(event.target.value)}>
-          {!parameter.required ? <option value="">Any</option> : null}
+          {!parameter.required ? <option value="">{t("analysis.parameterAny")}</option> : null}
           {parameter.options.map((option) => <option key={option}>{option}</option>)}
         </SelectInput>
       </Field>
@@ -602,10 +593,11 @@ function DataBlock({ block, data, definition }: {
   data: AnalysisBlockData | undefined;
   definition: AnalysisArticleDefinition;
 }) {
+  const { t } = useI18n();
   if (!data) {
     return (
       <div className="tw:flex tw:min-h-28 tw:items-center tw:justify-center tw:text-sm tw:text-muted-foreground">
-        Run this revision to load current data.
+        {t("analysis.visualizationRunFirst")}
       </div>
     );
   }
@@ -625,7 +617,10 @@ function DataBlock({ block, data, definition }: {
   return null;
 }
 
-function narrativeBlock(block: AnalysisBlock): ReactNode {
+function narrativeBlock(
+  block: AnalysisBlock,
+  richTextLabels: Parameters<typeof AgentRichText>[0]["labels"],
+): ReactNode {
   if (block.kind === "heading") {
     const text = configString(block, "text") ?? block.title;
     const level = configNumber(block, "level") ?? 2;
@@ -674,11 +669,23 @@ export function AnalysisArticleVisualization({
   parameterValues: ArticleParameterValues;
   onParameterChange: (id: string, value: AnalysisParameterValue) => void;
 }) {
+  const { t } = useI18n();
+  const richTextLabels = {
+    copied: t("agent.acpCopied"),
+    copyCode: t("agent.acpCopyCode"),
+    diagram: t("agent.acpDiagram"),
+    diagramError: t("agent.acpDiagramError"),
+    diagramLoading: t("agent.acpDiagramLoading"),
+    diagramSource: t("agent.acpDiagramSource"),
+    imageOmitted: t("agent.acpImageOmitted"),
+    openLink: t("agent.acpOpenLink"),
+    plainTextFallback: t("agent.acpPlainTextFallback"),
+  };
   const blocks = useMemo(() => definition.blocks, [definition.blocks]);
   return (
     <div className="tw:grid tw:grid-cols-12 tw:items-start tw:gap-3">
       {blocks.map((block) => {
-        const narrative = narrativeBlock(block);
+        const narrative = narrativeBlock(block, richTextLabels);
         const control = ["date_range_control", "comparison_control", "segment_control"].includes(block.kind);
         return (
           <section
@@ -701,7 +708,7 @@ export function AnalysisArticleVisualization({
               <DataBlock block={block} data={data.get(block.id)} definition={definition} />
             )}
             {data.get(block.id)?.truncated ? (
-              <span className="tw:text-2xs tw:text-warning">Result is truncated at this block's declared safety limit.</span>
+              <span className="tw:text-2xs tw:text-warning">{t("analysis.resultTruncated")}</span>
             ) : null}
           </section>
         );

@@ -20,7 +20,6 @@ import {
 } from "../../features/analysisArticles/domain";
 import {
   cancelAnalysisArticleRun,
-  createAnalysisArticle,
   deleteAnalysisArticle,
   getAnalysisArticleResult,
   getLocalAnalysisArticleResult,
@@ -63,17 +62,10 @@ import {
   WorkbenchToolbar,
 } from "../../design-system/components/Workbench";
 import { errMessage } from "../../ipc/types";
+import { useI18n } from "../../lib/i18n";
 
 type DetailTab = "article" | "definition" | "lineage" | "signals" | "sharing" | "history";
-
-const detailTabs = [
-  { id: "article", label: "Article" },
-  { id: "definition", label: "Definition" },
-  { id: "lineage", label: "Lineage" },
-  { id: "signals", label: "Signals" },
-  { id: "sharing", label: "Sharing" },
-  { id: "history", label: "History" },
-] as const;
+type Translate = ReturnType<typeof useI18n>["t"];
 
 function stateTone(state: AnalysisArticleState): StatusTone {
   if (state === "live") return "success";
@@ -87,12 +79,12 @@ function runTone(state: string): StatusTone {
   return "warning";
 }
 
-function relativeTime(value: string | null): string {
-  if (!value) return "Never";
+function relativeTime(value: string | null, locale: string, never: string): string {
+  if (!value) return never;
   const time = Date.parse(value);
   if (!Number.isFinite(time)) return value;
   const seconds = Math.round((time - Date.now()) / 1_000);
-  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
   if (Math.abs(seconds) < 60) return formatter.format(seconds, "second");
   const minutes = Math.round(seconds / 60);
   if (Math.abs(minutes) < 60) return formatter.format(minutes, "minute");
@@ -107,11 +99,33 @@ function byteSize(value: number): string {
   return `${(value / 1_048_576).toFixed(1)} MiB`;
 }
 
-function sourceLabel(article: AnalysisArticleRecord): string {
+function sourceLabel(article: AnalysisArticleRecord, t: Translate): string {
   if (article.definition.source === "dopedb.acp.claude") return "Claude";
   if (article.definition.source === "dopedb.acp.codex") return "Codex";
-  if (article.definition.source === "migration") return "Migrated";
-  return "Human";
+  if (article.definition.source === "migration") return t("analysis.sourceMigrated");
+  return t("analysis.sourceHuman");
+}
+
+function stateLabel(state: AnalysisArticleState, t: Translate): string {
+  if (state === "draft") return t("analysis.stateDraft");
+  if (state === "review") return t("analysis.stateReview");
+  if (state === "live") return t("analysis.stateLive");
+  return t("analysis.stateArchived");
+}
+
+function freshnessLabel(value: ReturnType<typeof articleFreshness>, t: Translate): string {
+  if (value === "fresh") return t("analysis.freshnessFresh");
+  if (value === "never_run") return t("analysis.freshnessNeverRun");
+  if (value === "running") return t("analysis.freshnessRunning");
+  if (value === "failed") return t("analysis.freshnessFailed");
+  return t("analysis.freshnessStale");
+}
+
+function collectionErrorMessage(error: unknown, t: Translate): string {
+  const message = errMessage(error);
+  return /returned invalid JSON|expected value at line 1 column 1|404 Not Found|API is unavailable|incompatible response/.test(message)
+    ? t("analysis.loadFailedBody")
+    : message;
 }
 
 function defaultParameters(article: AnalysisArticleRecord): Record<string, AnalysisParameterValue> {
@@ -134,10 +148,19 @@ export default function AnalysisArticles({
   bindings: readonly EnvironmentConnection[];
   sharedWorkspace: boolean;
   focusId?: string | null;
-  onOpenAgent?: (connectionId: string) => void;
+  onOpenAgent?: (connectionId: string, environmentId?: string, prompt?: string) => void;
   onNewConnection?: () => void;
 }) {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
+  const detailTabs = useMemo(() => [
+    { id: "article", label: t("analysis.tabArticle") },
+    { id: "definition", label: t("analysis.tabDefinition") },
+    { id: "lineage", label: t("analysis.tabLineage") },
+    { id: "signals", label: t("analysis.tabSignals") },
+    { id: "sharing", label: t("analysis.tabSharing") },
+    { id: "history", label: t("analysis.tabHistory") },
+  ] as const, [t]);
   const articleKey = ["analysis-articles", environment.id] as const;
   const articles = useQuery({
     queryKey: articleKey,
@@ -161,7 +184,7 @@ export default function AnalysisArticles({
   const [tab, setTab] = useState<DetailTab>("article");
   const [filter, setFilter] = useState("");
   const [stateFilter, setStateFilter] = useState<"all" | AnalysisArticleState>("all");
-  const [editorArticle, setEditorArticle] = useState<AnalysisArticleRecord | "new" | null>(null);
+  const [editorArticle, setEditorArticle] = useState<AnalysisArticleRecord | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [parameterValues, setParameterValues] = useState<Record<string, AnalysisParameterValue>>({});
   const [localResults, setLocalResults] = useState(new Map<string, AnalysisDefinitionRunReceipt>());
@@ -294,9 +317,7 @@ export default function AnalysisArticles({
 
   const saveArticle = useMutation({
     mutationFn: (input: SharedAnalysisArticleCreate) =>
-      editorArticle === "new"
-        ? createAnalysisArticle(input)
-        : updateAnalysisArticle(input.id, (editorArticle as AnalysisArticleRecord).revision, input),
+      updateAnalysisArticle(input.id, editorArticle!.revision, input),
     onSuccess: async (article) => {
       setActionError(null);
       setEditorArticle(null);
@@ -388,27 +409,41 @@ export default function AnalysisArticles({
     execute.mutate({ article, runId });
   };
 
+  const agentBinding = bindings.find((binding) => binding.connectionId);
+  const askAgent = () => {
+    if (!agentBinding?.connectionId || !onOpenAgent) return;
+    onOpenAgent(
+      agentBinding.connectionId,
+      environment.id,
+      t("analysis.agentPrompt"),
+    );
+  };
+
   if (!sharedWorkspace) {
     return (
       <WorkbenchEmptyState icon="chart">
-        <strong>Analysis Articles live in a team workspace</strong>
-        <span>They share definitions, policy, review state, and encrypted result blocks without sharing long-lived credentials.</span>
+        <strong>{t("analysis.teamOnlyTitle")}</strong>
+        <span>{t("analysis.teamOnlyBody")}</span>
       </WorkbenchEmptyState>
     );
   }
 
   return (
     <div className="tw:flex tw:min-h-[calc(100dvh-90px)] tw:min-w-0 tw:flex-col tw:bg-background">
-      <WorkbenchToolbar label="Analysis Articles">
-        <WorkbenchButton onClick={() => setEditorArticle("new")}>
-          <Icon name="plus" />
-          New Article
-        </WorkbenchButton>
-        <WorkbenchDivider />
+      <WorkbenchToolbar label={t("analysis.title")}>
+        {agentBinding?.connectionId && onOpenAgent ? (
+          <>
+            <WorkbenchButton onClick={askAgent}>
+              <Icon name="terminal" />
+              {t("analysis.askAgent")}
+            </WorkbenchButton>
+            <WorkbenchDivider />
+          </>
+        ) : null}
         <WorkbenchButton
           iconOnly
-          title="Refresh Articles"
-          aria-label="Refresh Articles"
+          title={t("analysis.refresh")}
+          aria-label={t("analysis.refresh")}
           onClick={() => void articles.refetch()}
         >
           <Icon name="refresh" className={articles.isFetching ? "tw:animate-spin tw:motion-reduce:animate-none" : undefined} />
@@ -416,7 +451,9 @@ export default function AnalysisArticles({
         <span className="tw:ml-auto tw:flex tw:min-w-0 tw:items-center tw:gap-2 tw:text-xs tw:text-muted-foreground">
           <StatusDot tone={runnerState?.state === "failed" || runnerState?.state === "deferred" ? "warning" : "success"} />
           <span className="tw:truncate">
-            {runnerState?.state === "running" ? "Refreshing an Article" : `${runners.data?.filter((runner) => runner.online).length ?? 0} runner online`}
+            {runnerState?.state === "running"
+              ? t("analysis.runnerRefreshing")
+              : t("analysis.runnerOnline", { count: runners.data?.filter((runner) => runner.online).length ?? 0 })}
           </span>
         </span>
       </WorkbenchToolbar>
@@ -433,27 +470,32 @@ export default function AnalysisArticles({
             <TextInput
               density="compact"
               type="search"
-              placeholder="Filter Articles"
+              placeholder={t("analysis.filterPlaceholder")}
               value={filter}
               onChange={(event) => setFilter(event.target.value)}
             />
             <SelectInput density="compact" value={stateFilter} onChange={(event) => setStateFilter(event.target.value as typeof stateFilter)}>
-              <option value="all">All states</option>
-              <option value="draft">Draft</option>
-              <option value="review">In review</option>
-              <option value="live">Live</option>
-              <option value="archived">Archived</option>
+              <option value="all">{t("analysis.filterAll")}</option>
+              <option value="draft">{t("analysis.stateDraft")}</option>
+              <option value="review">{t("analysis.stateReview")}</option>
+              <option value="live">{t("analysis.stateLive")}</option>
+              <option value="archived">{t("analysis.stateArchived")}</option>
             </SelectInput>
           </div>
           <div className="scrollbar-sleek tw:min-h-0 tw:flex-1 tw:overflow-auto tw:p-1">
             {articles.isPending ? (
-              <div className="tw:p-3"><LoadingLabel>Loading Articles…</LoadingLabel></div>
+              <div className="tw:p-3"><LoadingLabel>{t("analysis.loading")}</LoadingLabel></div>
             ) : articles.error ? (
-              <div className="tw:p-2"><InlineNotice tone="danger" icon="alert">{errMessage(articles.error)}</InlineNotice></div>
+              <div className="tw:p-2">
+                <InlineNotice tone="danger" icon="alert">
+                  <strong>{t("analysis.loadFailedTitle")}</strong>
+                  <span>{collectionErrorMessage(articles.error, t)}</span>
+                </InlineNotice>
+              </div>
             ) : filtered.length === 0 ? (
               <div className="tw:grid tw:gap-2 tw:p-4 tw:text-sm tw:text-muted-foreground">
                 <Icon name="chart" />
-                <span>{articles.data?.length ? "No Article matches this filter." : "No Analysis Article yet."}</span>
+                <span>{articles.data?.length ? t("analysis.noMatch") : t("analysis.noArticles")}</span>
               </div>
             ) : filtered.map((article) => {
               const freshness = articleFreshness(article);
@@ -472,12 +514,12 @@ export default function AnalysisArticles({
                   <strong className="tw:min-w-0 tw:truncate tw:text-sm tw:font-medium">{article.definition.title}</strong>
                   <span className="tw:font-mono tw:text-2xs tw:text-muted-foreground">r{article.revision}</span>
                   <span className="tw:col-start-2 tw:min-w-0 tw:truncate tw:text-xs tw:text-muted-foreground">
-                    {article.definition.question || article.definition.summary || "No question supplied"}
+                    {article.definition.question || article.definition.summary || t("analysis.noQuestion")}
                   </span>
                   <span className="tw:col-start-2 tw:flex tw:min-w-0 tw:items-center tw:gap-1 tw:text-2xs tw:text-muted-foreground">
-                    <span>{article.state}</span>
+                    <span>{stateLabel(article.state, t)}</span>
                     <MetadataDot />
-                    <span>{freshness.replace(/_/g, " ")}</span>
+                    <span>{freshnessLabel(freshness, t)}</span>
                   </span>
                 </button>
               );
@@ -489,18 +531,20 @@ export default function AnalysisArticles({
           {!selected ? (
             <WorkbenchEmptyState icon="chart">
               <strong>{projectName} / {environment.name}</strong>
-              <span>Create a versioned Article or ask the Agent to propose one from verified reads.</span>
+              <span>{t("analysis.emptyBody")}</span>
+              <span className="tw:text-xs tw:text-muted-foreground">
+                {t("analysis.emptyFlow")}
+              </span>
               <span className="tw:flex tw:flex-wrap tw:items-center tw:justify-center tw:gap-2">
-                <Button variant="primary" onClick={() => setEditorArticle("new")}>
-                  <Icon name="plus" /> New Article
-                </Button>
-                {bindings[0]?.connectionId && onOpenAgent ? (
-                  <Button onClick={() => onOpenAgent(bindings[0]!.connectionId!)}>
-                    <Icon name="terminal" /> Ask Agent
+                {agentBinding?.connectionId && onOpenAgent ? (
+                  <Button variant="primary" onClick={askAgent}>
+                    <Icon name="terminal" /> {t("analysis.askAgent")}
                   </Button>
                 ) : null}
                 {bindings.length === 0 && onNewConnection ? (
-                  <Button onClick={onNewConnection}><Icon name="database" /> Connect database</Button>
+                  <Button variant="primary" onClick={onNewConnection}>
+                    <Icon name="database" /> {t("analysis.connectDatabase")}
+                  </Button>
                 ) : null}
               </span>
             </WorkbenchEmptyState>
@@ -517,7 +561,7 @@ export default function AnalysisArticles({
                 onTransition={(action) => transition.mutate({ article: selected, action })}
                 onDelete={() => remove.mutate(selected)}
               />
-              <PanelTabs tabs={detailTabs} active={tab} onChange={setTab} label="Analysis Article details" />
+              <PanelTabs tabs={detailTabs} active={tab} onChange={setTab} label={t("analysis.details")} />
               <div className="scrollbar-sleek tw:min-h-0 tw:flex-1 tw:overflow-auto tw:overscroll-contain">
                 {tab === "article" ? (
                   <ArticleView
@@ -568,7 +612,7 @@ export default function AnalysisArticles({
 
       {editorArticle ? (
         <AnalysisArticleEditor
-          article={editorArticle === "new" ? null : editorArticle}
+          article={editorArticle}
           environment={environment}
           bindings={bindings}
           runners={runners.data ?? []}
@@ -602,14 +646,15 @@ function ArticleHeader({
   onTransition: (action: "submitReview" | "returnDraft" | "publishLive" | "archive") => void;
   onDelete: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <header className="tw:grid tw:shrink-0 tw:gap-2 tw:border-b tw:border-border-subtle tw:bg-background tw:px-4 tw:py-3">
       <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-start tw:justify-between tw:gap-3">
         <div className="tw:grid tw:min-w-0 tw:gap-1">
           <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2">
             <h1 className="tw:m-0 tw:min-w-0 tw:truncate tw:text-title tw:font-semibold tw:tracking-tight">{article.definition.title}</h1>
-            <StatusBadge density="compact" tone={stateTone(article.state)}>{article.state}</StatusBadge>
-            <StatusBadge density="compact">{sourceLabel(article)}</StatusBadge>
+            <StatusBadge density="compact" tone={stateTone(article.state)}>{stateLabel(article.state, t)}</StatusBadge>
+            <StatusBadge density="compact">{sourceLabel(article, t)}</StatusBadge>
             <span className="tw:font-mono tw:text-2xs tw:text-muted-foreground">r{article.revision}</span>
           </div>
           {article.definition.question ? (
@@ -619,30 +664,30 @@ function ArticleHeader({
         <div className="ds-control-row tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-1">
           {running ? (
             <Button variant="danger" size="compact" onClick={onCancel}>
-              <Icon name="stop" /> Cancel
+              <Icon name="stop" /> {t("analysis.cancelRun")}
             </Button>
           ) : (
             <Button variant="primary" size="compact" disabled={busy} onClick={onRun}>
-              <Icon name="play" /> Run current data
+              <Icon name="play" /> {t("analysis.runCurrent")}
             </Button>
           )}
-          <Button size="compact" disabled={busy} onClick={onEdit}><Icon name="pencil" /> Edit</Button>
+          <Button size="compact" disabled={busy} onClick={onEdit}><Icon name="pencil" /> {t("analysis.edit")}</Button>
           {article.state === "draft" ? (
-            <Button size="compact" disabled={busy} onClick={() => onTransition("submitReview")}><Icon name="arrowRight" /> Submit review</Button>
+            <Button size="compact" disabled={busy} onClick={() => onTransition("submitReview")}><Icon name="arrowRight" /> {t("analysis.submitReview")}</Button>
           ) : null}
           {article.state === "review" ? (
             <>
-              <Button size="compact" disabled={busy} onClick={() => onTransition("returnDraft")}><Icon name="arrowLeft" /> Return draft</Button>
-              <Button size="compact" variant="primary" disabled={busy || !canPublish} title={canPublish ? "Publish this exact successful revision" : "Run this exact review successfully before publishing"} onClick={() => onTransition("publishLive")}><Icon name="check" /> Publish live</Button>
+              <Button size="compact" disabled={busy} onClick={() => onTransition("returnDraft")}><Icon name="arrowLeft" /> {t("analysis.returnDraft")}</Button>
+              <Button size="compact" variant="primary" disabled={busy || !canPublish} title={canPublish ? t("analysis.publishExactTitle") : t("analysis.publishNeedsRunTitle")} onClick={() => onTransition("publishLive")}><Icon name="check" /> {t("analysis.publishLive")}</Button>
             </>
           ) : null}
           {article.state === "live" ? (
-            <ConfirmButton size="compact" disabled={busy} confirmLabel="Archive this live Article?" onConfirm={() => onTransition("archive")}>
-              Archive
+            <ConfirmButton size="compact" disabled={busy} confirmLabel={t("analysis.archiveConfirm")} onConfirm={() => onTransition("archive")}>
+              {t("analysis.archive")}
             </ConfirmButton>
           ) : null}
           {article.state === "draft" || article.state === "archived" ? (
-            <ConfirmButton iconOnly size="xs" variant="ghost" label="Delete Article" disabled={busy} onConfirm={onDelete}>
+            <ConfirmButton iconOnly size="xs" variant="ghost" label={t("analysis.deleteLabel")} disabled={busy} onConfirm={onDelete}>
               <Icon name="trash" />
             </ConfirmButton>
           ) : null}
@@ -680,18 +725,24 @@ function ArticleView({
   selectedRunId: string | null;
   onSelectRun: (id: string | null) => void;
 }) {
+  const { lang, t } = useI18n();
+  const locale = lang === "ko" ? "ko-KR" : "en-US";
+  const freshness = articleFreshness(article);
   return (
     <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[1320px] tw:gap-4 tw:p-5 tw:@max-[760px]:p-3">
       <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2">
-        <StatusBadge density="compact" tone={articleFreshness(article) === "fresh" ? "success" : "warning"}>
-          {articleFreshness(article).replace(/_/g, " ")}
+        <StatusBadge density="compact" tone={freshness === "fresh" ? "success" : "warning"}>
+          {freshnessLabel(freshness, t)}
         </StatusBadge>
         <span className="tw:text-xs tw:text-muted-foreground">
-          Updated {relativeTime(article.updatedAt)} · {article.definition.timezone}
+          {t("analysis.updated", {
+            time: relativeTime(article.updatedAt, locale, t("analysis.never")),
+            timezone: article.definition.timezone,
+          })}
         </span>
         {runs.length ? (
           <label className="tw:ml-auto tw:inline-flex tw:items-center tw:gap-2 tw:text-xs tw:text-muted-foreground">
-            Result
+            {t("analysis.result")}
             <select
               className="tw:h-control-sm tw:max-w-[260px] tw:rounded-sm tw:border tw:border-input tw:bg-background tw:px-2 tw:text-xs tw:text-foreground"
               value={selectedRunId ?? ""}
@@ -707,9 +758,9 @@ function ArticleView({
       {article.definition.summary ? (
         <p className="tw:m-0 tw:max-w-[90ch] tw:text-sm tw:leading-relaxed tw:text-foreground">{article.definition.summary}</p>
       ) : null}
-      {loadingResult ? <LoadingLabel>Decrypting reviewed result blocks…</LoadingLabel> : null}
+      {loadingResult ? <LoadingLabel>{t("analysis.decrypting")}</LoadingLabel> : null}
       {resultError && runId ? (
-        <InlineNotice tone="warning" icon="alert">This run has no shared result blocks on this device. Run the current revision locally, or select its published live result.</InlineNotice>
+        <InlineNotice tone="warning" icon="alert">{t("analysis.sharedResultMissing")}</InlineNotice>
       ) : null}
       <AnalysisArticleVisualization
         definition={article.definition}
@@ -719,7 +770,7 @@ function ArticleView({
       />
       {article.definition.claims.length > 0 ? (
         <section className="tw:grid tw:gap-2 tw:border-t tw:border-border-subtle tw:pt-4">
-          <h2 className="tw:m-0 tw:text-sm tw:font-semibold">Evidence-backed claims</h2>
+          <h2 className="tw:m-0 tw:text-sm tw:font-semibold">{t("analysis.evidenceClaims")}</h2>
           <ol className="tw:m-0 tw:grid tw:gap-2 tw:pl-5 tw:text-sm tw:leading-body">
             {article.definition.claims.map((claim) => <li key={claim.id}>{claim.text}</li>)}
           </ol>
@@ -730,17 +781,18 @@ function ArticleView({
 }
 
 function DefinitionView({ article }: { article: AnalysisArticleRecord }) {
+  const { t } = useI18n();
   return (
     <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[1100px] tw:gap-5 tw:p-5 tw:@max-[760px]:p-3">
-      <DefinitionSection title="Parameters" count={article.definition.parameters.length}>
+      <DefinitionSection title={t("analysis.parameters")} count={article.definition.parameters.length}>
         {article.definition.parameters.map((parameter) => (
-          <DefinitionRow key={parameter.id} title={parameter.label} metadata={`${parameter.type} · ${parameter.required ? "required" : "optional"}`} detail={parameter.id} />
+          <DefinitionRow key={parameter.id} title={parameter.label} metadata={`${parameter.type} · ${parameter.required ? t("analysis.required") : t("analysis.optional")}`} detail={parameter.id} />
         ))}
       </DefinitionSection>
-      <DefinitionSection title="Queries" count={article.definition.queries.length}>
+      <DefinitionSection title={t("analysis.queries")} count={article.definition.queries.length}>
         {article.definition.queries.map((query) => (
           <details key={query.id} className="tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3">
-            <summary className="tw:cursor-pointer tw:text-sm tw:font-medium">{query.title} <span className="tw:text-xs tw:font-normal tw:text-muted-foreground">· {query.connectionRole} · {query.maxRows.toLocaleString()} rows · {byteSize(query.maxBytes)}</span></summary>
+            <summary className="tw:cursor-pointer tw:text-sm tw:font-medium">{query.title} <span className="tw:text-xs tw:font-normal tw:text-muted-foreground">· {query.connectionRole} · {t("analysis.rows", { count: query.maxRows.toLocaleString() })} · {byteSize(query.maxBytes)}</span></summary>
             <pre className="scrollbar-sleek tw:mt-3 tw:max-h-[360px] tw:overflow-auto tw:whitespace-pre-wrap tw:rounded-sm tw:bg-muted tw:p-3 tw:font-mono tw:text-xs tw:leading-body">{query.sql}</pre>
             <div className="tw:mt-2 tw:flex tw:flex-wrap tw:gap-1">
               {query.columns.map((column) => <StatusBadge key={column.name} density="compact" title={`${column.sensitivity} · ${column.masking}`}>{column.name}: {column.type}</StatusBadge>)}
@@ -748,19 +800,19 @@ function DefinitionView({ article }: { article: AnalysisArticleRecord }) {
           </details>
         ))}
       </DefinitionSection>
-      <DefinitionSection title="Transforms" count={article.definition.transforms.length}>
+      <DefinitionSection title={t("analysis.transforms")} count={article.definition.transforms.length}>
         {article.definition.transforms.map((transform) => (
           <DefinitionRow key={transform.id} title={transform.title} metadata={transform.operation.replace(/_/g, " ")} detail={`${transform.inputNodeIds.join(" + ")} → ${transform.id}`} />
         ))}
       </DefinitionSection>
-      <DefinitionSection title="Metrics" count={article.definition.metrics.length}>
+      <DefinitionSection title={t("analysis.metrics")} count={article.definition.metrics.length}>
         {article.definition.metrics.map((metric) => (
           <DefinitionRow key={metric.id} title={metric.label} metadata={`${metric.format.style} · ${metric.sourceNodeId}.${metric.valueColumn}`} detail={metric.description || metric.id} />
         ))}
       </DefinitionSection>
-      <DefinitionSection title="Layout blocks" count={article.definition.blocks.length}>
+      <DefinitionSection title={t("analysis.layoutBlocks")} count={article.definition.blocks.length}>
         {article.definition.blocks.map((block) => (
-          <DefinitionRow key={block.id} title={block.title || block.id} metadata={`${block.kind.replace(/_/g, " ")} · ${block.width}/12`} detail={block.sourceNodeId ?? "Narrative / control"} />
+          <DefinitionRow key={block.id} title={block.title || block.id} metadata={`${block.kind.replace(/_/g, " ")} · ${block.width}/12`} detail={block.sourceNodeId ?? t("analysis.narrativeControl")} />
         ))}
       </DefinitionSection>
     </div>
@@ -768,10 +820,11 @@ function DefinitionView({ article }: { article: AnalysisArticleRecord }) {
 }
 
 function DefinitionSection({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
+  const { t } = useI18n();
   return (
     <section className="tw:grid tw:gap-2">
       <h2 className="tw:m-0 tw:flex tw:items-center tw:gap-2 tw:text-sm tw:font-semibold">{title}<StatusBadge density="compact">{count}</StatusBadge></h2>
-      {count ? <div className="tw:grid tw:gap-2">{children}</div> : <span className="tw:text-sm tw:text-muted-foreground">None</span>}
+      {count ? <div className="tw:grid tw:gap-2">{children}</div> : <span className="tw:text-sm tw:text-muted-foreground">{t("analysis.none")}</span>}
     </section>
   );
 }
@@ -817,16 +870,18 @@ function LineageView({
   transferring: boolean;
   onTransfer: (ownerMemberId: string) => void;
 }) {
+  const { lang, t } = useI18n();
+  const locale = lang === "ko" ? "ko-KR" : "en-US";
   return (
     <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[1100px] tw:gap-5 tw:p-5 tw:@max-[760px]:p-3">
       <section className="tw:grid tw:gap-3">
-        <h2 className="tw:m-0 tw:text-base tw:font-semibold">Authority chain</h2>
+        <h2 className="tw:m-0 tw:text-base tw:font-semibold">{t("analysis.authorityChain")}</h2>
         <div className="tw:grid tw:grid-cols-[repeat(4,minmax(0,1fr))] tw:gap-px tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-border-subtle tw:@max-[720px]:grid-cols-2 tw:@max-[420px]:grid-cols-1">
           {[
-            ["Environment", `r${article.environmentRevision}`],
-            ["Connections", `${article.connections.length} exact revisions`],
-            ["Knowledge graphs", article.graphRevisionIds.length ? `${article.graphRevisionIds.length} pinned` : "None"],
-            ["Definition", `r${article.revision}`],
+            [t("analysis.environment"), `r${article.environmentRevision}`],
+            [t("analysis.connections"), t("analysis.exactRevisions", { count: article.connections.length })],
+            [t("analysis.knowledgeGraphs"), article.graphRevisionIds.length ? t("analysis.pinnedCount", { count: article.graphRevisionIds.length }) : t("analysis.none")],
+            [t("analysis.definition"), `r${article.revision}`],
           ].map(([label, value]) => (
             <div key={label} className="tw:grid tw:gap-1 tw:bg-card tw:p-3">
               <span className="tw:text-xs tw:text-muted-foreground">{label}</span>
@@ -842,20 +897,20 @@ function LineageView({
         />
       </section>
       <section className="tw:grid tw:gap-2">
-        <h2 className="tw:m-0 tw:text-sm tw:font-semibold">Desktop runners</h2>
+        <h2 className="tw:m-0 tw:text-sm tw:font-semibold">{t("analysis.desktopRunners")}</h2>
         <p className="tw:m-0 tw:text-xs tw:leading-body tw:text-muted-foreground">
-          Scheduled refreshes use one member-owned Desktop device. Forgetting a device immediately stops its schedules and active leases without moving credentials to the workspace.
+          {t("analysis.desktopRunnersBody")}
         </p>
         {article.definition.refresh.mode === "scheduled"
           && article.definition.refresh.runnerId
           && !runners.some((runner) => runner.id === article.definition.refresh.runnerId) ? (
             <InlineNotice tone="warning" icon="alert">
-              This Article is assigned to a runner that is no longer available. Edit the Article and choose an online runner before scheduling resumes.
+              {t("analysis.runnerUnavailable")}
             </InlineNotice>
           ) : null}
         {runners.length === 0 ? (
           <InlineNotice tone="warning" icon="alert">
-            No Desktop runner is registered for your account in this workspace. Keep DopeDB open once to register this device, then enable background automation in Settings if schedules must run after the window closes.
+            {t("analysis.noRunner")}
           </InlineNotice>
         ) : runners.map((runner) => {
           const assigned = article.definition.refresh.runnerId === runner.id;
@@ -864,26 +919,28 @@ function LineageView({
               <span className="tw:flex tw:min-w-0 tw:items-center tw:gap-2">
                 <StatusDot tone={runner.online ? "success" : "neutral"} />
                 <strong className="tw:min-w-0 tw:truncate tw:text-sm tw:font-medium">{runner.displayName}</strong>
-                {runner.isCurrent ? <StatusBadge density="compact">This device</StatusBadge> : null}
-                {assigned ? <StatusBadge density="compact" tone="success">Assigned</StatusBadge> : null}
+                {runner.isCurrent ? <StatusBadge density="compact">{t("analysis.thisDevice")}</StatusBadge> : null}
+                {assigned ? <StatusBadge density="compact" tone="success">{t("analysis.assigned")}</StatusBadge> : null}
               </span>
               {runner.isCurrent ? (
-                <span className="tw:text-xs tw:text-muted-foreground">Managed in Settings</span>
+                <span className="tw:text-xs tw:text-muted-foreground">{t("analysis.managedInSettings")}</span>
               ) : (
                 <ConfirmButton
                   size="xs"
                   variant="dangerGhost"
                   disabled={revokingRunnerId !== null}
-                  confirmLabel={`Forget this runner and stop ${runner.scheduledArticleCount} scheduled Article${runner.scheduledArticleCount === 1 ? "" : "s"}?`}
+                  confirmLabel={t("analysis.forgetRunnerConfirm", { count: runner.scheduledArticleCount })}
                   onConfirm={() => onRevokeRunner(runner.id)}
                 >
-                  Forget
+                  {t("analysis.forgetRunner")}
                 </ConfirmButton>
               )}
               <span className="tw:min-w-0 tw:truncate tw:text-xs tw:text-muted-foreground">
-                {runner.online ? "Online" : `Last seen ${relativeTime(runner.lastSeenAt)}`}
-                {runner.backgroundAllowed ? " · background enabled" : " · foreground only"}
-                {runner.scheduledArticleCount > 0 ? ` · ${runner.scheduledArticleCount} scheduled` : ""}
+                {runner.online
+                  ? t("analysis.online")
+                  : t("analysis.lastSeen", { time: relativeTime(runner.lastSeenAt, locale, t("analysis.never")) })}
+                {runner.backgroundAllowed ? ` · ${t("analysis.backgroundEnabled")}` : ` · ${t("analysis.foregroundOnly")}`}
+                {runner.scheduledArticleCount > 0 ? ` · ${t("analysis.scheduledCount", { count: runner.scheduledArticleCount })}` : ""}
               </span>
               <code className="tw:max-w-48 tw:truncate tw:text-right tw:text-2xs tw:text-muted-foreground">{runner.id}</code>
             </div>
@@ -891,7 +948,7 @@ function LineageView({
         })}
       </section>
       <section className="tw:grid tw:gap-2">
-        <h2 className="tw:m-0 tw:text-sm tw:font-semibold">Connection pins</h2>
+        <h2 className="tw:m-0 tw:text-sm tw:font-semibold">{t("analysis.connectionPins")}</h2>
         {article.connections.map((connection) => (
           <div key={connection.connectionId} className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:gap-1 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3">
             <strong className="tw:truncate tw:text-sm">{connection.alias}</strong>
@@ -901,24 +958,24 @@ function LineageView({
         ))}
       </section>
       <section className="tw:grid tw:gap-2">
-        <h2 className="tw:m-0 tw:text-sm tw:font-semibold">Execution evidence</h2>
-        {loading ? <LoadingLabel>Loading run evidence…</LoadingLabel> : runs.length === 0 ? (
-          <span className="tw:text-sm tw:text-muted-foreground">No execution receipt yet.</span>
+        <h2 className="tw:m-0 tw:text-sm tw:font-semibold">{t("analysis.executionEvidence")}</h2>
+        {loading ? <LoadingLabel>{t("analysis.loadingEvidence")}</LoadingLabel> : runs.length === 0 ? (
+          <span className="tw:text-sm tw:text-muted-foreground">{t("analysis.noExecution")}</span>
         ) : runs.map((run) => (
           <details key={run.id} className="tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3">
             <summary className="tw:flex tw:cursor-pointer tw:items-center tw:gap-2 tw:text-sm">
               <StatusDot tone={runTone(run.state)} />
               <strong className="tw:font-medium">{run.state}</strong>
-              <span className="tw:text-xs tw:text-muted-foreground">r{run.articleRevision} · {run.finishedAt ? new Date(run.finishedAt).toLocaleString() : "in progress"}</span>
-              <span className="tw:ml-auto tw:font-mono tw:text-2xs tw:text-muted-foreground">{run.rowCount.toLocaleString()} rows · {byteSize(run.byteCount)}</span>
+              <span className="tw:text-xs tw:text-muted-foreground">r{run.articleRevision} · {run.finishedAt ? new Date(run.finishedAt).toLocaleString(locale) : t("analysis.inProgress")}</span>
+              <span className="tw:ml-auto tw:font-mono tw:text-2xs tw:text-muted-foreground">{t("analysis.rows", { count: run.rowCount.toLocaleString(locale) })} · {byteSize(run.byteCount)}</span>
             </summary>
             <dl className="tw:mt-3 tw:grid tw:grid-cols-[120px_minmax(0,1fr)] tw:gap-x-3 tw:gap-y-2 tw:text-xs">
-              <dt className="tw:text-muted-foreground">Run ID</dt><dd className="tw:m-0 tw:truncate tw:font-mono">{run.id}</dd>
-              <dt className="tw:text-muted-foreground">Definition hash</dt><dd className="tw:m-0 tw:truncate tw:font-mono">{run.definitionHash}</dd>
-              <dt className="tw:text-muted-foreground">Result hash</dt><dd className="tw:m-0 tw:truncate tw:font-mono">{run.resultHash ?? "None"}</dd>
+              <dt className="tw:text-muted-foreground">{t("analysis.runId")}</dt><dd className="tw:m-0 tw:truncate tw:font-mono">{run.id}</dd>
+              <dt className="tw:text-muted-foreground">{t("analysis.definitionHash")}</dt><dd className="tw:m-0 tw:truncate tw:font-mono">{run.definitionHash}</dd>
+              <dt className="tw:text-muted-foreground">{t("analysis.resultHash")}</dt><dd className="tw:m-0 tw:truncate tw:font-mono">{run.resultHash ?? t("analysis.none")}</dd>
               {Object.entries(run.schemaFingerprints).map(([node, hash]) => (
                 <span className="tw:col-span-2 tw:grid tw:grid-cols-[120px_minmax(0,1fr)] tw:gap-x-3" key={node}>
-                  <dt className="tw:text-muted-foreground">Schema · {node}</dt><dd className="tw:m-0 tw:truncate tw:font-mono">{hash}</dd>
+                  <dt className="tw:text-muted-foreground">{t("analysis.schema", { node })}</dt><dd className="tw:m-0 tw:truncate tw:font-mono">{hash}</dd>
                 </span>
               ))}
             </dl>
@@ -940,6 +997,7 @@ function OwnershipControl({
   transferring: boolean;
   onTransfer: (ownerMemberId: string) => void;
 }) {
+  const { t } = useI18n();
   const [target, setTarget] = useState(article.ownerMemberId);
   useEffect(() => setTarget(article.ownerMemberId), [article.ownerMemberId]);
   const current = collaborators?.members.find((member) => member.id === article.ownerMemberId);
@@ -951,19 +1009,19 @@ function OwnershipControl({
   return (
     <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_minmax(180px,300px)_auto] tw:items-end tw:gap-3 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3 tw:@max-[680px]:grid-cols-1">
       <span className="tw:grid tw:gap-1">
-        <strong className="tw:text-sm tw:font-medium">Article owner</strong>
-        <span className="tw:text-xs tw:text-muted-foreground">{current?.name ?? article.ownerMemberId} owns lifecycle and transfer decisions.</span>
+        <strong className="tw:text-sm tw:font-medium">{t("analysis.owner")}</strong>
+        <span className="tw:text-xs tw:text-muted-foreground">{t("analysis.ownerBody", { name: current?.name ?? article.ownerMemberId })}</span>
       </span>
       {allowed ? (
-        <SelectInput density="compact" aria-label="New Article owner" value={target} onChange={(event) => setTarget(event.target.value)}>
+        <SelectInput density="compact" aria-label={t("analysis.ownerSelect")} value={target} onChange={(event) => setTarget(event.target.value)}>
           {(collaborators?.members ?? []).filter((member) => member.canOwnAnalysis).map((member) => (
             <option key={member.id} value={member.id}>{member.name} · {member.role}</option>
           ))}
         </SelectInput>
-      ) : <span className="tw:text-xs tw:text-muted-foreground">Only the owner or a workspace administrator can transfer ownership.</span>}
+      ) : <span className="tw:text-xs tw:text-muted-foreground">{t("analysis.ownerRestricted")}</span>}
       {allowed ? (
         <Button size="compact" disabled={transferring || target === article.ownerMemberId} onClick={() => onTransfer(target)}>
-          Transfer
+          {t("analysis.transfer")}
         </Button>
       ) : null}
     </div>
@@ -985,35 +1043,37 @@ function HistoryView({
   restoring: boolean;
   onRestore: (revision: number) => void;
 }) {
-  if (loading) return <div className="tw:p-5"><LoadingLabel>Loading immutable history…</LoadingLabel></div>;
+  const { lang, t } = useI18n();
+  const locale = lang === "ko" ? "ko-KR" : "en-US";
+  if (loading) return <div className="tw:p-5"><LoadingLabel>{t("analysis.loadingHistory")}</LoadingLabel></div>;
   return (
     <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[1100px] tw:grid-cols-2 tw:gap-5 tw:p-5 tw:@max-[760px]:grid-cols-1 tw:@max-[760px]:p-3">
       <section className="tw:grid tw:content-start tw:gap-2">
-        <h2 className="tw:m-0 tw:text-sm tw:font-semibold">Definition revisions</h2>
+        <h2 className="tw:m-0 tw:text-sm tw:font-semibold">{t("analysis.definitionRevisions")}</h2>
         {revisions.map((revision) => (
           <div key={revision.revision} className="tw:grid tw:grid-cols-[auto_minmax(0,1fr)_auto] tw:items-center tw:gap-2 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3">
             <StatusDot tone={revision.revision === article.liveRevision ? "success" : "neutral"} />
             <span className="tw:grid tw:min-w-0 tw:gap-0.5">
               <strong className="tw:text-sm tw:font-medium">r{revision.revision} · {revision.operation.replace(/_/g, " ")}</strong>
-              <span className="tw:truncate tw:text-xs tw:text-muted-foreground">{new Date(revision.createdAt).toLocaleString()} · {revision.createdByMemberId}</span>
+              <span className="tw:truncate tw:text-xs tw:text-muted-foreground">{new Date(revision.createdAt).toLocaleString(locale)} · {revision.createdByMemberId}</span>
               <code className="tw:truncate tw:text-2xs tw:text-muted-foreground">{revision.payloadHash}</code>
             </span>
             {revision.revision !== article.revision ? (
-              <ConfirmButton size="xs" variant="ghost" disabled={restoring} confirmLabel={`Restore revision ${revision.revision} as a new draft?`} onConfirm={() => onRestore(revision.revision)}>
-                Restore
+              <ConfirmButton size="xs" variant="ghost" disabled={restoring} confirmLabel={t("analysis.restoreConfirm", { revision: revision.revision })} onConfirm={() => onRestore(revision.revision)}>
+                {t("analysis.restore")}
               </ConfirmButton>
-            ) : <StatusBadge density="compact">Current</StatusBadge>}
+            ) : <StatusBadge density="compact">{t("analysis.current")}</StatusBadge>}
           </div>
         ))}
       </section>
       <section className="tw:grid tw:content-start tw:gap-2">
-        <h2 className="tw:m-0 tw:text-sm tw:font-semibold">Runs</h2>
+        <h2 className="tw:m-0 tw:text-sm tw:font-semibold">{t("analysis.runs")}</h2>
         {runs.map((run) => (
           <div key={run.id} className="tw:grid tw:grid-cols-[auto_minmax(0,1fr)] tw:items-start tw:gap-2 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3">
             <StatusDot tone={runTone(run.state)} />
             <span className="tw:grid tw:min-w-0 tw:gap-0.5">
               <strong className="tw:text-sm tw:font-medium">{run.state} · {run.trigger} · r{run.articleRevision}</strong>
-              <span className="tw:text-xs tw:text-muted-foreground">{run.finishedAt ? new Date(run.finishedAt).toLocaleString() : run.startedAt ? `Started ${new Date(run.startedAt).toLocaleString()}` : "Queued"}</span>
+              <span className="tw:text-xs tw:text-muted-foreground">{run.finishedAt ? new Date(run.finishedAt).toLocaleString(locale) : run.startedAt ? t("analysis.startedAt", { time: new Date(run.startedAt).toLocaleString(locale) }) : t("analysis.queued")}</span>
               {run.errorMessage ? <span className="tw:text-xs tw:text-danger">{run.errorMessage}</span> : null}
               <code className="tw:truncate tw:text-2xs tw:text-muted-foreground">{run.id}</code>
             </span>

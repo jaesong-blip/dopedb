@@ -341,9 +341,10 @@ impl Store {
         &self,
         connection: &PinnedConnection,
     ) -> AppResult<Vec<AgentKnowledgeEnvironment>> {
-        let rows: Vec<(String, String, String, String, i64)> = sqlx::query_as(
+        let rows: Vec<(String, String, String, String, i64, i64)> = sqlx::query_as(
             "SELECT environment.id, project.name, environment.name,
-                    environment.risk_class, COUNT(head.graph_revision_id)
+                    environment.risk_class, environment.revision,
+                    COUNT(head.graph_revision_id)
              FROM knowledge_environment_connections binding
              JOIN knowledge_project_environments environment
                ON environment.id = binding.project_environment_id
@@ -357,7 +358,7 @@ impl Store {
                AND binding.revoked_at IS NULL
                AND project.workspace_id = ?3
              GROUP BY environment.id, project.name, environment.name,
-                      environment.risk_class
+                      environment.risk_class, environment.revision
              ORDER BY project.name, environment.name, environment.id",
         )
         .bind(connection.connection_id.to_string())
@@ -365,17 +366,14 @@ impl Store {
         .bind(connection.scope.workspace_id.to_string())
         .fetch_all(&self.pool)
         .await?;
-        let Some(account_id) = connection.scope.selected_account_id.as_deref() else {
-            return Ok(Vec::new());
-        };
         let mut environments = Vec::new();
-        for (id, project_name, name, risk_class, graph_revision_count) in rows {
+        for (id, project_name, name, risk_class, environment_revision, graph_revision_count) in rows
+        {
             let id = parse_uuid(id)?;
             let graphs = self.active_set(id).await?;
-            if graphs.is_empty() {
-                continue;
-            }
-            let environment_revision = graphs[0].environment_revision;
+            let environment_revision = u64::try_from(environment_revision).map_err(|_| {
+                AppError::Config("the stored Project Environment revision is invalid".into())
+            })?;
             if graphs
                 .iter()
                 .any(|graph| graph.environment_revision != environment_revision)
@@ -386,18 +384,23 @@ impl Store {
                 .iter()
                 .map(|graph| graph.graph_revision_id)
                 .collect::<Vec<_>>();
-            if self
-                .active_knowledge_grant(
-                    connection.scope.workspace_id,
-                    account_id,
-                    id,
-                    environment_revision,
-                    &graph_revision_ids,
-                )
-                .await?
-                .is_none()
-            {
-                continue;
+            if !graph_revision_ids.is_empty() {
+                let Some(account_id) = connection.scope.selected_account_id.as_deref() else {
+                    continue;
+                };
+                if self
+                    .active_knowledge_grant(
+                        connection.scope.workspace_id,
+                        account_id,
+                        id,
+                        environment_revision,
+                        &graph_revision_ids,
+                    )
+                    .await?
+                    .is_none()
+                {
+                    continue;
+                }
             }
             environments.push(AgentKnowledgeEnvironment {
                 id,
@@ -452,13 +455,10 @@ impl Store {
         }
         let (environment_id, environment_revision) = &environment_rows[0];
         let project_environment_id = parse_uuid(environment_id.clone())?;
-        let graphs = self.active_set(project_environment_id).await?;
-        if graphs.is_empty() {
-            return Ok(None);
-        }
         let environment_revision = u64::try_from(*environment_revision).map_err(|_| {
             AppError::Config("the stored Project Environment revision is invalid".into())
         })?;
+        let graphs = self.active_set(project_environment_id).await?;
         if graphs
             .iter()
             .any(|graph| graph.environment_revision != environment_revision)
@@ -467,30 +467,36 @@ impl Store {
                 reason: "the Project Environment Knowledge graph set is stale".into(),
             });
         }
-        let account_id = connection
-            .scope
-            .selected_account_id
-            .as_deref()
-            .ok_or_else(|| AppError::Blocked {
-                reason: "Project Knowledge requires an exact member grant".into(),
-            })?;
         let graph_revision_ids = graphs
             .iter()
             .map(|graph| graph.graph_revision_id)
             .collect::<Vec<_>>();
-        let knowledge_grant_id = self
-            .active_knowledge_grant(
-                connection.scope.workspace_id,
-                account_id,
-                project_environment_id,
-                environment_revision,
-                &graph_revision_ids,
+        let knowledge_grant_id = if graph_revision_ids.is_empty() {
+            None
+        } else {
+            let account_id = connection
+                .scope
+                .selected_account_id
+                .as_deref()
+                .ok_or_else(|| AppError::Blocked {
+                    reason: "Project Knowledge requires an exact member grant".into(),
+                })?;
+            Some(
+                self.active_knowledge_grant(
+                    connection.scope.workspace_id,
+                    account_id,
+                    project_environment_id,
+                    environment_revision,
+                    &graph_revision_ids,
+                )
+                .await?
+                .ok_or_else(|| AppError::Blocked {
+                    reason:
+                        "this member has no current grant for the active Knowledge revision set"
+                            .into(),
+                })?,
             )
-            .await?
-            .ok_or_else(|| AppError::Blocked {
-                reason: "this member has no current grant for the active Knowledge revision set"
-                    .into(),
-            })?;
+        };
         let bindings = self
             .environment_connections(connection.scope.workspace_id, project_environment_id)
             .await?;
@@ -591,37 +597,49 @@ impl Store {
         expected_workspace_id: Uuid,
         expected_account_id: &str,
     ) -> AppResult<Vec<GraphBuildArtifactV1>> {
-        let grant = self
-            .exact_grant(scope.knowledge_grant_id)
-            .await?
-            .ok_or_else(|| AppError::Blocked {
-                reason: "the Agent Knowledge grant expired or was revoked".into(),
-            })?;
-        if Uuid::from(grant.workspace_id) != expected_workspace_id
-            || grant.account_id.as_str() != expected_account_id
-            || grant.project_environment_id != scope.project_environment_id
-            || grant.environment_revision != scope.environment_revision
-            || grant.graph_revision_ids != scope.graph_revision_ids
-        {
-            return Err(AppError::Blocked {
-                reason: "the Agent Knowledge grant changed; start a new session".into(),
-            });
-        }
         let graphs = self.active_set(scope.project_environment_id).await?;
         let active_ids = graphs
             .iter()
             .map(|graph| graph.graph_revision_id)
             .collect::<Vec<_>>();
-        if graphs.is_empty()
-            || graphs
-                .iter()
-                .any(|graph| graph.environment_revision != scope.environment_revision)
+        if graphs
+            .iter()
+            .any(|graph| graph.environment_revision != scope.environment_revision)
             || active_ids != scope.graph_revision_ids
         {
             return Err(AppError::Blocked {
                 reason: "the Agent Knowledge scope changed; start a new session to reconfirm it"
                     .into(),
             });
+        }
+        match (
+            scope.knowledge_grant_id,
+            scope.graph_revision_ids.is_empty(),
+        ) {
+            (None, true) => {}
+            (Some(grant_id), false) => {
+                let grant = self
+                    .exact_grant(grant_id)
+                    .await?
+                    .ok_or_else(|| AppError::Blocked {
+                        reason: "the Agent Knowledge grant expired or was revoked".into(),
+                    })?;
+                if Uuid::from(grant.workspace_id) != expected_workspace_id
+                    || grant.account_id.as_str() != expected_account_id
+                    || grant.project_environment_id != scope.project_environment_id
+                    || grant.environment_revision != scope.environment_revision
+                    || grant.graph_revision_ids != scope.graph_revision_ids
+                {
+                    return Err(AppError::Blocked {
+                        reason: "the Agent Knowledge grant changed; start a new session".into(),
+                    });
+                }
+            }
+            _ => {
+                return Err(AppError::Blocked {
+                    reason: "the Agent Knowledge graph authority is incomplete".into(),
+                });
+            }
         }
         if scope.connections.is_empty()
             || scope.connections.len() > 32

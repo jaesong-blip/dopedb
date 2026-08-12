@@ -472,7 +472,11 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   기본 `main` Environment를 함께 설정한다. Project 행의 hover/focus `plus`는 해당
   Project에 Environment를 추가하고, `Databases` folder의 `plus`는 기존 connection
   editor를, `Data sources` folder의 `plus`는 기존 source 연결 상세를,
-  `Analyses` folder의 `plus`는 새 Article draft를 연다. Project가 없는
+  `Analyses` folder는 Agent가 제안한 Article draft collection을 연며 수동 빈
+  draft `plus`를 제공하지 않는다. collection의 유일한 생성 action은 현재
+  Environment와 연결 revision을 고정한 AI Chat composer로 이동해 분석 질문을
+  받은 뒤, Agent가 검증된 읽기 결과로 제안한 draft를 다시 collection에 넣는다.
+  Project가 없는
   workspace에서는 설명만 표시하고 별도 생성 row를 누적하지 않으며, 생성 직후
   새 Environment의 `Databases` folder를 연다. resource folder와 `Unassigned` 행에는
   연결 개수 badge를 붙이지 않는다. 중앙 환경 상세나 AI Chat 안내에

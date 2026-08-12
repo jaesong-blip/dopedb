@@ -85,7 +85,11 @@ type Props = {
   onSearchEverywhere: (returnFocus?: HTMLElement | null) => void;
   onOpenActivity: () => void;
   onOpenTerminal: () => void;
-  onOpenAgentTask: (connectionId: string) => void;
+  onOpenAgentTask: (
+    connectionId: string,
+    environmentId?: string,
+    prompt?: string,
+  ) => void;
   onSetQueryTitle: (value: string) => void;
   onSetQueryDatabase: (value: string) => void;
   onSetQuerySchema: (value: string | null) => void;

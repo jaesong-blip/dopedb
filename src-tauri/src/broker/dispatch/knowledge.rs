@@ -358,7 +358,7 @@ async fn propose_mapping(
     let proposal = propose_remote_knowledge_mapping(
         session.account_scope.as_str(),
         Uuid::from(session.workspace_id),
-        scope.knowledge_grant_id,
+        scope.knowledge_grant_id.ok_or(ErrorCode::ScopeDenied)?,
         &proposal,
     )
     .await

@@ -123,7 +123,7 @@ fn article_create(
         id: article_id,
         project_environment_id: scope.project_environment_id,
         environment_revision,
-        source_knowledge_grant_id: Some(scope.knowledge_grant_id),
+        source_knowledge_grant_id: scope.knowledge_grant_id,
         graph_revision_ids: scope.graph_revision_ids.clone(),
         connections: scope
             .connections

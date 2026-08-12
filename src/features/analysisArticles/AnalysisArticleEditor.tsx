@@ -17,6 +17,7 @@ import {
 } from "../../design-system/components/Modal";
 import { PanelTabs } from "../../design-system/components/PanelTabs";
 import { InlineNotice, StatusBadge, StatusDot } from "../../design-system/components/Status";
+import { useI18n } from "../../lib/i18n";
 import type { EnvironmentConnection, KnowledgeEnvironment } from "../knowledge/domain";
 import type { AnalysisArticleRecord, SharedAnalysisArticleCreate } from "./domain";
 import {
@@ -26,104 +27,6 @@ import {
 } from "./AnalysisDefinitionBuilder";
 
 type EditorTab = "overview" | "data" | "transforms" | "layout" | "refresh" | "authority";
-
-const editorTabs = [
-  { id: "overview", label: "Overview" },
-  { id: "data", label: "Data contract" },
-  { id: "transforms", label: "Transforms" },
-  { id: "layout", label: "Article layout" },
-  { id: "refresh", label: "Refresh" },
-  { id: "authority", label: "Authority" },
-] as const;
-
-function timezone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-}
-
-function defaultArticle(
-  environment: KnowledgeEnvironment,
-  bindings: readonly EnvironmentConnection[],
-): SharedAnalysisArticleCreate {
-  const binding = bindings.find((candidate) => candidate.remoteConnectionId && !candidate.stale);
-  const role = binding?.role || "primary";
-  return {
-    id: crypto.randomUUID(),
-    projectEnvironmentId: environment.id,
-    environmentRevision: environment.revision,
-    sourceKnowledgeGrantId: null,
-    graphRevisionIds: [],
-    connections: binding?.remoteConnectionId
-      ? [{
-          connectionId: binding.remoteConnectionId,
-          connectionRevision: binding.connectionRevision,
-          role: binding.role,
-          alias: binding.alias,
-        }]
-      : [],
-    definition: {
-      version: 1,
-      source: "human",
-      title: "Untitled analysis",
-      question: "",
-      summary: "",
-      timezone: timezone(),
-      parameters: [],
-      queries: [{
-        id: "primary_query",
-        title: "Primary query",
-        connectionRole: role,
-        sql: "SELECT 1 AS value",
-        parameterIds: [],
-        maxRows: 5_000,
-        maxBytes: 4 * 1024 * 1024,
-        cacheTtlSeconds: 0,
-        columns: [{
-          name: "value",
-          type: "number",
-          nullable: false,
-          role: "measure",
-          sensitivity: "internal",
-          masking: "none",
-        }],
-      }],
-      transforms: [],
-      metrics: [{
-        id: "value",
-        label: "Value",
-        description: "",
-        sourceNodeId: "primary_query",
-        valueColumn: "value",
-        unit: "",
-        lowerIsBetter: null,
-        format: { style: "number", decimals: 0, currency: null },
-      }],
-      blocks: [{
-        id: "value_metric",
-        kind: "metric",
-        title: "Value",
-        sourceNodeId: "primary_query",
-        width: 4,
-          config: {
-            metricId: "value",
-            comparisonColumn: null,
-            sparklineColumn: null,
-            sampleCountColumn: null,
-          },
-      }],
-      claims: [],
-      refresh: {
-        mode: "manual",
-        cron: null,
-        timezone: timezone(),
-        runnerId: null,
-        maxStalenessSeconds: 86_400,
-        resultRetentionDays: 30,
-        shareReviewedResults: true,
-      },
-      warnings: [],
-    },
-  };
-}
 
 function existingInput(article: AnalysisArticleRecord): SharedAnalysisArticleCreate {
   return {
@@ -146,7 +49,7 @@ export function AnalysisArticleEditor({
   onSave,
   onClose,
 }: {
-  article: AnalysisArticleRecord | null;
+  article: AnalysisArticleRecord;
   environment: KnowledgeEnvironment;
   bindings: readonly EnvironmentConnection[];
   runners: ReadonlyArray<{
@@ -159,9 +62,18 @@ export function AnalysisArticleEditor({
   onSave: (article: SharedAnalysisArticleCreate) => void;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
+  const editorTabs = useMemo(() => [
+    { id: "overview", label: t("analysis.editorTabOverview") },
+    { id: "data", label: t("analysis.editorTabData") },
+    { id: "transforms", label: t("analysis.editorTabTransforms") },
+    { id: "layout", label: t("analysis.editorTabLayout") },
+    { id: "refresh", label: t("analysis.editorTabRefresh") },
+    { id: "authority", label: t("analysis.editorTabAuthority") },
+  ] as const, [t]);
   const initial = useMemo(
-    () => article ? existingInput(article) : defaultArticle(environment, bindings),
-    [article, bindings, environment],
+    () => existingInput(article),
+    [article],
   );
   const [tab, setTab] = useState<EditorTab>("overview");
   const [draft, setDraft] = useState(initial);
@@ -200,8 +112,8 @@ export function AnalysisArticleEditor({
   const submit = () => {
     try {
       const next: SharedAnalysisArticleCreate = draft;
-      if (!next.definition.title.trim()) throw new Error("Title is required");
-      if (next.connections.length === 0) throw new Error("Select at least one Environment database");
+      if (!next.definition.title.trim()) throw new Error(t("analysis.editorTitleRequired"));
+      if (next.connections.length === 0) throw new Error(t("analysis.editorConnectionRequired"));
       setError(null);
       onSave(next);
     } catch (nextError) {
@@ -220,12 +132,12 @@ export function AnalysisArticleEditor({
         }}
       >
         <ModalTitleBar
-          title={article ? `Edit ${article.definition.title}` : "New Analysis Article"}
+          title={t("analysis.editorTitle", { title: article.definition.title })}
           titleId="analysis-editor-title"
-          closeLabel="Close editor"
+          closeLabel={t("analysis.editorClose")}
           onClose={onClose}
         />
-        <PanelTabs tabs={editorTabs} active={tab} onChange={setTab} label="Analysis Article editor" />
+        <PanelTabs tabs={editorTabs} active={tab} onChange={setTab} label={t("analysis.editorLabel")} />
         <div className="scrollbar-sleek tw:min-h-0 tw:flex-1 tw:overflow-auto tw:p-5">
           {error ? (
             <InlineNotice tone="danger" icon="alert" role="alert">{error}</InlineNotice>
@@ -234,12 +146,12 @@ export function AnalysisArticleEditor({
           {tab === "overview" ? (
             <div className="tw:grid tw:gap-4">
               <div className="tw:grid tw:gap-1">
-                <h2 className="tw:m-0 tw:text-base tw:font-semibold">What this analysis answers</h2>
+                <h2 className="tw:m-0 tw:text-base tw:font-semibold">{t("analysis.editorOverviewTitle")}</h2>
                 <p className="tw:m-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
-                  The title, question, and summary are versioned with the exact data authority used to answer them.
+                  {t("analysis.editorOverviewBody")}
                 </p>
               </div>
-              <PropertyRow label="Title" htmlFor="analysis-title">
+              <PropertyRow label={t("analysis.fieldTitle")} htmlFor="analysis-title">
                 <TextInput
                   id="analysis-title"
                   value={draft.definition.title}
@@ -247,21 +159,21 @@ export function AnalysisArticleEditor({
                   onChange={(event) => patchDefinition({ title: event.target.value })}
                 />
               </PropertyRow>
-              <PropertyRow label="Question" htmlFor="analysis-question">
+              <PropertyRow label={t("analysis.fieldQuestion")} htmlFor="analysis-question">
                 <TextAreaInput
                   id="analysis-question"
                   value={draft.definition.question}
                   onChange={(event) => patchDefinition({ question: event.target.value })}
                 />
               </PropertyRow>
-              <PropertyRow label="Summary" htmlFor="analysis-summary">
+              <PropertyRow label={t("analysis.fieldSummary")} htmlFor="analysis-summary">
                 <TextAreaInput
                   id="analysis-summary"
                   value={draft.definition.summary}
                   onChange={(event) => patchDefinition({ summary: event.target.value })}
                 />
               </PropertyRow>
-              <PropertyRow label="Timezone" htmlFor="analysis-timezone">
+              <PropertyRow label={t("analysis.fieldTimezone")} htmlFor="analysis-timezone">
                 <TextInput
                   id="analysis-timezone"
                   value={draft.definition.timezone}
@@ -275,13 +187,13 @@ export function AnalysisArticleEditor({
             <div className="tw:grid tw:gap-5">
               <section className="tw:grid tw:gap-3">
                 <div className="tw:grid tw:gap-1">
-                  <h2 className="tw:m-0 tw:text-base tw:font-semibold">Environment databases</h2>
+                  <h2 className="tw:m-0 tw:text-base tw:font-semibold">{t("analysis.editorDatabasesTitle")}</h2>
                   <p className="tw:m-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
-                    Each query is bound to one role and one immutable shared connection revision. Credentials remain local to each member.
+                    {t("analysis.editorDatabasesBody")}
                   </p>
                 </div>
                 {bindings.length === 0 ? (
-                  <InlineNotice tone="warning" icon="alert">Connect a shared database to this Environment before creating an Article.</InlineNotice>
+                  <InlineNotice tone="warning" icon="alert">{t("analysis.editorConnectFirst")}</InlineNotice>
                 ) : (
                   <div className="tw:grid tw:gap-1 tw:rounded-md tw:border tw:border-border-subtle tw:p-2">
                     {bindings.map((binding) => {
@@ -315,9 +227,9 @@ export function AnalysisArticleEditor({
           {tab === "transforms" ? (
             <div className="tw:grid tw:gap-4">
               <div className="tw:grid tw:gap-1">
-                <h2 className="tw:m-0 tw:text-base tw:font-semibold">Typed transform DAG</h2>
+                <h2 className="tw:m-0 tw:text-base tw:font-semibold">{t("analysis.editorTransformsTitle")}</h2>
                 <p className="tw:m-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
-                  Nodes are evaluated in order. Cross-database data may meet only in an approved join or union mapping.
+                  {t("analysis.editorTransformsBody")}
                 </p>
               </div>
               <AnalysisTransformEditor
@@ -330,9 +242,9 @@ export function AnalysisArticleEditor({
           {tab === "layout" ? (
             <div className="tw:grid tw:gap-5">
               <div className="tw:grid tw:gap-1">
-                <h2 className="tw:m-0 tw:text-base tw:font-semibold">Safe, declarative article</h2>
+                <h2 className="tw:m-0 tw:text-base tw:font-semibold">{t("analysis.editorLayoutTitle")}</h2>
                 <p className="tw:m-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
-                  Blocks reference typed node columns. HTML, JavaScript, remote images, and arbitrary plugins cannot enter the renderer.
+                  {t("analysis.editorLayoutBody")}
                 </p>
               </div>
               <AnalysisLayoutEditor
@@ -345,12 +257,12 @@ export function AnalysisArticleEditor({
           {tab === "refresh" ? (
             <div className="tw:grid tw:gap-4">
               <div className="tw:grid tw:gap-1">
-                <h2 className="tw:m-0 tw:text-base tw:font-semibold">Freshness and retention</h2>
+                <h2 className="tw:m-0 tw:text-base tw:font-semibold">{t("analysis.editorRefreshTitle")}</h2>
                 <p className="tw:m-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
-                  Scheduled refreshes run only on an online, member-owned Desktop runner with current exact grants.
+                  {t("analysis.editorRefreshBody")}
                 </p>
               </div>
-              <PropertyRow label="Mode" htmlFor="analysis-refresh-mode">
+              <PropertyRow label={t("analysis.fieldMode")} htmlFor="analysis-refresh-mode">
                 <SelectInput
                   id="analysis-refresh-mode"
                   value={draft.definition.refresh.mode}
@@ -366,27 +278,27 @@ export function AnalysisArticleEditor({
                     });
                   }}
                 >
-                  <option value="manual">Manual</option>
-                  <option value="scheduled">Scheduled</option>
+                  <option value="manual">{t("analysis.modeManual")}</option>
+                  <option value="scheduled">{t("analysis.modeScheduled")}</option>
                 </SelectInput>
               </PropertyRow>
               {draft.definition.refresh.mode === "scheduled" ? (
                 <>
-                  <PropertyRow label="Runner" htmlFor="analysis-runner">
+                  <PropertyRow label={t("analysis.fieldRunner")} htmlFor="analysis-runner">
                     <SelectInput
                       id="analysis-runner"
                       value={draft.definition.refresh.runnerId ?? ""}
                       onChange={(event) => patchDefinition({ refresh: { ...draft.definition.refresh, runnerId: event.target.value || null } })}
                     >
-                      <option value="">Select an online runner</option>
+                      <option value="">{t("analysis.selectRunner")}</option>
                       {runners.map((runner) => (
                         <option key={runner.id} value={runner.id} disabled={!runner.online || !runner.backgroundAllowed}>
-                          {runner.displayName}{runner.online ? " · online" : " · offline"}{runner.backgroundAllowed ? "" : " · background disabled"}
+                          {runner.displayName}{runner.online ? ` · ${t("analysis.online")}` : ` · ${t("analysis.offline")}`}{runner.backgroundAllowed ? "" : ` · ${t("analysis.backgroundDisabled")}`}
                         </option>
                       ))}
                     </SelectInput>
                   </PropertyRow>
-                  <PropertyRow label="Cron" htmlFor="analysis-cron">
+                  <PropertyRow label={t("analysis.fieldCron")} htmlFor="analysis-cron">
                     <TextInput
                       id="analysis-cron"
                       value={draft.definition.refresh.cron ?? ""}
@@ -396,14 +308,14 @@ export function AnalysisArticleEditor({
                   </PropertyRow>
                 </>
               ) : null}
-              <PropertyRow label="Timezone" htmlFor="analysis-refresh-timezone">
+              <PropertyRow label={t("analysis.fieldTimezone")} htmlFor="analysis-refresh-timezone">
                 <TextInput
                   id="analysis-refresh-timezone"
                   value={draft.definition.refresh.timezone}
                   onChange={(event) => patchDefinition({ refresh: { ...draft.definition.refresh, timezone: event.target.value } })}
                 />
               </PropertyRow>
-              <PropertyRow label="Stale after" htmlFor="analysis-staleness">
+              <PropertyRow label={t("analysis.fieldStaleAfter")} htmlFor="analysis-staleness">
                 <TextInput
                   id="analysis-staleness"
                   type="number"
@@ -412,7 +324,7 @@ export function AnalysisArticleEditor({
                   onChange={(event) => patchDefinition({ refresh: { ...draft.definition.refresh, maxStalenessSeconds: event.target.valueAsNumber } })}
                 />
               </PropertyRow>
-              <PropertyRow label="Retention" htmlFor="analysis-retention">
+              <PropertyRow label={t("analysis.fieldRetention")} htmlFor="analysis-retention">
                 <TextInput
                   id="analysis-retention"
                   type="number"
@@ -423,7 +335,7 @@ export function AnalysisArticleEditor({
                 />
               </PropertyRow>
               <CheckboxField
-                label="Share privacy-minimized result blocks while this revision is in review"
+                label={t("analysis.shareReviewedResults")}
                 checked={draft.definition.refresh.shareReviewedResults}
                 onChange={(event) => patchDefinition({ refresh: { ...draft.definition.refresh, shareReviewedResults: event.target.checked } })}
               />
@@ -433,23 +345,23 @@ export function AnalysisArticleEditor({
           {tab === "authority" ? (
             <div className="tw:grid tw:gap-4">
               <div className="tw:grid tw:gap-1">
-                <h2 className="tw:m-0 tw:text-base tw:font-semibold">Exact authority pins</h2>
+                <h2 className="tw:m-0 tw:text-base tw:font-semibold">{t("analysis.editorAuthorityTitle")}</h2>
                 <p className="tw:m-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
-                  These pins make every result reproducible and prevent a saved Article from silently inheriting wider access.
+                  {t("analysis.editorAuthorityBody")}
                 </p>
               </div>
               <dl className="tw:grid tw:grid-cols-[minmax(130px,auto)_minmax(0,1fr)] tw:gap-x-4 tw:gap-y-3 tw:text-sm tw:@max-[560px]:grid-cols-1 tw:@max-[560px]:gap-y-1">
-                <dt className="tw:text-muted-foreground">Article ID</dt>
+                <dt className="tw:text-muted-foreground">{t("analysis.articleId")}</dt>
                 <dd className="tw:m-0 tw:truncate tw:font-mono">{draft.id}</dd>
-                <dt className="tw:text-muted-foreground">Environment</dt>
+                <dt className="tw:text-muted-foreground">{t("analysis.environment")}</dt>
                 <dd className="tw:m-0 tw:font-mono">{environment.name} · r{draft.environmentRevision}</dd>
-                <dt className="tw:text-muted-foreground">Knowledge grant</dt>
-                <dd className="tw:m-0 tw:truncate tw:font-mono">{draft.sourceKnowledgeGrantId ?? "None"}</dd>
-                <dt className="tw:text-muted-foreground">Graph revisions</dt>
+                <dt className="tw:text-muted-foreground">{t("analysis.knowledgeGrant")}</dt>
+                <dd className="tw:m-0 tw:truncate tw:font-mono">{draft.sourceKnowledgeGrantId ?? t("analysis.none")}</dd>
+                <dt className="tw:text-muted-foreground">{t("analysis.graphRevisions")}</dt>
                 <dd className="tw:m-0 tw:grid tw:gap-1 tw:font-mono">
-                  {draft.graphRevisionIds.length ? draft.graphRevisionIds.map((id) => <span className="tw:truncate" key={id}>{id}</span>) : "None"}
+                  {draft.graphRevisionIds.length ? draft.graphRevisionIds.map((id) => <span className="tw:truncate" key={id}>{id}</span>) : t("analysis.none")}
                 </dd>
-                <dt className="tw:text-muted-foreground">Connection revisions</dt>
+                <dt className="tw:text-muted-foreground">{t("analysis.connectionRevisions")}</dt>
                 <dd className="tw:m-0 tw:grid tw:gap-1">
                   {draft.connections.map((connection) => (
                     <span key={connection.connectionId} className="tw:flex tw:min-w-0 tw:items-center tw:gap-2">
@@ -461,17 +373,20 @@ export function AnalysisArticleEditor({
               </dl>
               {draft.environmentRevision !== environment.revision ? (
                 <InlineNotice tone="warning" icon="alert">
-                  This definition is pinned to Environment r{draft.environmentRevision}; the current Environment is r{environment.revision}. Rebase through an Agent session so graph and mapping grants are re-verified together.
+                  {t("analysis.environmentRevisionChanged", {
+                    pinned: draft.environmentRevision,
+                    current: environment.revision,
+                  })}
                 </InlineNotice>
               ) : null}
             </div>
           ) : null}
         </div>
         <ModalFooter>
-          <Button onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button onClick={onClose} disabled={saving}>{t("common.cancel")}</Button>
           <Button variant="primary" onClick={submit} disabled={saving}>
             {saving ? <Icon name="refresh" className="tw:animate-spin tw:motion-reduce:animate-none" /> : null}
-            {article ? "Save new revision" : "Create draft"}
+            {t("analysis.saveRevision")}
           </Button>
         </ModalFooter>
       </ModalSurface>

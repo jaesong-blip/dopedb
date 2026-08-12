@@ -3,6 +3,7 @@ import type { Update } from "@tauri-apps/plugin-updater";
 
 import { Icon } from "../../components/Icon";
 import AcpChatPanel from "../agents/AcpChatPanel";
+import type { AgentComposerRequest } from "../agents/domain";
 import { AgentSelectionProvider } from "../agents/selectionContext";
 import type { BackgroundTask } from "../backgroundTasks/domain";
 import type { ConnectionProfile } from "../connections/domain";
@@ -65,6 +66,7 @@ type Props = {
   mainContent: ReactNode;
   availableUpdate: Update | null;
   showTerminalDock: boolean;
+  agentComposerRequest: AgentComposerRequest | null;
   searchEverywhereOpen: boolean;
   terminalOverlay: boolean;
   terminalWidth: number;
@@ -367,6 +369,7 @@ function ShellLayoutContent(props: Props) {
       {showTerminalDock && selected && (
         <AcpChatPanel
           connection={selected}
+          composerRequest={props.agentComposerRequest}
           documents={workbenchDocuments}
           activeDocumentId={activeWorkbenchDocumentId}
           selectedTable={selectedTable}

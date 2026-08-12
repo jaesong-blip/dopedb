@@ -67,6 +67,14 @@ export interface AgentKnowledgeEnvironment {
   graphRevisionCount: number;
 }
 
+/** One screen-owned handoff into the Environment-pinned Agent composer. */
+export type AgentComposerRequest = {
+  id: string;
+  connectionId: ConnectionId;
+  projectEnvironmentId: string;
+  prompt: string;
+};
+
 /** A persisted, read-only conversation created before Terminal sessions replaced chat. */
 export interface RetiredChatArchiveThread {
   id: RetiredChatThreadId;

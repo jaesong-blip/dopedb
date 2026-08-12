@@ -153,7 +153,9 @@ pub(crate) struct KnowledgeGrant {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct KnowledgeSessionScope {
-    pub(crate) knowledge_grant_id: Uuid,
+    /// Exact graph authority when this Environment has active source-code
+    /// knowledge. Database-only Environments deliberately carry no graph grant.
+    pub(crate) knowledge_grant_id: Option<Uuid>,
     pub(crate) project_environment_id: Uuid,
     pub(crate) environment_revision: u64,
     pub(crate) graph_revision_ids: Vec<Uuid>,

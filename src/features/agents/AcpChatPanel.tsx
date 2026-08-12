@@ -64,6 +64,7 @@ import type {
   AcpSessionId,
   AcpSessionLifecycle,
   AcpSessionSummary,
+  AgentComposerRequest,
   AgentCliInfo,
   AgentProvider,
 } from "./domain";
@@ -119,6 +120,7 @@ type AgentDockLayout = "compact" | "docked" | "overlay";
 
 type AcpChatPanelProps = {
   connection: ConnectionProfile;
+  composerRequest: AgentComposerRequest | null;
   documents: WorkbenchDocument[];
   activeDocumentId: string | null;
   selectedTable: CatalogTable | null;
@@ -159,6 +161,7 @@ export default function AcpChatPanel(props: AcpChatPanelProps) {
 
 function AcpChatPanelContent({
   connection,
+  composerRequest,
   documents,
   activeDocumentId,
   selectedTable,
@@ -204,6 +207,7 @@ function AcpChatPanelContent({
   const autoScrollFrameRef = useRef<number | null>(null);
   const stickToBottomRef = useRef(true);
   const previousActiveIdRef = useRef<AcpSessionId | null>(null);
+  const consumedComposerRequestRef = useRef<string | null>(null);
   const cliStatusQuery = useQuery({
     ...agentCliDetectionQuery(),
     refetchOnWindowFocus: false,
@@ -218,10 +222,7 @@ function AcpChatPanelContent({
     refetchOnWindowFocus: false,
   });
   const availableKnowledgeEnvironments = useMemo(
-    () =>
-      (knowledgeEnvironmentsQuery.data ?? []).filter(
-        (environment) => environment.graphRevisionCount > 0,
-      ),
+    () => knowledgeEnvironmentsQuery.data ?? [],
     [knowledgeEnvironmentsQuery.data],
   );
   const enabledProviders = useMemo(
@@ -308,8 +309,7 @@ function AcpChatPanelContent({
     (environment) => environment.id === selectedEnvironmentId,
   );
   const newEnvironmentScopeReady =
-    selectedKnowledgeEnvironment !== undefined &&
-    selectedKnowledgeEnvironment.graphRevisionCount > 0;
+    selectedKnowledgeEnvironment !== undefined;
   const activeEnvironmentScopeReady =
     active !== null &&
     active.lifecycle !== "closed" &&
@@ -485,6 +485,10 @@ function AcpChatPanelContent({
       setSelectedEnvironmentId(active.projectEnvironmentId);
       return;
     }
+    if (composerRequest?.connectionId === connection.id) {
+      setSelectedEnvironmentId(composerRequest.projectEnvironmentId);
+      return;
+    }
     setSelectedEnvironmentId(
       availableKnowledgeEnvironments.length === 1
         ? availableKnowledgeEnvironments[0].id
@@ -494,7 +498,43 @@ function AcpChatPanelContent({
     active?.id,
     active?.projectEnvironmentId,
     availableKnowledgeEnvironments,
+    composerRequest,
     connection.id,
+  ]);
+
+  useEffect(() => {
+    if (
+      composerRequest === null ||
+      composerRequest.connectionId !== connection.id ||
+      consumedComposerRequestRef.current === composerRequest.id ||
+      !knowledgeEnvironmentsQuery.isSuccess
+    ) {
+      return;
+    }
+    consumedComposerRequestRef.current = composerRequest.id;
+    const environment = availableKnowledgeEnvironments.find(
+      (candidate) => candidate.id === composerRequest.projectEnvironmentId,
+    );
+    if (!environment) {
+      setError(t("agent.acpEnvironmentRequiredBody"));
+      return;
+    }
+    if (active?.projectEnvironmentId !== environment.id) {
+      setActiveId(null);
+    }
+    setSelectedEnvironmentId(environment.id);
+    setPrompt(composerRequest.prompt.slice(0, MAX_PROMPT_CHARS));
+    setHistoryOpen(false);
+    setError(null);
+    setComposerExpanded(false);
+    setIncludeEditorContext(false);
+  }, [
+    active?.projectEnvironmentId,
+    availableKnowledgeEnvironments,
+    composerRequest,
+    connection.id,
+    knowledgeEnvironmentsQuery.isSuccess,
+    t,
   ]);
 
   useEffect(() => {

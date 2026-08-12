@@ -14,6 +14,7 @@ import {
 import type { CatalogTable } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
 import type { BackgroundTask } from "../../features/backgroundTasks/domain";
+import type { AgentComposerRequest } from "../../features/agents/domain";
 import { useBackgroundTasks } from "../../features/backgroundTasks/useBackgroundTasks";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import SearchEverywhere, {
@@ -190,6 +191,8 @@ function Shell() {
   const [area, setArea] = usePersistentAppArea();
   const [knowledgeEnvironmentFocus, setKnowledgeEnvironmentFocus] =
     useState<KnowledgeEnvironmentFocus | null>(null);
+  const [agentComposerRequest, setAgentComposerRequest] =
+    useState<AgentComposerRequest | null>(null);
   const {
     open: terminalDockOpen,
     width: terminalDockWidth,
@@ -399,6 +402,7 @@ function Shell() {
 
   function openOrFocusTerminalDock() {
     if (!selected) return;
+    setAgentComposerRequest(null);
     if (compactShell) {
       closeServices();
       setMobileExplorerOpen(false);
@@ -420,8 +424,23 @@ function Shell() {
     openTerminalDock();
   }
 
-  function openAgentTask(connectionId: string) {
-    if (!conns.some((connection) => connection.id === connectionId)) return;
+  function openAgentTask(
+    connectionId: string,
+    environmentId?: string,
+    prompt?: string,
+  ) {
+    const target = conns.find((connection) => connection.id === connectionId);
+    if (!target) return;
+    setAgentComposerRequest(
+      environmentId && prompt
+        ? {
+            id: crypto.randomUUID(),
+            connectionId: target.id,
+            projectEnvironmentId: environmentId,
+            prompt,
+          }
+        : null,
+    );
     if (selected?.id !== connectionId) {
       selectConnection(connectionId, "workspace");
     }
@@ -985,6 +1004,7 @@ function Shell() {
       mainContent={mainContent}
       availableUpdate={availableUpdate}
       showTerminalDock={showTerminalDock}
+      agentComposerRequest={agentComposerRequest}
       searchEverywhereOpen={searchEverywhereOpen}
       terminalOverlay={terminalOverlay}
       terminalWidth={terminalDockWidth}

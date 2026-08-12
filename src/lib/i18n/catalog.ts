@@ -1,6 +1,7 @@
 // The complete static catalogue is composed once at module load. Catalogues stay statically
 // imported so Vite retains the existing one-bundle localization behavior with no async gap.
 import { activityCatalog } from "./catalogs/activity";
+import { analysisCatalog } from "./catalogs/analysis";
 import { agentsCatalog } from "./catalogs/agents";
 import { appCatalog } from "./catalogs/app";
 import { approvalCatalog } from "./catalogs/approval";
@@ -25,6 +26,7 @@ import type { Lang, MessageCatalog } from "./types";
 
 export const catalogParts = [
   activityCatalog,
+  analysisCatalog,
   agentsCatalog,
   appCatalog,
   approvalCatalog,

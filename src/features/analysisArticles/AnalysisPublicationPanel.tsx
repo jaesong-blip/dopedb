@@ -19,6 +19,7 @@ import {
   StatusDot,
 } from "../../design-system/components/Status";
 import { errMessage } from "../../ipc/types";
+import { useI18n } from "../../lib/i18n";
 import { AnalysisArticleVisualization } from "./AnalysisArticleVisualization";
 import {
   mergeAnalysisFragments,
@@ -71,6 +72,7 @@ function requestFor(article: AnalysisArticleRecord): AnalysisPublicationRequest 
 }
 
 export function AnalysisPublicationPanel({ article }: { article: AnalysisArticleRecord }) {
+  const { lang, t } = useI18n();
   const queryClient = useQueryClient();
   const publicationKey = ["analysis-publications", article.id] as const;
   const publications = useQuery({
@@ -96,7 +98,7 @@ export function AnalysisPublicationPanel({ article }: { article: AnalysisArticle
   });
   const publishMutation = useMutation({
     mutationFn: () => {
-      if (!preview) throw new Error("Preview this exact snapshot before publishing");
+      if (!preview) throw new Error(t("analysis.publicationPreviewRequired"));
       return publishAnalysisSnapshot(article.id, {
         ...request,
         previewHash: preview.snapshotHash,
@@ -144,7 +146,7 @@ export function AnalysisPublicationPanel({ article }: { article: AnalysisArticle
     return (
       <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[900px] tw:gap-3 tw:p-5">
         <InlineNotice tone="warning" icon="alert">
-          Publish an exact reviewed revision live before creating a fixed external snapshot.
+          {t("analysis.publicationLiveFirst")}
         </InlineNotice>
       </div>
     );
@@ -156,42 +158,42 @@ export function AnalysisPublicationPanel({ article }: { article: AnalysisArticle
 
       <section className="tw:grid tw:gap-3">
         <div className="tw:grid tw:gap-1">
-          <h2 className="tw:m-0 tw:text-base tw:font-semibold">Fixed public snapshot</h2>
+          <h2 className="tw:m-0 tw:text-base tw:font-semibold">{t("analysis.publicationTitle")}</h2>
           <p className="tw:m-0 tw:max-w-[86ch] tw:text-sm tw:leading-body tw:text-muted-foreground">
-            External readers receive only the selected, privacy-checked block values from live run {article.liveRunId.slice(0, 8)}. SQL, connection identity, refresh access, and workspace evidence never enter the public artifact.
+            {t("analysis.publicationBody", { run: article.liveRunId.slice(0, 8) })}
           </p>
         </div>
         <div className="tw:grid tw:grid-cols-2 tw:gap-3 tw:@max-[680px]:grid-cols-1">
-          <Field label="Public title">
+          <Field label={t("analysis.publicationPublicTitle")}>
             <TextInput value={request.title} maxLength={160} onChange={(event) => change({ title: event.target.value })} />
           </Field>
-          <Field label="URL slug">
+          <Field label={t("analysis.publicationSlug")}>
             <TextInput value={request.slug} pattern="[a-z0-9][a-z0-9-]{7,127}" onChange={(event) => change({ slug: event.target.value.toLocaleLowerCase() })} />
           </Field>
-          <Field label="Visibility">
+          <Field label={t("analysis.publicationVisibility")}>
             <SelectInput value={request.visibility} onChange={(event) => {
               const visibility = event.target.value === "public" ? "public" : "unlisted";
               change({ visibility, searchIndexable: visibility === "public" ? request.searchIndexable : false });
             }}>
-              <option value="unlisted">Unlisted link</option>
-              <option value="public">Public</option>
+              <option value="unlisted">{t("analysis.publicationUnlisted")}</option>
+              <option value="public">{t("analysis.publicationPublic")}</option>
             </SelectInput>
           </Field>
-          <Field label="Replace publication">
+          <Field label={t("analysis.publicationReplace")}>
             <SelectInput value={request.replacePublicationId ?? ""} onChange={(event) => change({ replacePublicationId: event.target.value || null })}>
-              <option value="">Create a new URL</option>
+              <option value="">{t("analysis.publicationNewUrl")}</option>
               {(publications.data ?? []).filter((publication) => !publication.revokedAt).map((publication) => (
                 <option key={publication.id} value={publication.id}>{publication.slug} · v{publication.version}</option>
               ))}
             </SelectInput>
           </Field>
         </div>
-        <Field label="Description">
+        <Field label={t("analysis.publicationDescription")}>
           <TextAreaInput value={request.description} maxLength={2_000} onChange={(event) => change({ description: event.target.value })} />
         </Field>
 
         <div className="tw:grid tw:gap-2">
-          <strong className="tw:text-sm tw:font-medium">Published blocks</strong>
+          <strong className="tw:text-sm tw:font-medium">{t("analysis.publicationBlocks")}</strong>
           <div className="tw:grid tw:grid-cols-2 tw:gap-1 tw:rounded-md tw:border tw:border-border-subtle tw:p-2 tw:@max-[620px]:grid-cols-1">
             {article.definition.blocks.filter((block) => !CONTROL_BLOCKS.has(block.kind)).map((block) => (
               <CheckboxField
@@ -209,7 +211,7 @@ export function AnalysisPublicationPanel({ article }: { article: AnalysisArticle
         </div>
         {article.definition.parameters.length ? (
           <div className="tw:grid tw:gap-2">
-            <strong className="tw:text-sm tw:font-medium">Parameter values shown publicly</strong>
+            <strong className="tw:text-sm tw:font-medium">{t("analysis.publicationParameters")}</strong>
             <div className="tw:grid tw:grid-cols-2 tw:gap-1 tw:rounded-md tw:border tw:border-border-subtle tw:p-2 tw:@max-[620px]:grid-cols-1">
               {article.definition.parameters.map((parameter) => (
                 <CheckboxField
@@ -228,17 +230,17 @@ export function AnalysisPublicationPanel({ article }: { article: AnalysisArticle
         ) : null}
         <div className="tw:grid tw:gap-2 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3">
           <CheckboxField
-            label="I reviewed every selected block and confirm its masking and sensitivity are safe for external readers"
+            label={t("analysis.publicationSensitivityConfirm")}
             checked={request.sensitivityConfirmed}
             onChange={(event) => change({ sensitivityConfirmed: event.target.checked })}
           />
           <CheckboxField
-            label="I approve publishing values produced from this live Environment revision"
+            label={t("analysis.publicationProductionConfirm")}
             checked={request.productionConfirmed}
             onChange={(event) => change({ productionConfirmed: event.target.checked })}
           />
           <CheckboxField
-            label="Allow search engines to index this public snapshot"
+            label={t("analysis.publicationIndexable")}
             checked={request.searchIndexable}
             disabled={request.visibility !== "public"}
             onChange={(event) => change({ searchIndexable: event.target.checked })}
@@ -250,15 +252,15 @@ export function AnalysisPublicationPanel({ article }: { article: AnalysisArticle
             onClick={() => previewMutation.mutate()}
           >
             {previewMutation.isPending ? <Icon name="refresh" className="tw:animate-spin tw:motion-reduce:animate-none" /> : <Icon name="view" />}
-            Preview exact snapshot
+            {t("analysis.publicationPreview")}
           </Button>
           <ConfirmButton
             variant="primary"
             disabled={!preview || publishMutation.isPending}
-            confirmLabel="Publish this exact, fixed snapshot externally?"
+            confirmLabel={t("analysis.publicationPublishConfirm")}
             onConfirm={() => publishMutation.mutate()}
           >
-            <Icon name="externalLink" /> Publish snapshot
+            <Icon name="externalLink" /> {t("analysis.publicationPublish")}
           </ConfirmButton>
         </div>
       </section>
@@ -266,9 +268,9 @@ export function AnalysisPublicationPanel({ article }: { article: AnalysisArticle
       {preview && previewDefinition ? (
         <section className="tw:grid tw:gap-3 tw:border-t tw:border-border-subtle tw:pt-5">
           <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
-            <h2 className="tw:m-0 tw:text-base tw:font-semibold">Approved preview</h2>
+            <h2 className="tw:m-0 tw:text-base tw:font-semibold">{t("analysis.publicationApprovedPreview")}</h2>
             <StatusBadge density="compact">{preview.snapshotHash.slice(0, 12)}</StatusBadge>
-            <span className="tw:text-xs tw:text-muted-foreground">Data as of {new Date(preview.snapshot.dataAsOf).toLocaleString()}</span>
+            <span className="tw:text-xs tw:text-muted-foreground">{t("analysis.publicationDataAsOf", { time: new Date(preview.snapshot.dataAsOf).toLocaleString(lang) })}</span>
           </div>
           {preview.snapshot.parameters.length ? (
             <dl className="tw:flex tw:flex-wrap tw:gap-2">
@@ -290,17 +292,17 @@ export function AnalysisPublicationPanel({ article }: { article: AnalysisArticle
       ) : null}
 
       <section className="tw:grid tw:gap-3 tw:border-t tw:border-border-subtle tw:pt-5">
-        <h2 className="tw:m-0 tw:text-base tw:font-semibold">Publication history</h2>
-        {publications.isPending ? <LoadingLabel>Loading publications…</LoadingLabel> : publications.error ? (
+        <h2 className="tw:m-0 tw:text-base tw:font-semibold">{t("analysis.publicationHistory")}</h2>
+        {publications.isPending ? <LoadingLabel>{t("analysis.publicationLoading")}</LoadingLabel> : publications.error ? (
           <InlineNotice tone="danger" icon="alert">{errMessage(publications.error)}</InlineNotice>
         ) : (publications.data?.length ?? 0) === 0 ? (
-          <span className="tw:text-sm tw:text-muted-foreground">No external snapshot has been published.</span>
+          <span className="tw:text-sm tw:text-muted-foreground">{t("analysis.publicationEmpty")}</span>
         ) : publications.data?.map((publication) => (
           <div key={publication.id} className="tw:grid tw:grid-cols-[auto_minmax(0,1fr)_auto] tw:items-center tw:gap-3 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3">
             <StatusDot tone={publication.revokedAt ? "neutral" : "success"} />
             <span className="tw:grid tw:min-w-0 tw:gap-0.5">
               <strong className="tw:truncate tw:text-sm tw:font-medium">{publication.title}</strong>
-              <span className="tw:truncate tw:text-xs tw:text-muted-foreground">{publication.slug} · v{publication.version} · {publication.visibility} · {new Date(publication.publishedAt).toLocaleString()}</span>
+              <span className="tw:truncate tw:text-xs tw:text-muted-foreground">{publication.slug} · v{publication.version} · {publication.visibility === "public" ? t("analysis.publicationPublic") : t("analysis.publicationUnlisted")} · {new Date(publication.publishedAt).toLocaleString(lang)}</span>
               <code className="tw:truncate tw:text-2xs tw:text-muted-foreground">{publication.snapshotHash}</code>
             </span>
             <span className="tw:flex tw:items-center tw:gap-1">
@@ -309,7 +311,7 @@ export function AnalysisPublicationPanel({ article }: { article: AnalysisArticle
                   iconOnly
                   size="xs"
                   variant="ghost"
-                  title="Open public snapshot"
+                  title={t("analysis.publicationOpen")}
                   onClick={() => void analysisPublicationUrl(publication.slug).then(openUrl)}
                 >
                   <Icon name="externalLink" />
@@ -320,14 +322,14 @@ export function AnalysisPublicationPanel({ article }: { article: AnalysisArticle
                   iconOnly
                   size="xs"
                   variant="ghost"
-                  label="Revoke public snapshot"
-                  confirmLabel="Revoke this public URL?"
+                  label={t("analysis.publicationRevoke")}
+                  confirmLabel={t("analysis.publicationRevokeConfirm")}
                   disabled={revokeMutation.isPending}
                   onConfirm={() => revokeMutation.mutate(publication.id)}
                 >
                   <Icon name="trash" />
                 </ConfirmButton>
-              ) : <StatusBadge density="compact">Revoked</StatusBadge>}
+              ) : <StatusBadge density="compact">{t("analysis.publicationRevoked")}</StatusBadge>}
             </span>
           </div>
         ))}

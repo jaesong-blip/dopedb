@@ -567,6 +567,11 @@ async fn bounded_json<T: DeserializeOwned>(
     action: &str,
     maximum: usize,
 ) -> AppResult<T> {
+    let json_content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.split(';').next() == Some("application/json"));
     let bytes = response
         .bytes()
         .await
@@ -576,8 +581,13 @@ async fn bounded_json<T: DeserializeOwned>(
             "{action} returned an oversized response"
         )));
     }
+    if bytes.is_empty() || !json_content_type {
+        return Err(AppError::Network(format!(
+            "{action} API is unavailable in the current workspace service deployment"
+        )));
+    }
     serde_json::from_slice(&bytes)
-        .map_err(|error| AppError::Network(format!("{action} returned invalid JSON: {error}")))
+        .map_err(|_| AppError::Network(format!("{action} returned an incompatible response")))
 }
 
 async fn response<T: DeserializeOwned>(

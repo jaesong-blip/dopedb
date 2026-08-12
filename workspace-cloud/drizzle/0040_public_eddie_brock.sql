@@ -225,6 +225,15 @@ CREATE TABLE "workspace_control"."workspace_analysis_signal" (
 	CONSTRAINT "workspace_analysis_signal_revision" CHECK ("workspace_control"."workspace_analysis_signal"."article_revision" >= 1 AND "workspace_control"."workspace_analysis_signal"."revision" >= 1)
 );
 --> statement-breakpoint
+-- PostgreSQL requires the referenced composite keys to exist before their
+-- foreign keys are declared. Drizzle originally emitted these indexes after
+-- the foreign-key block, which made the first production migration fail at the
+-- article-connection reference and left the previous deployment active.
+CREATE UNIQUE INDEX "workspace_analysis_article_org_id_idx" ON "workspace_control"."workspace_analysis_article" USING btree ("organization_id","id");--> statement-breakpoint
+CREATE UNIQUE INDEX "workspace_analysis_article_revision_unique_idx" ON "workspace_control"."workspace_analysis_article_revision" USING btree ("organization_id","article_id","revision");--> statement-breakpoint
+CREATE UNIQUE INDEX "workspace_analysis_article_run_org_id_idx" ON "workspace_control"."workspace_analysis_article_run" USING btree ("organization_id","id");--> statement-breakpoint
+CREATE UNIQUE INDEX "workspace_analysis_refresh_lease_org_id_idx" ON "workspace_control"."workspace_analysis_refresh_lease" USING btree ("organization_id","id");--> statement-breakpoint
+CREATE UNIQUE INDEX "workspace_analysis_runner_org_id_idx" ON "workspace_control"."workspace_analysis_runner" USING btree ("organization_id","id");--> statement-breakpoint
 ALTER TABLE "workspace_control"."workspace_analysis_article" ADD CONSTRAINT "workspace_analysis_article_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "workspace_control"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workspace_control"."workspace_analysis_article" ADD CONSTRAINT "workspace_analysis_article_org_environment_fk" FOREIGN KEY ("organization_id","project_environment_id") REFERENCES "workspace_control"."knowledge_project_environment"("organization_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workspace_control"."workspace_analysis_article" ADD CONSTRAINT "workspace_analysis_article_org_grant_fk" FOREIGN KEY ("organization_id","source_knowledge_grant_id") REFERENCES "workspace_control"."knowledge_grant"("organization_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -261,22 +270,17 @@ ALTER TABLE "workspace_control"."workspace_analysis_signal" ADD CONSTRAINT "work
 ALTER TABLE "workspace_control"."workspace_analysis_signal" ADD CONSTRAINT "workspace_analysis_signal_org_revision_fk" FOREIGN KEY ("organization_id","article_id","article_revision") REFERENCES "workspace_control"."workspace_analysis_article_revision"("organization_id","article_id","revision") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workspace_control"."workspace_analysis_signal" ADD CONSTRAINT "workspace_analysis_signal_org_owner_fk" FOREIGN KEY ("organization_id","owner_member_id") REFERENCES "workspace_control"."member"("organization_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workspace_control"."workspace_analysis_signal" ADD CONSTRAINT "workspace_analysis_signal_org_run_fk" FOREIGN KEY ("organization_id","last_evaluated_run_id") REFERENCES "workspace_control"."workspace_analysis_article_run"("organization_id","id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-CREATE UNIQUE INDEX "workspace_analysis_article_org_id_idx" ON "workspace_control"."workspace_analysis_article" USING btree ("organization_id","id");--> statement-breakpoint
 CREATE INDEX "workspace_analysis_article_environment_idx" ON "workspace_control"."workspace_analysis_article" USING btree ("organization_id","project_environment_id","state","updated_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "workspace_analysis_article_connection_role_idx" ON "workspace_control"."workspace_analysis_article_connection" USING btree ("article_id","role");--> statement-breakpoint
 CREATE UNIQUE INDEX "workspace_analysis_query_receipt_run_query_idx" ON "workspace_control"."workspace_analysis_article_query_receipt" USING btree ("organization_id","run_id","query_run_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "workspace_analysis_article_revision_unique_idx" ON "workspace_control"."workspace_analysis_article_revision" USING btree ("organization_id","article_id","revision");--> statement-breakpoint
 CREATE INDEX "workspace_analysis_article_revision_history_idx" ON "workspace_control"."workspace_analysis_article_revision" USING btree ("organization_id","article_id","created_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "workspace_analysis_article_run_org_id_idx" ON "workspace_control"."workspace_analysis_article_run" USING btree ("organization_id","id");--> statement-breakpoint
 CREATE INDEX "workspace_analysis_article_run_article_idx" ON "workspace_control"."workspace_analysis_article_run" USING btree ("organization_id","article_id","created_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "workspace_analysis_publication_org_id_idx" ON "workspace_control"."workspace_analysis_publication" USING btree ("organization_id","id");--> statement-breakpoint
 CREATE UNIQUE INDEX "workspace_analysis_publication_slug_idx" ON "workspace_control"."workspace_analysis_publication" USING btree ("slug");--> statement-breakpoint
 CREATE INDEX "workspace_analysis_publication_article_idx" ON "workspace_control"."workspace_analysis_publication" USING btree ("organization_id","article_id","published_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "workspace_analysis_refresh_lease_org_id_idx" ON "workspace_control"."workspace_analysis_refresh_lease" USING btree ("organization_id","id");--> statement-breakpoint
 CREATE UNIQUE INDEX "workspace_analysis_refresh_lease_idempotency_idx" ON "workspace_control"."workspace_analysis_refresh_lease" USING btree ("organization_id","idempotency_key");--> statement-breakpoint
 CREATE INDEX "workspace_analysis_refresh_lease_due_idx" ON "workspace_control"."workspace_analysis_refresh_lease" USING btree ("organization_id","runner_id","expires_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "workspace_analysis_result_fragment_unique_idx" ON "workspace_control"."workspace_analysis_result_fragment" USING btree ("organization_id","run_id","block_id","ordinal");--> statement-breakpoint
-CREATE UNIQUE INDEX "workspace_analysis_runner_org_id_idx" ON "workspace_control"."workspace_analysis_runner" USING btree ("organization_id","id");--> statement-breakpoint
 CREATE UNIQUE INDEX "workspace_analysis_runner_org_device_idx" ON "workspace_control"."workspace_analysis_runner" USING btree ("organization_id","device_id");--> statement-breakpoint
 CREATE INDEX "workspace_analysis_runner_member_idx" ON "workspace_control"."workspace_analysis_runner" USING btree ("organization_id","member_id","revoked_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "workspace_analysis_signal_org_id_idx" ON "workspace_control"."workspace_analysis_signal" USING btree ("organization_id","id");--> statement-breakpoint

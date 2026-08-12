@@ -433,7 +433,7 @@ impl AcpRuntime {
                         acp_session_id: None,
                         knowledge_grant_id: knowledge_scope
                             .as_ref()
-                            .map(|scope| scope.knowledge_grant_id),
+                            .and_then(|scope| scope.knowledge_grant_id),
                         project_environment_id: knowledge_scope
                             .as_ref()
                             .map(|scope| scope.project_environment_id),
@@ -806,11 +806,14 @@ fn summary_knowledge_scope(
     ) {
         (None, None, None, true) => Ok(None),
         (
-            Some(knowledge_grant_id),
+            knowledge_grant_id,
             Some(project_environment_id),
             Some(environment_revision),
-            false,
+            graph_ids_empty,
         ) if environment_revision > 0
+            && !summary.environment_connections.is_empty()
+            && ((graph_ids_empty && knowledge_grant_id.is_none())
+                || (!graph_ids_empty && knowledge_grant_id.is_some()))
             && summary.graph_revision_ids.len() <= 100
             && summary
                 .graph_revision_ids

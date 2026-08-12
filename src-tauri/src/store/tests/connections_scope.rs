@@ -343,7 +343,7 @@ async fn assert_current_store_migration_is_write_free() {
     let current_connection_id = Uuid::from_u128(0x1291);
     let secondary_connection_id = Uuid::from_u128(0x1292);
     let mut agent_scope = Some(crate::features::knowledge::domain::KnowledgeSessionScope {
-        knowledge_grant_id: Uuid::from_u128(0x1290),
+        knowledge_grant_id: Some(Uuid::from_u128(0x1290)),
         project_environment_id: environment.id,
         environment_revision: environment.revision,
         graph_revision_ids: active_set
@@ -938,6 +938,69 @@ async fn remote_template_sync_preserves_member_local_credential_binding() {
         crate::model::WorkspaceConnectionAccess::Read
     );
     assert!(!loaded.allow_writes);
+
+    // An Environment with databases but no source-code graph is still a valid
+    // exact Agent scope. Analysis Article drafts must not require users to add
+    // a repository before they can ask a database-only question.
+    sqlx::raw_sql(migrations::KNOWLEDGE_SCHEMA)
+        .execute(store.pool())
+        .await
+        .unwrap();
+    let project_id = Uuid::new_v4();
+    let environment_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO knowledge_projects
+             (id, workspace_id, name, revision, created_at, updated_at)
+         VALUES (?1, ?2, 'Database only', 1, ?3, ?3)",
+    )
+    .bind(project_id.to_string())
+    .bind(workspace_id.to_string())
+    .bind(Utc::now())
+    .execute(store.pool())
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO knowledge_project_environments
+             (id, project_id, name, production, risk_class, revision, created_at, updated_at)
+         VALUES (?1, ?2, 'Main', 0, 'development', 1, ?3, ?3)",
+    )
+    .bind(environment_id.to_string())
+    .bind(project_id.to_string())
+    .bind(Utc::now())
+    .execute(store.pool())
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO knowledge_environment_connections
+             (id, workspace_id, project_environment_id, environment_revision,
+              connection_id, connection_revision, role, alias, created_at)
+         VALUES (?1, ?2, ?3, 1, ?4, 2, 'primary', 'Primary', ?5)",
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind(workspace_id.to_string())
+    .bind(environment_id.to_string())
+    .bind(id.to_string())
+    .bind(Utc::now())
+    .execute(store.pool())
+    .await
+    .unwrap();
+    let pinned = store.pin_connection_for_read(id).await.unwrap();
+    let environments = store.agent_knowledge_environments(&pinned).await.unwrap();
+    assert_eq!(environments.len(), 1);
+    assert_eq!(environments[0].graph_revision_count, 0);
+    let environment_scope = store
+        .knowledge_session_scope(&pinned, Some(environment_id))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(environment_scope.knowledge_grant_id, None);
+    assert!(environment_scope.graph_revision_ids.is_empty());
+    assert_eq!(environment_scope.connections.len(), 1);
+    assert!(store
+        .exact_knowledge_session_graphs(&environment_scope, workspace_id, user.id.as_str())
+        .await
+        .unwrap()
+        .is_empty());
 
     assert_agent_acp_batch_replay_is_bounded(&store, id).await;
 
