@@ -57,6 +57,11 @@ CREATE TABLE "workspace_control"."workspace_analysis_signal_revision" (
         AND "workspace_control"."workspace_analysis_signal_revision"."payload_hash" ~ '^[0-9a-f]{64}$')
 );
 --> statement-breakpoint
+-- PostgreSQL resolves composite foreign-key targets when each ALTER TABLE is
+-- executed. Create both referenced unique keys before the notification and
+-- receipt constraints that depend on them.
+CREATE UNIQUE INDEX "workspace_analysis_signal_receipt_org_id_idx" ON "workspace_control"."workspace_analysis_signal_receipt" USING btree ("organization_id","id");--> statement-breakpoint
+CREATE UNIQUE INDEX "workspace_analysis_signal_revision_unique_idx" ON "workspace_control"."workspace_analysis_signal_revision" USING btree ("organization_id","signal_id","revision");--> statement-breakpoint
 ALTER TABLE "workspace_control"."workspace_analysis_signal" DROP CONSTRAINT "workspace_analysis_signal_org_run_fk";
 --> statement-breakpoint
 ALTER TABLE "workspace_control"."workspace_analysis_signal_notification" ADD CONSTRAINT "workspace_analysis_signal_notification_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "workspace_control"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -71,8 +76,6 @@ ALTER TABLE "workspace_control"."workspace_analysis_signal_revision" ADD CONSTRA
 ALTER TABLE "workspace_control"."workspace_analysis_signal_revision" ADD CONSTRAINT "workspace_analysis_signal_revision_org_member_fk" FOREIGN KEY ("organization_id","created_by_member_id") REFERENCES "workspace_control"."member"("organization_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "workspace_analysis_signal_notification_delivery_idx" ON "workspace_control"."workspace_analysis_signal_notification" USING btree ("organization_id","receipt_id","recipient_member_id","channel");--> statement-breakpoint
 CREATE INDEX "workspace_analysis_signal_notification_inbox_idx" ON "workspace_control"."workspace_analysis_signal_notification" USING btree ("organization_id","recipient_member_id","read_at","created_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "workspace_analysis_signal_receipt_org_id_idx" ON "workspace_control"."workspace_analysis_signal_receipt" USING btree ("organization_id","id");--> statement-breakpoint
 CREATE UNIQUE INDEX "workspace_analysis_signal_receipt_dedupe_idx" ON "workspace_control"."workspace_analysis_signal_receipt" USING btree ("organization_id","dedupe_key");--> statement-breakpoint
 CREATE INDEX "workspace_analysis_signal_receipt_history_idx" ON "workspace_control"."workspace_analysis_signal_receipt" USING btree ("organization_id","signal_id","transition_sequence");--> statement-breakpoint
-CREATE UNIQUE INDEX "workspace_analysis_signal_revision_unique_idx" ON "workspace_control"."workspace_analysis_signal_revision" USING btree ("organization_id","signal_id","revision");--> statement-breakpoint
 ALTER TABLE "workspace_control"."workspace_analysis_signal" ADD CONSTRAINT "workspace_analysis_signal_org_run_fk" FOREIGN KEY ("organization_id","last_evaluated_run_id") REFERENCES "workspace_control"."workspace_analysis_article_run"("organization_id","id") ON DELETE restrict ON UPDATE no action;
