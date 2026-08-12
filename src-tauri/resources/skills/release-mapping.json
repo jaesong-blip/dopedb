@@ -198,6 +198,11 @@
       "packageDigest": "1bb911248554280a0472be9876588b04c05d19984b877a0a045fd31ba8ce9c4c"
     },
     {
+      "appVersion": "0.3.47",
+      "releaseRevision": 20,
+      "packageDigest": "1bb911248554280a0472be9876588b04c05d19984b877a0a045fd31ba8ce9c4c"
+    },
+    {
       "appVersion": "0.3.5",
       "releaseRevision": 4,
       "packageDigest": "b63f3eb90060b449abb1bd9de68256c3490ea2b8825496d3065230fc5c5534db"
