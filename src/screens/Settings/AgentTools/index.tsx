@@ -26,7 +26,7 @@ import {
   removeSkill,
   repairSkill,
   skillSelfTest,
-} from "../../../ipc/commands";
+} from "../../../features/skills/tauriAdapter";
 import {
   errMessage,
   type SkillConflictKind,

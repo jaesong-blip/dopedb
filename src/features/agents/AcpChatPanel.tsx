@@ -30,6 +30,8 @@ import {
   canRenderAgentRichText,
 } from "../../design-system/components/AgentRichText";
 import { Button } from "../../design-system/components/Button";
+import { InlineSelect } from "../../design-system/components/FormControls";
+import { ProgressBar } from "../../design-system/components/Progress";
 import RenderRecoveryBoundary from "../../design-system/components/RenderRecoveryBoundary";
 import {
   InlineNotice,
@@ -87,15 +89,18 @@ import {
   cancelAgentAcpSession,
   closeAgentAcpSession,
   focusAgentAcpSession,
-  listAgentAcpSessions,
   listAgentKnowledgeEnvironments,
-  onAgentAcpChanged,
   promptAgentAcpSession,
   respondAgentAcpPermission,
   resumeAgentAcpSession,
   setAgentAcpConfigOption,
   startAgentAcpSession,
 } from "./tauriAdapter";
+import {
+  retryAcpSessionSnapshot,
+  subscribeAcpSessionChanges,
+  useAcpSessionSnapshot,
+} from "./sessionStore";
 import {
   appendAcpConversationEvents,
   mergeAcpConversationFocus,
@@ -175,6 +180,7 @@ function AcpChatPanelContent({
 }: AcpChatPanelProps) {
   const { t } = useI18n();
   const catalogScope = useCatalogScope();
+  const sessionSnapshot = useAcpSessionSnapshot(catalogScope.key);
   const { selection } = useAgentSelection();
   const debugDetails = useAgentDebugDetails();
   const configuredProviders = useEnabledAgentProviders();
@@ -198,6 +204,7 @@ function AcpChatPanelContent({
   const [configChanging, setConfigChanging] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [sessionLoadError, setSessionLoadError] = useState<string | null>(null);
   const [permissionSubmitting, setPermissionSubmitting] = useState<string | null>(
     null,
   );
@@ -410,46 +417,16 @@ function AcpChatPanelContent({
   );
 
   useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    setLoading(true);
-    setError(null);
-
-    void Promise.all([
-      listAgentAcpSessions(),
-      onAgentAcpChanged((change) => {
-        if (disposed) return;
-        queueSessionChange(change.session, change.event);
-        if (
-          change.session.connectionId === connection.id &&
-          change.session.lifecycle === "starting"
-        ) {
-          setActiveId((current) => current ?? change.session.id);
-        }
-      }),
-    ])
-      .then(([loaded, stopListening]) => {
-        if (disposed) {
-          stopListening();
-          return;
-        }
-        unlisten = stopListening;
-        upsertSessions(loaded);
-        const next = loaded
-          .filter((session) => session.connectionId === connection.id)
-          .filter((session) => isLiveSession(session.lifecycle))
-          .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
-        setActiveId(next?.id ?? null);
-      })
-      .catch((reason) => {
-        if (!disposed) setError(t("agent.acpLoadFailed", { error: errMessage(reason) }));
-      })
-      .finally(() => {
-        if (!disposed) setLoading(false);
-      });
-
+    const stopListening = subscribeAcpSessionChanges((change) => {
+      queueSessionChange(change.session, change.event);
+      if (
+        change.session.connectionId === connection.id &&
+        change.session.lifecycle === "starting"
+      ) {
+        setActiveId((current) => current ?? change.session.id);
+      }
+    });
     return () => {
-      disposed = true;
       if (pendingChangeFrameRef.current !== null) {
         window.cancelAnimationFrame(pendingChangeFrameRef.current);
         pendingChangeFrameRef.current = null;
@@ -459,9 +436,34 @@ function AcpChatPanelContent({
         pendingChangeTimerRef.current = null;
       }
       pendingChangesRef.current.clear();
-      unlisten?.();
+      stopListening();
     };
   }, [connection.id, queueSessionChange, t, upsertSessions]);
+
+  useEffect(() => {
+    setLoading(sessionSnapshot.loading);
+    if (sessionSnapshot.error) {
+      setSessionLoadError(t("agent.acpLoadFailed", {
+        error: errMessage(sessionSnapshot.error),
+      }));
+      return;
+    }
+    setSessionLoadError(null);
+    setSessions([...sessionSnapshot.sessions]);
+    if (sessionSnapshot.loading) return;
+    const next = sessionSnapshot.sessions
+      .filter((session) => session.connectionId === connection.id)
+      .filter((session) => isLiveSession(session.lifecycle))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+    setActiveId((current) => current ?? next?.id ?? null);
+  }, [connection.id, sessionSnapshot, t]);
+
+  useEffect(() => {
+    setActiveId(null);
+    projectionsRef.current.clear();
+    pendingChangesRef.current.clear();
+    setProjectionRevision((revision) => revision + 1);
+  }, [catalogScope.key]);
 
   useEffect(() => {
     const next =
@@ -879,16 +881,12 @@ function AcpChatPanelContent({
       />
 
       {agentBusy ? (
-        <div
-          className="tw:mx-6 tw:mt-2 tw:h-2 tw:shrink-0 tw:overflow-hidden tw:rounded-pill tw:bg-muted"
-          role="progressbar"
-          aria-label={t("agent.acpWorking")}
-        >
-          <span className="tw:block tw:h-full tw:w-full tw:animate-pulse tw:rounded-pill tw:bg-muted-foreground/30 tw:motion-reduce:animate-none" />
+        <div className="tw:mx-6 tw:mt-2 tw:shrink-0">
+          <ProgressBar value={null} label={t("agent.acpWorking")} />
         </div>
       ) : null}
 
-      {error ? (
+      {error || sessionLoadError ? (
         <InlineNotice
           tone="danger"
           icon="alert"
@@ -898,15 +896,21 @@ function AcpChatPanelContent({
               iconOnly
               size="xs"
               variant="ghost"
-              onClick={() => setError(null)}
-              title={t("common.close")}
-              aria-label={t("common.close")}
+              onClick={() => {
+                if (sessionLoadError) {
+                  retryAcpSessionSnapshot(catalogScope.key);
+                } else {
+                  setError(null);
+                }
+              }}
+              title={t(sessionLoadError ? "common.refresh" : "common.close")}
+              aria-label={t(sessionLoadError ? "common.refresh" : "common.close")}
             >
-              <Icon name="close" />
+              <Icon name={sessionLoadError ? "refresh" : "close"} />
             </Button>
           }
         >
-          {error}
+          {error ?? sessionLoadError}
         </InlineNotice>
       ) : null}
 
@@ -1259,23 +1263,26 @@ function AcpChatPanelContent({
         </ToolWindowComposer>
         <ToolWindowComposerContext>
           <AgentProviderMark provider={selectedProvider} />
-          {enabledProviders.length > 0 ? <select
-            className="tw:h-control-sm tw:max-w-[10rem] tw:cursor-pointer tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-1 tw:font-sans tw:text-ui tw:text-foreground tw:outline-none tw:hover:bg-muted tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
-            value={selectedProvider}
-            disabled={starting}
-            onChange={(event) =>
-              void changeProvider(event.target.value as AgentProvider)
-            }
-            aria-label={t("agent.acpProvider")}
-            title={t("agent.acpLocalAuth")}
-          >
-            {enabledProviders.includes("claude") ? (
-              <option value="claude">Claude Agent</option>
-            ) : null}
-            {enabledProviders.includes("codex") ? (
-              <option value="codex">Codex</option>
-            ) : null}
-          </select> : (
+          {enabledProviders.length > 0 ? (
+            <span className="tw:max-w-[10rem]">
+              <InlineSelect
+                value={selectedProvider}
+                disabled={starting}
+                onChange={(event) =>
+                  void changeProvider(event.target.value as AgentProvider)
+                }
+                aria-label={t("agent.acpProvider")}
+                title={t("agent.acpLocalAuth")}
+              >
+                {enabledProviders.includes("claude") ? (
+                  <option value="claude">Claude Agent</option>
+                ) : null}
+                {enabledProviders.includes("codex") ? (
+                  <option value="codex">Codex</option>
+                ) : null}
+              </InlineSelect>
+            </span>
+          ) : (
             <Button size="compact" variant="ghost" onClick={openAgentSetup}>
               {t("agent.acpOpenSetup")}
             </Button>
@@ -1288,25 +1295,26 @@ function AcpChatPanelContent({
             />
           ) : null}
           {knowledgeEnvironmentsQuery.isSuccess ? (
-            <select
-              className="tw:h-control-sm tw:min-w-0 tw:max-w-[14rem] tw:cursor-pointer tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-1 tw:font-sans tw:text-ui tw:text-foreground tw:outline-none tw:hover:bg-muted tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
-              value={selectedEnvironmentId ?? ""}
-              disabled={starting || active !== null}
-              onChange={(event) =>
-                setSelectedEnvironmentId(event.target.value || null)
-              }
-              aria-label={t("agent.acpEnvironment")}
-              title={t("agent.acpEnvironmentHint")}
-            >
-              <option value="" disabled>
-                {t("agent.acpSelectEnvironment")}
-              </option>
-              {availableKnowledgeEnvironments.map((environment) => (
-                <option key={environment.id} value={environment.id}>
-                  {environment.projectName} / {environment.name}
+            <span className="tw:max-w-[14rem]">
+              <InlineSelect
+                value={selectedEnvironmentId ?? ""}
+                disabled={starting || active !== null}
+                onChange={(event) =>
+                  setSelectedEnvironmentId(event.target.value || null)
+                }
+                aria-label={t("agent.acpEnvironment")}
+                title={t("agent.acpEnvironmentHint")}
+              >
+                <option value="" disabled>
+                  {t("agent.acpSelectEnvironment")}
                 </option>
-              ))}
-            </select>
+                {availableKnowledgeEnvironments.map((environment) => (
+                  <option key={environment.id} value={environment.id}>
+                    {environment.projectName} / {environment.name}
+                  </option>
+                ))}
+              </InlineSelect>
+            </span>
           ) : null}
         </ToolWindowComposerContext>
       </ToolWindowComposerDock>
@@ -1397,20 +1405,21 @@ function ConfigSelect({
     return null;
   }
   return (
-    <select
-      className="tw:h-control-sm tw:max-w-[11rem] tw:cursor-pointer tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-1 tw:font-sans tw:text-xs tw:text-foreground tw:outline-none tw:hover:bg-muted tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:disabled:cursor-wait tw:disabled:text-muted-foreground"
-      value={option.currentValue}
-      disabled={changing}
-      onChange={(event) => onChange(event.target.value)}
-      aria-label={option.name}
-      title={option.description ?? option.name}
-    >
-      {options.map((entry) => (
-        <option key={entry.value} value={entry.value}>
-          {entry.name}
-        </option>
-      ))}
-    </select>
+    <span className="tw:max-w-[11rem]">
+      <InlineSelect
+        value={option.currentValue}
+        disabled={changing}
+        onChange={(event) => onChange(event.target.value)}
+        aria-label={option.name}
+        title={option.description ?? option.name}
+      >
+        {options.map((entry) => (
+          <option key={entry.value} value={entry.value}>
+            {entry.name}
+          </option>
+        ))}
+      </InlineSelect>
+    </span>
   );
 }
 

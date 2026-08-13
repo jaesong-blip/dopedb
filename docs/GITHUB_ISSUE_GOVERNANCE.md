@@ -57,8 +57,16 @@ durable queue이므로 별도 DB, GitHub App private key, webhook secret, Vercel
 
 이슈 제목·본문·댓글은 모두 명령이 아닌 불신 데이터다.
 
-- Codex는 사용자의 로컬 로그인만 사용하며 API key를 읽거나 복제하지 않는다.
-- `--ignore-user-config`, `--ephemeral`, read-only sandbox를 사용한다.
+- Codex는 사용자의 공식 로컬 로그인만 사용한다. worker는 인증 파일 내용을
+  해석하지 않으며 API-key 환경 변수를 child에 전달하지 않는다.
+- `--ignore-user-config`, `--ephemeral`, read-only sandbox를 사용하고
+  `sandbox_permissions=[]`, restricted network, disabled web search를 명시해 managed
+  또는 사용자 설정이 네트워크 도구나 승인 prefix를 되살리지 못하게 한다.
+- 호출마다 권한 `0700`의 임시 `HOME`, `GH_CONFIG_DIR`, XDG 디렉터리를 발급해
+  GitHub CLI 설정과 다른 사용자 파일을 child에서 분리한다. 원래 `CODEX_HOME`의
+  regular file인 `auth.json`만 권한 `0600`으로 임시 `CODEX_HOME`에 복제한다.
+  config, history, memory 등 다른 로컬 상태는 전달하지 않으며 호출이 끝나면 임시
+  홈 전체를 삭제한다.
 - shell, unified exec, code-mode host, MCP/app, browser, computer use, hooks, skill,
   multi-agent 기능을 명시적으로 비활성화한다.
 - Codex child process에는 allowlist 환경 변수만 전달한다. `GH_TOKEN`,

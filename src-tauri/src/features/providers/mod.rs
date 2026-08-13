@@ -11,9 +11,9 @@ use crate::operations::OperationRuntime;
 use crate::store::Store;
 
 use adapters::{
-    HostedProviderAuthority, HostedProviderVerifier, HostedProvisioningTargetAuthority,
-    InMemoryProviderReceiptRegistry, KeyringProviderCredentialVault, ProductionGcpAdcVerifier,
-    ProviderLocalResolver, SqliteProviderBindingRepository,
+    HostedProviderAuthority, HostedProvisioningTargetAuthority, InMemoryProviderReceiptRegistry,
+    KeyringProviderCredentialVault, ProductionGcpAdcVerifier, ProviderLocalResolver,
+    SqliteProviderBindingRepository,
 };
 use application::ProviderUseCases;
 use ports::{
@@ -22,7 +22,7 @@ use ports::{
 };
 use provisioning::{
     managed_provider_registry, GcpCloudSqlProvisioningDriver, NeonProvisioningDriver,
-    PlanetScaleProvisioningDriver, ProvisioningCoordinator,
+    PlanetScaleProvisioningDriver, ProvisioningCoordinator, ProvisioningRepository,
 };
 
 pub(crate) use domain::{
@@ -38,7 +38,6 @@ pub(crate) use provisioning::{
 type ComposedProviderApplication = ProviderUseCases<
     SqliteProviderBindingRepository,
     KeyringProviderCredentialVault,
-    HostedProviderVerifier,
     ProductionGcpAdcVerifier,
     InMemoryProviderReceiptRegistry,
     HostedProviderAuthority,
@@ -56,25 +55,25 @@ pub(crate) struct ProvidersFeature {
 
 pub(crate) fn compose(store: Store, operation: OperationRuntime) -> ProvidersFeature {
     let repository = SqliteProviderBindingRepository::new(store.clone());
-    let vault = KeyringProviderCredentialVault::default();
-    let verifier = HostedProviderVerifier::new();
+    let vault = KeyringProviderCredentialVault;
     let authority = HostedProviderAuthority::new();
     let revocation = ProviderBindingRevocationHandle::default();
     let provisioning_runtime = ProvisioningRuntimeHandle::default();
     let provisioning_target_authority =
         std::sync::Arc::new(HostedProvisioningTargetAuthority::new());
+    let provisioning_repository = ProvisioningRepository::new(store.clone());
     let provisioning_driver = PlanetScaleProvisioningDriver::new(
-        store.clone(),
+        provisioning_repository.clone(),
         provisioning_target_authority.clone(),
         std::sync::Arc::new(provisioning_runtime.clone()),
     );
     let gcp_provisioning_driver = GcpCloudSqlProvisioningDriver::new(
-        store.clone(),
+        provisioning_repository.clone(),
         provisioning_target_authority.clone(),
         std::sync::Arc::new(provisioning_runtime.clone()),
     );
     let neon_provisioning_driver = NeonProvisioningDriver::new(
-        store.clone(),
+        provisioning_repository.clone(),
         provisioning_target_authority,
         std::sync::Arc::new(provisioning_runtime.clone()),
     );
@@ -82,17 +81,16 @@ pub(crate) fn compose(store: Store, operation: OperationRuntime) -> ProvidersFea
         application: ProviderUseCases::new(
             repository.clone(),
             vault.clone(),
-            verifier,
             ProductionGcpAdcVerifier,
             InMemoryProviderReceiptRegistry::default(),
             authority,
             std::sync::Arc::new(revocation.clone()),
         ),
-        local_connection: ProviderLocalResolver::new(repository, vault),
+        local_connection: ProviderLocalResolver::new(repository),
         revocation,
         provisioning_runtime,
         provisioning: ProvisioningCoordinator::new(
-            store,
+            provisioning_repository,
             operation,
             managed_provider_registry(
                 provisioning_driver,

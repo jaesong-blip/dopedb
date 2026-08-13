@@ -24,6 +24,7 @@ import {
   emptyWorkbenchState,
   workbenchReducer,
 } from "./state";
+import { useI18n } from "../../lib/i18n";
 
 interface UseWorkbenchDocumentsOptions {
   selectedConnectionId: string | null;
@@ -50,6 +51,7 @@ export function useWorkbenchDocuments({
   sqlDocuments,
   onRestoreError,
 }: UseWorkbenchDocumentsOptions) {
+  const { t } = useI18n();
   const [state, dispatch] = useReducer(workbenchReducer, emptyWorkbenchState);
   const loadToken = useRef(0);
   const pendingInitial = useRef<WorkbenchDocument | null>(null);
@@ -100,7 +102,7 @@ export function useWorkbenchDocuments({
           restored = [
             await sqlDocuments.create({
               connectionId: connectionId(selectedConnectionId),
-              title: "Untitled query",
+              title: t("sql.untitledQuery"),
               selectedDatabase: selectedConnectionDatabase,
               content: "SELECT 1;",
             }),
@@ -123,6 +125,7 @@ export function useWorkbenchDocuments({
     selectedConnectionId,
     sqlDocuments,
     supportsSql,
+    t,
   ]);
 
   const selectedDocuments = useMemo(
@@ -203,7 +206,7 @@ export function useWorkbenchDocuments({
       connectionId: rawConnectionId,
       database,
       supportsSql: canUseSql,
-      title = "Untitled query",
+      title = t("sql.untitledQuery"),
       content = "SELECT 1;",
     }: OpenQueryOptions): Promise<WorkbenchDocument> => {
       if (!canUseSql) {
@@ -217,7 +220,7 @@ export function useWorkbenchDocuments({
       });
       return persistedQueryDocument(document);
     },
-    [sqlDocuments],
+    [sqlDocuments, t],
   );
 
   return {

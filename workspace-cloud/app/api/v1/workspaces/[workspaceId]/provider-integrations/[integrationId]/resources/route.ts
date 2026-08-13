@@ -23,6 +23,7 @@ import {
   requireNeonBranchManagedAccessReady,
 } from "../../../../../../../../lib/provider-operation-store";
 import {
+  boundedJsonBody,
   isUuid,
   jsonError,
   mutationAllowed,
@@ -217,7 +218,16 @@ export async function POST(request: Request, context: RouteContext) {
   }
   const authorization = await authorizeWorkspace(request, workspaceId, "manage");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
-  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  const parsed = await boundedJsonBody(request, 20 * 1_024);
+  if (!parsed.ok) {
+    return jsonError(
+      parsed.reason === "too_large"
+        ? "Provider selection proof is too large"
+        : "Invalid provider selection proof",
+      parsed.reason === "too_large" ? 413 : 400,
+    );
+  }
+  const body = parsed.value as Record<string, unknown> | null;
   if (
     !body
     || Array.isArray(body)

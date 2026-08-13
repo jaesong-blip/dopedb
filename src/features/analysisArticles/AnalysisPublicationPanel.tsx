@@ -20,6 +20,7 @@ import {
 } from "../../design-system/components/Status";
 import { errMessage } from "../../ipc/types";
 import { useI18n } from "../../lib/i18n";
+import { analysisQueryKeys } from "./queryKeys";
 import { AnalysisArticleVisualization } from "./AnalysisArticleVisualization";
 import {
   mergeAnalysisFragments,
@@ -71,10 +72,16 @@ function requestFor(article: AnalysisArticleRecord): AnalysisPublicationRequest 
   };
 }
 
-export function AnalysisPublicationPanel({ article }: { article: AnalysisArticleRecord }) {
+export function AnalysisPublicationPanel({
+  article,
+  scopeKey,
+}: {
+  article: AnalysisArticleRecord;
+  scopeKey: string;
+}) {
   const { lang, t } = useI18n();
   const queryClient = useQueryClient();
-  const publicationKey = ["analysis-publications", article.id] as const;
+  const publicationKey = analysisQueryKeys.publication(scopeKey, article.id);
   const publications = useQuery({
     queryKey: publicationKey,
     queryFn: () => listAnalysisPublications(article.id),

@@ -4,6 +4,7 @@ import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
 import { neonSql } from "../db";
+import { revocationGateLockKey } from "../revocation-gates";
 
 const PERSONAL_KNOWLEDGE_NAMESPACE = "dopedb.personal-knowledge.v1";
 const PERSONAL_KNOWLEDGE_METADATA = JSON.stringify({
@@ -71,6 +72,7 @@ export function isPersonalKnowledgeMetadata(metadata: string | null | undefined)
  */
 export async function ensurePersonalKnowledgeScope(input: {
   userId: string;
+  sessionId: string;
   projects: PersonalKnowledgeProject[];
 }) {
   const workspaceId = personalKnowledgeOrganizationId(input.userId);
@@ -81,8 +83,24 @@ export async function ensurePersonalKnowledgeScope(input: {
     (count, project) => count + project.environments.length,
     0,
   );
+  const memberGateLockKey = revocationGateLockKey({
+    kind: "member",
+    organizationId: workspaceId,
+    memberId,
+    userId: input.userId,
+  });
   const rows = await neonSql.query(
-    `WITH requested_project AS MATERIALIZED (
+    `WITH member_gate AS MATERIALIZED (
+       SELECT pg_advisory_xact_lock(hashtextextended($9, 0))
+     ), live_session AS MATERIALIZED (
+       SELECT session."id"
+       FROM "workspace_control"."session" session
+       CROSS JOIN member_gate
+       WHERE session."id" = $10
+         AND session."user_id" = $6
+         AND session."expires_at" > now()
+       FOR UPDATE OF session
+     ), requested_project AS MATERIALIZED (
        SELECT requested."id", requested."name", requested."revision",
          requested."environments"
        FROM jsonb_to_recordset($7::jsonb)
@@ -108,7 +126,7 @@ export async function ensurePersonalKnowledgeScope(input: {
      ), inserted_organization AS MATERIALIZED (
        INSERT INTO "workspace_control"."organization"
          ("id", "name", "slug", "metadata")
-       SELECT $1, 'Personal Knowledge', $3, $4
+       SELECT $1, 'Personal Knowledge', $3, $4 FROM live_session
        WHERE NOT EXISTS (SELECT 1 FROM requested_identity_conflict)
        ON CONFLICT ("id") DO NOTHING
        RETURNING "id"
@@ -117,6 +135,7 @@ export async function ensurePersonalKnowledgeScope(input: {
        UNION ALL
        SELECT organization."id"
        FROM "workspace_control"."organization" organization
+       CROSS JOIN live_session
        WHERE organization."id" = $1
        LIMIT 1
      ), ensured_profile AS MATERIALIZED (
@@ -127,11 +146,25 @@ export async function ensurePersonalKnowledgeScope(input: {
        WHERE NOT EXISTS (SELECT 1 FROM requested_identity_conflict)
        ON CONFLICT ("organization_id") DO NOTHING
        RETURNING "organization_id"
+     ), existing_active_profile AS MATERIALIZED (
+       SELECT profile."organization_id"
+       FROM "workspace_control"."workspace_profile" profile
+       JOIN current_organization organization
+         ON organization."id" = profile."organization_id"
+       CROSS JOIN live_session
+       WHERE profile."lifecycle_state" = 'active'
+       FOR UPDATE OF profile
+     ), active_profile AS MATERIALIZED (
+       SELECT profile."organization_id"
+       FROM ensured_profile profile
+       UNION ALL
+       SELECT profile."organization_id"
+       FROM existing_active_profile profile
      ), ensured_member AS MATERIALIZED (
        INSERT INTO "workspace_control"."member"
          ("id", "organization_id", "user_id", "role")
-       SELECT $2, organization."id", $6, 'owner'
-       FROM current_organization organization
+       SELECT $2, profile."organization_id", $6, 'owner'
+       FROM active_profile profile
        WHERE NOT EXISTS (SELECT 1 FROM requested_identity_conflict)
        ON CONFLICT ("organization_id", "user_id") DO UPDATE SET
          "role" = 'owner'
@@ -150,7 +183,7 @@ export async function ensurePersonalKnowledgeScope(input: {
          ("id", "organization_id", "name", "revision", "updated_at")
        SELECT project."id", organization."id", project."name", project."revision", now()
        FROM requested_project project
-       CROSS JOIN current_organization organization
+       CROSS JOIN active_profile organization
        WHERE NOT EXISTS (SELECT 1 FROM requested_identity_conflict)
        ON CONFLICT ("id") DO UPDATE SET
          "name" = EXCLUDED."name",
@@ -184,6 +217,7 @@ export async function ensurePersonalKnowledgeScope(input: {
        (SELECT count(*) FROM ensured_project)::text AS "projectCount",
        (SELECT count(*) FROM ensured_environment)::text AS "environmentCount"
      FROM current_organization organization
+     JOIN active_profile profile ON profile."organization_id" = organization."id"
      JOIN ensured_member member ON member."organization_id" = organization."id"
      WHERE NOT EXISTS (SELECT 1 FROM requested_identity_conflict)`,
     [
@@ -195,6 +229,8 @@ export async function ensurePersonalKnowledgeScope(input: {
       input.userId,
       projects,
       randomUUID(),
+      memberGateLockKey,
+      input.sessionId,
     ],
   ) as PersonalKnowledgeScopeRow[];
   const scope = rows[0];

@@ -52,10 +52,6 @@ export function listWorkspaces(): Promise<Workspace[]> {
   return invoke("list_workspaces");
 }
 
-export function refreshWorkspaceMemberships(): Promise<Workspace[]> {
-  return invoke("refresh_workspace_memberships");
-}
-
 export function getActiveWorkspace(): Promise<Workspace> {
   return invoke("get_active_workspace");
 }

@@ -10,8 +10,7 @@ import {
 import {
   fetchWorkspaceContext,
   invalidateWorkspaceAuth,
-  invalidateWorkspaceState,
-  resetWorkspaceScope,
+  runWorkspaceAuthorityTransition,
 } from "../cache";
 import { workspaceAuthStateQuery, workspaceContextQuery } from "../queries";
 import {
@@ -70,13 +69,16 @@ export default function WorkspaceSwitcher({
     const accountUserId = choice.accountUserId ?? auth.data?.user?.id;
     setSwitching(true);
     try {
-      await setActiveWorkspace(choice.workspaceId, accountUserId);
-      await resetWorkspaceScope(queryClient, "none");
-      await invalidateWorkspaceAuth(queryClient);
-      await fetchWorkspaceContext(queryClient);
-      await onChanged();
+      await runWorkspaceAuthorityTransition(
+        queryClient,
+        () => setActiveWorkspace(choice.workspaceId, accountUserId),
+        async () => {
+          await invalidateWorkspaceAuth(queryClient);
+          await fetchWorkspaceContext(queryClient);
+          await onChanged();
+        },
+      );
     } catch (error) {
-      await invalidateWorkspaceState(queryClient);
       toast(t("workspace.switchFailed", { error: errMessage(error) }), "error");
     } finally {
       setSwitching(false);

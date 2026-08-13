@@ -56,6 +56,9 @@ Use a local-execution, hosted-control-plane architecture:
   Article definitions, bounded reviewed result fragments, revisions, publications,
   signal receipts, and collaboration audit events.
 - Member-local mode keeps database credentials in that member's OS credential store.
+  Desktop provider discovery, when supported, delegates to an official provider CLI
+  with fixed arguments and machine-readable output; Desktop never reads a provider
+  token to call that provider's HTTP API itself.
 - Optional managed mode encrypts reusable workspace-owned provider authorization at the
   control plane (or uses keyless cloud federation) and uses it only to create
   member-specific, least-privilege, short-lived
@@ -90,9 +93,9 @@ flowchart LR
     B --> KB["B's OS credential store · local mode"]
     KA --> D["Target database"]
     KB --> D
-    KA --> PA["local provider adapter"]
-    KB --> PB["local provider adapter"]
-    PA --> API["Neon · PlanetScale · GCP APIs"]
+    KA --> PA["official provider CLI · supported local discovery"]
+    KB --> PB["official provider CLI · supported local discovery"]
+    PA --> API["provider control plane"]
     PB --> API
     W --> MI["encrypted provider grant · managed mode"]
     MI --> API
@@ -143,8 +146,9 @@ database work remains in the Tauri app.
 - Let an admin optionally enable provider-backed automatic access. The current public
   path issues only a short-lived read credential; a future write credential requires
   the separate provisioning, database grant, and approval work owned by #99/#100.
-- Let each member bind a provider API credential to a workspace integration and
-  import only resources that both the provider and workspace authorize.
+- Let an administrator bind a provider authorization to a managed workspace
+  integration in the web console and import only resources that both the provider
+  and workspace authorize. Desktop does not collect provider API credentials.
 - Apply workspace roles, resource grants, provider-token scopes, environment policy,
   and local safety checks as narrowing layers rather than interchangeable authority.
 - Share and version complete Analysis Articles across members and devices, including
@@ -264,12 +268,15 @@ Keep two adapter contracts with no shared secret-bearing configuration object:
 A provider resource may create or update a workspace connection template through a
 redacted selector, but the template never owns or serializes a provider token.
 
-Member-local mode remains available for every driver. Managed mode stores reusable
-provider authorization separately from connection templates and routes provider
-control-plane calls through the workspace service. PlanetScale uses OAuth and
-provider-native TTL roles/passwords. Neon uses an encrypted, preferably project-scoped
-API key to create a 15-minute SQL role whose grants are limited to current user schemas
-in the selected database. GCP Cloud SQL stores no service-account key: Vercel OIDC and
+Member-local database credentials remain available for every driver. A Desktop-local
+provider integration is available only where an official CLI implements the required
+bounded discovery contract; it never falls back to a raw token or direct provider HTTP
+request. Managed mode stores reusable provider authorization separately from connection
+templates and routes provider control-plane calls through the workspace service.
+PlanetScale uses OAuth and provider-native TTL roles/passwords. Neon uses a hosted,
+encrypted, preferably project-scoped API key to create a 15-minute SQL role whose grants
+are limited to current user schemas in the selected database. GCP Cloud SQL stores no
+service-account key: Vercel OIDC and
 Workload Identity Federation issue 15-minute IAM database login tokens for separate
 dedicated read and write service accounts. The native client receives a credential once
 over HTTPS, pins provider-required TLS material, creates the pool in Rust, and evicts
@@ -598,7 +605,9 @@ Deliverables:
 
 - Expand the implemented provider-neutral PlanetScale/Neon/GCP managed-access boundary
   into persisted resource inventory, capability detection, and idempotent import.
-- Add member/device provider credential bindings backed by the OS credential store.
+- Add only official-CLI-backed member/device provider bindings. Providers without
+  that machine-readable CLI contract remain managed web integrations; do not add a
+  Desktop API-key fallback.
 - Synchronize only redacted organization, project, database, branch, endpoint,
   compute, lifecycle, and capability metadata.
 - Let an authorized member turn an imported provider database or branch into a

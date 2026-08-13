@@ -15,14 +15,9 @@ use dopedb_protocol::{
 };
 use serde_json::json;
 
+use super::*;
 use crate::features::knowledge::application::{graph_path, search_graphs};
 use crate::features::knowledge::domain::{KnowledgeMappingProposal, MappingProposalState};
-use crate::features::knowledge::ports::{
-    KnowledgeGraphRepositoryPort, KnowledgeMappingRepositoryPort,
-};
-use crate::features::workspaces::adapters::control_plane::propose_remote_knowledge_mapping;
-
-use super::*;
 
 pub(super) async fn handle(
     dispatcher: &BrokerDispatcher,
@@ -362,14 +357,16 @@ async fn propose_mapping(
         state: MappingProposalState::Proposed,
         proposed_at: chrono::Utc::now(),
     };
-    let proposal = propose_remote_knowledge_mapping(
-        session.account_scope.as_str(),
-        Uuid::from(session.workspace_id),
-        scope.knowledge_grant_id.ok_or(ErrorCode::ScopeDenied)?,
-        &proposal,
-    )
-    .await
-    .map_err(map_application_error)?;
+    let proposal = services
+        .knowledge
+        .propose_remote_mapping(
+            session.account_scope.as_str(),
+            Uuid::from(session.workspace_id),
+            scope.knowledge_grant_id.ok_or(ErrorCode::ScopeDenied)?,
+            &proposal,
+        )
+        .await
+        .map_err(map_application_error)?;
     services
         .knowledge
         .propose_mapping(&proposal)

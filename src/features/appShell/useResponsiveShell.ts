@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export function useResponsiveShell() {
-  const [terminalOverlay, setTerminalOverlay] = useState(
+  const [agentOverlay, setAgentOverlay] = useState(
     () => window.matchMedia("(max-width: 900px)").matches,
   );
   const [compact, setCompact] = useState(
@@ -32,7 +32,7 @@ export function useResponsiveShell() {
 
   useEffect(() => {
     const media = window.matchMedia("(max-width: 900px)");
-    const sync = () => setTerminalOverlay(media.matches);
+    const sync = () => setAgentOverlay(media.matches);
     media.addEventListener("change", sync);
     return () => media.removeEventListener("change", sync);
   }, []);
@@ -57,7 +57,7 @@ export function useResponsiveShell() {
   }, [dismissMobileExplorer, mobileExplorerOpen]);
 
   return {
-    terminalOverlay,
+    agentOverlay,
     compact,
     mobileExplorerOpen,
     setMobileExplorerOpen,

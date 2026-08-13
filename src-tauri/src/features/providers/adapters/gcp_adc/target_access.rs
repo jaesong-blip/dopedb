@@ -41,17 +41,16 @@ pub(crate) async fn resolve_cloud_sql_connect_settings(
     }
     #[cfg(not(windows))]
     {
-        let mut token = access_token().await?;
+        let token = access_token().await?;
         let settings = super::gcp_target::resolve_connect_settings(
             project,
             instance,
             database,
             engine,
             network_mode,
-            &token,
         )
         .await?;
-        let access_token = String::from_utf8(std::mem::take(&mut *token))
+        let access_token = String::from_utf8(token.to_vec())
             .map(Zeroizing::new)
             .map_err(|_| super::blocked("GCP ADC credential returned an invalid access token"))?;
         Ok(ResolvedCloudSqlConnectSettings {
@@ -76,10 +75,7 @@ pub(super) async fn verify_cloud_sql_target(
     }
     #[cfg(not(windows))]
     {
-        let token = access_token().await?;
-        let result = super::gcp_target::verify_cloud_sql_target(binding, &token).await;
-        drop(token);
-        result
+        super::gcp_target::verify_cloud_sql_target(binding).await
     }
 }
 

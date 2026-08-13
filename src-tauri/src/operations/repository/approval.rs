@@ -107,19 +107,4 @@ impl OperationRepository {
         tx.commit().await?;
         Ok(updated)
     }
-
-    pub(crate) async fn approvals(
-        &self,
-        operation_id: Uuid,
-    ) -> AppResult<Vec<OperationApprovalRecord>> {
-        let rows = sqlx::query(
-            "SELECT * FROM operation_approvals
-             WHERE operation_id = ?1
-             ORDER BY created_at ASC, id ASC",
-        )
-        .bind(operation_id.to_string())
-        .fetch_all(&self.pool)
-        .await?;
-        rows.iter().map(row_to_approval).collect()
-    }
 }

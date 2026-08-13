@@ -7,6 +7,7 @@ import {
 import CellViewer from "../../components/CellViewer";
 import { Icon } from "../../components/Icon";
 import { Button } from "../../design-system/components/Button";
+import { TextInput } from "../../design-system/components/FormControls";
 import RowEditor, {
   type RowEditorSubmission,
 } from "../../components/RowEditor";
@@ -256,12 +257,13 @@ export default function TableSidePanel(props: Props) {
             ))}
           </ol>
           {proposal?.confirmationPhrase && (
-            <label className="tw:mt-3 tw:grid tw:gap-2 tw:text-sm tw:[&_input]:w-full tw:[&_input]:font-mono">
+            <label className="tw:mt-3 tw:grid tw:gap-2 tw:text-sm">
               <span>
                 {t("approval.confirmationPrompt")}{" "}
                 <code>{proposal.confirmationPhrase}</code>
               </span>
-              <input
+              <TextInput
+                monospace
                 value={confirmation}
                 onChange={(event) => props.onConfirmation(event.target.value)}
                 autoComplete="off"

@@ -16,12 +16,11 @@ use crate::kernel::sync::lock_unpoisoned;
 use crate::store::PinnedConnection;
 
 use super::super::domain::{
-    TerminalConnectionPin, TerminalExit, TerminalExitEvent, TerminalLifecycle, TerminalOutputChunk,
-    TerminalProfile, TerminalSessionSummary, TerminalSize, TerminalStateEvent,
+    TerminalConnectionPin, TerminalExit, TerminalLifecycle, TerminalOutputChunk, TerminalProfile,
+    TerminalSessionSummary, TerminalSize, TerminalStateEvent,
 };
-use super::output::OutputSanitizer;
+use super::output::{OutputSanitizer, TerminalOutputStream};
 use super::process_tree::ProcessTree;
-use super::replay::{OutputReplay, ReplayReceipt};
 
 pub(super) const MAX_INPUT_BYTES: usize = 64 * 1024;
 pub(super) const OUTPUT_READ_BYTES: usize = 16 * 1024;
@@ -41,14 +40,6 @@ pub(super) struct SessionResources {
     pub(super) output: Channel<TerminalOutputChunk>,
 }
 
-pub(super) struct RestartSeed {
-    pub(super) connection: PinnedConnection,
-    pub(super) connection_pin: TerminalConnectionPin,
-    pub(super) profile: TerminalProfile,
-    pub(super) size: TerminalSize,
-    pub(super) name: String,
-}
-
 pub(super) struct TerminalSession {
     id: TerminalSessionId,
     launch: SessionLaunch,
@@ -57,7 +48,7 @@ pub(super) struct TerminalSession {
     writer: Mutex<Option<Box<dyn Write + Send>>>,
     killer: Mutex<Option<Box<dyn ChildKiller + Send + Sync>>>,
     process_tree: Mutex<Option<Arc<ProcessTree>>>,
-    output: Mutex<OutputReplay>,
+    output: Mutex<TerminalOutputStream>,
 }
 
 struct SessionMetadata {
@@ -93,7 +84,7 @@ impl TerminalSession {
             writer: Mutex::new(Some(resources.writer)),
             killer: Mutex::new(Some(resources.killer)),
             process_tree: Mutex::new(Some(resources.process_tree)),
-            output: Mutex::new(OutputReplay::new(resources.output)),
+            output: Mutex::new(TerminalOutputStream::new(resources.output)),
         }
     }
 
@@ -118,17 +109,6 @@ impl TerminalSession {
 
     pub(super) fn connection_id(&self) -> ConnectionId {
         ConnectionId::from(self.launch.connection.connection_id)
-    }
-
-    pub(super) fn restart_seed(&self) -> RestartSeed {
-        let metadata = lock_unpoisoned(&self.metadata);
-        RestartSeed {
-            connection: self.launch.connection.clone(),
-            connection_pin: self.launch.connection_pin.clone(),
-            profile: self.launch.profile,
-            size: metadata.size,
-            name: metadata.name.clone(),
-        }
     }
 
     pub(super) fn write(&self, bytes: Vec<u8>) -> AppResult<()> {
@@ -170,23 +150,10 @@ impl TerminalSession {
         Ok(())
     }
 
-    pub(super) fn rename(&self, name: String) -> TerminalSessionSummary {
-        lock_unpoisoned(&self.metadata).name = name;
-        self.summary()
-    }
-
     pub(super) fn mark_stopping(&self) {
         let mut metadata = lock_unpoisoned(&self.metadata);
         metadata.lifecycle = TerminalLifecycle::Stopping;
         metadata.last_activity_at = Utc::now();
-    }
-
-    pub(super) fn attach(
-        &self,
-        after_sequence: Option<u64>,
-        subscriber: Channel<TerminalOutputChunk>,
-    ) -> AppResult<ReplayReceipt> {
-        lock_unpoisoned(&self.output).attach(self.id, after_sequence, subscriber)
     }
 
     pub(super) fn request_stop(&self) {
@@ -305,15 +272,6 @@ fn wait_for_child(
     }
     let summary = session.summary();
     emit_state(&app, &summary);
-    if let Err(error) = app.emit(
-        "terminal:exit",
-        TerminalExitEvent {
-            session_id: session.id,
-            exit,
-        },
-    ) {
-        tracing::warn!(session_id = %session.id, "failed to emit terminal:exit: {error}");
-    }
 }
 
 fn read_output(session: Arc<TerminalSession>, mut reader: Box<dyn Read + Send>) {

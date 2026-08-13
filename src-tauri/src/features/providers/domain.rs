@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 use crate::kernel::identity::{
     AccountId, ProviderBindingId, ProviderCredentialReceiptId, ProviderIntegrationId, WorkspaceId,
 };
-use zeroize::Zeroizing;
 
 /// Hosted provider family with deliberately separate local capability rules.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,8 +24,6 @@ pub(crate) enum LocalProvider {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum ProviderCredentialMethod {
-    #[serde(rename = "apiKey")]
-    NeonApiKey,
     #[serde(rename = "adcWif")]
     GcpAdcWif,
     Unsupported,
@@ -44,9 +41,6 @@ pub(crate) enum ProviderIntegrationState {
     #[serde(rename = "unavailable")]
     ReconnectRequired,
     Unsupported,
-    #[serde(rename = "scopeInsufficient")]
-    #[allow(dead_code)] // Reserved exact hosted-authority wire state.
-    ScopeInsufficient,
     #[serde(rename = "ready")]
     Ready,
 }
@@ -213,7 +207,6 @@ pub(crate) struct RevokeProviderCredential {
 /// Secret material exists only inside application control flow; it is neither
 /// serializable nor debug-printable.
 pub(crate) enum ProviderCredentialMaterial {
-    NeonApiKey(Zeroizing<String>),
     GcpAdc,
 }
 
@@ -221,5 +214,4 @@ pub(crate) enum ProviderCredentialMaterial {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ProviderVerification {
     Verified(RedactedProviderPrincipal),
-    Unsupported,
 }

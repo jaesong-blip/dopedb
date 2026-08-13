@@ -142,6 +142,7 @@ fn query_and_skill_security_contracts_stay_fail_closed() {
         .unwrap()
         .contains("row-secret"));
 
+    #[cfg(not(feature = "packaged-benchmark"))]
     crate::app_paths::assert_application_data_root_contract();
     crate::broker::assert_catalog_search_contract();
     crate::features::agents::domain::assert_agent_event_wire_contract();
@@ -150,7 +151,8 @@ fn query_and_skill_security_contracts_stay_fail_closed() {
     crate::skills::assert_skill_installation_contract();
     crate::features::agents::runtime::assert_acp_plugin_runtime_contract();
     crate::features::knowledge::domain::assert_knowledge_domain_contract();
-    crate::features::workspaces::adapters::control_plane::assert_shared_http_client_contract();
+    crate::hosted_control_plane::assert_shared_http_client_contract();
+    crate::features::workspaces::adapters::control_plane::assert_hosted_workspace_response_bounds_contract();
     crate::connection::assert_warm_cache_authorization_contract();
     super::adapters::assert_ephemeral_page_contract();
 }

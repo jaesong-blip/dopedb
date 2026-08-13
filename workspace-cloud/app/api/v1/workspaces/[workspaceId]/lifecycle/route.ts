@@ -2,6 +2,7 @@
 // confirmed and idempotent; the cron-owned hard purge is never exposed here.
 import { env } from "../../../../../../lib/env";
 import {
+  boundedJsonBody,
   isSafeDisplayText,
   isUuid,
   jsonError,
@@ -30,11 +31,18 @@ export async function POST(request: Request, context: RouteContext) {
   if (!mutationAllowed(request, env.appOrigin())) return jsonError("Invalid request origin", 403);
   const { workspaceId } = await context.params;
   if (!isUuid(workspaceId)) return jsonError("Invalid workspace id", 400);
-  const text = await request.text();
-  if (text.length > 512) return jsonError("Workspace lifecycle request is too large", 413);
+  const parsed = await boundedJsonBody(request, 512);
+  if (!parsed.ok) {
+    return jsonError(
+      parsed.reason === "too_large"
+        ? "Workspace lifecycle request is too large"
+        : "Invalid workspace lifecycle request",
+      parsed.reason === "too_large" ? 413 : 400,
+    );
+  }
   let body: Record<string, unknown>;
   try {
-    const value = JSON.parse(text) as unknown;
+    const value = parsed.value;
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       return jsonError("Workspace lifecycle request must be an object", 400);
     }

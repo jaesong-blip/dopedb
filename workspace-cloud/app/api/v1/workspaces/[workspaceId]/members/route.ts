@@ -4,7 +4,13 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { auth } from "../../../../../../lib/auth";
 import { db } from "../../../../../../lib/db";
 import { env } from "../../../../../../lib/env";
-import { isUuid, jsonError, mutationAllowed, privateJson } from "../../../../../../lib/http";
+import {
+  boundedJsonBody,
+  isUuid,
+  jsonError,
+  mutationAllowed,
+  privateJson,
+} from "../../../../../../lib/http";
 import { revokeActiveLeases } from "../../../../../../lib/provider-integrations";
 import {
   localizedWorkspacePath,
@@ -22,8 +28,10 @@ import {
   member,
   user,
   workspaceAnalysisArticle,
+  workspaceAnalysisSignal,
   workspaceAuditEvent,
 } from "../../../../../../lib/schema";
+import { removeMemberAfterAnalysisRunnerCleanup } from "../../../../../../lib/workspace-analysis-runner-store";
 import { authorizeWorkspace } from "../../../../../../lib/workspace-authorization";
 
 type RouteContext = { params: Promise<{ workspaceId: string }> };
@@ -101,7 +109,14 @@ export async function POST(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId)) return jsonError("Invalid workspace id", 400);
   const authorization = await authorizeWorkspace(request, workspaceId, "manage");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
-  const body = (await request.json().catch(() => null)) as { email?: unknown; role?: unknown } | null;
+  const parsed = await boundedJsonBody(request, 1_024);
+  if (!parsed.ok) {
+    return jsonError(
+      parsed.reason === "too_large" ? "Member invitation is too large" : "Invalid member invitation",
+      parsed.reason === "too_large" ? 413 : 400,
+    );
+  }
+  const body = parsed.value as { email?: unknown; role?: unknown } | null;
   const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
   if (!/^\S+@\S+\.\S+$/.test(email) || email.length > 320) return jsonError("Invalid email", 400);
   if (!isAssignableRole(body?.role)) return jsonError("Invalid assignable workspace role", 400);
@@ -137,7 +152,14 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId)) return jsonError("Invalid workspace id", 400);
   const authorization = await authorizeWorkspace(request, workspaceId, "manage");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
-  const body = (await request.json().catch(() => null)) as { memberId?: unknown; role?: unknown } | null;
+  const parsed = await boundedJsonBody(request, 1_024);
+  if (!parsed.ok) {
+    return jsonError(
+      parsed.reason === "too_large" ? "Member update is too large" : "Invalid member role update",
+      parsed.reason === "too_large" ? 413 : 400,
+    );
+  }
+  const body = parsed.value as { memberId?: unknown; role?: unknown } | null;
   const memberId = typeof body?.memberId === "string" ? body.memberId : "";
   if (!isUuid(memberId) || !isAssignableRole(body?.role)) {
     return jsonError("Invalid member role update", 400);
@@ -322,7 +344,14 @@ export async function DELETE(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId)) return jsonError("Invalid workspace id", 400);
   const authorization = await authorizeWorkspace(request, workspaceId, "manage");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
-  const body = (await request.json().catch(() => null)) as {
+  const parsed = await boundedJsonBody(request, 1_024);
+  if (!parsed.ok) {
+    return jsonError(
+      parsed.reason === "too_large" ? "Member removal is too large" : "Invalid member removal",
+      parsed.reason === "too_large" ? 413 : 400,
+    );
+  }
+  const body = parsed.value as {
     memberId?: unknown;
     invitationId?: unknown;
   } | null;
@@ -400,6 +429,25 @@ export async function DELETE(request: Request, context: RouteContext) {
         409,
       );
     }
+    const activeSignalRecipient = await db.query.workspaceAnalysisSignal.findFirst({
+      where: and(
+        eq(workspaceAnalysisSignal.organizationId, workspaceId),
+        eq(workspaceAnalysisSignal.enabled, true),
+        isNull(workspaceAnalysisSignal.deletedAt),
+        sql`COALESCE(
+          ${workspaceAnalysisSignal.definition}->'recipientMemberIds' ? ${existing.id},
+          false
+        )`,
+      ),
+      columns: { id: true },
+    });
+    if (activeSignalRecipient) {
+      await abandonMemberClaim(claim);
+      return jsonError(
+        "Remove this member from active Analysis signal recipients before removing them",
+        409,
+      );
+    }
     let revocation;
     try {
       revocation = await revokeActiveLeases({
@@ -428,73 +476,26 @@ export async function DELETE(request: Request, context: RouteContext) {
       await abandonMemberClaim(renewedClaim);
       return jsonError("Member access changed concurrently. Retry removal.", 409);
     }
-    const [actorGateLock, targetGateLock = actorGateLock] = orderedMemberGateLocks(
-      workspaceId,
-      { memberId: authorization.membership.id, userId: authorization.session.user.id },
-      { memberId: existing.id, userId: renewedClaim.userId },
-    );
-    const result = await db.execute<{ id: string }>(sql`
-      WITH actor_gate_lock AS MATERIALIZED (
-        SELECT pg_advisory_xact_lock(hashtextextended(${actorGateLock}, 0))
-      ), target_gate_lock AS MATERIALIZED (
-        SELECT pg_advisory_xact_lock(hashtextextended(${targetGateLock}, 0))
-        FROM actor_gate_lock
-      ), actor_authority AS MATERIALIZED (
-        SELECT actor_member."id"
-        FROM "workspace_control"."session" actor_session
-        JOIN "workspace_control"."member" actor_member
-          ON actor_member."id" = ${authorization.membership.id}
-         AND actor_member."organization_id" = ${workspaceId}
-         AND actor_member."user_id" = ${authorization.session.user.id}
-        JOIN actor_gate_lock ON TRUE
-        JOIN target_gate_lock ON TRUE
-        WHERE actor_session."id" = ${authorization.session.session.id}
-          AND actor_session."user_id" = ${authorization.session.user.id}
-          AND actor_session."expires_at" > now()
-          AND actor_member."role" = ${authorization.role}
-          AND actor_member."role" IN ('admin', 'owner')
-          AND actor_member."revocation_pending_at" IS NULL
-          AND actor_member."revocation_claim_id" IS NULL
-        FOR UPDATE OF actor_session, actor_member
-      ), deleted_member AS (
-        DELETE FROM ${member} AS target
-        USING actor_authority
-        WHERE target."id" = ${existing.id}
-          AND target."organization_id" = ${workspaceId}
-          AND target."user_id" = ${renewedClaim.userId}
-          AND target."role" = ${renewedClaim.memberRole}
-          AND target."role" <> 'owner'
-          AND target."revocation_claim_id" = ${renewedClaim.claimId}::uuid
-          AND NOT EXISTS (
-            SELECT 1 FROM ${workspaceAnalysisArticle} AS owned_article
-            WHERE owned_article."organization_id" = target."organization_id"
-              AND owned_article."owner_member_id" = target."id"
-              AND owned_article."deleted_at" IS NULL
-          )
-        RETURNING target."id", target."organization_id", target."role"
-      ),
-      audit_event AS (
-        INSERT INTO ${workspaceAuditEvent}
-          ("organization_id", "actor_user_id", "action", "resource_type",
-           "resource_id", "redacted_summary", "request_id")
-        SELECT deleted_member."organization_id",
-               ${authorization.session.user.id}, 'member.remove', 'member',
-               deleted_member."id",
-               jsonb_build_object(
-                 'previousRole', deleted_member."role",
-                 'revokedLeases', ${revocation.revoked},
-                 'deferredRevocations', ${revocation.deferred}
-               ),
-               ${crypto.randomUUID()}::uuid
-        FROM deleted_member
-        RETURNING "resource_id"
-      )
-      SELECT "id" FROM deleted_member
-    `).catch(async (error) => {
+    const removed = await removeMemberAfterAnalysisRunnerCleanup({
+      organizationId: workspaceId,
+      target: {
+        memberId: existing.id,
+        userId: renewedClaim.userId,
+        role: renewedClaim.memberRole,
+        claimId: renewedClaim.claimId,
+      },
+      externalLeaseRevocation: revocation,
+      authority: {
+        sessionId: authorization.session.session.id,
+        userId: authorization.session.user.id,
+        membershipId: authorization.membership.id,
+        role: authorization.role,
+      },
+    }).catch(async (error) => {
       await abandonMemberClaim(renewedClaim);
       throw error;
     });
-    if (result.rows.length !== 1) {
+    if (!removed) {
       await abandonMemberClaim(renewedClaim);
       return jsonError("Member access changed concurrently. Retry removal.", 409);
     }

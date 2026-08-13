@@ -18,7 +18,9 @@ use crate::operations::{
     actor_for_pin, capture_policy, required_confirmation, ClaimedOperation, NewOperation,
     OperationPlanDisposition, OperationRecord, OperationRuntime,
 };
-use crate::store::{ActiveResourceScope, PinnedConnection, Store};
+#[cfg(test)]
+use crate::store::Store;
+use crate::store::{ActiveResourceScope, PinnedConnection};
 
 use super::super::domain::LocalProvider;
 use super::domain::{
@@ -26,7 +28,7 @@ use super::domain::{
     ProvisioningPlan, ProvisioningPlanStep, ProvisioningReceipt, ProvisioningRepairReason,
     ProvisioningState, ProvisioningTarget, ProvisioningVerification,
 };
-use super::repository::ProvisioningReceiptRepository;
+use super::repository::{ProvisioningReceiptRepository, ProvisioningRepository};
 use super::{ProvisioningExecutionPermit, ProvisioningReadAuthority};
 
 pub(super) type DriverFuture<'a, T> = Pin<Box<dyn Future<Output = AppResult<T>> + Send + 'a>>;
@@ -248,6 +250,7 @@ pub(crate) struct ProvisioningDriverRegistry {
 }
 
 impl ProvisioningDriverRegistry {
+    #[cfg(test)]
     pub(super) fn with_driver(driver: Arc<dyn ProvisioningDriver>) -> Self {
         Self {
             drivers: Arc::new(vec![driver]),
@@ -291,7 +294,7 @@ pub(crate) struct ProvisioningRecoveryReport {
 
 #[derive(Clone)]
 pub(crate) struct ProvisioningCoordinator {
-    store: Store,
+    repository: ProvisioningRepository,
     receipts: ProvisioningReceiptRepository,
     operations: OperationRuntime,
     drivers: ProvisioningDriverRegistry,
@@ -301,13 +304,13 @@ pub(crate) struct ProvisioningCoordinator {
 
 impl ProvisioningCoordinator {
     pub(crate) fn new(
-        store: Store,
+        repository: ProvisioningRepository,
         operations: OperationRuntime,
         drivers: ProvisioningDriverRegistry,
     ) -> Self {
         Self {
-            receipts: ProvisioningReceiptRepository::new(store.clone()),
-            store,
+            receipts: ProvisioningReceiptRepository::new(repository.clone()),
+            repository,
             operations,
             drivers,
             discoveries: Arc::new(Mutex::new(HashMap::new())),
@@ -340,7 +343,7 @@ impl ProvisioningCoordinator {
         if connection_id.is_nil() {
             return Err(blocked("provider provisioning connection is invalid"));
         }
-        let scope = self.store.active_resource_scope().await?;
+        let scope = self.repository.active_scope().await?;
         let driver = self
             .drivers
             .find(provider)
@@ -405,7 +408,7 @@ impl ProvisioningCoordinator {
         connection_id: Uuid,
         access: ProvisioningAccessMode,
     ) -> AppResult<ProvisioningPlanProjection> {
-        let scope = self.store.active_resource_scope().await?;
+        let scope = self.repository.active_scope().await?;
         let staged = self
             .discoveries
             .lock()
@@ -428,7 +431,7 @@ impl ProvisioningCoordinator {
         if driver.manifest_sha256() != staged.adapter_manifest_sha256 {
             return Err(blocked("provider adapter changed after discovery"));
         }
-        let connection = self.store.pin_connection_for_view(connection_id).await?;
+        let connection = self.repository.pinned_connection(connection_id).await?;
         if connection.scope != scope
             || Uuid::from(staged.target.connection_id()) != connection.connection_id
             || staged.target.connection_revision() != connection.connection_revision
@@ -469,7 +472,7 @@ impl ProvisioningCoordinator {
         &self,
         receipt_id: Uuid,
     ) -> AppResult<ProvisioningPlanProjection> {
-        let scope = self.store.active_resource_scope().await?;
+        let scope = self.repository.active_scope().await?;
         let mut receipt = self.receipts.load(&scope, receipt_id).await?;
         if receipt.state() == ProvisioningState::Destroying {
             return self.status_for(&receipt).await;
@@ -490,7 +493,7 @@ impl ProvisioningCoordinator {
             &previous_operation.payload_hash,
         )?;
         let connection_id = Uuid::from(receipt.connection_id());
-        let connection = self.store.pin_connection_for_view(connection_id).await?;
+        let connection = self.repository.pinned_connection(connection_id).await?;
         if connection.scope != scope {
             return Err(blocked("provider connection scope changed"));
         }
@@ -524,7 +527,7 @@ impl ProvisioningCoordinator {
         &self,
         receipt_id: Uuid,
     ) -> AppResult<ProvisioningPlanProjection> {
-        let scope = self.store.active_resource_scope().await?;
+        let scope = self.repository.active_scope().await?;
         let mut receipt = self.receipts.load(&scope, receipt_id).await?;
         if receipt.state() != ProvisioningState::NeedsRepair {
             return Err(blocked("provider provisioning does not need repair"));
@@ -539,7 +542,7 @@ impl ProvisioningCoordinator {
             .find(receipt.provider())
             .ok_or_else(|| blocked("provider provisioning driver is unavailable"))?;
         let connection_id = Uuid::from(receipt.connection_id());
-        let connection = self.store.pin_connection_for_view(connection_id).await?;
+        let connection = self.repository.pinned_connection(connection_id).await?;
         if connection.scope != scope {
             return Err(blocked("provider connection scope changed"));
         }
@@ -573,7 +576,7 @@ impl ProvisioningCoordinator {
         &self,
         receipt_id: Uuid,
     ) -> AppResult<ProvisioningPlanProjection> {
-        let scope = self.store.active_resource_scope().await?;
+        let scope = self.repository.active_scope().await?;
         let mut receipt = self.receipts.load(&scope, receipt_id).await?;
         if receipt.state() != ProvisioningState::Ready {
             return Err(blocked(
@@ -624,7 +627,7 @@ impl ProvisioningCoordinator {
     }
 
     pub(crate) async fn status(&self, receipt_id: Uuid) -> AppResult<ProvisioningPlanProjection> {
-        let scope = self.store.active_resource_scope().await?;
+        let scope = self.repository.active_scope().await?;
         let receipt = self.receipts.load(&scope, receipt_id).await?;
         self.status_for(&receipt).await
     }
@@ -633,8 +636,8 @@ impl ProvisioningCoordinator {
         &self,
         connection_id: Uuid,
     ) -> AppResult<Vec<ProvisioningPlanProjection>> {
-        let scope = self.store.active_resource_scope().await?;
-        let connection = self.store.pin_connection_for_view(connection_id).await?;
+        let scope = self.repository.active_scope().await?;
+        let connection = self.repository.pinned_connection(connection_id).await?;
         if connection.scope != scope {
             return Err(blocked("provider connection scope changed"));
         }
@@ -760,7 +763,7 @@ impl ProvisioningCoordinator {
         {
             return Err(blocked("provider provisioning connection pin changed"));
         }
-        let safety = self.store.get_safety(connection.connection_id).await?;
+        let safety = self.repository.safety(connection.connection_id).await?;
         let policy = capture_policy(connection, &safety)?;
         self.operations
             .plan(
@@ -803,7 +806,7 @@ impl ProvisioningCoordinator {
     }
 
     pub(crate) async fn execute(&self, receipt_id: Uuid) -> AppResult<ProvisioningReceipt> {
-        let scope = self.store.active_resource_scope().await?;
+        let scope = self.repository.active_scope().await?;
         let receipt = self.receipts.load(&scope, receipt_id).await?;
         let operation = self.operations.get(receipt.operation_id()).await?;
         let (plan, driver) = validate_execution(&receipt, &operation, &self.drivers)?;
@@ -828,7 +831,7 @@ impl ProvisioningCoordinator {
         &self,
         operation_ids: &[Uuid],
     ) -> AppResult<ProvisioningRecoveryReport> {
-        let scope = self.store.active_resource_scope().await?;
+        let scope = self.repository.active_scope().await?;
         let mut report = ProvisioningRecoveryReport::default();
         for operation_id in operation_ids {
             let operation = self.operations.get(*operation_id).await?;
@@ -1673,7 +1676,8 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
         let (runtime, authority) = OperationRuntime::new(&store);
         approved_operation(&runtime, &authority, &scope, &plan, operation_id).await;
 
-        let receipt_repository = ProvisioningReceiptRepository::new(store.clone());
+        let receipt_repository =
+            ProvisioningReceiptRepository::new(ProvisioningRepository::new(store.clone()));
         let receipt = ProvisioningReceipt::ready_to_apply(
             WorkspaceId::from(scope.workspace_id),
             scope.account_scope.storage_key().into(),
@@ -1690,7 +1694,7 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
 
         let effects = Arc::new(Mutex::new(MockProviderEffects::default()));
         let failing_coordinator = ProvisioningCoordinator::new(
-            store.clone(),
+            ProvisioningRepository::new(store.clone()),
             runtime.clone(),
             ProvisioningDriverRegistry::with_driver(Arc::new(MockDriver {
                 fail_sequence,
@@ -1741,7 +1745,7 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
         );
 
         let repair_coordinator = ProvisioningCoordinator::new(
-            store,
+            ProvisioningRepository::new(store),
             runtime.clone(),
             ProvisioningDriverRegistry::with_driver(Arc::new(MockDriver {
                 effects: effects.clone(),
@@ -1844,7 +1848,7 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
     let retry_connection_id = Uuid::from(retry_plan.target().connection_id());
     let (first_approval_runtime, _) = OperationRuntime::new(&retry_store);
     let first_approval_coordinator = ProvisioningCoordinator::new(
-        retry_store.clone(),
+        ProvisioningRepository::new(retry_store.clone()),
         first_approval_runtime.clone(),
         ProvisioningDriverRegistry::with_driver(Arc::new(MockDriver::default())),
     );
@@ -1876,7 +1880,7 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
         .expect("expire the previous runtime approval");
     assert_eq!(approval_recovery.expired, vec![first_approval.operation_id]);
     let second_approval_coordinator = ProvisioningCoordinator::new(
-        retry_store,
+        ProvisioningRepository::new(retry_store),
         second_approval_runtime.clone(),
         ProvisioningDriverRegistry::with_driver(Arc::new(MockDriver::default())),
     );
@@ -1937,7 +1941,8 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
     ));
     let (first_runtime, authority) = OperationRuntime::new(&store);
     approved_operation(&first_runtime, &authority, &scope, &plan, operation_id).await;
-    let receipt_repository = ProvisioningReceiptRepository::new(store.clone());
+    let receipt_repository =
+        ProvisioningReceiptRepository::new(ProvisioningRepository::new(store.clone()));
     let mut receipt = ProvisioningReceipt::ready_to_apply(
         WorkspaceId::from(scope.workspace_id),
         scope.account_scope.storage_key().into(),
@@ -1983,7 +1988,7 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
     );
     assert!(recovery.outcome_unknown.is_empty());
     let coordinator = ProvisioningCoordinator::new(
-        store.clone(),
+        ProvisioningRepository::new(store.clone()),
         second_runtime.clone(),
         ProvisioningDriverRegistry::with_driver(Arc::new(MockDriver::default())),
     );
@@ -2069,7 +2074,7 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
         .await
         .expect("persist partial destroy fixture");
     let failing_coordinator = ProvisioningCoordinator::new(
-        store,
+        ProvisioningRepository::new(store),
         second_runtime.clone(),
         ProvisioningDriverRegistry::with_driver(Arc::new(MockDriver {
             fail_sequence: Some(2),

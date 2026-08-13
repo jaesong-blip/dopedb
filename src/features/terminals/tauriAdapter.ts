@@ -1,8 +1,9 @@
+// Sole frontend owner of the bounded Shell Terminal command names. Agent sessions
+// remain owned by ACP and do not pass through this adapter.
 import { Channel, invoke } from "../../ipc/core";
 
 import type {
   TerminalCreateRequest,
-  TerminalFocusReceipt,
   TerminalOutputChunk,
   TerminalSessionId,
   TerminalSessionSummary,
@@ -17,63 +18,27 @@ export function terminalOutputChannel(
   return channel;
 }
 
-export function terminalCreate(
+export function createShellTerminal(
   request: TerminalCreateRequest,
   onOutput: Channel<TerminalOutputChunk>,
 ): Promise<TerminalSessionSummary> {
   return invoke("terminal_create", { request, onOutput });
 }
 
-export function terminalList(): Promise<TerminalSessionSummary[]> {
-  return invoke("terminal_list");
-}
-
-export function terminalFocus(
-  id: TerminalSessionId,
-  afterSequence: number | null,
-  onOutput: Channel<TerminalOutputChunk>,
-): Promise<TerminalFocusReceipt> {
-  return invoke("terminal_focus", { id, afterSequence, onOutput });
-}
-
-export function terminalWrite(
+export function writeShellTerminal(
   id: TerminalSessionId,
   bytes: number[],
 ): Promise<void> {
   return invoke("terminal_write", { id, bytes });
 }
 
-export function terminalResize(
+export function resizeShellTerminal(
   id: TerminalSessionId,
   size: TerminalSize,
 ): Promise<void> {
   return invoke("terminal_resize", { id, size });
 }
 
-export function terminalKill(
-  id: TerminalSessionId,
-): Promise<TerminalSessionSummary> {
-  return invoke("terminal_kill", { id });
-}
-
-export function terminalClose(id: TerminalSessionId): Promise<void> {
+export function closeShellTerminal(id: TerminalSessionId): Promise<void> {
   return invoke("terminal_close", { id });
-}
-
-export function terminalRestart(
-  id: TerminalSessionId,
-  onOutput: Channel<TerminalOutputChunk>,
-): Promise<TerminalSessionSummary> {
-  return invoke("terminal_restart", { id, onOutput });
-}
-
-export function terminalRename(
-  id: TerminalSessionId,
-  name: string,
-): Promise<TerminalSessionSummary> {
-  return invoke("terminal_rename", { id, name });
-}
-
-export function terminalShutdownAll(): Promise<void> {
-  return invoke("terminal_shutdown_all");
 }

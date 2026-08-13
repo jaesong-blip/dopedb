@@ -120,6 +120,10 @@ pub(crate) struct ProvisioningTarget {
 }
 
 impl ProvisioningTarget {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the immutable exact-target constructor names every authority pin explicitly"
+    )]
     pub(crate) fn new(
         provider: LocalProvider,
         connection_id: ConnectionId,
@@ -421,6 +425,10 @@ pub(crate) struct ProvisioningPlan {
 }
 
 impl ProvisioningPlan {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the immutable provisioning plan constructor names every approved hash input explicitly"
+    )]
     pub(crate) fn new(
         intent: ProvisioningIntent,
         adapter_manifest_sha256: String,

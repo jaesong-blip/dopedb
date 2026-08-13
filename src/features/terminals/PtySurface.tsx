@@ -1,5 +1,5 @@
-// Owns one xterm renderer and bridges bounded PTY input, output, resize, focus,
-// and teardown for both connection-pinned and capability-free sessions.
+// Owns the one xterm renderer used by the explicit connection-pinned advanced
+// Shell and bridges bounded PTY input, output, resize, focus, and teardown.
 import {
   forwardRef,
   useEffect,

@@ -4,39 +4,16 @@
 //! actions into fixed CLI/API calls, but they cannot invent lifecycle states,
 //! declare Managed Access ready early, or persist credential material here.
 
-#[allow(
-    dead_code,
-    reason = "the provider-neutral lifecycle is consumed by the concrete adapters landing in #100"
-)]
 mod application;
-#[allow(
-    dead_code,
-    reason = "the closed provisioning contracts are consumed by the concrete adapters landing in #100"
-)]
 mod domain;
 mod gcp;
-#[allow(
-    dead_code,
-    reason = "the GCP CLI inventory is registered only after its complete #100 lifecycle lands"
-)]
 mod gcp_cli;
 mod neon;
 mod planetscale;
-#[allow(
-    dead_code,
-    reason = "the PlanetScale CLI inventory is registered only after its complete #100 lifecycle lands"
-)]
 mod planetscale_cli;
-#[allow(
-    dead_code,
-    reason = "the fixed CLI runner is consumed by the concrete adapters landing in #100"
-)]
 mod process;
-#[allow(
-    dead_code,
-    reason = "plan creation and target lookup are consumed by the concrete adapters landing in #100"
-)]
 mod repository;
+mod shared;
 #[cfg(test)]
 mod test_support;
 
@@ -47,6 +24,7 @@ pub(crate) use application::{
 pub(super) use gcp::GcpCloudSqlProvisioningDriver;
 pub(super) use neon::NeonProvisioningDriver;
 pub(super) use planetscale::PlanetScaleProvisioningDriver;
+pub(super) use repository::ProvisioningRepository;
 
 pub(super) fn managed_provider_registry(
     planet_scale: PlanetScaleProvisioningDriver,
@@ -102,24 +80,7 @@ impl ProvisioningExecutionPermit {
         }
     }
 }
-#[allow(
-    unused_imports,
-    reason = "the provider-neutral API surface is consumed by the concrete adapters landing in #100"
-)]
-pub(crate) use domain::{
-    ManagedAccessCapability, ProvisioningAccessMode, ProvisioningAction,
-    ProvisioningCapabilityManifest, ProvisioningIntent, ProvisioningPhase, ProvisioningPlan,
-    ProvisioningPlanStep, ProvisioningReceipt, ProvisioningRepairReason, ProvisioningState,
-    ProvisioningTarget, ProvisioningTargetSelector, ProvisioningVerification,
-};
-#[allow(
-    unused_imports,
-    reason = "the fixed CLI API surface is consumed by the concrete adapters landing in #100"
-)]
-pub(crate) use process::{
-    ProvisioningCliCommand, ProvisioningCliEnvironment, ProvisioningCliOutput,
-    ProvisioningCliOutputSchema, ProvisioningExecutableIdentity, ProvisioningProcessFailure,
-};
+pub(crate) use domain::{ProvisioningAccessMode, ProvisioningReceipt, ProvisioningTarget};
 
 #[cfg(test)]
 pub(crate) use application::assert_restart_resume_lifecycle;

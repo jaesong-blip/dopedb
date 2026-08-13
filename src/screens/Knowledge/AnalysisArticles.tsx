@@ -7,6 +7,7 @@ import { AnalysisArticleEditor } from "../../features/analysisArticles/AnalysisA
 import { AnalysisArticleVisualization } from "../../features/analysisArticles/AnalysisArticleVisualization";
 import { AnalysisPublicationPanel } from "../../features/analysisArticles/AnalysisPublicationPanel";
 import { AnalysisSignalPanel } from "../../features/analysisArticles/AnalysisSignalPanel";
+import { analysisQueryKeys } from "../../features/analysisArticles/queryKeys";
 import {
   articleFreshness,
   mergeAnalysisFragments,
@@ -139,6 +140,7 @@ export default function AnalysisArticles({
   environment,
   bindings,
   sharedWorkspace,
+  scopeKey,
   focusId,
   onOpenAgent,
   onNewConnection,
@@ -147,6 +149,7 @@ export default function AnalysisArticles({
   environment: KnowledgeEnvironment;
   bindings: readonly EnvironmentConnection[];
   sharedWorkspace: boolean;
+  scopeKey: string;
   focusId?: string | null;
   onOpenAgent?: (connectionId: string, environmentId?: string, prompt?: string) => void;
   onNewConnection?: () => void;
@@ -161,7 +164,7 @@ export default function AnalysisArticles({
     { id: "sharing", label: t("analysis.tabSharing") },
     { id: "history", label: t("analysis.tabHistory") },
   ] as const, [t]);
-  const articleKey = ["analysis-articles", environment.id] as const;
+  const articleKey = analysisQueryKeys.articles(scopeKey, environment.id);
   const articles = useQuery({
     queryKey: articleKey,
     queryFn: () => listAnalysisArticles(environment.id),
@@ -169,13 +172,13 @@ export default function AnalysisArticles({
     retry: false,
   });
   const runners = useQuery({
-    queryKey: ["analysis-runners"] as const,
+    queryKey: analysisQueryKeys.runners(scopeKey),
     queryFn: listAnalysisRunners,
     enabled: sharedWorkspace,
     retry: false,
   });
   const collaborators = useQuery({
-    queryKey: ["analysis-collaborators"] as const,
+    queryKey: analysisQueryKeys.collaborators(scopeKey),
     queryFn: listAnalysisCollaborators,
     enabled: sharedWorkspace,
     retry: false,
@@ -213,20 +216,20 @@ export default function AnalysisArticles({
 
   const selected = articles.data?.find((article) => article.id === selectedId) ?? null;
   const revisions = useQuery({
-    queryKey: ["analysis-article-revisions", selected?.id] as const,
+    queryKey: analysisQueryKeys.revisions(scopeKey, selected?.id),
     queryFn: () => listAnalysisArticleRevisions(selected!.id),
     enabled: Boolean(selected) && tab === "history",
     retry: false,
   });
   const runs = useQuery({
-    queryKey: ["analysis-article-runs", selected?.id] as const,
+    queryKey: analysisQueryKeys.runs(scopeKey, selected?.id),
     queryFn: () => listAnalysisArticleRuns(selected!.id),
     enabled: Boolean(selected) && (tab === "history" || tab === "lineage" || tab === "article"),
     retry: false,
     refetchInterval: running?.articleId === selected?.id ? 2_000 : false,
   });
   const recoveredResult = useQuery({
-    queryKey: ["analysis-article-local-result", selected?.id] as const,
+    queryKey: analysisQueryKeys.localResult(scopeKey, selected?.id),
     queryFn: () => getLocalAnalysisArticleResult(selected!.id),
     enabled: Boolean(selected),
     retry: false,
@@ -241,7 +244,7 @@ export default function AnalysisArticles({
     ?? selected?.liveRunId
     ?? (selected?.state === "review" ? selected.latestSuccessfulRunId : null);
   const sharedResult = useQuery({
-    queryKey: ["analysis-article-result", selected?.id, effectiveRunId] as const,
+    queryKey: analysisQueryKeys.result(scopeKey, selected?.id, effectiveRunId),
     queryFn: () => getAnalysisArticleResult(selected!.id, effectiveRunId!),
     enabled: Boolean(
       selected
@@ -268,9 +271,9 @@ export default function AnalysisArticles({
     void onAnalysisRunnerChanged((change) => {
       if (disposed) return;
       setRunnerState(change);
-      void queryClient.invalidateQueries({ queryKey: ["analysis-runners"] });
+      void queryClient.invalidateQueries({ queryKey: analysisQueryKeys.runners(scopeKey) });
       if (change.articleId) {
-        void queryClient.invalidateQueries({ queryKey: ["analysis-article-runs", change.articleId] });
+        void queryClient.invalidateQueries({ queryKey: analysisQueryKeys.runs(scopeKey, change.articleId) });
         void queryClient.invalidateQueries({ queryKey: articleKey });
       }
     }).then((stop) => {
@@ -290,7 +293,7 @@ export default function AnalysisArticles({
       if (disposed) return;
       void queryClient.invalidateQueries({ queryKey: articleKey });
       void queryClient.invalidateQueries({
-        queryKey: ["analysis-article-revisions", change.articleId],
+        queryKey: analysisQueryKeys.revisions(scopeKey, change.articleId),
       });
       setSelectedId(change.articleId);
     }).then((stop) => {
@@ -307,10 +310,10 @@ export default function AnalysisArticles({
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: articleKey }),
       articleId
-        ? queryClient.invalidateQueries({ queryKey: ["analysis-article-runs", articleId] })
+        ? queryClient.invalidateQueries({ queryKey: analysisQueryKeys.runs(scopeKey, articleId) })
         : Promise.resolve(),
       articleId
-        ? queryClient.invalidateQueries({ queryKey: ["analysis-article-revisions", articleId] })
+        ? queryClient.invalidateQueries({ queryKey: analysisQueryKeys.revisions(scopeKey, articleId) })
         : Promise.resolve(),
     ]);
   };
@@ -397,7 +400,7 @@ export default function AnalysisArticles({
     onSuccess: async () => {
       setActionError(null);
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["analysis-runners"] }),
+        queryClient.invalidateQueries({ queryKey: analysisQueryKeys.runners(scopeKey) }),
         queryClient.invalidateQueries({ queryKey: articleKey }),
       ]);
     },
@@ -591,9 +594,9 @@ export default function AnalysisArticles({
                     onTransfer={(ownerMemberId) => transfer.mutate({ article: selected, ownerMemberId })}
                   />
                 ) : tab === "signals" ? (
-                  <AnalysisSignalPanel article={selected} />
+                  <AnalysisSignalPanel article={selected} scopeKey={scopeKey} />
                 ) : tab === "sharing" ? (
-                  <AnalysisPublicationPanel article={selected} />
+                  <AnalysisPublicationPanel article={selected} scopeKey={scopeKey} />
                 ) : (
                   <HistoryView
                     article={selected}
@@ -743,15 +746,18 @@ function ArticleView({
         {runs.length ? (
           <label className="tw:ml-auto tw:inline-flex tw:items-center tw:gap-2 tw:text-xs tw:text-muted-foreground">
             {t("analysis.result")}
-            <select
-              className="tw:h-control-sm tw:max-w-[260px] tw:rounded-sm tw:border tw:border-input tw:bg-background tw:px-2 tw:text-xs tw:text-foreground"
-              value={selectedRunId ?? ""}
-              onChange={(event) => onSelectRun(event.target.value || null)}
-            >
-              {runs.filter((run) => run.state === "succeeded").map((run) => (
-                <option key={run.id} value={run.id}>r{run.articleRevision} · {run.finishedAt ? new Date(run.finishedAt).toLocaleString() : run.id.slice(0, 8)}</option>
-              ))}
-            </select>
+            <span className="tw:w-[min(260px,40vw)]">
+              <SelectInput
+                density="compact"
+                value={selectedRunId ?? ""}
+                onChange={(event) => onSelectRun(event.target.value || null)}
+                aria-label={t("analysis.result")}
+              >
+                {runs.filter((run) => run.state === "succeeded").map((run) => (
+                  <option key={run.id} value={run.id}>r{run.articleRevision} · {run.finishedAt ? new Date(run.finishedAt).toLocaleString() : run.id.slice(0, 8)}</option>
+                ))}
+              </SelectInput>
+            </span>
           </label>
         ) : null}
       </div>

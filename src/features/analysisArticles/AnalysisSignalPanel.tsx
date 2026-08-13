@@ -45,6 +45,7 @@ import {
   setAnalysisSignalEnabled,
   updateAnalysisSignal,
 } from "./tauriAdapter";
+import { analysisQueryKeys } from "./queryKeys";
 
 type SignalDraft = AnalysisSignalCreate;
 type ConditionKind = AnalysisSignalCondition["kind"];
@@ -167,22 +168,28 @@ function canManage(directory: AnalysisCollaboratorDirectory | undefined) {
   return directory ? ["editor", "admin", "owner"].includes(directory.currentRole) : false;
 }
 
-export function AnalysisSignalPanel({ article }: { article: AnalysisArticleRecord }) {
+export function AnalysisSignalPanel({
+  article,
+  scopeKey,
+}: {
+  article: AnalysisArticleRecord;
+  scopeKey: string;
+}) {
   const { lang, t } = useI18n();
   const queryClient = useQueryClient();
-  const signalKey = ["analysis-signals", article.id] as const;
+  const signalKey = analysisQueryKeys.signals(scopeKey, article.id);
   const signals = useQuery({
     queryKey: signalKey,
     queryFn: () => listAnalysisSignals(article.id),
     retry: false,
   });
   const collaborators = useQuery({
-    queryKey: ["analysis-collaborators"] as const,
+    queryKey: analysisQueryKeys.collaborators(scopeKey),
     queryFn: listAnalysisCollaborators,
     retry: false,
   });
   const notifications = useQuery({
-    queryKey: ["analysis-notifications"] as const,
+    queryKey: analysisQueryKeys.notifications(scopeKey),
     queryFn: listAnalysisNotifications,
     retry: false,
   });
@@ -193,7 +200,7 @@ export function AnalysisSignalPanel({ article }: { article: AnalysisArticleRecor
   const [error, setError] = useState<string | null>(null);
   const selectedSignal = signals.data?.find((signal) => signal.id === selectedSignalId) ?? null;
   const receipts = useQuery({
-    queryKey: ["analysis-signal-receipts", article.id, selectedSignalId] as const,
+    queryKey: analysisQueryKeys.signalReceipts(scopeKey, article.id, selectedSignalId),
     queryFn: () => listAnalysisSignalReceipts(article.id, selectedSignalId!),
     enabled: Boolean(selectedSignalId),
     retry: false,
@@ -207,9 +214,9 @@ export function AnalysisSignalPanel({ article }: { article: AnalysisArticleRecor
   const refresh = async (signalId?: string) => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: signalKey }),
-      queryClient.invalidateQueries({ queryKey: ["analysis-notifications"] }),
+      queryClient.invalidateQueries({ queryKey: analysisQueryKeys.notifications(scopeKey) }),
       signalId
-        ? queryClient.invalidateQueries({ queryKey: ["analysis-signal-receipts", article.id, signalId] })
+        ? queryClient.invalidateQueries({ queryKey: analysisQueryKeys.signalReceipts(scopeKey, article.id, signalId) })
         : Promise.resolve(),
     ]);
   };
@@ -256,7 +263,7 @@ export function AnalysisSignalPanel({ article }: { article: AnalysisArticleRecor
     mutationFn: (ids: string[]) => markAnalysisNotificationsRead(ids),
     onSuccess: async () => {
       setError(null);
-      await queryClient.invalidateQueries({ queryKey: ["analysis-notifications"] });
+      await queryClient.invalidateQueries({ queryKey: analysisQueryKeys.notifications(scopeKey) });
     },
     onError: (cause) => setError(errMessage(cause)),
   });

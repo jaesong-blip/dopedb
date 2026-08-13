@@ -15,14 +15,8 @@ pub(crate) enum AcpPluginInstallationState {
     Verifying,
     Staged,
     Ready,
-    // Reserved for a catalog-only check before the user starts an update.
-    #[allow(dead_code)]
-    UpdateAvailable,
     Removing,
     Failed,
-    // Reserved for a persisted candidate that cannot be automatically restored.
-    #[allow(dead_code)]
-    RollbackRequired,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

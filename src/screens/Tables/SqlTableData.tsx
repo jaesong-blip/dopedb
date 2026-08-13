@@ -8,12 +8,9 @@ import type {
 } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
 import type { ConnectionProfile } from "../../features/connections/domain";
-import {
-  approveTableChanges,
-  proposeTableChanges,
-  rejectTableChanges,
-  runTableChanges,
-} from "../../features/tableData/tauriAdapter";
+import { approveOperation, rejectOperation } from "../../features/operations/tauriAdapter";
+import { runScript } from "../../features/queries/tauriAdapter";
+import { proposeTableChanges } from "../../features/tableData/tauriAdapter";
 import { useCatalogTableMetadata } from "../../features/tableData/catalogTable";
 import type { RowEditorState } from "../../features/tableData/domain";
 import { useAgentSelection } from "../../features/agents/selectionContext";
@@ -320,7 +317,7 @@ export default function SqlTableData({
       );
       commands.patch({ proposal, reviewing: true });
       if (!proposal.approvalRequired) {
-        const outcome = await runTableChanges(proposal.operationId);
+        const outcome = await runScript(proposal.operationId);
         finishStagedChanges(outcome);
       }
     } catch (error) {
@@ -334,12 +331,12 @@ export default function SqlTableData({
     if (!stagedProposal || stagedRunning) return;
     commands.patch({ running: true, writeError: null });
     try {
-      await approveTableChanges(
+      await approveOperation(
         stagedProposal.operationId,
         stagedProposal.payloadHash,
         stagedProposal.confirmationPhrase ? stagedConfirmation : undefined,
       );
-      finishStagedChanges(await runTableChanges(stagedProposal.operationId));
+      finishStagedChanges(await runScript(stagedProposal.operationId));
     } catch (error) {
       commands.patch({ writeError: errMessage(error) });
     } finally {
@@ -350,7 +347,7 @@ export default function SqlTableData({
   async function rejectStagedChanges() {
     if (!stagedProposal || stagedRunning) return;
     try {
-      await rejectTableChanges(
+      await rejectOperation(
         stagedProposal.operationId,
         stagedProposal.payloadHash,
       );

@@ -2,7 +2,13 @@
 // Neon HTTP Drizzle driver cannot execute callback transactions.
 import "server-only";
 
-import { neonSql } from "../db";
+import { sql } from "drizzle-orm";
+
+import { db } from "../db";
+import {
+  knowledgeMutationAuthoritySql,
+  type KnowledgeMutationAuthority,
+} from "./mutation-authority";
 
 export const KNOWLEDGE_RISK_CLASSES = [
   "production",
@@ -74,22 +80,26 @@ export async function insertKnowledgeProject(input: {
   organizationId: string;
   name: string;
   environments: Array<{ name: string; riskClass: KnowledgeRiskClass }>;
+  authority: KnowledgeMutationAuthority;
 }): Promise<StoredKnowledgeProject | null> {
-  const rows = await neonSql.query(
-    `WITH requested_environment AS MATERIALIZED (
+  const result = await db.execute<ProjectRow>(sql`
+     WITH actor_authority AS MATERIALIZED (
+       SELECT 1 WHERE ${knowledgeMutationAuthoritySql(input.authority, input.organizationId)}
+     ), requested_environment AS MATERIALIZED (
        SELECT requested."name", requested."riskClass"
-       FROM jsonb_to_recordset($3::jsonb)
+       FROM jsonb_to_recordset(${JSON.stringify(input.environments)}::jsonb)
          AS requested("name" text, "riskClass" text)
      ), inserted_project AS MATERIALIZED (
        INSERT INTO "workspace_control"."knowledge_project"
          ("organization_id", "name")
-       VALUES ($1, $2)
+       SELECT ${input.organizationId}, ${input.name}
+       FROM actor_authority
        ON CONFLICT ("organization_id", "name") DO NOTHING
        RETURNING "id", "name", "revision"
      ), inserted_environment AS MATERIALIZED (
        INSERT INTO "workspace_control"."knowledge_project_environment"
          ("organization_id", "project_id", "name", "production", "risk_class")
-       SELECT $1, project."id", environment."name",
+       SELECT ${input.organizationId}, project."id", environment."name",
          environment."riskClass" = 'production', environment."riskClass"
        FROM inserted_project project
        CROSS JOIN requested_environment environment
@@ -105,10 +115,9 @@ export async function insertKnowledgeProject(input: {
      FROM inserted_project project
      JOIN inserted_environment environment
        ON environment."project_id" = project."id"
-     ORDER BY environment."name", environment."id"`,
-    [input.organizationId, input.name, JSON.stringify(input.environments)],
-  ) as ProjectRow[];
-  return projectFromRows(rows);
+     ORDER BY environment."name", environment."id"
+  `);
+  return projectFromRows(result.rows);
 }
 
 export async function appendKnowledgeEnvironment(input: {
@@ -117,19 +126,23 @@ export async function appendKnowledgeEnvironment(input: {
   expectedProjectRevision: number;
   name: string;
   riskClass: KnowledgeRiskClass;
+  authority: KnowledgeMutationAuthority;
 }): Promise<StoredKnowledgeProject | null> {
-  const rows = await neonSql.query(
-    `WITH eligible_project AS MATERIALIZED (
+  const result = await db.execute<ProjectRow>(sql`
+     WITH actor_authority AS MATERIALIZED (
+       SELECT 1 WHERE ${knowledgeMutationAuthoritySql(input.authority, input.organizationId)}
+     ), eligible_project AS MATERIALIZED (
        SELECT project."id", project."name", project."revision"
        FROM "workspace_control"."knowledge_project" project
-       WHERE project."organization_id" = $1
-         AND project."id" = $2::uuid
-         AND project."revision" = $3::bigint
+       CROSS JOIN actor_authority
+       WHERE project."organization_id" = ${input.organizationId}
+         AND project."id" = ${input.projectId}::uuid
+         AND project."revision" = ${input.expectedProjectRevision}::bigint
          AND NOT EXISTS (
            SELECT 1
            FROM "workspace_control"."knowledge_project_environment" environment
            WHERE environment."project_id" = project."id"
-             AND environment."name" = $4
+             AND environment."name" = ${input.name}
          )
        FOR UPDATE
      ), updated_project AS MATERIALIZED (
@@ -142,7 +155,8 @@ export async function appendKnowledgeEnvironment(input: {
      ), inserted_environment AS MATERIALIZED (
        INSERT INTO "workspace_control"."knowledge_project_environment"
          ("organization_id", "project_id", "name", "production", "risk_class")
-       SELECT $1, project."id", $4, $5 = 'production', $5
+       SELECT ${input.organizationId}, project."id", ${input.name},
+         ${input.riskClass} = 'production', ${input.riskClass}
        FROM updated_project project
        RETURNING "id", "project_id", "name", "risk_class", "revision"
      ), projected_environment AS (
@@ -165,14 +179,7 @@ export async function appendKnowledgeEnvironment(input: {
      FROM updated_project project
      JOIN projected_environment environment
        ON environment."project_id" = project."id"
-     ORDER BY environment."name", environment."id"`,
-    [
-      input.organizationId,
-      input.projectId,
-      input.expectedProjectRevision,
-      input.name,
-      input.riskClass,
-    ],
-  ) as ProjectRow[];
-  return projectFromRows(rows);
+     ORDER BY environment."name", environment."id"
+  `);
+  return projectFromRows(result.rows);
 }

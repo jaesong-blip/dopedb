@@ -62,6 +62,21 @@ export async function sealAnalysisResultFragments(input: {
   }));
 }
 
+export async function sealAnalysisResultFragment(input: {
+  request: Request;
+  workspaceId: string;
+  actorUserId: string;
+  runId: string;
+  expiresAt: Date;
+  fragment: AnalysisResultFragmentPayload;
+}) {
+  const sealed = await sealAnalysisResultFragments({
+    ...input,
+    fragments: [input.fragment],
+  });
+  return sealed[0]!;
+}
+
 export async function openAnalysisResultFragmentWithKms(
   kms: WorkspaceKmsSession,
   input: {

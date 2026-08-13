@@ -4,10 +4,6 @@ mod discovery;
 mod dispatch;
 mod peer;
 mod server;
-#[allow(
-    dead_code,
-    reason = "session issuance and revocation are consumed by the upcoming PTY Terminal manager; authentication is already active in the broker"
-)]
 mod session;
 
 use std::path::PathBuf;
@@ -109,6 +105,15 @@ impl BrokerRuntime {
     pub(crate) fn shutdown(&self) {
         self.inner.sessions.revoke_all();
         self.inner.shutdown.cancel();
+    }
+
+    /// Revoke every exact-grant capability without stopping the listener.
+    ///
+    /// Workspace/account authority changes invalidate all issued capabilities,
+    /// while the process-local Broker itself remains available to issue fresh
+    /// capabilities after the new scope is selected.
+    pub(crate) fn revoke_all_sessions(&self) {
+        self.inner.sessions.revoke_all();
     }
 
     pub(crate) async fn shutdown_and_wait(&self, timeout: Duration) {

@@ -1,0 +1,328 @@
+//! SQLite-backed Project Knowledge repository adapter.
+//!
+//! The application facade owns this concrete adapter, preventing Tauri,
+//! Analysis Articles, and the Broker from receiving a raw global `Store`.
+
+use dopedb_protocol::{GraphBuildArtifactV1, GraphRevisionDiffV1, KnowledgeSourceBindingV1};
+use uuid::Uuid;
+
+use crate::error::AppResult;
+use crate::features::agents::domain::AgentKnowledgeEnvironment;
+use crate::store::{ActiveResourceScope, PinnedConnection, Store};
+
+use super::super::domain::{
+    EnvironmentConnectionBinding, EnvironmentRiskClass, KnowledgeGrant, KnowledgeMappingProposal,
+    KnowledgeSessionScope, MappingProposalState, Project, ProjectDefinition, ProjectEnvironment,
+    SourceSnapshot, StoredKnowledgeScope,
+};
+use super::super::ports::{
+    KnowledgeGrantPort, KnowledgeGraphRepositoryPort, KnowledgeMappingRepositoryPort,
+    KnowledgeRepositoryPort, KnowledgeScopeRepositoryPort,
+};
+
+#[derive(Clone)]
+pub(crate) struct SqliteKnowledgeRepository {
+    store: Store,
+}
+
+impl KnowledgeScopeRepositoryPort for SqliteKnowledgeRepository {
+    async fn save_scope(
+        &self,
+        project: &Project,
+        environment: &ProjectEnvironment,
+        binding: &KnowledgeSourceBindingV1,
+        environment_revision: u64,
+    ) -> AppResult<()> {
+        KnowledgeScopeRepositoryPort::save_scope(
+            &self.store,
+            project,
+            environment,
+            binding,
+            environment_revision,
+        )
+        .await
+    }
+
+    async fn scopes(&self, workspace_id: Uuid) -> AppResult<Vec<StoredKnowledgeScope>> {
+        KnowledgeScopeRepositoryPort::scopes(&self.store, workspace_id).await
+    }
+
+    async fn remove_scope(&self, source_id: Uuid) -> AppResult<()> {
+        KnowledgeScopeRepositoryPort::remove_scope(&self.store, source_id).await
+    }
+
+    async fn save_snapshot(&self, snapshot: &SourceSnapshot) -> AppResult<()> {
+        KnowledgeScopeRepositoryPort::save_snapshot(&self.store, snapshot).await
+    }
+
+    async fn source_snapshot(&self, source_id: Uuid) -> AppResult<Option<SourceSnapshot>> {
+        KnowledgeScopeRepositoryPort::source_snapshot(&self.store, source_id).await
+    }
+}
+
+impl KnowledgeGraphRepositoryPort for SqliteKnowledgeRepository {
+    async fn stage(&self, artifact: &GraphBuildArtifactV1) -> AppResult<()> {
+        KnowledgeGraphRepositoryPort::stage(&self.store, artifact).await
+    }
+
+    async fn activate(&self, artifact: &GraphBuildArtifactV1) -> AppResult<()> {
+        KnowledgeGraphRepositoryPort::activate(&self.store, artifact).await
+    }
+
+    async fn active_for_source(&self, source_id: Uuid) -> AppResult<Option<GraphBuildArtifactV1>> {
+        KnowledgeGraphRepositoryPort::active_for_source(&self.store, source_id).await
+    }
+
+    async fn active_set(
+        &self,
+        project_environment_id: Uuid,
+    ) -> AppResult<Vec<GraphBuildArtifactV1>> {
+        KnowledgeGraphRepositoryPort::active_set(&self.store, project_environment_id).await
+    }
+
+    async fn by_revision(
+        &self,
+        graph_revision_id: Uuid,
+    ) -> AppResult<Option<GraphBuildArtifactV1>> {
+        KnowledgeGraphRepositoryPort::by_revision(&self.store, graph_revision_id).await
+    }
+
+    async fn diff(
+        &self,
+        from_graph_revision_id: Uuid,
+        to_graph_revision_id: Uuid,
+    ) -> AppResult<GraphRevisionDiffV1> {
+        KnowledgeGraphRepositoryPort::diff(
+            &self.store,
+            from_graph_revision_id,
+            to_graph_revision_id,
+        )
+        .await
+    }
+}
+
+impl KnowledgeGrantPort for SqliteKnowledgeRepository {
+    async fn save_grant(&self, grant: &KnowledgeGrant) -> AppResult<()> {
+        KnowledgeGrantPort::save_grant(&self.store, grant).await
+    }
+
+    async fn exact_grant(&self, grant_id: Uuid) -> AppResult<Option<KnowledgeGrant>> {
+        KnowledgeGrantPort::exact_grant(&self.store, grant_id).await
+    }
+}
+
+impl KnowledgeMappingRepositoryPort for SqliteKnowledgeRepository {
+    async fn propose_mapping(&self, proposal: &KnowledgeMappingProposal) -> AppResult<()> {
+        KnowledgeMappingRepositoryPort::propose_mapping(&self.store, proposal).await
+    }
+
+    async fn decide_mapping(
+        &self,
+        proposal_id: Uuid,
+        expected_graph_revision_id: Uuid,
+        state: MappingProposalState,
+    ) -> AppResult<()> {
+        KnowledgeMappingRepositoryPort::decide_mapping(
+            &self.store,
+            proposal_id,
+            expected_graph_revision_id,
+            state,
+        )
+        .await
+    }
+
+    async fn mappings_for_revision(
+        &self,
+        project_environment_id: Uuid,
+        graph_revision_id: Uuid,
+    ) -> AppResult<Vec<KnowledgeMappingProposal>> {
+        KnowledgeMappingRepositoryPort::mappings_for_revision(
+            &self.store,
+            project_environment_id,
+            graph_revision_id,
+        )
+        .await
+    }
+}
+
+impl KnowledgeRepositoryPort for SqliteKnowledgeRepository {
+    async fn active_resource_scope(&self) -> AppResult<ActiveResourceScope> {
+        self.store.active_resource_scope().await
+    }
+
+    async fn knowledge_projects(&self, workspace_id: Uuid) -> AppResult<Vec<ProjectDefinition>> {
+        self.store.knowledge_projects(workspace_id).await
+    }
+
+    async fn knowledge_environment_exists(
+        &self,
+        workspace_id: Uuid,
+        environment_id: Uuid,
+    ) -> AppResult<bool> {
+        self.store
+            .knowledge_environment_exists(workspace_id, environment_id)
+            .await
+    }
+
+    async fn create_knowledge_project(
+        &self,
+        workspace_id: Uuid,
+        name: &str,
+        environments: &[(String, EnvironmentRiskClass)],
+    ) -> AppResult<ProjectDefinition> {
+        self.store
+            .create_knowledge_project(workspace_id, name, environments)
+            .await
+    }
+
+    async fn create_knowledge_environment(
+        &self,
+        workspace_id: Uuid,
+        project_id: Uuid,
+        name: &str,
+        risk_class: EnvironmentRiskClass,
+    ) -> AppResult<ProjectDefinition> {
+        self.store
+            .create_knowledge_environment(workspace_id, project_id, name, risk_class)
+            .await
+    }
+
+    async fn save_knowledge_project(&self, value: &ProjectDefinition) -> AppResult<()> {
+        self.store.save_knowledge_project(value).await
+    }
+
+    async fn pin_connection_for_read(&self, connection_id: Uuid) -> AppResult<PinnedConnection> {
+        self.store.pin_connection_for_read(connection_id).await
+    }
+
+    async fn agent_knowledge_environments(
+        &self,
+        connection: &PinnedConnection,
+    ) -> AppResult<Vec<AgentKnowledgeEnvironment>> {
+        self.store.agent_knowledge_environments(connection).await
+    }
+
+    async fn knowledge_session_scope(
+        &self,
+        connection: &PinnedConnection,
+        environment_id: Option<Uuid>,
+    ) -> AppResult<Option<KnowledgeSessionScope>> {
+        self.store
+            .knowledge_session_scope(connection, environment_id)
+            .await
+    }
+
+    async fn exact_knowledge_session_graphs(
+        &self,
+        scope: &KnowledgeSessionScope,
+        workspace_id: Uuid,
+        account_id: &str,
+    ) -> AppResult<Vec<GraphBuildArtifactV1>> {
+        self.store
+            .exact_knowledge_session_graphs(scope, workspace_id, account_id)
+            .await
+    }
+
+    async fn active_knowledge_grant(
+        &self,
+        workspace_id: Uuid,
+        account_id: &str,
+        environment_id: Uuid,
+        environment_revision: u64,
+        graph_revision_ids: &[Uuid],
+    ) -> AppResult<Option<Uuid>> {
+        self.store
+            .active_knowledge_grant(
+                workspace_id,
+                account_id,
+                environment_id,
+                environment_revision,
+                graph_revision_ids,
+            )
+            .await
+    }
+
+    async fn revoke_knowledge_grants_for_account(
+        &self,
+        workspace_id: Uuid,
+        account_id: &str,
+    ) -> AppResult<()> {
+        self.store
+            .revoke_knowledge_grants_for_account(workspace_id, account_id)
+            .await
+    }
+
+    async fn import_granted_active_graph(&self, graph: &GraphBuildArtifactV1) -> AppResult<()> {
+        self.store.import_granted_active_graph(graph).await
+    }
+
+    async fn retain_granted_environment_heads(
+        &self,
+        environment_id: Uuid,
+        revisions: &[Uuid],
+    ) -> AppResult<()> {
+        self.store
+            .retain_granted_environment_heads(environment_id, revisions)
+            .await
+    }
+
+    async fn sync_remote_knowledge_mapping(
+        &self,
+        proposal: &KnowledgeMappingProposal,
+    ) -> AppResult<()> {
+        self.store.sync_remote_knowledge_mapping(proposal).await
+    }
+
+    async fn environment_connections(
+        &self,
+        workspace_id: Uuid,
+        environment_id: Uuid,
+    ) -> AppResult<Vec<EnvironmentConnectionBinding>> {
+        self.store
+            .environment_connections(workspace_id, environment_id)
+            .await
+    }
+
+    async fn bind_environment_connection(
+        &self,
+        binding_id: Uuid,
+        connection: &PinnedConnection,
+        environment_id: Uuid,
+        role: &str,
+        alias: &str,
+    ) -> AppResult<EnvironmentConnectionBinding> {
+        self.store
+            .bind_environment_connection(binding_id, connection, environment_id, role, alias)
+            .await
+    }
+
+    async fn revoke_environment_connection(
+        &self,
+        workspace_id: Uuid,
+        binding_id: Uuid,
+    ) -> AppResult<()> {
+        self.store
+            .revoke_environment_connection(workspace_id, binding_id)
+            .await
+    }
+
+    async fn remote_connection_id(&self, connection: &PinnedConnection) -> AppResult<Option<Uuid>> {
+        self.store.remote_connection_id(connection).await
+    }
+
+    async fn local_connection_id_for_remote(
+        &self,
+        workspace_id: Uuid,
+        remote_id: Uuid,
+    ) -> AppResult<Option<Uuid>> {
+        self.store
+            .local_connection_id_for_remote(workspace_id, remote_id)
+            .await
+    }
+}
+
+impl SqliteKnowledgeRepository {
+    pub(crate) fn new(store: Store) -> Self {
+        Self { store }
+    }
+}

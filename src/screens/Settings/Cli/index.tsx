@@ -3,7 +3,7 @@
 // atomic copy and optional user-PATH edit both return a receipt.
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { installCli } from "../../../ipc/commands";
+import { installCli } from "../../../features/skills/tauriAdapter";
 import { errMessage } from "../../../ipc/types";
 import ConfirmButton from "../../../components/ConfirmButton";
 import InfoTip from "../../../components/InfoTip";
@@ -12,8 +12,14 @@ import { useToast } from "../../../components/Toast";
 import { Button } from "../../../design-system/components/Button";
 import { useI18n } from "../../../lib/i18n";
 import { cliInstallationStatusQuery, qk } from "../../../lib/queries";
+import type { ConnectionProfile } from "../../../features/connections/domain";
+import { AdvancedShellTerminalLauncher } from "./AdvancedShellTerminal";
 
-export default function CliSettings() {
+export default function CliSettings({
+  connection,
+}: {
+  connection: ConnectionProfile | null;
+}) {
   const { t } = useI18n();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -151,6 +157,7 @@ export default function CliSettings() {
                 {t("cli.refresh")}
               </Button>
             </div>
+            <AdvancedShellTerminalLauncher connection={connection} />
           </>
         )
       )}

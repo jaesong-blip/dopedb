@@ -4,14 +4,12 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
-use zeroize::Zeroizing;
-
 use crate::error::AppResult;
 use crate::kernel::identity::{
     ProviderBindingId, ProviderCredentialReceiptId, ProviderIntegrationId,
 };
 use crate::model::Engine;
+use chrono::{DateTime, Utc};
 
 use super::domain::{
     ProviderBindingScope, ProviderBindingStatus, ProviderCredentialCleanup,
@@ -21,19 +19,7 @@ use super::domain::{
 
 /// OS credential store isolated from connection and workspace-session vaults.
 pub(crate) trait ProviderCredentialVault: Clone + Send + Sync + 'static {
-    fn store(
-        &self,
-        scope: &ProviderBindingScope,
-        id: ProviderBindingId,
-        secret: &str,
-    ) -> AppResult<()>;
-    fn fetch(
-        &self,
-        scope: &ProviderBindingScope,
-        id: ProviderBindingId,
-    ) -> AppResult<Zeroizing<String>>;
     fn delete(&self, cleanup: &ProviderCredentialCleanup) -> AppResult<()>;
-    fn clear_scope(&self, scope: Option<&ProviderScope>);
 }
 
 /// Local-only SQLite binding persistence. Every write rechecks the active scope.
@@ -77,16 +63,6 @@ pub(crate) trait ProviderBindingRepository: Clone + Send + Sync + 'static {
         &self,
         account_id: Option<&crate::kernel::identity::AccountId>,
     ) -> impl Future<Output = AppResult<Vec<TombstonedProviderBinding>>> + Send;
-}
-
-/// Injected provider verifier. Production adapters may make hosted requests;
-/// tests supply deterministic fakes and no use case starts a process or network.
-pub(crate) trait ProviderVerifier: Clone + Send + Sync + 'static {
-    fn verify(
-        &self,
-        binding: &ProviderBindingScope,
-        secret: Zeroizing<String>,
-    ) -> impl Future<Output = AppResult<ProviderVerification>> + Send;
 }
 
 /// Keyless GCP ADC/WIF verification. Implementations must never read a

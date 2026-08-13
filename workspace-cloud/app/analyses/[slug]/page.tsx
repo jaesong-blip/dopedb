@@ -1,43 +1,40 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { cache } from "react";
-import { and, eq, isNull } from "drizzle-orm";
 
 import { Brand } from "../../components/Brand";
-import { db } from "../../../lib/db";
-import { workspaceAnalysisPublication } from "../../../lib/schema";
-import { parseAnalysisPublicSnapshot } from "../../../lib/workspace-analysis-publications";
-import { canonicalHash } from "../../../lib/workspace-versioning";
+import {
+  consumePublicAnalysisBudget,
+  loadPublicAnalysisPublication,
+} from "../../../lib/public-analysis-publication";
+import { forwardedClientKey } from "../../../lib/rate-limit";
 import { PublicAnalysisArticle } from "./PublicAnalysisArticle";
 
-const SLUG = /^[a-z0-9][a-z0-9-]{7,127}$/;
+// A publication slug is revocable access, not an immutable asset URL. Always
+// ask the database for its current revocation state and never prerender it.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-const publication = cache(async (slug: string) => {
-  if (!SLUG.test(slug)) return null;
-  const row = await db.query.workspaceAnalysisPublication.findFirst({
-    where: and(
-      eq(workspaceAnalysisPublication.slug, slug),
-      isNull(workspaceAnalysisPublication.revokedAt),
-    ),
-    columns: {
-      snapshot: true,
-      snapshotHash: true,
-      publishedAt: true,
-      visibility: true,
-    },
-  });
-  if (!row || canonicalHash(row.snapshot) !== row.snapshotHash) return null;
-  try {
-    return { ...row, article: parseAnalysisPublicSnapshot(row.snapshot) };
-  } catch {
-    return null;
-  }
+// Next's server contract scopes React.cache to one request and explicitly uses it
+// to deduplicate ORM reads shared by generateMetadata and the page. Keep budget
+// consumption inside this memoized boundary so one HTML request consumes one unit.
+const publication = cache(async (slug: string, clientKey: string) => {
+  if (!await consumePublicAnalysisBudget(clientKey)) return { kind: "rate_limited" as const };
+  const result = await loadPublicAnalysisPublication(slug);
+  return result ? { kind: "found" as const, result } : { kind: "not_found" as const };
 });
+
+async function requestedPublication(slug: string) {
+  const clientKey = forwardedClientKey(await headers());
+  return await publication(slug, clientKey);
+}
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
-  const result = await publication(slug);
-  if (!result) return { title: "Analysis Article not found" };
+  const loaded = await requestedPublication(slug);
+  if (loaded.kind !== "found") return { title: "Analysis Article not found", robots: { index: false } };
+  const { result } = loaded;
   const index = result.visibility === "public" && result.article.searchIndexable;
   return {
     title: `${result.article.title} · DopeDB`,
@@ -54,8 +51,9 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function AnalysisPublicationPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const result = await publication(slug);
-  if (!result) notFound();
+  const loaded = await requestedPublication(slug);
+  if (loaded.kind !== "found") notFound();
+  const { result } = loaded;
   return (
     <>
       <header className="tw:relative tw:z-[1] tw:border-b tw:border-border tw:bg-surface/90 tw:backdrop-blur-xl">

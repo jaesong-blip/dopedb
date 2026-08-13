@@ -2,18 +2,14 @@
 //! and credential persistence stay in Rust so Bearer sessions never cross into the
 //! webview, logs, local SQLite, or frontend query caches.
 
-mod analysis_articles;
 mod authentication;
 mod connections;
-mod knowledge;
 mod provider_local_target;
 mod sync;
 
-use std::net::IpAddr;
-use std::sync::OnceLock;
 use std::time::Duration;
 
-use reqwest::{redirect::Policy, Client, Response, StatusCode, Url};
+use reqwest::{Client, Response, StatusCode, Url};
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::json;
@@ -43,25 +39,6 @@ use crate::model::{
 };
 
 use super::super::ports::WorkspaceControlPlanePort;
-pub(crate) use analysis_articles::{
-    analysis_publication_url, analysis_refresh_lease_is_active, cancel_analysis_run,
-    claim_analysis_refresh_lease, complete_analysis_run, create_analysis_article,
-    create_analysis_publication, create_analysis_signal, delete_analysis_article,
-    delete_analysis_signal, get_analysis_article, get_analysis_result, get_analysis_run,
-    list_analysis_article_revisions, list_analysis_articles, list_analysis_collaborators,
-    list_analysis_notifications, list_analysis_publications, list_analysis_runners,
-    list_analysis_runs, list_analysis_signal_receipts, list_analysis_signals,
-    mark_analysis_notifications_read, mutate_analysis_article, preview_analysis_publication,
-    register_analysis_runner, release_analysis_refresh_lease, revoke_analysis_publication,
-    revoke_analysis_runner, set_analysis_signal_enabled, start_analysis_run,
-    submit_analysis_signal_receipt, update_analysis_signal, AnalysisArticleMutation,
-    AnalysisCollaboratorDirectory, AnalysisPublicationRequest, AnalysisRunnerRevocation,
-    AnalysisSignalChannel, AnalysisSignalCondition, AnalysisSignalCreateRequest,
-    AnalysisSignalObservedState, AnalysisSignalReceiptRequest, RemoteAnalysisArticleRevision,
-    RemoteAnalysisLease, RemoteAnalysisNotification, RemoteAnalysisPublicSnapshot,
-    RemoteAnalysisPublication, RemoteAnalysisResult, RemoteAnalysisRun, RemoteAnalysisRunner,
-    RemoteAnalysisSignal, RemoteAnalysisSignalHistoryReceipt,
-};
 use authentication::{
     auth_user, begin_login, migrate_legacy_session, poll_login, remote_workspaces, sign_out,
 };
@@ -69,27 +46,20 @@ use connections::{
     authorize_connection, delete_connection, issue_managed_connection_lease,
     release_managed_connection_lease, remote_connections, share_connection, update_connection,
 };
-pub(crate) use knowledge::{
-    begin_knowledge_github_install, bind_environment_connection, create_current_knowledge_grant,
-    create_knowledge_environment, create_knowledge_project, create_knowledge_source,
-    decide_remote_knowledge_mapping, delete_knowledge_source, download_knowledge_graph,
-    ensure_personal_knowledge_scope, list_current_knowledge_grants, list_environment_connections,
-    list_knowledge_github_repositories, list_knowledge_projects, list_remote_knowledge_mappings,
-    list_remote_knowledge_sources, propose_remote_knowledge_mapping, request_knowledge_source_sync,
-    revoke_environment_connection, AppendKnowledgeEnvironmentRequest,
-    CreateKnowledgeEnvironmentRequest, CreateKnowledgeProjectRequest, CreateKnowledgeSourceRequest,
-    RemoteGithubRepository, RemoteKnowledgeEnvironment, RemoteKnowledgeGrant,
-    RemoteKnowledgeProject, RemoteKnowledgeSource,
-};
 use provider_local_target::provider_local_target;
 use sync::workspace_pull_page;
 
-const DEFAULT_CONTROL_PLANE_ORIGIN: &str = "https://app.dopedb.dev";
 const DESKTOP_CLIENT_ID: &str = "dopedb-desktop";
 const DEVICE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const MANAGED_LEASE_CONTRACT: &str = "access-v2";
-
-static CONTROL_PLANE_CLIENT: OnceLock<Client> = OnceLock::new();
+const MAX_AUTH_RESPONSE_BYTES: usize = 64 * 1024;
+const MAX_WORKSPACE_LIST_RESPONSE_BYTES: usize = 1024 * 1024;
+const MAX_CONNECTION_RESPONSE_BYTES: usize = 128 * 1024;
+const MAX_CONNECTION_LIST_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+const MAX_MANAGED_LEASE_RESPONSE_BYTES: usize = 256 * 1024;
+const MAX_WORKSPACE_SYNC_RESPONSE_BYTES: usize = 16 * 1024;
+const MAX_WORKSPACES_PER_ACCOUNT: usize = 512;
+const MAX_CONNECTIONS_PER_WORKSPACE: usize = 10_000;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -104,13 +74,6 @@ struct DeviceCodeResponse {
 #[derive(Debug, Deserialize)]
 struct TokenResponse {
     access_token: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct OAuthErrorResponse {
-    error: Option<String>,
-    error_description: Option<String>,
-    message: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -240,40 +203,10 @@ struct SharedConnectionRequest<'a> {
     schema_group: &'a Option<String>,
 }
 
-fn is_loopback_host(url: &Url) -> bool {
-    url.host_str().is_some_and(|host| {
-        host.eq_ignore_ascii_case("localhost")
-            || host
-                .trim_start_matches('[')
-                .trim_end_matches(']')
-                .parse::<IpAddr>()
-                .is_ok_and(|address| address.is_loopback())
-    })
-}
-
 /// The one canonical hosted-origin validator. Provider adapters reuse this
 /// rather than accepting a second environment variable or a weaker fallback.
 pub(crate) fn validated_control_plane_origin() -> AppResult<String> {
-    let raw = std::env::var("DOPEDB_WORKSPACE_ORIGIN")
-        .unwrap_or_else(|_| DEFAULT_CONTROL_PLANE_ORIGIN.to_string())
-        .trim_end_matches('/')
-        .to_string();
-    let url = Url::parse(&raw)
-        .map_err(|_| AppError::Config("workspace control-plane origin is invalid".into()))?;
-    let local_debug_origin =
-        cfg!(debug_assertions) && url.scheme() == "http" && is_loopback_host(&url);
-    if (url.scheme() != "https" && !local_debug_origin)
-        || url.username() != ""
-        || url.password().is_some()
-        || url.path() != "/"
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
-        return Err(AppError::Config(
-            "workspace control-plane origin must be an HTTPS origin".into(),
-        ));
-    }
-    Ok(raw)
+    crate::hosted_control_plane::origin()
 }
 
 // Child HTTP adapter modules retain this private spelling; cross-feature users
@@ -301,81 +234,52 @@ pub(crate) fn console_url(workspace_id: Option<Uuid>) -> AppResult<String> {
 }
 
 fn client() -> AppResult<&'static Client> {
-    if let Some(client) = CONTROL_PLANE_CLIENT.get() {
-        return Ok(client);
-    }
-
-    let client = Client::builder()
-        .timeout(Duration::from_secs(15))
-        .redirect(Policy::none())
-        .user_agent(concat!("DopeDB/", env!("CARGO_PKG_VERSION"), " desktop"))
-        .build()
-        .map_err(|error| AppError::Network(format!("could not create HTTP client: {error}")))?;
-    // A request racing the first initialization may win this set. In either
-    // case every caller receives the same pooled client, while authorization
-    // headers and tokens remain scoped to each individual request.
-    let _ = CONTROL_PLANE_CLIENT.set(client);
-    CONTROL_PLANE_CLIENT
-        .get()
-        .ok_or_else(|| AppError::Network("could not initialize the shared HTTP client".into()))
-}
-
-#[cfg(test)]
-pub(crate) fn assert_shared_http_client_contract() {
-    let first = client().expect("the control-plane HTTP client is available");
-    let second = client().expect("the control-plane HTTP client remains available");
-    assert!(std::ptr::eq(first, second));
-    assert!(is_json_media_type(Some("application/json")));
-    assert!(is_json_media_type(Some(
-        "application/problem+json; charset=utf-8"
-    )));
-    assert!(!is_json_media_type(Some("text/html; charset=utf-8")));
+    crate::hosted_control_plane::client()
 }
 
 fn request_error(action: &str, error: reqwest::Error) -> AppError {
-    AppError::Network(format!("{action} failed: {error}"))
+    crate::hosted_control_plane::request_error(action, error)
 }
 
-fn is_json_media_type(value: Option<&str>) -> bool {
-    value
-        .and_then(|value| value.split(';').next())
-        .map(str::trim)
-        .is_some_and(|media_type| {
-            media_type.eq_ignore_ascii_case("application/json")
-                || media_type.to_ascii_lowercase().ends_with("+json")
-        })
-}
-
-fn require_json_response(response: &Response, action: &str) -> AppResult<()> {
-    let content_type = response
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok());
-    if is_json_media_type(content_type) {
+fn require_response_item_count(actual: usize, maximum: usize, action: &str) -> AppResult<()> {
+    if actual <= maximum {
         return Ok(());
     }
     Err(AppError::Network(format!(
-        "{action} returned an unexpected {} response; the connected workspace service does not support this app feature yet",
-        response.status()
+        "{action} returned too many items"
     )))
 }
 
 async fn oauth_error(response: Response) -> AppError {
-    let status = response.status();
-    let body = response.json::<OAuthErrorResponse>().await.ok();
-    let detail = body
-        .as_ref()
-        .and_then(|value| {
-            value
-                .error_description
-                .as_deref()
-                .or(value.message.as_deref())
-                .or(value.error.as_deref())
-        })
-        .unwrap_or("the control plane rejected the request");
-    AppError::Network(format!(
-        "workspace authentication returned {status}: {detail}"
-    ))
+    crate::hosted_control_plane::response_error(response).await
+}
+
+#[cfg(test)]
+pub(crate) fn assert_hosted_workspace_response_bounds_contract() {
+    assert!(require_response_item_count(
+        MAX_WORKSPACES_PER_ACCOUNT,
+        MAX_WORKSPACES_PER_ACCOUNT,
+        "workspace memberships",
+    )
+    .is_ok());
+    assert!(require_response_item_count(
+        MAX_WORKSPACES_PER_ACCOUNT + 1,
+        MAX_WORKSPACES_PER_ACCOUNT,
+        "workspace memberships",
+    )
+    .is_err());
+    assert!(require_response_item_count(
+        MAX_CONNECTIONS_PER_WORKSPACE,
+        MAX_CONNECTIONS_PER_WORKSPACE,
+        "shared connections",
+    )
+    .is_ok());
+    assert!(require_response_item_count(
+        MAX_CONNECTIONS_PER_WORKSPACE + 1,
+        MAX_CONNECTIONS_PER_WORKSPACE,
+        "shared connections",
+    )
+    .is_err());
 }
 
 /// Production bridge injected into the connection-pool runtime. Keeping this

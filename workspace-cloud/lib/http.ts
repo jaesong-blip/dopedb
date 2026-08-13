@@ -5,6 +5,134 @@ export function privateJson(data: unknown, init: ResponseInit = {}) {
   return Response.json(data, { ...init, headers });
 }
 
+type JsonPrimitive = string | number | boolean | null;
+
+function normalizedJsonValue(value: unknown, key: string): unknown {
+  if (value && typeof value === "object" && "toJSON" in value
+    && typeof (value as { toJSON?: unknown }).toJSON === "function") {
+    return (value as { toJSON(key: string): unknown }).toJSON(key);
+  }
+  if (value instanceof Number || value instanceof String || value instanceof Boolean) {
+    return value.valueOf();
+  }
+  if (Object.prototype.toString.call(value) === "[object BigInt]") {
+    return (value as { valueOf(): bigint }).valueOf();
+  }
+  return value;
+}
+
+function omittedJsonValue(value: unknown) {
+  return value === undefined || typeof value === "function" || typeof value === "symbol";
+}
+
+function* jsonTokens(value: unknown, ancestors: Set<object>): Generator<string> {
+  if (value === null || typeof value === "string" || typeof value === "boolean") {
+    yield JSON.stringify(value as JsonPrimitive);
+    return;
+  }
+  if (typeof value === "number") {
+    yield Number.isFinite(value) ? JSON.stringify(value) : "null";
+    return;
+  }
+  if (typeof value === "bigint") throw new TypeError("BigInt is not JSON serializable");
+  if (!value || typeof value !== "object") throw new TypeError("Value is not JSON serializable");
+  if (ancestors.has(value)) throw new TypeError("Converting circular structure to JSON");
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) {
+      yield "[";
+      for (let index = 0; index < value.length; index += 1) {
+        if (index > 0) yield ",";
+        const child = normalizedJsonValue(value[index], String(index));
+        if (omittedJsonValue(child)) yield "null";
+        else yield* jsonTokens(child, ancestors);
+      }
+      yield "]";
+      return;
+    }
+    yield "{";
+    let emitted = false;
+    for (const key of Object.keys(value)) {
+      const child = normalizedJsonValue((value as Record<string, unknown>)[key], key);
+      if (omittedJsonValue(child)) continue;
+      if (emitted) yield ",";
+      emitted = true;
+      yield JSON.stringify(key);
+      yield ":";
+      yield* jsonTokens(child, ancestors);
+    }
+    yield "}";
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
+/**
+ * Incrementally serializes private JSON. This avoids both Vercel's buffered
+ * response ceiling and a second full-size stringify/UTF-8 allocation while the
+ * stream's pull contract provides downstream backpressure.
+ */
+export function privateJsonStream(data: unknown, init: ResponseInit = {}) {
+  const headers = new Headers(init.headers);
+  headers.set("cache-control", "private, no-store");
+  headers.set("content-type", "application/json; charset=utf-8");
+  headers.set("x-content-type-options", "nosniff");
+  const root = normalizedJsonValue(data, "");
+  if (omittedJsonValue(root)) throw new TypeError("Value is not JSON serializable");
+  const iterator = jsonTokens(root, new Set<object>());
+  const encoder = new TextEncoder();
+  let pending: Uint8Array | null = null;
+  let pendingOffset = 0;
+  let finished = false;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      const chunkBytes = 64 * 1024;
+      try {
+        if (pending && pendingOffset < pending.byteLength) {
+          const end = Math.min(pendingOffset + chunkBytes, pending.byteLength);
+          controller.enqueue(pending.subarray(pendingOffset, end));
+          pendingOffset = end;
+          if (pendingOffset >= pending.byteLength) {
+            pending = null;
+            pendingOffset = 0;
+          }
+          return;
+        }
+        if (finished) {
+          controller.close();
+          return;
+        }
+        const tokens: string[] = [];
+        let characters = 0;
+        while (characters < 32 * 1024) {
+          const next = iterator.next();
+          if (next.done) {
+            finished = true;
+            break;
+          }
+          tokens.push(next.value);
+          characters += next.value.length;
+        }
+        if (tokens.length === 0) {
+          controller.close();
+          return;
+        }
+        pending = encoder.encode(tokens.join(""));
+        const end = Math.min(chunkBytes, pending.byteLength);
+        controller.enqueue(pending.subarray(0, end));
+        pendingOffset = end;
+        if (pendingOffset >= pending.byteLength) {
+          pending = null;
+          pendingOffset = 0;
+        }
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+  });
+  return new Response(body, { ...init, headers });
+}
+
 export function jsonError(message: string, status: number) {
   return privateJson({ error: message }, { status });
 }
@@ -18,15 +146,21 @@ export function mutationAllowed(request: Request, appOrigin: string) {
 export async function boundedJsonBody(
   request: Request,
   maxBytes: number,
-): Promise<{ ok: true; value: unknown } | { ok: false }> {
+): Promise<
+  | { ok: true; value: unknown }
+  | { ok: false; reason: "invalid" | "too_large" }
+> {
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || !request.body) {
-    return { ok: false };
+    return { ok: false, reason: "invalid" };
   }
   const lengthHeader = request.headers.get("content-length");
   if (lengthHeader !== null) {
     if (!/^\d+$/.test(lengthHeader) || Number(lengthHeader) > maxBytes) {
       await request.body.cancel().catch(() => undefined);
-      return { ok: false };
+      return {
+        ok: false,
+        reason: /^\d+$/.test(lengthHeader) ? "too_large" : "invalid",
+      };
     }
   }
   const reader = request.body.getReader();
@@ -39,7 +173,7 @@ export async function boundedJsonBody(
       total += value.byteLength;
       if (total > maxBytes) {
         await reader.cancel().catch(() => undefined);
-        return { ok: false };
+        return { ok: false, reason: "too_large" };
       }
       chunks.push(value);
     }
@@ -55,7 +189,7 @@ export async function boundedJsonBody(
     };
   } catch {
     await reader.cancel().catch(() => undefined);
-    return { ok: false };
+    return { ok: false, reason: "invalid" };
   }
 }
 

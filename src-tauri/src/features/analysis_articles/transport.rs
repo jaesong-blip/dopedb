@@ -12,30 +12,30 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use uuid::Uuid;
 
-use crate::error::{AppError, AppResult};
-use crate::executor::cancel;
-use crate::features::workspaces::adapters::control_plane::{
-    analysis_publication_url, cancel_analysis_run as cancel_remote_analysis_run,
-    complete_analysis_run, create_analysis_article, create_analysis_publication,
-    create_analysis_signal, delete_analysis_article, delete_analysis_signal, get_analysis_article,
-    get_analysis_result, get_analysis_run, list_analysis_article_revisions, list_analysis_articles,
-    list_analysis_collaborators, list_analysis_notifications, list_analysis_publications,
-    list_analysis_runners, list_analysis_runs, list_analysis_signal_receipts,
-    list_analysis_signals, mark_analysis_notifications_read, mutate_analysis_article,
+use super::adapters::hosted::{
+    analysis_publication_url, analysis_runner_capability_is_missing,
+    analysis_runner_registration_guard, cancel_analysis_run as cancel_remote_analysis_run,
+    complete_analysis_run, create_analysis_publication, create_analysis_signal,
+    delete_analysis_article, delete_analysis_signal, get_analysis_result, get_analysis_run,
+    list_analysis_article_revisions, list_analysis_collaborators, list_analysis_notifications,
+    list_analysis_publications, list_analysis_runners, list_analysis_runs,
+    list_analysis_signal_receipts, list_analysis_signals, mark_analysis_notifications_read,
     preview_analysis_publication, register_analysis_runner, revoke_analysis_publication,
     revoke_analysis_runner, set_analysis_signal_enabled, start_analysis_run,
-    update_analysis_signal, AnalysisArticleMutation, AnalysisCollaboratorDirectory,
-    AnalysisPublicationRequest, AnalysisRunnerRevocation, AnalysisSignalChannel,
-    AnalysisSignalCreateRequest, RemoteAnalysisArticleRevision, RemoteAnalysisNotification,
-    RemoteAnalysisPublicSnapshot, RemoteAnalysisPublication, RemoteAnalysisResult,
-    RemoteAnalysisRun, RemoteAnalysisSignal, RemoteAnalysisSignalHistoryReceipt,
+    update_analysis_signal, AnalysisCollaboratorDirectory, AnalysisPublicationRequest,
+    AnalysisRunnerRevocation, AnalysisSignalChannel, AnalysisSignalCreateRequest,
+    RemoteAnalysisArticleRevision, RemoteAnalysisNotification, RemoteAnalysisPublicSnapshot,
+    RemoteAnalysisPublication, RemoteAnalysisResult, RemoteAnalysisRun, RemoteAnalysisSignal,
+    RemoteAnalysisSignalHistoryReceipt,
 };
+use crate::error::{AppError, AppResult};
+use crate::executor::cancel;
 use crate::features::workspaces::WorkspaceKind;
 use crate::kernel::identity::AccountId;
 use crate::state::AppState;
 use crate::store::ActiveResourceScope;
 
-use super::{AnalysisDefinitionRunReceipt, AnalysisDefinitionRunRequest};
+use super::{AnalysisArticleMutation, AnalysisDefinitionRunReceipt, AnalysisDefinitionRunRequest};
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -82,7 +82,7 @@ fn team_account(scope: &ActiveResourceScope) -> AppResult<AccountId> {
 }
 
 async fn remote_scope(state: &AppState) -> AppResult<(ActiveResourceScope, AccountId)> {
-    let scope = state.knowledge_store().active_resource_scope().await?;
+    let scope = state.services.knowledge.active_resource_scope().await?;
     let account = team_account(&scope)?;
     Ok((scope, account))
 }
@@ -108,47 +108,16 @@ fn cancelled_error(error: &AppError) -> bool {
 }
 
 #[tauri::command]
-pub(crate) async fn run_analysis_article_definition(
-    state: State<'_, AppState>,
-    request: AnalysisDefinitionRunRequest,
-) -> AppResult<AnalysisDefinitionRunReceipt> {
-    state
-        .services
-        .analysis_article
-        .run_definition(request)
-        .await
-}
-
-#[tauri::command]
-pub(crate) async fn cancel_analysis_article_definition_run(run_id: Uuid) -> bool {
-    cancel::cancel(run_id)
-}
-
-#[tauri::command]
 pub(crate) async fn list_analysis_articles_command(
     state: State<'_, AppState>,
     project_environment_id: Option<Uuid>,
 ) -> AppResult<Vec<AnalysisArticleRecord>> {
     let (scope, account) = remote_scope(&state).await?;
-    list_analysis_articles(account.as_str(), scope.workspace_id, project_environment_id).await
-}
-
-#[tauri::command]
-pub(crate) async fn get_analysis_article_command(
-    state: State<'_, AppState>,
-    article_id: Uuid,
-) -> AppResult<AnalysisArticleRecord> {
-    let (scope, account) = remote_scope(&state).await?;
-    get_analysis_article(account.as_str(), scope.workspace_id, article_id).await
-}
-
-#[tauri::command]
-pub(crate) async fn create_analysis_article_command(
-    state: State<'_, AppState>,
-    article: SharedAnalysisArticleCreate,
-) -> AppResult<AnalysisArticleRecord> {
-    let (scope, account) = remote_scope(&state).await?;
-    create_analysis_article(account.as_str(), scope.workspace_id, &article).await
+    state
+        .services
+        .analysis_article
+        .list_remote(account.as_str(), scope.workspace_id, project_environment_id)
+        .await
 }
 
 #[tauri::command]
@@ -159,14 +128,17 @@ pub(crate) async fn update_analysis_article_command(
     article: SharedAnalysisArticleCreate,
 ) -> AppResult<AnalysisArticleRecord> {
     let (scope, account) = remote_scope(&state).await?;
-    mutate_analysis_article(
-        account.as_str(),
-        scope.workspace_id,
-        article_id,
-        expected_revision,
-        AnalysisArticleMutation::Update(article),
-    )
-    .await
+    state
+        .services
+        .analysis_article
+        .mutate_remote(
+            account.as_str(),
+            scope.workspace_id,
+            article_id,
+            expected_revision,
+            AnalysisArticleMutation::Update(Box::new(article)),
+        )
+        .await
 }
 
 #[tauri::command]
@@ -177,14 +149,17 @@ pub(crate) async fn transition_analysis_article_command(
     action: AnalysisArticleLifecycleAction,
 ) -> AppResult<AnalysisArticleRecord> {
     let (scope, account) = remote_scope(&state).await?;
-    mutate_analysis_article(
-        account.as_str(),
-        scope.workspace_id,
-        article_id,
-        expected_revision,
-        lifecycle_mutation(action),
-    )
-    .await
+    state
+        .services
+        .analysis_article
+        .mutate_remote(
+            account.as_str(),
+            scope.workspace_id,
+            article_id,
+            expected_revision,
+            lifecycle_mutation(action),
+        )
+        .await
 }
 
 #[tauri::command]
@@ -195,14 +170,17 @@ pub(crate) async fn transfer_analysis_article_command(
     owner_member_id: String,
 ) -> AppResult<AnalysisArticleRecord> {
     let (scope, account) = remote_scope(&state).await?;
-    mutate_analysis_article(
-        account.as_str(),
-        scope.workspace_id,
-        article_id,
-        expected_revision,
-        AnalysisArticleMutation::Transfer { owner_member_id },
-    )
-    .await
+    state
+        .services
+        .analysis_article
+        .mutate_remote(
+            account.as_str(),
+            scope.workspace_id,
+            article_id,
+            expected_revision,
+            AnalysisArticleMutation::Transfer { owner_member_id },
+        )
+        .await
 }
 
 #[tauri::command]
@@ -213,14 +191,17 @@ pub(crate) async fn restore_analysis_article_revision_command(
     revision: i64,
 ) -> AppResult<AnalysisArticleRecord> {
     let (scope, account) = remote_scope(&state).await?;
-    mutate_analysis_article(
-        account.as_str(),
-        scope.workspace_id,
-        article_id,
-        expected_revision,
-        AnalysisArticleMutation::Restore { revision },
-    )
-    .await
+    state
+        .services
+        .analysis_article
+        .mutate_remote(
+            account.as_str(),
+            scope.workspace_id,
+            article_id,
+            expected_revision,
+            AnalysisArticleMutation::Restore { revision },
+        )
+        .await
 }
 
 #[tauri::command]
@@ -238,8 +219,9 @@ pub(crate) async fn delete_analysis_article_command(
     )
     .await?;
     if let Err(error) = state
-        .knowledge_store()
-        .delete_analysis_article_local_results(article_id)
+        .services
+        .analysis_article
+        .delete_local_results(article_id)
         .await
     {
         tracing::warn!(
@@ -258,8 +240,9 @@ pub(crate) async fn get_local_analysis_article_result_command(
     run_id: Option<Uuid>,
 ) -> AppResult<Option<AnalysisDefinitionRunReceipt>> {
     state
-        .knowledge_store()
-        .load_analysis_article_local_result(article_id, run_id)
+        .services
+        .analysis_article
+        .load_local_result(article_id, run_id)
         .await
 }
 
@@ -275,11 +258,12 @@ pub(crate) async fn list_analysis_article_revisions_command(
 #[tauri::command]
 pub(crate) async fn list_analysis_runners_command(
     state: State<'_, AppState>,
-) -> AppResult<Vec<crate::features::workspaces::adapters::control_plane::RemoteAnalysisRunner>> {
+) -> AppResult<Vec<super::adapters::hosted::RemoteAnalysisRunner>> {
     let (scope, account) = remote_scope(&state).await?;
     let current_device_id = state
-        .knowledge_store()
-        .automation_runner_device_id()
+        .services
+        .analysis_article
+        .runner_device_id(account.as_str(), scope.workspace_id)
         .await?
         .to_string();
     let mut runners = list_analysis_runners(account.as_str(), scope.workspace_id).await?;
@@ -296,8 +280,9 @@ pub(crate) async fn revoke_analysis_runner_command(
 ) -> AppResult<AnalysisRunnerRevocation> {
     let (scope, account) = remote_scope(&state).await?;
     let current_device_id = state
-        .knowledge_store()
-        .automation_runner_device_id()
+        .services
+        .analysis_article
+        .runner_device_id(account.as_str(), scope.workspace_id)
         .await?
         .to_string();
     let runners = list_analysis_runners(account.as_str(), scope.workspace_id).await?;
@@ -525,23 +510,43 @@ pub(crate) async fn run_analysis_article_command(
 ) -> AppResult<AnalysisRunCommandResult> {
     let parameter_values = parameter_values.unwrap_or_default();
     let (scope, account) = remote_scope(&state).await?;
-    let device_id = state
-        .knowledge_store()
-        .automation_runner_device_id()
+    let registration_guard = analysis_runner_registration_guard().await;
+    let mut device_id = state
+        .services
+        .analysis_article
+        .runner_device_id(account.as_str(), scope.workspace_id)
         .await?
         .to_string();
     let runner =
-        register_analysis_runner(account.as_str(), scope.workspace_id, &device_id, false).await?;
+        match register_analysis_runner(account.as_str(), scope.workspace_id, &device_id, false)
+            .await
+        {
+            Ok(runner) => runner,
+            Err(error) if analysis_runner_capability_is_missing(&error) => {
+                device_id = state
+                    .services
+                    .analysis_article
+                    .replace_runner_device_id(account.as_str(), scope.workspace_id)
+                    .await?
+                    .to_string();
+                register_analysis_runner(account.as_str(), scope.workspace_id, &device_id, false)
+                    .await?
+            }
+            Err(error) => return Err(error),
+        };
+    drop(registration_guard);
     let run_id = run_id.unwrap_or_else(Uuid::new_v4);
     let (_, article) = start_analysis_run(
         account.as_str(),
         scope.workspace_id,
         article_id,
         article_revision,
-        runner.id,
+        runner.runner.id,
         run_id,
         AnalysisRunTrigger::Manual,
         &parameter_values,
+        runner.capability(),
+        runner.generation(),
         None,
     )
     .await?;
@@ -599,6 +604,7 @@ pub(crate) async fn run_analysis_article_command(
                     scope.workspace_id,
                     article_id,
                     run_id,
+                    runner.capability(),
                     AnalysisRunState::Cancelled,
                     &result.query_receipts,
                     &[],
@@ -620,6 +626,7 @@ pub(crate) async fn run_analysis_article_command(
                 scope.workspace_id,
                 article_id,
                 run_id,
+                runner.capability(),
                 AnalysisRunState::Succeeded,
                 &result.query_receipts,
                 fragments,
@@ -627,15 +634,18 @@ pub(crate) async fn run_analysis_article_command(
             )
             .await?;
             if let Err(error) = super::signals::evaluate_analysis_signals(
-                Some(&app),
-                &state,
-                account.as_str(),
-                scope.workspace_id,
-                &article,
-                runner.id,
-                &run,
-                &result.fragments,
-                None,
+                super::signals::AnalysisSignalEvaluation {
+                    app: Some(&app),
+                    state: &state,
+                    account_id: account.as_str(),
+                    workspace_id: scope.workspace_id,
+                    article: &article,
+                    runner_id: runner.runner.id,
+                    runner_capability: runner.capability(),
+                    run: &run,
+                    fragments: &result.fragments,
+                    execution_error: None,
+                },
             )
             .await
             {
@@ -666,6 +676,7 @@ pub(crate) async fn run_analysis_article_command(
                 scope.workspace_id,
                 article_id,
                 run_id,
+                runner.capability(),
                 terminal_state,
                 &[],
                 &[],
@@ -675,15 +686,18 @@ pub(crate) async fn run_analysis_article_command(
             {
                 Ok(run) if terminal_state != AnalysisRunState::Cancelled => {
                     if let Err(signal_error) = super::signals::evaluate_analysis_signals(
-                        Some(&app),
-                        &state,
-                        account.as_str(),
-                        scope.workspace_id,
-                        &article,
-                        runner.id,
-                        &run,
-                        &[],
-                        Some(&error),
+                        super::signals::AnalysisSignalEvaluation {
+                            app: Some(&app),
+                            state: &state,
+                            account_id: account.as_str(),
+                            workspace_id: scope.workspace_id,
+                            article: &article,
+                            runner_id: runner.runner.id,
+                            runner_capability: runner.capability(),
+                            run: &run,
+                            fragments: &[],
+                            execution_error: Some(&error),
+                        },
                     )
                     .await
                     {

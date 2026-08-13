@@ -99,7 +99,7 @@ enum SessionAuthorization {
     Bearer(Zeroizing<[u8; SESSION_TOKEN_BYTES]>),
     AgentBootstrap {
         token: Zeroizing<[u8; SESSION_TOKEN_BYTES]>,
-        registration: AgentSessionRegisterArguments,
+        registration: Box<AgentSessionRegisterArguments>,
     },
     AgentProcess(PeerProcessIdentity),
 }
@@ -168,6 +168,7 @@ impl BrokerSessionRegistry {
         self.issue_with_authorization(terminal_session_id, pin, capabilities, ttl, None, None)
     }
 
+    #[cfg(test)]
     pub(crate) fn issue_agent(
         &self,
         terminal_session_id: TerminalSessionId,
@@ -269,7 +270,7 @@ impl BrokerSessionRegistry {
                 authorization: match agent_registration {
                     Some(registration) => SessionAuthorization::AgentBootstrap {
                         token: token.clone(),
-                        registration,
+                        registration: Box::new(registration),
                     },
                     None => SessionAuthorization::Bearer(token.clone()),
                 },
@@ -344,7 +345,7 @@ impl BrokerSessionRegistry {
             SessionAuthorization::AgentBootstrap {
                 token,
                 registration: expected,
-            } if expected == registration
+            } if expected.as_ref() == registration
                 && bool::from(token.as_ref().ct_eq(supplied.as_ref()))
         );
         if !authorized {

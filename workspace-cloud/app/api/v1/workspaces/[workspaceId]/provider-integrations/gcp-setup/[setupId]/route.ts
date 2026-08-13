@@ -4,6 +4,7 @@ import { and, eq, gt, isNull } from "drizzle-orm";
 import { db } from "../../../../../../../../lib/db";
 import { env } from "../../../../../../../../lib/env";
 import {
+  boundedJsonBody,
   isUuid,
   jsonError,
   mutationAllowed,
@@ -137,7 +138,16 @@ export async function POST(request: Request, context: RouteContext) {
     authorization.session.user.id,
   );
   if (!setup) return jsonError("Google Cloud setup session expired", 410);
-  const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+  const parsed = await boundedJsonBody(request, 8 * 1_024);
+  if (!parsed.ok) {
+    return jsonError(
+      parsed.reason === "too_large"
+        ? "Google Cloud setup request is too large"
+        : "Invalid Google Cloud setup request",
+      parsed.reason === "too_large" ? 413 : 400,
+    );
+  }
+  const body = parsed.value as Record<string, unknown> | null;
   if (
     !body
     || typeof body.projectId !== "string"

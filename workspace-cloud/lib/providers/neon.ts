@@ -2,6 +2,10 @@
 // and obtains an owner session only long enough to create or revoke a constrained role.
 import "server-only";
 
+import {
+  boundedJsonResponse,
+  BoundedJsonResponseError,
+} from "../bounded-json-response";
 import { createHash, randomBytes } from "node:crypto";
 import { neon } from "@neondatabase/serverless";
 import { MAX_PROVIDER_RESULTS } from "./adapter-contract";
@@ -180,47 +184,15 @@ async function boundedJson(
   response: Response,
   maxBytes = MAX_NEON_RESPONSE_BYTES,
 ): Promise<unknown> {
-  const lengthHeader = response.headers.get("content-length");
-  if (lengthHeader !== null) {
-    if (!/^\d+$/.test(lengthHeader)) {
-      throw new ProviderRequestError("neon", "Neon returned an invalid response", 502);
-    }
-    const contentLength = Number(lengthHeader);
-    if (
-      !Number.isSafeInteger(contentLength)
-      || contentLength > maxBytes
-    ) {
-      await response.body?.cancel().catch(() => undefined);
-      throw new ProviderRequestError("neon", "Neon response is too large", 502);
-    }
-  }
-  if (!response.body) {
-    throw new ProviderRequestError("neon", "Neon returned an invalid response", 502);
-  }
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  while (true) {
-    const { done, value } = await reader.read().catch(() => {
-      throw new ProviderRequestError("neon", "Neon API is unavailable", 502);
-    });
-    if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      await reader.cancel().catch(() => undefined);
-      throw new ProviderRequestError("neon", "Neon response is too large", 502);
-    }
-    chunks.push(value);
-  }
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
   try {
-    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-  } catch {
+    return await boundedJsonResponse(response, maxBytes);
+  } catch (error) {
+    if (
+      error instanceof BoundedJsonResponseError
+      && error.failure === "oversized"
+    ) {
+      throw new ProviderRequestError("neon", "Neon response is too large", 502);
+    }
     throw new ProviderRequestError("neon", "Neon returned an invalid response", 502);
   }
 }

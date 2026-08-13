@@ -1,11 +1,15 @@
 // Per-connection SafetySettings editor. Loads via get_safety, saves via set_safety.
 import { useEffect, useState } from "react";
-import { getSafety, setSafety } from "../../../ipc/commands";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { SafetySettings } from "../../../ipc/types";
 import { errMessage } from "../../../ipc/types";
 import InfoTip from "../../../components/InfoTip";
 import { useToast } from "../../../components/Toast";
 import { Button } from "../../../design-system/components/Button";
+import {
+  CheckboxField,
+  TextInput,
+} from "../../../design-system/components/FormControls";
 import { SettingsGroup } from "../../../design-system/components/Settings";
 import { StatusBadge } from "../../../design-system/components/Status";
 import {
@@ -15,6 +19,11 @@ import {
 import { useI18n, type I18nKey } from "../../../lib/i18n";
 import type { ConnectionProfile } from "../../../features/connections/domain";
 import MonitoringAccess from "./MonitoringAccess";
+import { setSafetySettings } from "../../../features/safetySettings/tauriAdapter";
+import {
+  safetyQueryKeys,
+  safetySettingsQuery,
+} from "../../../features/safetySettings/queries";
 
 const TOGGLES: { key: keyof SafetySettings; label: I18nKey; hint: I18nKey }[] = [
   { key: "allowWrites", label: "safety.allowWrites", hint: "safety.allowWritesHint" },
@@ -47,35 +56,22 @@ export default function Safety({
   const localWritePolicyRequired =
     connection.credentialMode === "local" && !connectionWriteEnabled;
   const [settings, setSettings] = useState<SafetySettings | null>(null);
-  const [msg, setMsg] = useState<string | null>(null); // load-failure only; save feedback goes through toast
   const [busy, setBusy] = useState(false);
   const toast = useToast();
+  const queryClient = useQueryClient();
+  const safetyQuery = useQuery(safetySettingsQuery(connectionId));
 
   useEffect(() => {
-    let alive = true;
-    setSettings(null);
-    setMsg(null);
-    getSafety(connectionId)
-      .then((s) => {
-        if (alive) {
-          setSettings(s);
-        }
-      })
-      .catch((e) => {
-        if (alive) setMsg(errMessage(e));
-      });
-    return () => {
-      alive = false;
-    };
-  }, [connectionId]);
+    setSettings(safetyQuery.data ?? null);
+  }, [connectionId, safetyQuery.data]);
 
   if (!settings) {
     return (
       <div
-        role={msg ? "alert" : "status"}
+        role={safetyQuery.error ? "alert" : "status"}
         className="tw:p-4 tw:text-muted-foreground"
       >
-        {msg ?? t("safety.loading")}
+        {safetyQuery.error ? errMessage(safetyQuery.error) : t("safety.loading")}
       </div>
     );
   }
@@ -89,14 +85,21 @@ export default function Safety({
     const requested = effectiveSafetySettings(connection, settings);
     setBusy(true);
     try {
-      await setSafety(connectionId, requested);
-      const persisted = await getSafety(connectionId);
+      await setSafetySettings(connectionId, requested);
+      const persisted = await queryClient.fetchQuery({
+        ...safetySettingsQuery(connectionId),
+        staleTime: 0,
+      });
       setSettings(persisted);
+      queryClient.setQueryData(safetyQueryKeys.detail(connectionId), persisted);
       onSaved(connectionId, persisted);
       toast(t("safety.saved"));
     } catch (e) {
       try {
-        setSettings(await getSafety(connectionId));
+        setSettings(await queryClient.fetchQuery({
+          ...safetySettingsQuery(connectionId),
+          staleTime: 0,
+        }));
       } catch {
         setSettings(requested);
       }
@@ -132,13 +135,11 @@ export default function Safety({
       <div className="tw:grid tw:grid-cols-[minmax(0,1.2fr)_minmax(264px,0.8fr)] tw:gap-4 tw:max-[1180px]:grid-cols-2 tw:max-[860px]:grid-cols-1">
         <SettingsGroup title={t("safety.guardrails")}>
           {TOGGLES.map((item) => (
-            <label
+            <div
               key={item.key}
-              className="tw:grid tw:min-h-control-lg tw:grid-cols-[16px_minmax(0,1fr)_20px] tw:items-center tw:gap-2 tw:border-t tw:border-border-subtle tw:py-2 tw:first-of-type:border-t-0"
+              className="tw:grid tw:min-h-control-lg tw:grid-cols-[minmax(0,1fr)_20px] tw:items-center tw:gap-2 tw:border-t tw:border-border-subtle tw:py-2 tw:first-of-type:border-t-0"
             >
-              <input
-                className="tw:m-0"
-                type="checkbox"
+              <CheckboxField
                 checked={
                   item.key === "allowWrites"
                     ? effectiveAllowWrites
@@ -149,10 +150,8 @@ export default function Safety({
                   (workspaceManaged || !connectionWriteEnabled)
                 }
                 onChange={(e) => set(item.key, e.target.checked as never)}
+                label={<strong>{t(item.label)}</strong>}
               />
-              <span>
-                <strong>{t(item.label)}</strong>
-              </span>
               <InfoTip
                 label={t(
                   item.key !== "allowWrites"
@@ -166,7 +165,7 @@ export default function Safety({
                           : item.hint,
                 )}
               />
-            </label>
+            </div>
           ))}
           {memberLocalReadOnly ? (
             <p className="tw:m-0 tw:border-t tw:border-border-subtle tw:pt-2 tw:text-sm tw:leading-body tw:text-muted-foreground">
@@ -199,8 +198,8 @@ export default function Safety({
               <span className="tw:text-sm tw:text-muted-foreground">
                 {t(n.label)}
               </span>
-              <input
-                className="tw:w-full tw:bg-muted"
+              <TextInput
+                density="compact"
                 type="number"
                 min={n.key === "maxRows" ? 1 : 0}
                 step={1}

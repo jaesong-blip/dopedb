@@ -77,9 +77,7 @@ export type ProviderCredentialReceipt = Readonly<{
   expiresAt: string;
 }>;
 
-export type ProviderCredential =
-  | Readonly<{ type: "neonApiKey"; apiKey: string }>
-  | Readonly<{ type: "gcpAdc" }>;
+export type ProviderCredential = Readonly<{ type: "gcpAdc" }>;
 
 export type ProvisioningPrerequisiteKind = "officialCli" | "workspaceIntegration";
 

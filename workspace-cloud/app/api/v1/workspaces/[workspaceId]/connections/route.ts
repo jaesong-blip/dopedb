@@ -3,7 +3,13 @@
 import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { db } from "../../../../../../lib/db";
 import { env } from "../../../../../../lib/env";
-import { isUuid, jsonError, mutationAllowed, privateJson } from "../../../../../../lib/http";
+import {
+  boundedJsonBody,
+  isUuid,
+  jsonError,
+  mutationAllowed,
+  privateJson,
+} from "../../../../../../lib/http";
 import {
   workspaceConnection,
   workspaceConnectionGrant,
@@ -117,7 +123,14 @@ export async function POST(request: Request, context: RouteContext) {
   if (expectedRevision !== 0) return jsonError("New connections require If-Match: \"0\"", 409);
   let input;
   try {
-    input = parseSharedConnection(await request.json());
+    const body = await boundedJsonBody(request, 64 * 1_024);
+    if (!body.ok) {
+      return jsonError(
+        body.reason === "too_large" ? "Connection template is too large" : "Invalid connection template",
+        body.reason === "too_large" ? 413 : 400,
+      );
+    }
+    input = parseSharedConnection(body.value);
   } catch (error) {
     return jsonError(error instanceof Error ? error.message : "Invalid connection template", 400);
   }

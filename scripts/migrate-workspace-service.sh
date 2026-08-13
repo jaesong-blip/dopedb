@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-env_file="$repo_dir/.env.local"
+env_file="$repo_dir/workspace-cloud/.env.local"
 
 if [[ ! -f "$env_file" ]]; then
   echo "Missing $env_file" >&2

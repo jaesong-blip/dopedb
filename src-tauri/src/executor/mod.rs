@@ -18,21 +18,33 @@ use crate::error::{AppError, AppResult};
 use crate::model::{Classification, Engine, ExecOutcome, QueryKind, SafetySettings};
 use crate::operations::ExecutionGrant;
 
+pub(crate) struct ExecutionRequest<'a> {
+    pub(crate) live: &'a LiveConnection,
+    pub(crate) engine: Engine,
+    pub(crate) classification: &'a Classification,
+    pub(crate) sql: &'a str,
+    pub(crate) namespace: Option<String>,
+    pub(crate) settings: &'a SafetySettings,
+    pub(crate) grant: Option<&'a ExecutionGrant>,
+    pub(crate) cancellation: Option<&'a cancel::CancelHandle>,
+}
+
 /// Single entry point the `run_sql` command calls. Reads run against the read-only
 /// pool; writes/DDL/privilege require an exact Operation grant and route through the
 /// guarded write path (which additionally enforces `allow_writes`).
 /// Execute with a cancellation slot minted before the caller's durable operation
 /// claim. This is the path used by the shared Operation Runtime.
-pub(crate) async fn execute(
-    live: &LiveConnection,
-    engine: Engine,
-    classification: &Classification,
-    sql: &str,
-    namespace: Option<String>,
-    settings: &SafetySettings,
-    grant: Option<&ExecutionGrant>,
-    cancellation: Option<&cancel::CancelHandle>,
-) -> AppResult<ExecOutcome> {
+pub(crate) async fn execute(request: ExecutionRequest<'_>) -> AppResult<ExecOutcome> {
+    let ExecutionRequest {
+        live,
+        engine,
+        classification,
+        sql,
+        namespace,
+        settings,
+        grant,
+        cancellation,
+    } = request;
     match classification.kind {
         QueryKind::Read => {
             let result = read::run_read_registered(

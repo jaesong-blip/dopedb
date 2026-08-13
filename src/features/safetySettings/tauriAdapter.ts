@@ -7,3 +7,10 @@ export function getSafetySettings(
 ): Promise<SafetySettings> {
   return invoke("get_safety", { id: connectionId });
 }
+
+export function setSafetySettings(
+  connectionId: string,
+  settings: SafetySettings,
+): Promise<void> {
+  return invoke("set_safety", { id: connectionId, settings });
+}

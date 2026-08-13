@@ -19,7 +19,6 @@ pub(crate) mod operation_control;
 pub(crate) mod providers;
 pub(crate) mod queries;
 pub(crate) mod safety_settings;
-pub(crate) mod schema_editor;
 pub(crate) mod scripts;
 pub(crate) mod sql_documents;
 pub(crate) mod terminals;

@@ -2,14 +2,19 @@
 
 import { randomUUID } from "node:crypto";
 import {
+  chmodSync,
+  copyFileSync,
   existsSync,
   lstatSync,
+  mkdirSync,
+  mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { homedir, platform } from "node:os";
+import { homedir, platform, tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -264,9 +269,8 @@ function graphVocabulary() {
   return vocabulary;
 }
 
-function codexEnvironment() {
+function codexEnvironment(isolatedHome, isolatedCodexHome) {
   const allowed = [
-    "HOME",
     "PATH",
     "USER",
     "LOGNAME",
@@ -276,17 +280,44 @@ function codexEnvironment() {
     "LC_CTYPE",
     "SHELL",
     "TERM",
-    "CODEX_HOME",
   ];
-  const environment = { NO_COLOR: "1" };
+  const environment = {
+    NO_COLOR: "1",
+    HOME: isolatedHome,
+    GH_CONFIG_DIR: join(isolatedHome, "gh"),
+    XDG_CACHE_HOME: join(isolatedHome, "cache"),
+    XDG_CONFIG_HOME: join(isolatedHome, "config"),
+    XDG_DATA_HOME: join(isolatedHome, "data"),
+    XDG_STATE_HOME: join(isolatedHome, "state"),
+    CODEX_HOME: isolatedCodexHome,
+  };
   for (const name of allowed) {
     if (process.env[name]) environment[name] = process.env[name];
   }
   return environment;
 }
 
-function invokeCodex(schemaPath, prompt, phase) {
-  const outputPath = join(stateRoot, `${phase}-${process.pid}-${randomUUID()}.json`);
+function stageCodexAuthentication(
+  isolatedHome,
+  sourceCodexHome = process.env.CODEX_HOME || join(homedir(), ".codex"),
+) {
+  const source = join(sourceCodexHome, "auth.json");
+  if (!existsSync(source)) {
+    throw new Error("Codex local authentication is missing; run `codex login` before issue review");
+  }
+  const sourceMetadata = lstatSync(source);
+  if (!sourceMetadata.isFile() || sourceMetadata.isSymbolicLink()) {
+    throw new Error("Codex local authentication must be a regular file, not a symlink");
+  }
+  const isolatedCodexHome = join(isolatedHome, "codex");
+  mkdirSync(isolatedCodexHome, { recursive: true, mode: 0o700 });
+  const target = join(isolatedCodexHome, "auth.json");
+  copyFileSync(source, target);
+  chmodSync(target, 0o600);
+  return isolatedCodexHome;
+}
+
+function codexArguments(schemaPath, outputPath) {
   const disabledFeatures = [
     "apps",
     "auth_elicitation",
@@ -302,15 +333,25 @@ function invokeCodex(schemaPath, prompt, phase) {
     "plugin_sharing",
     "shell_tool",
     "skill_search",
+    "standalone_web_search",
+    "search_tool",
     "tool_call_mcp_elicitation",
     "tool_suggest",
     "unified_exec",
     "view_image",
+    "web_search_cached",
+    "web_search_request",
     "workspace_dependencies",
   ];
-  const args = [
+  return [
     "--ask-for-approval", "never",
     "exec",
+    // Managed/user configuration must not silently restore network or a hosted
+    // search tool. These recognized overrides make the model-visible permission
+    // prompt say `Network access is restricted` with no approved command prefix.
+    "-c", "sandbox_permissions=[]",
+    "-c", 'web_search="disabled"',
+    "-c", "tools.web_search=false",
     "--ignore-user-config",
     "--ephemeral",
     "--sandbox", "read-only",
@@ -322,11 +363,23 @@ function invokeCodex(schemaPath, prompt, phase) {
     ...disabledFeatures.flatMap((feature) => ["--disable", feature]),
     "-",
   ];
+}
+
+function invokeCodex(schemaPath, prompt, phase) {
+  const outputPath = join(stateRoot, `${phase}-${process.pid}-${randomUUID()}.json`);
+  mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
+  const isolatedHome = mkdtempSync(join(stateRoot, "codex-home-"));
+  const isolatedCodexHome = stageCodexAuthentication(isolatedHome);
+  const args = codexArguments(schemaPath, outputPath);
   try {
-    command("codex", args, { input: prompt, env: codexEnvironment() });
+    command("codex", args, {
+      input: prompt,
+      env: codexEnvironment(isolatedHome, isolatedCodexHome),
+    });
     return parseJson(readFileSync(outputPath, "utf8"), `Codex ${phase}`);
   } finally {
     rmSync(outputPath, { force: true });
+    rmSync(isolatedHome, { recursive: true, force: true });
   }
 }
 
@@ -685,6 +738,48 @@ function selfTest() {
   const argumentsProbe = parseArguments(["--issue", "--", "48", "--dry-run"]);
   if (argumentsProbe.issueNumber !== 48 || !argumentsProbe.dryRun) {
     throw new Error("pnpm argument separator self-test failed");
+  }
+  const codexArgumentsProbe = codexArguments("review.schema.json", "review.json");
+  for (const boundary of [
+    "sandbox_permissions=[]",
+    'web_search="disabled"',
+    "tools.web_search=false",
+    "standalone_web_search",
+    "shell_tool",
+    "unified_exec",
+  ]) {
+    if (!codexArgumentsProbe.includes(boundary)) {
+      throw new Error(`Codex isolation argument is missing: ${boundary}`);
+    }
+  }
+  const isolatedHome = mkdtempSync(join(tmpdir(), "dopedb-issue-review-self-test-"));
+  try {
+    const sourceCodexHome = join(isolatedHome, "source-codex");
+    mkdirSync(sourceCodexHome, { mode: 0o700 });
+    writeFileSync(join(sourceCodexHome, "auth.json"), "{}\n", { mode: 0o600 });
+    writeFileSync(join(sourceCodexHome, "history.jsonl"), "sensitive\n", { mode: 0o600 });
+    const isolatedCodexHome = stageCodexAuthentication(isolatedHome, sourceCodexHome);
+    const environmentProbe = codexEnvironment(isolatedHome, isolatedCodexHome);
+    const stagedFiles = readdirSync(isolatedCodexHome);
+    const stagedAuthMode = lstatSync(join(isolatedCodexHome, "auth.json")).mode & 0o777;
+    if (
+      environmentProbe.HOME !== isolatedHome
+      || !environmentProbe.GH_CONFIG_DIR.startsWith(`${isolatedHome}/`)
+      || !environmentProbe.XDG_CONFIG_HOME.startsWith(`${isolatedHome}/`)
+      || environmentProbe.CODEX_HOME !== isolatedCodexHome
+      || stagedFiles.length !== 1
+      || stagedFiles[0] !== "auth.json"
+      || stagedAuthMode !== 0o600
+      || "GH_TOKEN" in environmentProbe
+      || "GITHUB_TOKEN" in environmentProbe
+    ) {
+      throw new Error("Codex credential isolation self-test failed");
+    }
+  } finally {
+    rmSync(isolatedHome, { recursive: true, force: true });
+  }
+  if (existsSync(isolatedHome)) {
+    throw new Error("Codex temporary home cleanup self-test failed");
   }
   process.stdout.write("Local issue review self-test passed.\n");
 }

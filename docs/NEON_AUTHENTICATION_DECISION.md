@@ -4,11 +4,14 @@ Decision date: 2026-08-05
 
 ## Decision
 
-DopeDB does not present Neon Management API access as OAuth or as a one-click
-connection. The production fallback is a Neon API key, preferably a
-project-scoped organization key. DopeDB encrypts that integration credential;
-shared connection records, discovery receipts, browser responses, audit events,
-and desktop target authority never contain it.
+DopeDB does not present Neon Management API access as OAuth or as a Desktop
+one-click credential. Neon management is available only as a workspace-managed
+integration in the hosted control plane. An administrator supplies a Neon API
+key there, preferably a project-scoped organization key, and the service encrypts
+that integration credential. The Desktop has no Neon API-key form, never reads
+the key, and never calls the Neon Management API. Shared connection records,
+discovery receipts, browser responses, audit events, and Desktop target authority
+never contain it.
 
 New encrypted Neon credential envelopes use this explicit contract:
 
@@ -20,8 +23,10 @@ organizationId = optional organization selector
 ```
 
 The server can still read the original unversioned API-key envelope, but always
-normalizes it to version 1 before use. An OAuth credential kind must not be added
-until Neon supplies DopeDB with a production third-party client contract.
+normalizes it to version 1 before use. That compatibility belongs only to the
+hosted encrypted envelope and is not a Desktop credential path. An OAuth
+credential kind must not be added until Neon supplies DopeDB with a production
+third-party client contract.
 
 ## Official evidence
 
@@ -54,11 +59,12 @@ program. Revisit this decision only when Neon provides all of the following:
 
 ## Runtime verification
 
-Every connect or reconnect verifies both the `/auth` principal and the complete,
+The hosted control plane verifies both the `/auth` principal and the complete,
 bounded project set. Their fingerprints form the durable external account
 identity. Discovery and new lease issuance repeat that comparison, so a key
 replacement or project-scope drift fails closed and asks the administrator to
-reconnect.
+reconnect in the web console. Desktop receives only the redacted resource
+selector and the resulting short-lived database lease.
 
 Personal keys without an organization selector are recorded as broad scope.
 The UI must warn about that scope and continue to recommend a project-scoped

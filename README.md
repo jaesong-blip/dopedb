@@ -19,7 +19,8 @@ connection revision, local policy에 고정된 session 안에서 일하며 DB tr
 - 비밀값 없는 공유 연결 template과 구성원별 local credential binding
 - PlanetScale, Neon, GCP Cloud SQL의 구성원별 단기 managed access
 - PostgreSQL, MySQL/MariaDB, SQLite, MongoDB 연결과 schema introspection
-- 정확한 연결에 고정된 공식 Codex/Claude ACP session과 심화 Shell Terminal
+- 정확한 연결에 고정된 공식 Codex/Claude ACP session과 앱 내 승인·복구 화면
+- Settings → Command line에서 명시적으로 여는 연결 고정 고급 Shell Terminal
 - 포트나 별도 서버 없이 동작하는 로컬 `dopedb` CLI Broker
 - 기본 읽기 전용 실행, SQL 분류, 불변 write proposal과 exact approval
 - 실행 중단, manual transaction rollback, durable result, hash-chain 감사 로그
@@ -104,14 +105,24 @@ UI를 수정하기 전에는 [디자인 시스템](./src/design-system/README.md
 
 ## 릴리스
 
-정식 버전은 저장소 소유자만 발행합니다. `main`에 합쳐진 커밋에 소유자가 `app-v*` 태그를 push하고 `stable-release` 환경을 승인하면 GitHub Actions가 macOS Apple Silicon/Intel 빌드, Windows x64 NSIS 설치 파일, updater metadata를 draft release에 모은 뒤 한 번에 공개합니다. 공개된 새 release의 태그와 asset은 immutable release 정책으로 잠깁니다.
+정식 버전은 저장소 소유자만 발행합니다. 버전 파일과 clean한 `main`을 확인한 뒤 아래
+명령이 annotated `app-v*` 태그와 같은 태그의 non-prerelease draft를 함께 만듭니다.
+워크플로우는 그 draft가 없거나 태그가 `main`에 없으면 빌드 전에 실패합니다. draft를
+검토한 뒤 `stable-release` 환경을 승인하면 GitHub Actions가 macOS Apple
+Silicon/Intel 빌드, Windows x64 NSIS 설치 파일, updater metadata를 모아 한 번에
+공개합니다. 공개된 태그와 asset은 immutable release 정책으로 잠깁니다.
 
 ```sh
-git tag app-v0.1.1
-git push origin app-v0.1.1
+pnpm release:stable:draft -- X.Y.Z
 ```
 
-릴리스 워크플로우에는 `TAURI_SIGNING_PRIVATE_KEY` repository secret이 필요합니다. 협업자는 `work/<GitHub아이디>/<작업명>` 브랜치에서 본인 전용 unsigned canary prerelease를 만들 수 있습니다. 브랜치, PR, 카나리 절차는 [CONTRIBUTING.md](./CONTRIBUTING.md)를 참고하세요.
+updater·Sentry·Apple 비밀값은 승인 보호된 `stable-release` environment가 소유해야
+합니다. GitHub는 기존 secret 값을 다시 보여주지 않으므로 scope 이전은 저장소
+소유자가 같은 이름을 environment에 재등록하고 검증한 뒤 repository 복사본을
+삭제하는 운영 작업입니다. 소스 변경이나 AI 작업자가 값을 읽거나 옮기지 않습니다.
+협업자는 `work/<GitHub아이디>/<작업명>` 브랜치에서 본인 전용 unsigned canary
+prerelease를 만들 수 있습니다. 브랜치, PR, 카나리 절차는
+[CONTRIBUTING.md](./CONTRIBUTING.md)를 참고하세요.
 
 ## macOS 경고
 

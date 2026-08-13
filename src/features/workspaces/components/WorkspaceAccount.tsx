@@ -9,19 +9,30 @@ import {
   beginWorkspaceLogin,
   pollWorkspaceLogin,
   refreshWorkspaceAuthState,
-  refreshWorkspaceMemberships,
   setActiveWorkspaceAccount,
   signOutAllWorkspaces,
   signOutWorkspace,
+  workspaceAuthState,
 } from "../tauriAdapter";
 import {
   invalidateWorkspaceContext,
   invalidateWorkspaceState,
   replaceWorkspaceAuth,
-  resetWorkspaceScope,
+  replaceWorkspaceContext,
+  workspaceAuthorityChanged,
+  workspaceResourceQueryScopeChanged,
 } from "../cache";
-import type { AccountId, WorkspaceLoginPoll } from "../domain";
-import { workspaceAuthStateQuery } from "../queries";
+import type {
+  AccountId,
+  WorkspaceAuthState,
+  WorkspaceLoginPoll,
+} from "../domain";
+import {
+  readWorkspaceContext,
+  workspaceAuthStateQuery,
+  workspaceQueryKeys,
+  type WorkspaceContextState,
+} from "../queries";
 import { shouldRevalidateWorkspaceAuth } from "../authPolicy";
 import { onWorkspaceLoginRequested } from "../loginRequest";
 import { errMessage } from "../../../ipc/types";
@@ -29,6 +40,12 @@ import { useI18n } from "../../../lib/i18n";
 import { Icon } from "../../../components/Icon";
 import { useToast } from "../../../components/Toast";
 import { PopupMenuItem } from "../../../design-system/components/PopupMenu";
+import { Button } from "../../../design-system/components/Button";
+import {
+  cancelWorkspaceResourceQueries,
+  refetchWorkspaceResourceQueries,
+  resetWorkspaceResourceQueries,
+} from "../../../lib/queryClient";
 
 export default function WorkspaceAccount({
   onScopeChanged,
@@ -67,7 +84,104 @@ export default function WorkspaceAccount({
   const workspaceDataRefreshHandler = useRef<() => void | Promise<void>>(
     () => undefined,
   );
+  const scopeChangeHandler = useRef<() => void | Promise<void>>(
+    () => undefined,
+  );
   workspaceDataRefreshHandler.current = onWorkspaceDataRefreshed;
+  scopeChangeHandler.current = onScopeChanged;
+
+  async function refreshWorkspaceAuthority(
+    refreshAuth: () => Promise<Awaited<ReturnType<typeof workspaceAuthState>>>,
+    previousAuthority?: {
+      auth: WorkspaceAuthState | undefined;
+      context: WorkspaceContextState | undefined;
+    },
+  ) {
+    const previousAuth = previousAuthority?.auth ??
+      queryClient.getQueryData<WorkspaceAuthState>(workspaceQueryKeys.auth());
+    const previousContext = previousAuthority?.context ??
+      queryClient.getQueryData<WorkspaceContextState>(
+        workspaceQueryKeys.context(),
+      );
+    // Native membership/auth refreshes may change the backend's active account or
+    // workspace. Stop old-generation reads before invoking that authority boundary.
+    await cancelWorkspaceResourceQueries(queryClient);
+    let nextAuth: WorkspaceAuthState;
+    let nextContext: WorkspaceContextState;
+    try {
+      nextAuth = await refreshAuth();
+      nextContext = await readWorkspaceContext();
+    } catch (error) {
+      // The native command may have committed a new authority before a later context
+      // or provider cleanup failed. Re-read the local authoritative projection after
+      // clearing old private data, then either advance every scope owner to its new
+      // generation or safely refill the unchanged generation.
+      await resetWorkspaceResourceQueries(queryClient);
+      try {
+        const recoveredAuth = await workspaceAuthState();
+        const recoveredContext = await readWorkspaceContext();
+        const recoveredScopeChanged = workspaceAuthorityChanged(
+          previousAuth,
+          previousContext,
+          recoveredAuth,
+          recoveredContext,
+        );
+        const recoveredQueryScopeChanged = workspaceResourceQueryScopeChanged(
+          previousAuth,
+          previousContext,
+          recoveredAuth,
+          recoveredContext,
+        );
+        replaceWorkspaceAuth(queryClient, recoveredAuth);
+        replaceWorkspaceContext(queryClient, recoveredContext);
+        if (recoveredScopeChanged) {
+          await scopeChangeHandler.current();
+          // A membership role can change while the active workspace/account key
+          // remains identical. Its active observers were reset above and therefore
+          // need an explicit read under the newly proven native authority.
+          if (!recoveredQueryScopeChanged) {
+            await refetchWorkspaceResourceQueries(queryClient);
+          }
+        } else {
+          await refetchWorkspaceResourceQueries(queryClient);
+          await workspaceDataRefreshHandler.current();
+        }
+      } catch {
+        // No local authority proof means the fail-closed empty projection remains.
+      }
+      throw error;
+    }
+    const scopeChanged = workspaceAuthorityChanged(
+      previousAuth,
+      previousContext,
+      nextAuth,
+      nextContext,
+    );
+    const queryScopeChanged = workspaceResourceQueryScopeChanged(
+      previousAuth,
+      previousContext,
+      nextAuth,
+      nextContext,
+    );
+    if (scopeChanged) {
+      await resetWorkspaceResourceQueries(queryClient);
+    }
+    replaceWorkspaceAuth(queryClient, nextAuth);
+    replaceWorkspaceContext(queryClient, nextContext);
+    if (scopeChanged) {
+      await scopeChangeHandler.current();
+      if (!queryScopeChanged) {
+        await refetchWorkspaceResourceQueries(queryClient);
+      }
+      return;
+    }
+    // `cancelWorkspaceResourceQueries` leaves an initial, data-less observer in
+    // `pending + idle`. The unchanged-authority path must explicitly resume every
+    // mounted private read after the native authority has been proven stable;
+    // refreshing only Connections would otherwise strand Explorer Knowledge forever.
+    await refetchWorkspaceResourceQueries(queryClient);
+    await workspaceDataRefreshHandler.current();
+  }
 
   useEffect(() => {
     const onBlur = () => {
@@ -126,14 +240,10 @@ export default function WorkspaceAccount({
   }, [auth.dataUpdatedAt]);
 
   useEffect(() => {
-    let active = true;
-    const request = refreshWorkspaceAuthState()
-      .then(async (state) => {
-        if (!active) return;
-        replaceWorkspaceAuth(queryClient, state);
-        await workspaceDataRefreshHandler.current();
-        await invalidateWorkspaceContext(queryClient);
-      })
+    // React StrictMode mounts effects twice in development. The native refresh is
+    // an authority fence, so duplicate setup must share the already running call.
+    if (membershipRefreshInFlight.current) return;
+    const request = refreshWorkspaceAuthority(refreshWorkspaceAuthState)
       .catch(() => undefined)
       .finally(() => {
         if (membershipRefreshInFlight.current === request) {
@@ -141,9 +251,6 @@ export default function WorkspaceAccount({
         }
       });
     membershipRefreshInFlight.current = request;
-    return () => {
-      active = false;
-    };
   }, [queryClient]);
 
   async function wait(ms: number) {
@@ -179,9 +286,7 @@ export default function WorkspaceAccount({
     if (result.status === "signedIn" && result.user) {
       pendingLogin.current = null;
       setLoginPhase("idle");
-      await auth.refetch();
-      await resetWorkspaceScope(queryClient);
-      await onScopeChanged();
+      await refreshWorkspaceAuthority(workspaceAuthState);
       toast(t("workspace.loginComplete", { name: result.user.displayName }), "success");
       return true;
     }
@@ -227,16 +332,10 @@ export default function WorkspaceAccount({
       auth.dataUpdatedAt,
       auth.isFetching,
     );
-    const request = (revalidateAuth
-      ? refreshWorkspaceAuthState().then((state) => {
-          replaceWorkspaceAuth(queryClient, state);
-        })
-      : refreshWorkspaceMemberships()
-          .then(() => auth.refetch())
-          .then(() => undefined)
-    )
-      .then(() => workspaceDataRefreshHandler.current())
-      .then(() => invalidateWorkspaceContext(queryClient))
+    // The native authority refresh fences every ACP and PTY authority before
+    // syncing. A routine focus event must never invoke it inside the auth cooldown.
+    if (!revalidateAuth) return;
+    const request = refreshWorkspaceAuthority(refreshWorkspaceAuthState)
       .catch(async () => {
         // A membership 401 also invalidates the hosted session. Confirm that state
         // silently so expired team scopes disappear without turning the button into
@@ -298,10 +397,7 @@ export default function WorkspaceAccount({
     setProviderCredentialsOpen(false);
     setLoggingOut(userId);
     try {
-      const signedOut = await signOutWorkspace(userId);
-      replaceWorkspaceAuth(queryClient, signedOut);
-      await resetWorkspaceScope(queryClient);
-      await onScopeChanged();
+      await refreshWorkspaceAuthority(() => signOutWorkspace(userId));
       setMenuOpen(false);
       toast(t("workspace.logoutComplete"), "success");
     } catch (error) {
@@ -321,10 +417,7 @@ export default function WorkspaceAccount({
     setProviderCredentialsOpen(false);
     setLoggingOut("all");
     try {
-      const signedOut = await signOutAllWorkspaces();
-      replaceWorkspaceAuth(queryClient, signedOut);
-      await resetWorkspaceScope(queryClient);
-      await onScopeChanged();
+      await refreshWorkspaceAuthority(signOutAllWorkspaces);
       setMenuOpen(false);
       toast(t("workspace.logoutAllComplete"), "success");
     } catch (error) {
@@ -344,10 +437,19 @@ export default function WorkspaceAccount({
     setProviderCredentialsOpen(false);
     setSwitchingAccount(userId);
     try {
+      const previousAuthority = {
+        auth: queryClient.getQueryData<WorkspaceAuthState>(
+          workspaceQueryKeys.auth(),
+        ),
+        context: queryClient.getQueryData<WorkspaceContextState>(
+          workspaceQueryKeys.context(),
+        ),
+      };
+      // The native switch changes active authority before it returns. Freeze old
+      // generation reads first; the common transition then replaces cache identity.
+      await cancelWorkspaceResourceQueries(queryClient);
       await setActiveWorkspaceAccount(userId);
-      await resetWorkspaceScope(queryClient);
-      await auth.refetch();
-      await onScopeChanged();
+      await refreshWorkspaceAuthority(workspaceAuthState, previousAuthority);
       setMenuOpen(false);
     } catch (error) {
       await auth.refetch();
@@ -415,18 +517,19 @@ export default function WorkspaceAccount({
             </span>
             <Icon name="chevronDown" />
           </button>
-          <button
-            type="button"
-            data-compact={compact}
-            className="tw:grid tw:size-control-md tw:shrink-0 tw:cursor-pointer tw:place-items-center tw:rounded-sm tw:border-0 tw:bg-transparent tw:p-0 tw:text-muted-foreground tw:disabled:cursor-progress tw:disabled:opacity-55 tw:hover:bg-muted tw:hover:text-danger tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:data-[compact=true]:hidden"
-            onClick={() => void logout(user.id)}
-            disabled={loggingOut !== null}
-            title={t(loggingOut === user.id ? "workspace.logoutPending" : "workspace.logout")}
-            aria-label={t(loggingOut === user.id ? "workspace.logoutPending" : "workspace.logout")}
-            aria-busy={loggingOut === user.id}
-          >
-            <Icon name="logOut" />
-          </button>
+          {!compact ? (
+            <Button
+              iconOnly
+              size="xs"
+              variant="ghost"
+              onClick={() => void logout(user.id)}
+              disabled={loggingOut !== null}
+              aria-label={t(loggingOut === user.id ? "workspace.logoutPending" : "workspace.logout")}
+              aria-busy={loggingOut === user.id}
+            >
+              <Icon name="logOut" />
+            </Button>
+          ) : null}
           {menuOpen ? (
             <div
               data-compact={compact}

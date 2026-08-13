@@ -114,6 +114,56 @@ async fn assert_current_store_migration_is_write_free() {
         .unwrap();
     assert_eq!(version, super::super::bootstrap::LOCAL_SCHEMA_VERSION);
 
+    let integrity_connection_id = Uuid::from_u128(0x1200);
+    let store = Store::from_pool_for_test(pool.clone());
+    store
+        .upsert_connection(&sqlite_profile(integrity_connection_id, "integrity-guard"))
+        .await
+        .unwrap();
+    assert!(
+        sqlx::query("UPDATE connections SET port = 65536 WHERE id = ?1")
+            .bind(integrity_connection_id.to_string())
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    assert!(
+        sqlx::query("UPDATE connections SET extra_params = '{' WHERE id = ?1")
+            .bind(integrity_connection_id.to_string())
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    assert!(
+        sqlx::query("UPDATE connections SET provider_target = '[]' WHERE id = ?1")
+            .bind(integrity_connection_id.to_string())
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    sqlx::query(
+        "INSERT INTO workspace_connection_bindings
+             (connection_id, account_user_id, username, extra_params, updated_at)
+         VALUES (?1, 'integrity-member', '', '{}', CURRENT_TIMESTAMP)",
+    )
+    .bind(integrity_connection_id.to_string())
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(sqlx::query(
+        "UPDATE workspace_connection_bindings SET extra_params = '[]'
+         WHERE connection_id = ?1 AND account_user_id = 'integrity-member'",
+    )
+    .bind(integrity_connection_id.to_string())
+    .execute(&pool)
+    .await
+    .is_err());
+    sqlx::query("DELETE FROM connections WHERE id = ?1")
+        .bind(integrity_connection_id.to_string())
+        .execute(&pool)
+        .await
+        .unwrap();
+
     use crate::features::knowledge::domain::{
         EnvironmentRiskClass, KnowledgeGrant, KnowledgeMappingProposal, MappingProposalState,
         Project, ProjectEnvironment,
@@ -128,7 +178,6 @@ async fn assert_current_store_migration_is_write_free() {
         SourceRevisionIdentity,
     };
 
-    let store = Store::from_pool_for_test(pool.clone());
     let personal_workspace_id = Uuid::parse_str(migrations::PERSONAL_WORKSPACE_ID).unwrap();
     let local_project = store
         .create_knowledge_project(
@@ -422,10 +471,44 @@ async fn assert_current_store_migration_is_write_free() {
             .graph_revision_id,
         artifact.graph_revision_id
     );
-    let runner_device = store.automation_runner_device_id().await.unwrap();
+    let runner_account = Uuid::from_u128(0x991).to_string();
+    let runner_workspace = Uuid::from_u128(0x992);
+    let runner_device = store
+        .automation_runner_device_id(&runner_account, runner_workspace)
+        .await
+        .unwrap();
     assert_eq!(
-        store.automation_runner_device_id().await.unwrap(),
+        store
+            .automation_runner_device_id(&runner_account, runner_workspace)
+            .await
+            .unwrap(),
         runner_device
+    );
+    let replacement_runner_device = store
+        .replace_automation_runner_device_id(&runner_account, runner_workspace)
+        .await
+        .unwrap();
+    assert_ne!(replacement_runner_device, runner_device);
+    assert_eq!(
+        store
+            .automation_runner_device_id(&runner_account, runner_workspace)
+            .await
+            .unwrap(),
+        replacement_runner_device
+    );
+    assert_ne!(
+        store
+            .automation_runner_device_id(&runner_account, Uuid::from_u128(0x993))
+            .await
+            .unwrap(),
+        replacement_runner_device
+    );
+    assert_ne!(
+        store
+            .automation_runner_device_id(&Uuid::from_u128(0x994).to_string(), runner_workspace)
+            .await
+            .unwrap(),
+        replacement_runner_device
     );
     store
         .set_automation_runner_background_allowed(true)
@@ -543,6 +626,18 @@ async fn assert_retired_operation_kind_migrates_without_losing_provenance() {
     let pool = memory_pool().await;
     sqlx::raw_sql(
         r#"
+        CREATE TABLE connections (
+            id TEXT PRIMARY KEY,
+            port INTEGER NOT NULL,
+            extra_params TEXT NOT NULL DEFAULT '{}',
+            provider_target TEXT
+        );
+        CREATE TABLE workspace_connection_bindings (
+            connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+            account_user_id TEXT NOT NULL,
+            extra_params TEXT NOT NULL DEFAULT '{}',
+            PRIMARY KEY (connection_id, account_user_id)
+        );
         CREATE TABLE operations (
             id TEXT PRIMARY KEY,
             runtime_id TEXT NOT NULL,
@@ -775,6 +870,78 @@ async fn assert_agent_acp_batch_replay_is_bounded(store: &Store, connection_id: 
         .windows(2)
         .all(|events| events[0].sequence < events[1].sequence));
     assert_eq!(focus.events.last().map(|event| event.sequence), Some(609));
+
+    for index in 0..=100 {
+        let mut historical = summary.clone();
+        historical.id = AcpSessionId::from(Uuid::new_v4());
+        historical.title = format!("Historical session {index}");
+        historical.lifecycle = AcpSessionLifecycle::Closed;
+        historical.created_at = now + chrono::Duration::seconds(index);
+        historical.updated_at = historical.created_at;
+        store
+            .persist_agent_acp_session(&scope, &historical)
+            .await
+            .unwrap();
+    }
+    let retained: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM agent_acp_sessions
+         WHERE workspace_id = ?1 AND account_scope = ?2",
+    )
+    .bind(scope.workspace_id.to_string())
+    .bind(scope.account_scope.storage_key())
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    assert_eq!(retained, 100);
+    assert_eq!(store.list_agent_acp_sessions().await.unwrap().len(), 100);
+
+    // Active sessions must never be discarded to make room for history. The
+    // runtime admits at most eight, but persistence still handles an imported
+    // over-cap state fail-safe: the next terminal transition restores the bound.
+    let mut overflow_active = None;
+    for index in 0..100 {
+        let mut active = summary.clone();
+        active.id = AcpSessionId::from(Uuid::new_v4());
+        active.title = format!("Concurrent active session {index}");
+        active.created_at = now + chrono::Duration::minutes(10 + index);
+        active.updated_at = active.created_at;
+        if index == 99 {
+            overflow_active = Some(active.clone());
+        }
+        store
+            .persist_agent_acp_session(&scope, &active)
+            .await
+            .unwrap();
+    }
+    let active_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM agent_acp_sessions
+         WHERE workspace_id = ?1 AND account_scope = ?2
+           AND lifecycle IN ('starting', 'ready', 'running', 'waiting_permission')",
+    )
+    .bind(scope.workspace_id.to_string())
+    .bind(scope.account_scope.storage_key())
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    assert_eq!(active_count, 101);
+
+    let mut closed_overflow = overflow_active.unwrap();
+    closed_overflow.lifecycle = AcpSessionLifecycle::Closed;
+    closed_overflow.updated_at = now + chrono::Duration::hours(3);
+    store
+        .persist_agent_acp_session(&scope, &closed_overflow)
+        .await
+        .unwrap();
+    let retained_after_close: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM agent_acp_sessions
+         WHERE workspace_id = ?1 AND account_scope = ?2",
+    )
+    .bind(scope.workspace_id.to_string())
+    .bind(scope.account_scope.storage_key())
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    assert_eq!(retained_after_close, 100);
 }
 
 #[tokio::test]
@@ -1118,6 +1285,42 @@ async fn managed_remote_template_never_reads_or_accepts_a_local_binding() {
     assert!(loaded.secret_ref.is_none());
     assert!(loaded.allow_writes);
     assert_eq!(loaded.provider_target, Some(provider_target));
+    let stored_port = i64::from(loaded.port);
+    let stored_provider_target = serde_json::to_string(&loaded.provider_target).unwrap();
+    sqlx::query("UPDATE connections SET extra_params = '{' WHERE id = ?1")
+        .bind(id.to_string())
+        .execute(store.pool())
+        .await
+        .unwrap();
+    assert!(matches!(
+        store.get_connection(id).await,
+        Err(AppError::Config(_))
+    ));
+    sqlx::query("UPDATE connections SET extra_params = '{}', provider_target = '{' WHERE id = ?1")
+        .bind(id.to_string())
+        .execute(store.pool())
+        .await
+        .unwrap();
+    assert!(matches!(
+        store.get_connection(id).await,
+        Err(AppError::Config(_))
+    ));
+    sqlx::query("UPDATE connections SET provider_target = ?1, port = -1 WHERE id = ?2")
+        .bind(stored_provider_target)
+        .bind(id.to_string())
+        .execute(store.pool())
+        .await
+        .unwrap();
+    assert!(matches!(
+        store.get_connection(id).await,
+        Err(AppError::Config(_))
+    ));
+    sqlx::query("UPDATE connections SET port = ?1 WHERE id = ?2")
+        .bind(stored_port)
+        .bind(id.to_string())
+        .execute(store.pool())
+        .await
+        .unwrap();
     assert!(store.get_safety(id).await.unwrap().allow_writes);
     let binding_material: (String, String, Option<String>) = sqlx::query_as(
         "SELECT username, extra_params, secret_ref
@@ -1241,6 +1444,28 @@ async fn shared_connection_bindings_are_isolated_per_signed_in_account() {
         crate::model::WorkspaceConnectionAccess::Write
     );
     assert!(profile_a.allow_writes);
+    sqlx::query(
+        "UPDATE workspace_connection_bindings SET extra_params = '{'
+         WHERE connection_id = ?1 AND account_user_id = ?2",
+    )
+    .bind(connection_id.to_string())
+    .bind(user_a.id.as_str())
+    .execute(store.pool())
+    .await
+    .unwrap();
+    assert!(matches!(
+        store.get_connection(connection_id).await,
+        Err(AppError::Config(_))
+    ));
+    sqlx::query(
+        "UPDATE workspace_connection_bindings SET extra_params = '{}'
+         WHERE connection_id = ?1 AND account_user_id = ?2",
+    )
+    .bind(connection_id.to_string())
+    .bind(user_a.id.as_str())
+    .execute(store.pool())
+    .await
+    .unwrap();
     store
         .set_schema_cache(connection_id, r#"{"owner":"alpha"}"#)
         .await
@@ -1639,6 +1864,21 @@ async fn pinned_catalog_cache_rejects_scope_aba_and_keeps_accounts_isolated() {
         snapshot,
         "a current pin may reuse the same account/revision cache after re-selection"
     );
+
+    // A role-only membership refresh changes the active grant even though the
+    // workspace and account tuple are unchanged. The generation must fence every
+    // pin issued under the previous role.
+    store
+        .sync_account_workspaces(
+            &user_a,
+            &[(workspace_id, "Shared".into(), WorkspaceRole::Viewer)],
+        )
+        .await
+        .unwrap();
+    assert!(!store.is_pin_current(&repinned_a).await.unwrap());
+    let role_repinned_a = store.pin_connection_for_read(connection_id).await.unwrap();
+    assert!(role_repinned_a.scope.generation > repinned_a.scope.generation);
+    let repinned_a = role_repinned_a;
 
     // A rollback binary can only write V1. Its row acts as a freshness marker:
     // after re-upgrade, the new runtime must miss instead of reviving older V2.

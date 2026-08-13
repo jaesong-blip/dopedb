@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { isUuid, jsonError, privateJson } from "@/lib/http";
+import { isUuid, jsonError, privateJsonStream } from "@/lib/http";
 import { authorizeKnowledgeGrant } from "@/lib/knowledge/authorization";
 import {
   knowledgeGraphRevision,
@@ -32,7 +32,7 @@ export async function GET(request: Request, context: RouteContext) {
     eq(knowledgeGraphRevision.environmentRevision, authorization.grant.environmentRevision),
   )).limit(1);
   if (!revision) return jsonError("Knowledge graph revision not found", 404);
-  return privateJson({
+  return privateJsonStream({
     graphRevisionId: authorizedRevision.graphRevisionId,
     artifactSha256: revision.artifactSha256,
     artifact: revision.artifact,

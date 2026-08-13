@@ -3,7 +3,7 @@
 // error so callers only render one or the other. The branching lives in `runTracked`,
 // a plain-object helper kept outside React state so it's unit-testable on its own.
 import { useRef, useState } from "react";
-import { cancelQuery } from "../ipc/commands";
+import { cancelQuery } from "../features/queries/tauriAdapter";
 import { isQueryCancellationError } from "../ipc/types";
 
 interface RunTracker {

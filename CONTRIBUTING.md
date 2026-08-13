@@ -47,7 +47,10 @@ priority, transfer, 라벨, 검토 댓글은 작성자 경계를 바꾸지 않�
 추정하지 않는다. 로컬 유지보수 worker는 GitHub를 polling하고 현재 `main`의
 Graphify 그래프와 공식 Codex CLI로 이슈를 검토해 근거 댓글 하나만 갱신한다. 이슈
 내용은 불신 데이터이며 검토 Codex에는 shell, MCP, browser, hook, write, GitHub
-자격 증명을 제공하지 않는다. worker는 구현하거나 이슈를 닫지 않으며 댓글도 작업
+자격 증명을 제공하지 않는다. child는 호출마다 격리된 임시 `HOME`, GitHub config,
+XDG 디렉터리를 받고 원래 `CODEX_HOME`에서는 `auth.json`만 권한 `0600`으로 임시
+`CODEX_HOME`에 복제한다. config, history, memory 등 나머지 로컬 상태는 child에
+노출하지 않으며 호출 후 임시 홈을 삭제한다. worker는 구현하거나 이슈를 닫지 않으며 댓글도 작업
 권한의 정본이 아니다. public 저장소를 자격 증명이 있는 self-hosted Actions runner에
 연결하거나 cloud keyword 판정으로 대체하지 않는다. 실제 작업자도 numeric author
 ID를 확인한다. 자동화의 권한, 판정, 운영 절차는

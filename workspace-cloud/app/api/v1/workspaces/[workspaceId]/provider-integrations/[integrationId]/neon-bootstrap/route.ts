@@ -5,6 +5,7 @@ import { sql } from "drizzle-orm";
 import { db } from "../../../../../../../../lib/db";
 import { env } from "../../../../../../../../lib/env";
 import {
+  boundedJsonBody,
   isUuid,
   jsonError,
   mutationAllowed,
@@ -338,7 +339,16 @@ export async function POST(request: Request, context: RouteContext) {
   if (!integration || integration.provider !== "neon") {
     return jsonError("Neon integration not found", 404);
   }
-  const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+  const parsed = await boundedJsonBody(request, 64 * 1_024);
+  if (!parsed.ok) {
+    return jsonError(
+      parsed.reason === "too_large"
+        ? "Neon bootstrap request is too large"
+        : "Invalid Neon bootstrap request",
+      parsed.reason === "too_large" ? 413 : 400,
+    );
+  }
+  const body = parsed.value as Record<string, unknown> | null;
   if (!body || Array.isArray(body) || (body.action !== "preflight" && body.action !== "apply")) {
     return jsonError("Invalid Neon bootstrap request", 400);
   }

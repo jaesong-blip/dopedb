@@ -1,7 +1,9 @@
 # DopeDB 클라이언트
 
 Tauri v2 기반 데이터베이스 클라이언트다. React/TypeScript 프론트엔드와
-Rust 코어, 연결 고정 Terminal, 로컬 CLI Broker로 구성된다.
+Rust 코어, 연결 고정 ACP Agent session, 로컬 CLI Broker로 구성된다.
+ACP와 별개인 연결 고정 고급 Shell PTY는 일반 작업 화면이 아니라
+Settings → Command line에서 사용자가 명시적으로 열 때만 표시된다.
 
 ## 작업 규칙
 
@@ -27,7 +29,11 @@ Rust 코어, 연결 고정 Terminal, 로컬 CLI Broker로 구성된다.
 저장소 유지보수 자동 검토는 이 Mac에서 GitHub를 polling하고 로컬 Graphify를
 갱신·조회한 뒤 공식 Codex CLI와 사용자의 로컬 로그인을 사용한다. 이슈 내용은
 불신 데이터이며 검토 Codex에는 shell, MCP, browser, hook, write, GitHub 자격
-증명을 주지 않는다. 검증된 근거 댓글만 갱신하고 구현·종료하지 않는다. 이를 cloud
+증명을 주지 않는다. child는 호출마다 격리된 임시 `HOME`, GitHub config, XDG
+디렉터리를 받고, 원래 `CODEX_HOME`에서는 `auth.json`만 권한 `0600`으로 임시
+`CODEX_HOME`에 복제한다. config, history, memory 등 나머지 로컬 상태는 child에
+노출하지 않으며 호출 후 임시 홈을 삭제한다. 검증된 근거 댓글만 갱신하고
+구현·종료하지 않는다. 이를 cloud
 keyword 판정이나 자격 증명이 있는 public self-hosted Actions runner로 바꾸지
 않는다. 실제 Agent도 작업 전 numeric author ID를 다시 확인한다. 상세 경계는
 [`docs/GITHUB_ISSUE_GOVERNANCE.md`](docs/GITHUB_ISSUE_GOVERNANCE.md)를 따른다.

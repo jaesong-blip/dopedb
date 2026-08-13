@@ -8,7 +8,7 @@ pub(crate) mod transport;
 
 use crate::connection::ConnectionManager;
 use crate::error::AppResult;
-use crate::kernel::identity::{ConnectionErdLayoutId, ConnectionId};
+use crate::kernel::identity::ConnectionId;
 use crate::store::Store;
 
 use adapters::{ConnectionErdAuthority, SqliteErdRepository, SystemErdGenerator};
@@ -34,14 +34,6 @@ impl ErdFeature {
         request: SaveErdLayoutRequest,
     ) -> AppResult<SaveErdLayoutOutcome> {
         self.application.save(request).await
-    }
-
-    pub(crate) async fn delete(
-        &self,
-        scoped_id: ConnectionErdLayoutId,
-        expected_revision: i64,
-    ) -> AppResult<()> {
-        self.application.delete(scoped_id, expected_revision).await
     }
 }
 

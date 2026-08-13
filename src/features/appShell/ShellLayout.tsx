@@ -27,14 +27,12 @@ import { DatabaseExplorer } from "../../screens/Connections";
 import type { ConnectionLaunchPreset } from "../connections/presets";
 import { clampAgentDockWidth } from "../agents/layout";
 import { IdeStatusBar, IdeTopBar } from "./IdeChrome";
-import type { AppArea } from "./navigation";
 
 const IS_MACOS =
   typeof navigator !== "undefined" &&
   /Macintosh|Mac OS X/.test(navigator.userAgent);
 
 type Props = {
-  area: AppArea;
   settingsOpen: boolean;
   activeSchemaGroupKey: string | null;
   connections: ConnectionProfile[];
@@ -61,21 +59,20 @@ type Props = {
   unseenOperationCount: number;
   sidebarWidth: number;
   mainRef: RefObject<HTMLElement | null>;
-  terminalButtonRef: RefObject<HTMLButtonElement | null>;
+  agentButtonRef: RefObject<HTMLButtonElement | null>;
   searchEverywhereButtonRef: RefObject<HTMLButtonElement | null>;
   mainContent: ReactNode;
   availableUpdate: Update | null;
-  showTerminalDock: boolean;
+  agentDockOpen: boolean;
   agentComposerRequest: AgentComposerRequest | null;
   searchEverywhereOpen: boolean;
-  terminalOverlay: boolean;
-  terminalWidth: number;
+  agentOverlay: boolean;
+  agentWidth: number;
   creatingDemo: boolean;
   onWorkspaceScopeChanged: () => Promise<void>;
   onWorkspaceDataRefreshed: () => Promise<void>;
   onNewConnection: (preset?: ConnectionLaunchPreset) => void;
   onCreateDemoDatabase: () => void;
-  onArea: (area: AppArea) => void;
   onOpenProjectEnvironment: (
     environmentId: string | null,
     view: KnowledgeEnvironmentView,
@@ -110,7 +107,7 @@ type Props = {
   onOpenNotifications: () => void;
   onNewQuery: () => void;
   onOpenAgentArchive: () => void;
-  onOpenTerminal: () => void;
+  onOpenAgent: () => void;
   onSearchEverywhere: (returnFocus?: HTMLElement | null) => void;
   onSelectWorkspaceConnection: (id: string) => void;
   onOpenTable: (connection: ConnectionProfile, table: CatalogTable) => void;
@@ -125,8 +122,8 @@ type Props = {
   }) => void;
   onResetSidebar: () => void;
   onOpenUpdateSettings: () => void;
-  onTerminalWidthChange: (width: number) => void;
-  onCloseTerminal: () => void;
+  onAgentWidthChange: (width: number) => void;
+  onCloseAgent: () => void;
 };
 
 export default function ShellLayout(props: Props) {
@@ -140,7 +137,6 @@ export default function ShellLayout(props: Props) {
 function ShellLayoutContent(props: Props) {
   const { t } = useI18n();
   const {
-    area,
     settingsOpen,
     activeSchemaGroupKey,
     connections,
@@ -162,20 +158,21 @@ function ShellLayoutContent(props: Props) {
     mainRef,
     mainContent,
     availableUpdate,
-    showTerminalDock,
-    terminalOverlay,
-    terminalWidth,
+    agentDockOpen,
+    agentOverlay,
+    agentWidth,
     creatingDemo,
   } = props;
   const showUpdateBadge = !!availableUpdate && !settingsOpen;
   const databaseExplorerVisible = databaseExplorerOpen;
-  const localHistoryVisible = area !== "knowledge" && localHistoryOpen;
+  const environmentDetailOpen = props.knowledgeEnvironmentFocus !== null;
+  const localHistoryVisible = !environmentDetailOpen && localHistoryOpen;
   const leftToolWindowVisible =
     databaseExplorerVisible || localHistoryVisible;
   const servicesVisible = servicesOpen;
-  const rightDockWidth = showTerminalDock && !terminalOverlay
+  const rightDockWidth = agentDockOpen && !agentOverlay
     ? clampAgentDockWidth(
-        terminalWidth,
+        agentWidth,
         typeof window === "undefined" ? 1_280 : window.innerWidth,
       )
     : 0;
@@ -204,7 +201,7 @@ function ShellLayoutContent(props: Props) {
       className="app tw:grid tw:h-dvh tw:overflow-hidden tw:bg-muted"
       data-compact={compact}
       data-platform={IS_MACOS ? "macos" : "other"}
-      data-terminal-open={showTerminalDock}
+      data-agent-open={agentDockOpen}
       data-mobile-explorer-open={mobileExplorerOpen}
       data-database-explorer-open={databaseExplorerVisible}
       data-local-history-open={localHistoryVisible}
@@ -223,7 +220,6 @@ function ShellLayoutContent(props: Props) {
       }}
     >
       <IdeTopBar
-        area={area}
         selected={selected}
         supportsSql={supportsSql}
         databaseExplorerOpen={
@@ -233,7 +229,7 @@ function ShellLayoutContent(props: Props) {
           localHistoryVisible && (!compact || mobileExplorerOpen)
         }
         servicesOpen={servicesVisible}
-        showTerminalDock={showTerminalDock}
+        agentDockOpen={agentDockOpen}
         searchEverywhereOpen={props.searchEverywhereOpen}
         settingsOpen={settingsOpen}
         account={
@@ -245,12 +241,11 @@ function ShellLayoutContent(props: Props) {
           />
         }
         onNewQuery={props.onNewQuery}
-        onArea={props.onArea}
         onToggleDatabaseExplorer={props.onToggleDatabaseExplorer}
         onToggleLocalHistory={props.onToggleLocalHistory}
         onToggleServices={props.onToggleServices}
-        onOpenTerminal={props.onOpenTerminal}
-        terminalButtonRef={props.terminalButtonRef}
+        onOpenAgent={props.onOpenAgent}
+        agentButtonRef={props.agentButtonRef}
         searchEverywhereButtonRef={props.searchEverywhereButtonRef}
         onSearchEverywhere={props.onSearchEverywhere}
         onSettings={props.onSettings}
@@ -281,14 +276,14 @@ function ShellLayoutContent(props: Props) {
         ) : (
           <DatabaseExplorer
             connections={connections}
-            selectedId={area === "workspace" ? selectedId : null}
+            selectedId={environmentDetailOpen ? null : selectedId}
             selectedTableKey={
-              area === "workspace" && selectedTable
+              !environmentDetailOpen && selectedTable
                 ? tableKey(selectedTable)
                 : null
             }
             activeSchemaGroupKey={
-              area === "workspace" ? activeSchemaGroupKey : null
+              environmentDetailOpen ? null : activeSchemaGroupKey
             }
             onSelectConn={props.onSelectWorkspaceConnection}
             onOpenTable={props.onOpenTable}
@@ -306,19 +301,13 @@ function ShellLayoutContent(props: Props) {
             revealDatabase={selectedDatabase}
             revealNamespace={selectedNamespace}
             activeProjectEnvironmentId={
-              area === "knowledge"
-                ? props.knowledgeEnvironmentFocus?.environmentId ?? null
-                : null
+              props.knowledgeEnvironmentFocus?.environmentId ?? null
             }
             activeProjectEnvironmentView={
-              area === "knowledge"
-                ? props.knowledgeEnvironmentFocus?.view ?? null
-                : null
+              props.knowledgeEnvironmentFocus?.view ?? null
             }
             activeProjectEnvironmentResourceId={
-              area === "knowledge"
-                ? props.knowledgeEnvironmentFocus?.resourceId ?? null
-                : null
+              props.knowledgeEnvironmentFocus?.resourceId ?? null
             }
             onOpenProjectEnvironment={props.onOpenProjectEnvironment}
           />
@@ -366,22 +355,22 @@ function ShellLayoutContent(props: Props) {
         )}
       </main>
 
-      {showTerminalDock && selected && (
+      {agentDockOpen && selected && (
         <AcpChatPanel
           connection={selected}
           composerRequest={props.agentComposerRequest}
           documents={workbenchDocuments}
           activeDocumentId={activeWorkbenchDocumentId}
           selectedTable={selectedTable}
-          overlay={terminalOverlay}
+          overlay={agentOverlay}
           compact={compact}
           width={rightDockWidth}
-          onWidthChange={props.onTerminalWidthChange}
+          onWidthChange={props.onAgentWidthChange}
           onOpenArchive={props.onOpenAgentArchive}
           onOpenKnowledgeAnalysis={(environmentId, articleId) =>
             props.onOpenProjectEnvironment(environmentId, "analyses", articleId)
           }
-          onClose={props.onCloseTerminal}
+          onClose={props.onCloseAgent}
         />
       )}
 

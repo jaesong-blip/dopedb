@@ -1,7 +1,11 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
+import {
+  knowledgeMutationAuthority,
+  knowledgeMutationAuthoritySql,
+} from "@/lib/knowledge/mutation-authority";
 import {
   boundedJsonBody,
   isSafeDisplayText,
@@ -66,6 +70,7 @@ export async function POST(request: Request, context: RouteContext) {
   }
   const authorization = await authorizeWorkspace(request, workspaceId, "manage");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
+  const authority = knowledgeMutationAuthority(authorization, workspaceId, "manage");
   const parsed = await boundedJsonBody(request, 8 * 1024);
   const body = parsed.ok ? parsed.value as Record<string, unknown> : null;
   if (
@@ -80,73 +85,80 @@ export async function POST(request: Request, context: RouteContext) {
     || !isSafeDisplayText(body.alias.trim(), 128)
   ) return jsonError("Invalid Environment connection binding", 400);
 
-  const [scope] = await db.select({
-    environmentRevision: knowledgeProjectEnvironment.revision,
-    connectionRevision: workspaceConnection.revision,
-    connectionName: workspaceConnection.name,
-  }).from(knowledgeProjectEnvironment).innerJoin(
-    workspaceConnection,
-    and(
-      eq(workspaceConnection.organizationId, knowledgeProjectEnvironment.organizationId),
-      eq(workspaceConnection.id, body.connectionId),
-      isNull(workspaceConnection.deletedAt),
-    ),
-  ).where(and(
-    eq(knowledgeProjectEnvironment.organizationId, workspaceId),
-    eq(knowledgeProjectEnvironment.id, environmentId),
-  )).limit(1);
-  if (!scope) return jsonError("Environment or connection not found", 404);
-
-  const [existing] = await db.select({ id: knowledgeEnvironmentConnection.id })
-    .from(knowledgeEnvironmentConnection).where(and(
-      eq(knowledgeEnvironmentConnection.organizationId, workspaceId),
-      eq(knowledgeEnvironmentConnection.projectEnvironmentId, environmentId),
-      eq(knowledgeEnvironmentConnection.connectionId, body.connectionId),
-      isNull(knowledgeEnvironmentConnection.revokedAt),
-    )).limit(1);
-  const values = {
-    environmentRevision: scope.environmentRevision,
-    connectionRevision: scope.connectionRevision,
-    role: body.role.trim(),
-    alias: body.alias.trim(),
-  };
-  const [binding] = existing
-    ? await db.update(knowledgeEnvironmentConnection).set(values).where(and(
-        eq(knowledgeEnvironmentConnection.organizationId, workspaceId),
-        eq(knowledgeEnvironmentConnection.id, existing.id),
-        isNull(knowledgeEnvironmentConnection.revokedAt),
-      )).returning({
-        id: knowledgeEnvironmentConnection.id,
-        projectEnvironmentId: knowledgeEnvironmentConnection.projectEnvironmentId,
-        environmentRevision: knowledgeEnvironmentConnection.environmentRevision,
-        connectionId: knowledgeEnvironmentConnection.connectionId,
-        connectionRevision: knowledgeEnvironmentConnection.connectionRevision,
-        role: knowledgeEnvironmentConnection.role,
-        alias: knowledgeEnvironmentConnection.alias,
-      })
-    : await db.insert(knowledgeEnvironmentConnection).values({
-        id: body.bindingId,
-        organizationId: workspaceId,
-        projectEnvironmentId: environmentId,
-        connectionId: body.connectionId,
-        ...values,
-      }).returning({
-        id: knowledgeEnvironmentConnection.id,
-        projectEnvironmentId: knowledgeEnvironmentConnection.projectEnvironmentId,
-        environmentRevision: knowledgeEnvironmentConnection.environmentRevision,
-        connectionId: knowledgeEnvironmentConnection.connectionId,
-        connectionRevision: knowledgeEnvironmentConnection.connectionRevision,
-        role: knowledgeEnvironmentConnection.role,
-        alias: knowledgeEnvironmentConnection.alias,
-      });
+  const bindingResult = await db.execute<{
+    id: string;
+    projectEnvironmentId: string;
+    environmentRevision: number;
+    connectionId: string;
+    connectionRevision: number;
+    connectionName: string;
+    role: string;
+    alias: string;
+    inserted: boolean;
+  }>(sql`
+    WITH actor_authority AS MATERIALIZED (
+      SELECT 1 WHERE ${knowledgeMutationAuthoritySql(authority, workspaceId)}
+    ), scope AS MATERIALIZED (
+      SELECT environment."id", environment."revision" AS environment_revision,
+        connection."id" AS connection_id,
+        connection."revision" AS connection_revision,
+        connection."name" AS connection_name
+      FROM ${knowledgeProjectEnvironment} AS environment
+      JOIN ${workspaceConnection} AS connection
+        ON connection."organization_id" = environment."organization_id"
+       AND connection."id" = ${body.connectionId}::uuid
+       AND connection."deleted_at" IS NULL
+       AND connection."revocation_pending_at" IS NULL
+       AND connection."revocation_claim_id" IS NULL
+      CROSS JOIN actor_authority
+      WHERE environment."organization_id" = ${workspaceId}
+        AND environment."id" = ${environmentId}::uuid
+      FOR UPDATE OF environment, connection
+    ), updated AS MATERIALIZED (
+      UPDATE ${knowledgeEnvironmentConnection} AS binding
+      SET "environment_revision" = scope.environment_revision,
+        "connection_revision" = scope.connection_revision,
+        "role" = ${body.role.trim()}, "alias" = ${body.alias.trim()}
+      FROM scope
+      WHERE binding."organization_id" = ${workspaceId}
+        AND binding."project_environment_id" = scope."id"
+        AND binding."connection_id" = scope.connection_id
+        AND binding."revoked_at" IS NULL
+      RETURNING binding.*, scope.connection_name
+    ), inserted AS MATERIALIZED (
+      INSERT INTO ${knowledgeEnvironmentConnection}
+        ("id", "organization_id", "project_environment_id", "environment_revision",
+         "connection_id", "connection_revision", "role", "alias")
+      SELECT ${body.bindingId}::uuid, ${workspaceId}, scope."id", scope.environment_revision,
+        scope.connection_id, scope.connection_revision, ${body.role.trim()}, ${body.alias.trim()}
+      FROM scope
+      WHERE NOT EXISTS (SELECT 1 FROM updated)
+      ON CONFLICT DO NOTHING
+      RETURNING *
+    )
+    SELECT updated."id"::text, updated."project_environment_id"::text AS "projectEnvironmentId",
+      updated."environment_revision"::integer AS "environmentRevision",
+      updated."connection_id"::text AS "connectionId",
+      updated."connection_revision"::integer AS "connectionRevision",
+      updated.connection_name AS "connectionName", updated."role", updated."alias", false AS inserted
+    FROM updated
+    UNION ALL
+    SELECT inserted."id"::text, inserted."project_environment_id"::text,
+      inserted."environment_revision"::integer, inserted."connection_id"::text,
+      inserted."connection_revision"::integer, scope.connection_name,
+      inserted."role", inserted."alias", true
+    FROM inserted JOIN scope ON scope."id" = inserted."project_environment_id"
+  `);
+  const binding = bindingResult.rows[0];
+  if (!binding) return jsonError("Environment or connection changed", 409);
+  const { inserted, ...responseBinding } = binding;
   return privateJson({
     binding: {
-      ...binding,
-      currentConnectionRevision: scope.connectionRevision,
-      connectionName: scope.connectionName,
+      ...responseBinding,
+      currentConnectionRevision: binding.connectionRevision,
       stale: false,
     },
-  }, { status: existing ? 200 : 201 });
+  }, { status: inserted ? 201 : 200 });
 }
 
 export async function DELETE(request: Request, context: RouteContext) {
@@ -157,6 +169,7 @@ export async function DELETE(request: Request, context: RouteContext) {
   }
   const authorization = await authorizeWorkspace(request, workspaceId, "manage");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
+  const authority = knowledgeMutationAuthority(authorization, workspaceId, "manage");
   const parsed = await boundedJsonBody(request, 4 * 1024);
   const body = parsed.ok ? parsed.value as Record<string, unknown> : null;
   if (!body || typeof body.bindingId !== "string" || !isUuid(body.bindingId)) {
@@ -169,6 +182,7 @@ export async function DELETE(request: Request, context: RouteContext) {
     eq(knowledgeEnvironmentConnection.projectEnvironmentId, environmentId),
     eq(knowledgeEnvironmentConnection.id, body.bindingId),
     isNull(knowledgeEnvironmentConnection.revokedAt),
+    knowledgeMutationAuthoritySql(authority, workspaceId),
   )).returning({ id: knowledgeEnvironmentConnection.id });
   if (updated.length !== 1) return jsonError("Environment connection binding not found", 404);
   return privateJson({ removed: true });

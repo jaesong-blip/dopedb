@@ -15,6 +15,12 @@ import {
   workspaceAnalysisRunner,
 } from "../../../../../../../lib/schema";
 import { authorizeWorkspace } from "../../../../../../../lib/workspace-authorization";
+import {
+  analysisRunnerCapabilityHeader,
+  isAnalysisDesktopBearerRequest,
+  parseAnalysisRunnerCapability,
+  parseAnalysisRunnerCapabilityVersion,
+} from "../../../../../../../lib/workspace-analysis-runner-capability";
 import { registerAnalysisRunner } from "../../../../../../../lib/workspace-analysis-runner-store";
 import { parseAnalysisRunnerRegistration } from "../../../../../../../lib/workspace-analysis-runs";
 
@@ -29,6 +35,7 @@ export async function GET(request: Request, context: RouteContext) {
     id: workspaceAnalysisRunner.id,
     deviceId: workspaceAnalysisRunner.deviceId,
     displayName: workspaceAnalysisRunner.displayName,
+    runnerCapabilityGeneration: workspaceAnalysisRunner.runnerCapabilityGeneration,
     backgroundAllowed: workspaceAnalysisRunner.backgroundAllowed,
     lastSeenAt: workspaceAnalysisRunner.lastSeenAt,
     scheduledArticleCount: sql<number>`(
@@ -57,6 +64,9 @@ export async function GET(request: Request, context: RouteContext) {
 
 export async function POST(request: Request, context: RouteContext) {
   if (!mutationAllowed(request, env.appOrigin())) return jsonError("Invalid request origin", 403);
+  if (!isAnalysisDesktopBearerRequest(request)) {
+    return jsonError("Analysis runner registration requires a Desktop bearer session", 401);
+  }
   const { workspaceId } = await context.params;
   if (!isUuid(workspaceId)) return jsonError("Invalid workspace id", 400);
   const authorization = await authorizeWorkspace(request, workspaceId, "view");
@@ -69,9 +79,23 @@ export async function POST(request: Request, context: RouteContext) {
   } catch (error) {
     return jsonError(error instanceof Error ? error.message : "Invalid Analysis runner", 400);
   }
+  const capabilityHeader = request.headers.get(analysisRunnerCapabilityHeader);
+  const runnerCapability = parseAnalysisRunnerCapability(request);
+  const capabilityVersion = parseAnalysisRunnerCapabilityVersion(request);
+  if (capabilityVersion === null) {
+    return jsonError(
+      "This Desktop version cannot create or update a possession-bound Analysis runner. Update DopeDB and try again.",
+      426,
+    );
+  }
+  if (capabilityHeader !== null && runnerCapability === null) {
+    return jsonError("Invalid Analysis runner capability", 403);
+  }
   const runner = await registerAnalysisRunner({
     organizationId: workspaceId,
     registration,
+    runnerCapability,
+    capabilityVersion,
     authority: {
       sessionId: authorization.session.session.id,
       userId: authorization.session.user.id,
@@ -80,7 +104,41 @@ export async function POST(request: Request, context: RouteContext) {
     },
   });
   if (!runner) return jsonError("Analysis runner authority changed", 409);
+  if (runner.status === "unsupported") {
+    return jsonError(
+      "This Desktop version cannot create a possession-bound Analysis runner. Update DopeDB and try again.",
+      426,
+    );
+  }
+  if (runner.status === "unbound" || runner.status === "replacement_required") {
+    return jsonError(
+      "This legacy Analysis runner is quarantined. Register again with a new Desktop device id.",
+      428,
+    );
+  }
+  if (runner.status === "missing") {
+    return jsonError(
+      "The Analysis runner capability is unavailable. Register again with a new Desktop device id.",
+      428,
+    );
+  }
+  if (runner.status === "invalid") return jsonError("Invalid Analysis runner capability", 403);
+  if (!runner.id || !runner.deviceId || !runner.displayName || !runner.lastSeenAt
+    || typeof runner.backgroundAllowed !== "boolean"
+    || !runner.runnerCapabilityGeneration) {
+    return jsonError("Analysis runner authority changed", 409);
+  }
   return privateJson({
-    runner: { ...runner, lastSeenAt: runner.lastSeenAt.toISOString(), online: true },
-  }, { status: 201 });
+    runner: {
+      id: runner.id,
+      deviceId: runner.deviceId,
+      displayName: runner.displayName,
+      backgroundAllowed: runner.backgroundAllowed,
+      runnerCapabilityGeneration: runner.runnerCapabilityGeneration,
+      lastSeenAt: runner.lastSeenAt.toISOString(),
+      online: true,
+    },
+    runnerCapability: runner.runnerCapability,
+    runnerCapabilityGeneration: runner.runnerCapabilityGeneration,
+  }, { status: runner.status === "created" ? 201 : 200 });
 }

@@ -37,6 +37,11 @@ import ErdRelationNode, { type ErdFlowNode } from "./ErdRelationNode";
 import ErdToolbar from "./ErdToolbar";
 import { Icon } from "./Icon";
 import { InlineNotice } from "../design-system/components/Status";
+import { Button } from "../design-system/components/Button";
+import {
+  SelectInput,
+  TextInput,
+} from "../design-system/components/FormControls";
 import {
   buildErdGraph,
   createErdGraphIndex,
@@ -522,59 +527,75 @@ export default function ErdCanvas({
       />
 
       {virtualEditorOpen && (
-        <div className="ds-control-row tw:flex tw:flex-wrap tw:gap-2 tw:border-b tw:border-border-subtle tw:bg-card tw:px-3 tw:py-2 tw:[&>input]:min-w-[120px] tw:[&>input]:flex-[1_1_140px] tw:[&>select]:min-w-[120px] tw:[&>select]:flex-[1_1_140px]">
-          <select
-            value={virtualFrom}
-            onChange={(event) => setVirtualFrom(event.target.value)}
-            aria-label={t("schema.erdFromTable")}
-          >
-            <option value="">{t("schema.erdFromTable")}</option>
-            {graphRelations.map((relation) => (
-              <option
-                key={erdRelationKey(relation.object)}
-                value={erdRelationKey(relation.object)}
-              >
-                {relationDisplayName(relation.object)}
-              </option>
-            ))}
-          </select>
-          <input
-            value={virtualFromColumns}
-            onChange={(event) => setVirtualFromColumns(event.target.value)}
-            placeholder={t("schema.erdFromColumns")}
-          />
-          <select
-            value={virtualTo}
-            onChange={(event) => setVirtualTo(event.target.value)}
-            aria-label={t("schema.erdToTable")}
-          >
-            <option value="">{t("schema.erdToTable")}</option>
-            {graphRelations.map((relation) => (
-              <option
-                key={erdRelationKey(relation.object)}
-                value={erdRelationKey(relation.object)}
-              >
-                {relationDisplayName(relation.object)}
-              </option>
-            ))}
-          </select>
-          <input
-            value={virtualToColumns}
-            onChange={(event) => setVirtualToColumns(event.target.value)}
-            placeholder={t("schema.erdToColumns")}
-          />
-          <input
-            value={virtualLabel}
-            onChange={(event) => setVirtualLabel(event.target.value)}
-            placeholder={t("schema.erdRelationLabel")}
-          />
-          <button
-            className="btn primary small"
+        <div className="ds-control-row tw:flex tw:flex-wrap tw:gap-2 tw:border-b tw:border-border-subtle tw:bg-card tw:px-3 tw:py-2 tw:[&>span]:min-w-[120px] tw:[&>span]:flex-[1_1_140px]">
+          <span>
+            <SelectInput
+              density="compact"
+              value={virtualFrom}
+              onChange={(event) => setVirtualFrom(event.target.value)}
+              aria-label={t("schema.erdFromTable")}
+            >
+              <option value="">{t("schema.erdFromTable")}</option>
+              {graphRelations.map((relation) => (
+                <option
+                  key={erdRelationKey(relation.object)}
+                  value={erdRelationKey(relation.object)}
+                >
+                  {relationDisplayName(relation.object)}
+                </option>
+              ))}
+            </SelectInput>
+          </span>
+          <span>
+            <TextInput
+              density="compact"
+              value={virtualFromColumns}
+              onChange={(event) => setVirtualFromColumns(event.target.value)}
+              placeholder={t("schema.erdFromColumns")}
+            />
+          </span>
+          <span>
+            <SelectInput
+              density="compact"
+              value={virtualTo}
+              onChange={(event) => setVirtualTo(event.target.value)}
+              aria-label={t("schema.erdToTable")}
+            >
+              <option value="">{t("schema.erdToTable")}</option>
+              {graphRelations.map((relation) => (
+                <option
+                  key={erdRelationKey(relation.object)}
+                  value={erdRelationKey(relation.object)}
+                >
+                  {relationDisplayName(relation.object)}
+                </option>
+              ))}
+            </SelectInput>
+          </span>
+          <span>
+            <TextInput
+              density="compact"
+              value={virtualToColumns}
+              onChange={(event) => setVirtualToColumns(event.target.value)}
+              placeholder={t("schema.erdToColumns")}
+            />
+          </span>
+          <span>
+            <TextInput
+              density="compact"
+              value={virtualLabel}
+              onChange={(event) => setVirtualLabel(event.target.value)}
+              placeholder={t("schema.erdRelationLabel")}
+            />
+          </span>
+          <Button
+            variant="primary"
+            size="compact"
             type="button"
             onClick={addVirtualRelation}
           >
             {t("common.add")}
-          </button>
+          </Button>
         </div>
       )}
 
@@ -588,9 +609,10 @@ export default function ErdCanvas({
               {relationDisplayName(relation.fromRelation)}
               {" → "}
               {relationDisplayName(relation.toRelation)}
-              <button
-                className="tw:cursor-pointer tw:border-0 tw:bg-transparent tw:p-0 tw:text-inherit"
-                type="button"
+              <Button
+                iconOnly
+                size="xs"
+                variant="ghost"
                 onClick={() => {
                   setVirtualRelations((current) =>
                     current.filter((candidate) => candidate.id !== relation.id),
@@ -600,7 +622,7 @@ export default function ErdCanvas({
                 aria-label={t("common.remove")}
               >
                 ×
-              </button>
+              </Button>
             </span>
           ))}
         </div>
@@ -615,15 +637,15 @@ export default function ErdCanvas({
           icon="info"
           role="status"
           action={
-            <button
+            <Button
               type="button"
-              className="btn small"
+              size="compact"
               disabled={busy}
               onClick={() => void autoLayout()}
             >
               <Icon name="refresh" />
               {t("common.refresh")}
-            </button>
+            </Button>
           }
         >
           {layoutWarning}

@@ -106,6 +106,17 @@ struct MacosTrustChecks {
     same_app_bytes: bool,
 }
 
+struct MacosReceiptExpectation<'a> {
+    tag: &'a str,
+    commit: &'a str,
+    target: &'a str,
+    architecture: &'a str,
+    dmg_name: &'a str,
+    updater_name: &'a str,
+    dmg_digest: String,
+    updater_digest: String,
+}
+
 fn fail<T>(message: impl Into<String>) -> Result<T, String> {
     Err(message.into())
 }
@@ -412,27 +423,21 @@ fn macos_distribution_config(arguments: &Arguments) -> Result<MacosDistributionC
 fn verify_macos_receipt_contract(
     receipt: &MacosTrustReceipt,
     config: &MacosDistributionConfig,
-    tag: &str,
-    commit: &str,
-    target: &str,
-    architecture: &str,
-    dmg_name: &str,
-    updater_name: &str,
-    dmg_digest: &str,
-    updater_digest: &str,
+    expected: &MacosReceiptExpectation<'_>,
 ) -> Result<(), String> {
     if receipt.schema_version != 1
-        || receipt.tag != tag
-        || receipt.commit != commit
-        || receipt.target != target
-        || receipt.architecture != architecture
+        || receipt.tag != expected.tag
+        || receipt.commit != expected.commit
+        || receipt.target != expected.target
+        || receipt.architecture != expected.architecture
         || receipt.team_identifier != config.team_identifier
         || receipt.bundle_identifier != config.bundle_identifier
     {
         return fail("macOS trust receipt identity does not match the release");
     }
-    if commit.len() != 40
-        || !commit
+    if expected.commit.len() != 40
+        || !expected
+            .commit
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
     {
@@ -448,10 +453,10 @@ fn verify_macos_receipt_contract(
     {
         return fail("macOS trust receipt has an invalid Developer ID claim");
     }
-    if receipt.artifacts.dmg.name != dmg_name
-        || receipt.artifacts.dmg.sha256 != dmg_digest
-        || receipt.artifacts.updater.name != updater_name
-        || receipt.artifacts.updater.sha256 != updater_digest
+    if receipt.artifacts.dmg.name != expected.dmg_name
+        || receipt.artifacts.dmg.sha256 != expected.dmg_digest
+        || receipt.artifacts.updater.name != expected.updater_name
+        || receipt.artifacts.updater.sha256 != expected.updater_digest
     {
         return fail("macOS trust receipt artifact hashes do not match downloaded assets");
     }
@@ -493,14 +498,16 @@ fn verify_macos_distribution(
         verify_macos_receipt_contract(
             &receipt,
             config,
-            &arguments.tag,
-            &arguments.commit,
-            target,
-            architecture,
-            &dmg_name,
-            &updater_name,
-            &digest(&dmg),
-            &digest(&updater),
+            &MacosReceiptExpectation {
+                tag: &arguments.tag,
+                commit: &arguments.commit,
+                target,
+                architecture,
+                dmg_name: &dmg_name,
+                updater_name: &updater_name,
+                dmg_digest: digest(&dmg),
+                updater_digest: digest(&updater),
+            },
         )?;
         println!("verified macOS Developer ID and notarization receipt: {target}");
     }
@@ -722,28 +729,32 @@ mod tests {
         assert!(verify_macos_receipt_contract(
             &receipt,
             &config,
-            "app-v0.2.0",
-            "0123456789abcdef0123456789abcdef01234567",
-            "aarch64-apple-darwin",
-            "arm64",
-            "DopeDB_0.2.0_aarch64.dmg",
-            "DopeDB_0.2.0_aarch64.app.tar.gz",
-            &digest(b"dmg"),
-            &digest(b"updater"),
+            &MacosReceiptExpectation {
+                tag: "app-v0.2.0",
+                commit: "0123456789abcdef0123456789abcdef01234567",
+                target: "aarch64-apple-darwin",
+                architecture: "arm64",
+                dmg_name: "DopeDB_0.2.0_aarch64.dmg",
+                updater_name: "DopeDB_0.2.0_aarch64.app.tar.gz",
+                dmg_digest: digest(b"dmg"),
+                updater_digest: digest(b"updater"),
+            },
         )
         .is_ok());
         receipt.checks.dmg_staple = false;
         assert!(verify_macos_receipt_contract(
             &receipt,
             &config,
-            "app-v0.2.0",
-            "0123456789abcdef0123456789abcdef01234567",
-            "aarch64-apple-darwin",
-            "arm64",
-            "DopeDB_0.2.0_aarch64.dmg",
-            "DopeDB_0.2.0_aarch64.app.tar.gz",
-            &digest(b"dmg"),
-            &digest(b"updater"),
+            &MacosReceiptExpectation {
+                tag: "app-v0.2.0",
+                commit: "0123456789abcdef0123456789abcdef01234567",
+                target: "aarch64-apple-darwin",
+                architecture: "arm64",
+                dmg_name: "DopeDB_0.2.0_aarch64.dmg",
+                updater_name: "DopeDB_0.2.0_aarch64.app.tar.gz",
+                dmg_digest: digest(b"dmg"),
+                updater_digest: digest(b"updater"),
+            },
         )
         .is_err());
 

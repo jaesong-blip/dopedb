@@ -4,6 +4,7 @@ import adapterSource from "./tauriAdapter.ts?raw";
 import authRouteSource from "../../../workspace-cloud/app/api/auth/[...all]/route.ts?raw";
 import gcpBootstrapSource from "../../../workspace-cloud/lib/providers/gcp-cloud-bootstrap.ts?raw";
 import gcpCloudSqlSource from "../../../workspace-cloud/lib/providers/gcp-cloud-sql.ts?raw";
+import boundedJsonResponseSource from "../../../workspace-cloud/lib/bounded-json-response.ts?raw";
 import neonSource from "../../../workspace-cloud/lib/providers/neon.ts?raw";
 import neonBranchesSource from "../../../workspace-cloud/lib/providers/neon-branches.ts?raw";
 import neonCoreSource from "../../../workspace-cloud/lib/providers/neon-core.ts?raw";
@@ -70,6 +71,7 @@ import workspaceVersioningStoreSource from "../../../workspace-cloud/lib/workspa
 import workspaceSettingsNavigationSource from "../../../workspace-cloud/app/settings/SettingsNavigation.tsx?raw";
 import desktopSharedConnectionSource from "../../../src-tauri/src/features/workspaces/adapters/control_plane/connections.rs?raw";
 import desktopControlPlaneSource from "../../../src-tauri/src/features/workspaces/adapters/control_plane.rs?raw";
+import hostedControlPlaneSource from "../../../src-tauri/src/hosted_control_plane.rs?raw";
 import {
   neonBranchQueryable,
   parseNeonBranchInventory,
@@ -115,7 +117,6 @@ import {
 } from "./domain";
 import {
   beginProviderCredentialBinding,
-  beginProviderCredentialBindingPayload,
   discoverProviderProvisioningTargets,
   listProviderCredentialBindings,
   listProviderIntegrations,
@@ -130,17 +131,17 @@ const connectionId = "55555555-5555-4555-8555-555555555555";
 const discoveryId = "66666666-6666-4666-8666-666666666666";
 const integration = {
   id: integrationId,
-  provider: "neon",
-  displayName: "Read-only Neon",
+  provider: "gcpCloudSql",
+  displayName: "Google Cloud SQL",
   integrationGeneration: "12",
-  credentialMethod: "apiKey",
-  state: "credentialsRequired",
+  credentialMethod: "adcWif",
+  state: "ready",
 };
 
 const binding = {
   id: bindingId,
   integrationId,
-  provider: "neon",
+  provider: "gcpCloudSql",
   integrationGeneration: "12",
   state: "ready",
   updatedAt: "2026-07-27T00:00:00.000Z",
@@ -179,7 +180,7 @@ describe("provider credential Tauri adapter", () => {
     ]);
     await beginProviderCredentialBinding({
       integrationId: providerIntegrationId(integrationId),
-      credential: { type: "neonApiKey", apiKey: "one-shot-key" },
+      credential: { type: "gcpAdc" },
     });
     await verifyProviderCredentialBinding({
       receiptId: providerCredentialReceiptId(receiptId),
@@ -194,7 +195,7 @@ describe("provider credential Tauri adapter", () => {
     });
     expect(invokeMock).toHaveBeenNthCalledWith(4, "begin_provider_credential_binding", {
       integrationId,
-      credential: { type: "neonApiKey", apiKey: "one-shot-key" },
+      credential: { type: "gcpAdc" },
     });
     expect(invokeMock).toHaveBeenNthCalledWith(5, "verify_provider_credential_binding", {
       receiptId,
@@ -860,15 +861,8 @@ describe("provider credential Tauri adapter", () => {
       vi.useRealTimers();
     }
 
-    const payload = beginProviderCredentialBindingPayload({
-      integrationId: providerIntegrationId(integrationId),
-      credential: { type: "gcpAdc" },
-    });
-    expect(payload).toEqual({ integrationId, credential: { type: "gcpAdc" } });
-    expect(Object.keys(payload).sort()).toEqual(["credential", "integrationId"]);
-    expect(JSON.stringify(payload)).not.toMatch(/integrationGeneration|bindingId|\"kind\"/);
     const beginSource = adapterSource.slice(
-      adapterSource.indexOf("export function beginProviderCredentialBindingPayload"),
+      adapterSource.indexOf("function beginProviderCredentialBindingPayload"),
       adapterSource.indexOf("export async function listProviderIntegrations"),
     );
     expect(beginSource).not.toMatch(/\b(integrationGeneration|bindingId|kind)\b/);
@@ -923,7 +917,7 @@ describe("provider credential Tauri adapter", () => {
     expect(providerIntegrationDomainSource).not.toContain(
       'networkMode: input.selection.networkMode || "PRIVATE_SERVICES_ACCESS"',
     );
-    expect(desktopControlPlaneSource).toContain(".or(value.error.as_deref())");
+    expect(hostedControlPlaneSource).toContain(".or(value.error.as_deref())");
     expect(gcpSetupRouteSource).toContain("writeAccess: true");
     expect(managedLeaseRouteSource).toContain('let requestedAccessMode: "read" | "write"');
     expect(managedLeaseRouteSource).toContain("providerResourceSupportsWrite");
@@ -993,7 +987,10 @@ describe("provider credential Tauri adapter", () => {
     expect(neonSource).toContain("credential.projectId === null");
     expect(neonSource).toContain("seenCursors.has(next)");
     expect(neonSource).toContain("MAX_NEON_RESPONSE_BYTES");
-    expect(neonSource).toContain("response.body.getReader()");
+    expect(neonSource).toContain("boundedJsonResponse(response, maxBytes)");
+    expect(neonSource).not.toContain("response.json()");
+    expect(boundedJsonResponseSource).toContain("response.body.getReader()");
+    expect(boundedJsonResponseSource).toContain('new TextDecoder("utf-8", { fatal: true })');
     expect(neonSource).toContain("listNeonBranchInventory");
     expect(neonBranchesSource).toContain(
       'treeParentId: branchInitSource === "schema-only" ? null : parentId',

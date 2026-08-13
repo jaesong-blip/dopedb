@@ -14,6 +14,10 @@ import {
   KNOWLEDGE_RISK_CLASSES,
   type KnowledgeRiskClass,
 } from "@/lib/knowledge/project-store";
+import {
+  knowledgeMutationAuthority,
+  knowledgeMutationAuthoritySql,
+} from "@/lib/knowledge/mutation-authority";
 import { knowledgeProject, knowledgeProjectEnvironment } from "@/lib/schema";
 import { authorizeWorkspace } from "@/lib/workspace-authorization";
 import {
@@ -57,6 +61,7 @@ export async function POST(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId)) return jsonError("Invalid workspace id", 400);
   const authorization = await authorizeWorkspace(request, workspaceId, "manage");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
+  const authority = knowledgeMutationAuthority(authorization, workspaceId, "manage");
   const parsed = await boundedJsonBody(request, 16 * 1024);
   const body = parsed.ok ? parsed.value as Record<string, unknown> : null;
   const environments = Array.isArray(body?.environments) ? body.environments : [];
@@ -102,6 +107,7 @@ export async function POST(request: Request, context: RouteContext) {
       organizationId: workspaceId,
       name: projectName,
       environments: normalizedEnvironments,
+      authority,
     });
     if (!created) {
       return jsonError("Project name is already in use", 409);
@@ -122,6 +128,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId)) return jsonError("Invalid workspace id", 400);
   const authorization = await authorizeWorkspace(request, workspaceId, "manage");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
+  const authority = knowledgeMutationAuthority(authorization, workspaceId, "manage");
   const parsed = await boundedJsonBody(request, 8 * 1024);
   const body = parsed.ok ? parsed.value as Record<string, unknown> : null;
   if (
@@ -142,6 +149,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     eq(knowledgeProject.organizationId, workspaceId),
     eq(knowledgeProject.id, body.projectId),
     eq(knowledgeProject.revision, body.expectedRevision),
+    knowledgeMutationAuthoritySql(authority, workspaceId),
   )).returning({ id: knowledgeProject.id, revision: knowledgeProject.revision });
   if (updated.length !== 1) return jsonError("Project revision changed", 409);
   return privateJson({ project: updated[0] });

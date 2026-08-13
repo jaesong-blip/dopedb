@@ -4,11 +4,14 @@
 import "server-only";
 
 import { createPublicKey, verify } from "node:crypto";
+import { boundedJsonResponse } from "../bounded-json-response";
 import { ProviderRequestError } from "./provider-types";
 
 type JsonObject = Record<string, unknown>;
 
 const MAX_VERCEL_TOKEN_LIFETIME_SECONDS = (12 * 60 * 60) + 60;
+const MAX_DISCOVERY_RESPONSE_BYTES = 32 * 1_024;
+const MAX_JWKS_RESPONSE_BYTES = 256 * 1_024;
 
 export type VerifiedVercelOidc = {
   issuer: string;
@@ -24,7 +27,11 @@ function decodeJson(segment: string): JsonObject {
   if (!/^[A-Za-z0-9_-]+$/.test(segment) || segment.length > 16_384) {
     throw new Error("invalid JWT segment");
   }
-  const value = JSON.parse(Buffer.from(segment, "base64url").toString("utf8"));
+  const bytes = Buffer.from(segment, "base64url");
+  if (bytes.toString("base64url") !== segment) {
+    throw new Error("invalid JWT encoding");
+  }
+  const value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("invalid JWT object");
   }
@@ -50,12 +57,21 @@ async function publicKey(issuer: string, kid: string) {
     cache: "no-store",
     signal: AbortSignal.timeout(10_000),
   });
-  const discovery = await discoveryResponse.json().catch(() => null) as JsonObject | null;
+  const discoveryValue = await boundedJsonResponse(
+    discoveryResponse,
+    MAX_DISCOVERY_RESPONSE_BYTES,
+  ).catch(() => null);
+  const discovery = discoveryValue
+    && typeof discoveryValue === "object"
+    && !Array.isArray(discoveryValue)
+    ? discoveryValue as JsonObject
+    : null;
   if (
     !discoveryResponse.ok
     || !discovery
     || discovery.issuer !== issuer
     || typeof discovery.jwks_uri !== "string"
+    || discovery.jwks_uri.length > 2_048
   ) {
     throw new Error("invalid Vercel OIDC discovery");
   }
@@ -70,8 +86,14 @@ async function publicKey(issuer: string, kid: string) {
     cache: "no-store",
     signal: AbortSignal.timeout(10_000),
   });
-  const jwks = await jwksResponse.json().catch(() => null) as JsonObject | null;
-  const keys = jwks && Array.isArray(jwks.keys) ? jwks.keys : [];
+  const jwksValue = await boundedJsonResponse(jwksResponse, MAX_JWKS_RESPONSE_BYTES)
+    .catch(() => null);
+  const jwks = jwksValue && typeof jwksValue === "object" && !Array.isArray(jwksValue)
+    ? jwksValue as JsonObject
+    : null;
+  const keys = jwks && Array.isArray(jwks.keys) && jwks.keys.length <= 32
+    ? jwks.keys
+    : [];
   const key = keys.find((value) => {
     if (!value || typeof value !== "object" || Array.isArray(value)) return false;
     const row = value as JsonObject;
@@ -80,7 +102,16 @@ async function publicKey(issuer: string, kid: string) {
       && row.alg === "RS256"
       && (row.use === undefined || row.use === "sig");
   });
-  if (!jwksResponse.ok || !key) throw new Error("Vercel signing key was not found");
+  if (
+    !jwksResponse.ok
+    || !key
+    || typeof (key as JsonObject).n !== "string"
+    || !/^[A-Za-z0-9_-]{128,2048}$/.test((key as JsonObject).n as string)
+    || typeof (key as JsonObject).e !== "string"
+    || !/^[A-Za-z0-9_-]{1,8}$/.test((key as JsonObject).e as string)
+  ) {
+    throw new Error("Vercel signing key was not found");
+  }
   return createPublicKey({ key: key as JsonWebKey, format: "jwk" });
 }
 
@@ -145,6 +176,9 @@ export async function verifyVercelOidcToken(
       typeof issuedAt !== "number"
       || typeof notBefore !== "number"
       || typeof expiresAt !== "number"
+      || !Number.isSafeInteger(issuedAt)
+      || !Number.isSafeInteger(notBefore)
+      || !Number.isSafeInteger(expiresAt)
       || issuedAt > now + 60
       || notBefore > now + 60
       || expiresAt <= now + 30
@@ -156,7 +190,9 @@ export async function verifyVercelOidcToken(
     const key = await publicKey(issuer, kid);
     const signature = Buffer.from(encodedSignature, "base64url");
     if (
-      signature.length < 128
+      signature.toString("base64url") !== encodedSignature
+      || !/^[A-Za-z0-9_-]+$/.test(encodedSignature)
+      || signature.length < 128
       || !verify(
         "RSA-SHA256",
         Buffer.from(`${encodedHeader}.${encodedClaims}`),

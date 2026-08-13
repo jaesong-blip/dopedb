@@ -69,6 +69,17 @@ pub(crate) trait WorkspaceRepositoryPort: Clone + Send + Sync + 'static {
     ) -> impl Future<Output = AppResult<()>> + Send;
 }
 
+/// Applies and validates the OS-owned SSH transport configuration for a
+/// member-local binding. The application layer does not know the concrete SSH
+/// parameter name or invoke the system transport adapter directly.
+pub(crate) trait WorkspaceSshProfilePort: Clone + Send + Sync + 'static {
+    fn bind_alias(
+        &self,
+        profile: &ConnectionProfile,
+        alias: Option<&str>,
+    ) -> AppResult<std::collections::HashMap<String, String>>;
+}
+
 pub(crate) trait WorkspaceConnectionMutationPort: Send {
     fn profile(&self) -> &ConnectionProfile;
     fn selected_account_id(&self) -> AppResult<AccountId>;

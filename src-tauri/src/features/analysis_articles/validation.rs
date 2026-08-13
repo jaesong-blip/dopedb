@@ -89,6 +89,8 @@ fn validate_column(column: &AnalysisColumn) -> AppResult<()> {
             && column.masking != AnalysisColumnMasking::Redact)
         || (column.sensitivity == AnalysisColumnSensitivity::Confidential
             && column.masking == AnalysisColumnMasking::None)
+        || (column.masking == AnalysisColumnMasking::Bucket
+            && column.sensitivity != AnalysisColumnSensitivity::Public)
         || (column.masking == AnalysisColumnMasking::Hash
             && column.column_type != AnalysisColumnType::String)
     {

@@ -278,7 +278,7 @@ export default function Settings({
               <div className="tw:min-h-0 tw:min-w-0 tw:flex-1 tw:overflow-auto tw:p-[var(--ds-pane-pad)] tw:[container-name:settings-body] tw:[container-type:inline-size] tw:@max-[700px]:p-3">
                 {section === "agent-tools" && <AgentTools />}
                 {section === "advanced" && <AdvancedSettings />}
-                {section === "cli" && <CliSettings />}
+                {section === "cli" && <CliSettings connection={connection} />}
                 {section === "archive" && (
                   <RetiredChatArchive connection={connection} />
                 )}

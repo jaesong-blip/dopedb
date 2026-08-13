@@ -56,6 +56,9 @@ pub(crate) struct WorkspaceAuthState {
     pub(crate) authenticated: bool,
     pub(crate) user: Option<WorkspaceAuthUser>,
     pub(crate) accounts: Vec<WorkspaceAuthAccount>,
+    /// Monotonic identity for every active workspace/account/membership authority.
+    /// Renderer caches and external stores must scope private state to this value.
+    pub(crate) authority_generation: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

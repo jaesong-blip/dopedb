@@ -6,16 +6,13 @@
 
 mod acp_launch;
 mod agent_mcp;
-// The public CLI and app-only bridge compile the same Broker client module with
-// different command surfaces, so a few public-CLI-only error paths are unused here.
-#[allow(dead_code)]
 mod client;
 mod exit_code;
 
 use std::process::ExitCode;
 
 use client::ClientError;
-use dopedb_protocol::AcpPluginId;
+use dopedb_protocol::{AcpPluginId, AgentSessionRegisterArguments};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
@@ -57,7 +54,7 @@ async fn main() -> ExitCode {
                 provider_cli_sha256,
                 arguments.next(),
             ) {
-                acp_launch::run(
+                acp_launch::run(AgentSessionRegisterArguments {
                     plugin_id,
                     adapter_bundle_version,
                     runtime_executable,
@@ -68,7 +65,7 @@ async fn main() -> ExitCode {
                     provider_cli_executable,
                     provider_cli_resolved_executable,
                     provider_cli_sha256,
-                )
+                })
                 .await
             } else {
                 Err(ClientError::InvalidArguments)

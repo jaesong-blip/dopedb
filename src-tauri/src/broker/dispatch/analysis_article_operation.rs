@@ -10,11 +10,8 @@ use dopedb_protocol::{
 };
 use tauri::Emitter;
 
+use crate::features::analysis_articles::AnalysisArticleMutation;
 use crate::features::analysis_articles::AnalysisDefinitionRunRequest;
-use crate::features::workspaces::adapters::control_plane::{
-    create_analysis_article, get_analysis_article, list_analysis_articles, mutate_analysis_article,
-    AnalysisArticleMutation,
-};
 
 use super::*;
 
@@ -66,15 +63,17 @@ pub(super) async fn handle(
             if decode_arguments::<AnalysisArticleListCommand>(request).is_err() {
                 Err(ErrorCode::InvalidRequest)
             } else {
-                list_analysis_articles(
-                    session.account_scope.as_str(),
-                    Uuid::from(session.workspace_id),
-                    Some(scope.project_environment_id),
-                )
-                .await
-                .map(|articles| serde_json::to_value(AnalysisArticleListResult { articles }))
-                .map_err(map_application_error)
-                .and_then(|value| value.map_err(|_| ErrorCode::Internal))
+                services
+                    .analysis_article
+                    .list_remote(
+                        session.account_scope.as_str(),
+                        Uuid::from(session.workspace_id),
+                        Some(scope.project_environment_id),
+                    )
+                    .await
+                    .map(|articles| serde_json::to_value(AnalysisArticleListResult { articles }))
+                    .map_err(map_application_error)
+                    .and_then(|value| value.map_err(|_| ErrorCode::Internal))
             }
         }
         CommandName::AnalysisArticlePropose => {
@@ -146,13 +145,16 @@ async fn propose(
     arguments: AnalysisArticleProposeArguments,
 ) -> Result<serde_json::Value, ErrorCode> {
     let article = article_create(session, source, arguments.definition, Uuid::new_v4())?;
-    let created = create_analysis_article(
-        session.account_scope.as_str(),
-        Uuid::from(session.workspace_id),
-        &article,
-    )
-    .await
-    .map_err(map_application_error)?;
+    let created = dispatcher
+        .services()?
+        .analysis_article
+        .create_remote(
+            session.account_scope.as_str(),
+            Uuid::from(session.workspace_id),
+            &article,
+        )
+        .await
+        .map_err(map_application_error)?;
     emit_changed(dispatcher, created.id, created.revision, "proposed");
     serde_json::to_value(AnalysisArticleRecordResult { article: created })
         .map_err(|_| ErrorCode::Internal)
@@ -168,13 +170,16 @@ async fn update_draft(
         return Err(ErrorCode::InvalidRequest);
     }
     let workspace_id = Uuid::from(session.workspace_id);
-    let existing = get_analysis_article(
-        session.account_scope.as_str(),
-        workspace_id,
-        arguments.article_id,
-    )
-    .await
-    .map_err(map_application_error)?;
+    let existing = dispatcher
+        .services()?
+        .analysis_article
+        .get_remote(
+            session.account_scope.as_str(),
+            workspace_id,
+            arguments.article_id,
+        )
+        .await
+        .map_err(map_application_error)?;
     let scope = session
         .knowledge_scope
         .as_ref()
@@ -186,15 +191,18 @@ async fn update_draft(
         return Err(ErrorCode::OperationConflict);
     }
     let article = article_create(session, source, arguments.definition, arguments.article_id)?;
-    let updated = mutate_analysis_article(
-        session.account_scope.as_str(),
-        workspace_id,
-        arguments.article_id,
-        arguments.expected_revision,
-        AnalysisArticleMutation::Update(article),
-    )
-    .await
-    .map_err(map_application_error)?;
+    let updated = dispatcher
+        .services()?
+        .analysis_article
+        .mutate_remote(
+            session.account_scope.as_str(),
+            workspace_id,
+            arguments.article_id,
+            arguments.expected_revision,
+            AnalysisArticleMutation::Update(Box::new(article)),
+        )
+        .await
+        .map_err(map_application_error)?;
     emit_changed(dispatcher, updated.id, updated.revision, "updated");
     serde_json::to_value(AnalysisArticleRecordResult { article: updated })
         .map_err(|_| ErrorCode::Internal)

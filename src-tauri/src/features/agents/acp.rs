@@ -32,7 +32,7 @@ use zeroize::Zeroizing;
 
 use crate::broker::{BrokerCapability, BrokerRuntime};
 use crate::error::{AppError, AppResult};
-use crate::features::knowledge::domain::KnowledgeSessionScope;
+use crate::features::knowledge::{domain::KnowledgeSessionScope, KnowledgeFeature};
 use crate::kernel::identity::{AcpSessionId, ConnectionId, TerminalSessionId};
 use crate::kernel::sync::lock_unpoisoned;
 use crate::model::{ConnectionProfile, Engine};
@@ -70,6 +70,7 @@ const MAX_PERSIST_BATCH_BYTES: usize = 256 * 1024;
 #[derive(Clone)]
 pub(crate) struct AcpRuntime {
     store: Store,
+    knowledge: KnowledgeFeature,
     broker: BrokerRuntime,
     sessions: Arc<DashMap<AcpSessionId, Arc<AcpSession>>>,
     persistence: Arc<PersistenceTracker>,
@@ -121,7 +122,7 @@ struct PersistenceRequest {
 }
 
 enum PersistenceCommand {
-    Event(PersistenceRequest),
+    Event(Box<PersistenceRequest>),
     Shutdown,
 }
 
@@ -146,9 +147,15 @@ enum SessionCommand {
 }
 
 impl AcpRuntime {
-    pub(crate) fn new(store: Store, broker: BrokerRuntime, plugins: AcpPluginManager) -> Self {
+    pub(crate) fn new(
+        store: Store,
+        knowledge: KnowledgeFeature,
+        broker: BrokerRuntime,
+        plugins: AcpPluginManager,
+    ) -> Self {
         Self {
             store,
+            knowledge,
             broker,
             sessions: Arc::new(DashMap::new()),
             persistence: Arc::new(PersistenceTracker::default()),
@@ -364,7 +371,7 @@ impl AcpRuntime {
         let mut knowledge_scope = match resume_seed.as_ref() {
             Some(seed) => summary_knowledge_scope(&seed.summary)?,
             None => {
-                self.store
+                self.knowledge
                     .knowledge_session_scope(&connection, requested_environment_id)
                     .await?
             }
@@ -382,7 +389,7 @@ impl AcpRuntime {
                 .selected_account_id
                 .as_deref()
                 .unwrap_or_else(|| connection.scope.account_scope.storage_key());
-            self.store
+            self.knowledge
                 .exact_knowledge_session_graphs(
                     scope,
                     connection.scope.workspace_id,
@@ -552,13 +559,15 @@ impl AcpRuntime {
         tauri::async_runtime::spawn(async move {
             run_session(
                 worker_session,
-                broker,
-                connection_summary,
                 launch,
-                resume,
                 command_rx,
-                ready,
-                worker_startup_cancel,
+                SessionRuntimeContext {
+                    broker,
+                    connection_context: connection_summary,
+                    resume,
+                    ready,
+                    startup_cancel: worker_startup_cancel,
+                },
             )
             .await;
         });
@@ -954,7 +963,7 @@ impl AcpSession {
         };
         if let Err(error) = self
             .persistence_queue
-            .send(PersistenceCommand::Event(request))
+            .send(PersistenceCommand::Event(Box::new(request)))
         {
             self.persistence.finish();
             let PersistenceCommand::Event(request) = error.0 else {
@@ -1249,16 +1258,27 @@ struct ResumeContext {
     previous_last_sequence: u64,
 }
 
-async fn run_session(
-    session: Arc<AcpSession>,
+struct SessionRuntimeContext {
     broker: BrokerRuntime,
     connection_context: String,
-    mut launch: LaunchContext,
     resume: Option<ResumeContext>,
-    mut commands: tokio::sync::mpsc::UnboundedReceiver<SessionCommand>,
     ready: Arc<Mutex<Option<oneshot::Sender<AppResult<()>>>>>,
     startup_cancel: CancellationToken,
+}
+
+async fn run_session(
+    session: Arc<AcpSession>,
+    mut launch: LaunchContext,
+    mut commands: tokio::sync::mpsc::UnboundedReceiver<SessionCommand>,
+    context: SessionRuntimeContext,
 ) {
+    let SessionRuntimeContext {
+        broker,
+        connection_context,
+        resume,
+        ready,
+        startup_cancel,
+    } = context;
     let plugin_id = launch.plugin_id;
     let plugin_version = launch.adapter_bundle_version.clone();
     let plugin_candidate = launch.plugin_candidate;

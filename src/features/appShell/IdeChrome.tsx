@@ -28,53 +28,48 @@ import {
 } from "../../design-system/components/Status";
 import { useI18n } from "../../lib/i18n";
 import { tableLabel } from "../../lib/tableRef";
-import type { AppArea } from "./navigation";
 
 const IS_MACOS =
   typeof navigator !== "undefined" &&
   /Macintosh|Mac OS X/.test(navigator.userAgent);
 
 export function IdeTopBar({
-  area,
   selected,
   supportsSql,
   databaseExplorerOpen,
   localHistoryOpen,
   servicesOpen,
-  showTerminalDock,
+  agentDockOpen,
   searchEverywhereOpen,
   settingsOpen,
   workspace,
   account,
   onNewQuery,
-  onArea,
   onToggleDatabaseExplorer,
   onToggleLocalHistory,
   onToggleServices,
-  onOpenTerminal,
-  terminalButtonRef,
+  onOpenAgent,
+  agentButtonRef,
   searchEverywhereButtonRef,
   onSearchEverywhere,
   onSettings,
 }: {
-  area: AppArea;
   selected: ConnectionProfile | null;
   supportsSql: boolean;
   databaseExplorerOpen: boolean;
   localHistoryOpen: boolean;
   servicesOpen: boolean;
-  showTerminalDock: boolean;
+  agentDockOpen: boolean;
   searchEverywhereOpen: boolean;
   settingsOpen: boolean;
   workspace: ReactNode;
   account: ReactNode;
   onNewQuery: () => void;
-  onArea: (area: AppArea) => void;
   onToggleDatabaseExplorer: () => void;
   onToggleLocalHistory: () => void;
   onToggleServices: () => void;
-  onOpenTerminal: () => void;
-  terminalButtonRef: RefObject<HTMLButtonElement | null>;
+  onOpenAgent: () => void;
+  agentButtonRef: RefObject<HTMLButtonElement | null>;
   searchEverywhereButtonRef: RefObject<HTMLButtonElement | null>;
   onSearchEverywhere: (returnFocus?: HTMLElement | null) => void;
   onSettings: () => void;
@@ -92,10 +87,7 @@ export function IdeTopBar({
         <IdeToolbarLauncher
           active={databaseExplorerOpen}
           onClick={() => {
-            if (area === "workspace" || area === "knowledge") {
-              onToggleDatabaseExplorer();
-            }
-            else onArea("workspace");
+            onToggleDatabaseExplorer();
           }}
           title={t("ide.action.databaseExplorer")}
           aria-label={t("ide.action.databaseExplorer")}
@@ -111,12 +103,12 @@ export function IdeTopBar({
           <Icon name="list" />
         </IdeToolbarLauncher>
         <IdeToolbarLauncher
-          buttonRef={terminalButtonRef}
-          active={showTerminalDock}
+          buttonRef={agentButtonRef}
+          active={agentDockOpen}
           disabled={!selected}
-          onClick={onOpenTerminal}
-          title={t("terminal.agentTitle")}
-          aria-label={t("terminal.agentTitle")}
+          onClick={onOpenAgent}
+          title={t("agent.acpTitle")}
+          aria-label={t("agent.acpTitle")}
         >
           <Icon name="user" />
         </IdeToolbarLauncher>

@@ -671,6 +671,10 @@ impl DesktopSqlResultStore {
         true
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the bounded export boundary keeps authority, destination, format, and progress ownership explicit"
+    )]
     pub(super) fn export_to_path(
         &self,
         export_id: Uuid,
@@ -794,7 +798,7 @@ fn export_manifest(
                         .columns
                         .iter()
                         .cloned()
-                        .zip(row.into_iter())
+                        .zip(row)
                         .collect::<serde_json::Map<_, _>>();
                     serde_json::to_writer(&mut writer, &object)?;
                     rows_written = rows_written.saturating_add(1);

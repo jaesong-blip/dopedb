@@ -4,6 +4,12 @@ This is the authenticated web and API control plane for DopeDB workspaces. It is
 separate Next.js application intended for its own Vercel project at `app.dopedb.dev`;
 the marketing `site/` deployment remains independent.
 
+It is a separate trust boundary from the Tauri desktop. PostgreSQL stores identity,
+membership, audit metadata, secret-free shared connection templates, and encrypted
+provider integration material. It never stores member-local database passwords,
+terminal capabilities, or ordinary query result rows. Runtime requests use the pooled
+URL; schema migrations use only the unpooled URL.
+
 ## Local setup
 
 Copy `.env.example` to the ignored `workspace-cloud/.env.local` and provide the Neon
@@ -25,9 +31,13 @@ managed-access flow: `read_organizations`, `read_databases`, `read_branches`,
 `manage_passwords`, and `manage_production_branch_passwords`. The callback rejects a
 grant missing any of them instead of leaving a partially working integration.
 
-To deliver invitation email, also set `RESEND_API_KEY` and a
-verified `WORKSPACE_INVITATION_FROM` sender; without them, the dashboard keeps the
-email-bound copy-link fallback. Configure this Google redirect URI:
+To deliver invitation email, also set `RESEND_API_KEY` and a verified
+`WORKSPACE_INVITATION_FROM` sender; without them, the dashboard keeps the email-bound
+copy-link fallback. Signal email can use a separate verified
+`WORKSPACE_SIGNAL_FROM`; when absent it deliberately reuses the invitation sender.
+Failed Signal delivery is claimed durably and retried with bounded backoff. Ambiguous
+email attempts retry within 23 hours, inside Resend's 24-hour idempotency-key lifetime.
+Configure this Google redirect URI:
 
 ```text
 http://localhost:3000/api/auth/callback/google
@@ -38,9 +48,23 @@ root. Generate/check migrations with `pnpm db:generate` and `pnpm db:check` here
 them through the unpooled URL with `pnpm workspace:migrate` from the repository root.
 `pnpm build` intentionally succeeds without production secrets: database and auth
 clients resolve configuration on the first request, where missing values fail closed.
-Production Vercel builds run that migration before the Next.js build; a migration
-failure stops the deployment instead of serving code against an older control-plane
-schema.
+Production Vercel builds run that migration before the Next.js build. The dedicated
+production command requires `DATABASE_URL_UNPOOLED` and does not fall back to the pooled
+runtime URL; a missing URL or migration failure stops the deployment instead of serving
+code against an older control-plane schema.
+
+Migration `0051_orange_sway` adds the Signal email claim, due-at, and retry indexes
+without rewriting existing notification payloads. Existing pending rows become due at
+migration time; delivered/failed rows remain terminal. It also indexes stale rate-limit
+rows. The one-minute maintenance job deletes at most 1,000 expired rows per tick, so
+retention never adds an unbounded delete to the public request path. The schema
+checks require claim id/timestamp pairs and prevent a delivered row from being retried.
+
+The older `/api/v1/providers/gcp-cloud-sql/callback` route remains only because an
+already registered Google OAuth client may still reference it. The canonical callback
+is `/api/auth/callback/google`. Remove the compatibility route only after the Google
+Cloud console no longer lists the older URI and production authorization has been
+verified against the canonical callback.
 
 ## Shared Project Knowledge
 
@@ -235,12 +259,27 @@ fragments whose declared column sensitivity and masking permit workspace sharing
 readers see the latest successful compatible live result; a failed refresh leaves the
 last successful result visible with explicit freshness and runner health.
 
+Desktop uploads each bounded result fragment through the staged-result endpoint before
+it completes a run. The service performs a read-only exact-run preflight before KMS
+work, but the final PostgreSQL transaction is authoritative: it rechecks the same
+session, member, runner, cancellation, Article revision, result-sharing state, and
+connection grants while it atomically commits receipts and the complete fragment
+manifest. Retrying the same fragment or exact terminal completion is idempotent. Result
+reads recompute the committed evidence hash from every still-unexpired fragment and
+fail closed if retention cleanup has removed only part of a manifest. During the
+Desktop/cloud rolling-upgrade window, the completion route also accepts the previous
+inline `fragments` shape under a four-MiB bounded body and seals it through the same KMS
+and SQL authority boundary; larger results require the staged protocol.
+
 The collection endpoint is `/api/v1/workspaces/:workspaceId/analyses`; item, immutable
 revision, run/result, runner/lease, Signal, notification, and publication endpoints are
 nested below it. Every mutation uses optimistic authority checks. A person reviews and
 makes revisions live, enables production scheduling, approves mappings, and publishes
 fixed external snapshots. Public `/analyses/:slug` pages read only immutable snapshot
 payloads and cannot reach a workspace session, SQL, credentials, or refresh commands.
+The public HTML and snapshot API are private `no-store` responses because a slug is
+revocable access: every request rechecks publication state and a revoked slug becomes
+unavailable without a browser or shared-cache grace period.
 
 Invalid legacy BI records are preserved in the non-executable migration-failure archive
 for explicit recovery. The one-way migration then drops the legacy projections so a

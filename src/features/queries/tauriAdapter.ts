@@ -3,7 +3,12 @@
 
 import { Channel, invoke } from "../../ipc/core";
 
-import type { ExecOutcome, QueryResult } from "../../ipc/types";
+import type {
+  ExecOutcome,
+  QueryResult,
+  ScriptOperationProposal,
+  ScriptOutcome,
+} from "../../ipc/types";
 import type {
   SqlInspection,
   ManualTransactionStatus,
@@ -114,6 +119,30 @@ export function proposeSql(
 
 export function runSql(operationId: string): Promise<ExecOutcome> {
   return invoke("run_sql", { operationId });
+}
+
+export function cancelQuery(queryId: string): Promise<boolean> {
+  return invoke("cancel_query", { queryId });
+}
+
+export function runScript(operationId: string): Promise<ScriptOutcome> {
+  return invoke("run_script", { operationId });
+}
+
+export function proposeScript(
+  id: string,
+  sql: string,
+  origin?: string,
+  namespace?: string,
+  database?: string,
+): Promise<ScriptOperationProposal> {
+  return invoke("propose_script", {
+    id,
+    sql,
+    database: database ?? null,
+    namespace: namespace ?? null,
+    origin: origin ?? null,
+  });
 }
 
 /** Stream an already-planned desktop read in bounded channel batches. */

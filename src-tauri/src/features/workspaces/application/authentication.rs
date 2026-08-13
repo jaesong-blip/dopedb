@@ -15,13 +15,14 @@ use super::super::ports::{
 };
 use super::WorkspaceUseCases;
 
-impl<R, A, C, V, E> WorkspaceUseCases<R, A, C, V, E>
+impl<R, A, C, V, E, S> WorkspaceUseCases<R, A, C, V, E, S>
 where
     R: WorkspaceRepositoryPort,
     A: WorkspaceRuntimePort,
     C: WorkspaceControlPlanePort,
     V: ConnectionCredentialVault + ?Sized,
     E: WorkspaceConfigurationPort,
+    S: super::super::ports::WorkspaceSshProfilePort,
 {
     pub(crate) fn feature_state(&self) -> WorkspaceFeatureState {
         WorkspaceFeatureState {
@@ -44,9 +45,7 @@ where
     pub(crate) async fn refresh_auth_state(&self) -> AppResult<WorkspaceAuthState> {
         if self.repository.accounts().await?.is_empty() {
             if let Some(user) = self.control_plane.migrate_legacy_session().await? {
-                if let Err(error) = self.sync_account_memberships(&user).await {
-                    tracing::warn!(%error, "legacy workspace membership sync deferred");
-                }
+                self.sync_account_memberships(&user).await?;
                 self.runtime.activate_account(&user.id).await?;
             }
         }
@@ -55,19 +54,13 @@ where
         if let Some(user_id) = self.repository.active_account_id().await? {
             match self.control_plane.auth_user(&user_id).await {
                 Ok(Some(user)) => {
-                    if let Err(error) = self.sync_account_memberships(&user).await {
-                        tracing::warn!(%error, "workspace membership sync deferred after session validation");
-                    }
+                    self.sync_account_memberships(&user).await?;
                 }
                 Ok(None) => {
                     self.runtime.remove_account(&user_id).await?;
                     self.ensure_active_account().await?;
                 }
-                Err(error) => {
-                    // Keep the last verified identity visible during an outage. Every
-                    // shared-resource action still performs its own online authorization.
-                    tracing::warn!(%error, "workspace session validation deferred");
-                }
+                Err(error) => return Err(error),
             }
         }
         self.auth_state_from_repository().await
@@ -144,6 +137,7 @@ where
     pub(super) async fn auth_state_from_repository(&self) -> AppResult<WorkspaceAuthState> {
         let accounts = self.repository.accounts().await?;
         let active_account_id = self.repository.active_account_id().await?;
+        let authority_generation = self.repository.authority_fingerprint().await?.generation;
         let user = active_account_id.and_then(|active_id| {
             accounts
                 .iter()
@@ -154,6 +148,7 @@ where
             authenticated: user.is_some(),
             user,
             accounts,
+            authority_generation,
         })
     }
 

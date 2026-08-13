@@ -6,18 +6,18 @@
 use crate::connection::ConnectionManager;
 use crate::features::activity::{self, ActivityFeature};
 use crate::features::agents::{self, AgentsFeature};
-use crate::features::analysis_articles::{self, AnalysisArticlesFeature};
+use crate::features::analysis_articles::{self, DesktopAnalysisArticlesFeature};
 use crate::features::catalog::{self, CatalogFeature};
 use crate::features::connections::{self as connection_feature, ConnectionsFeature};
 use crate::features::documents::{self, DocumentFeature};
 use crate::features::erd::{self, ErdFeature};
 use crate::features::jobs::{self, JobsFeature};
+use crate::features::knowledge::{self, KnowledgeFeature};
 use crate::features::monitoring::{self, MonitoringFeature};
 use crate::features::operation_control::{self, OperationControlFeature};
 use crate::features::providers::ProvidersFeature;
 use crate::features::queries::QueriesFeature;
 use crate::features::safety_settings::{self, SafetySettingsFeature};
-use crate::features::schema_editor::{self, SchemaEditorFeature};
 use crate::features::scripts::{self, ScriptFeature};
 use crate::features::sql_documents::{self, SqlDocumentsFeature};
 use crate::features::workspaces::{self, WorkspacesFeature};
@@ -30,19 +30,18 @@ use crate::store::Store;
 pub(crate) struct ApplicationServices {
     pub(crate) activity: ActivityFeature,
     pub(crate) agents: AgentsFeature,
-    pub(crate) analysis_article: AnalysisArticlesFeature,
+    pub(crate) analysis_article: DesktopAnalysisArticlesFeature,
     pub(crate) connections: ConnectionsFeature,
     pub(crate) catalog: CatalogFeature,
     pub(crate) document: DocumentFeature,
     pub(crate) erd: ErdFeature,
     pub(crate) job: JobsFeature,
-    pub(crate) knowledge: Store,
+    pub(crate) knowledge: KnowledgeFeature,
     pub(crate) monitoring: MonitoringFeature,
     pub(crate) operation: OperationControlFeature,
     pub(crate) providers: ProvidersFeature,
     pub(crate) queries: QueriesFeature,
     pub(crate) safety: SafetySettingsFeature,
-    pub(crate) schema: SchemaEditorFeature,
     pub(crate) script: ScriptFeature,
     pub(crate) sql_documents: SqlDocumentsFeature,
     pub(crate) workspace: WorkspacesFeature,
@@ -72,7 +71,6 @@ impl ApplicationServices {
             operation.clone(),
             queries.manual_transactions(),
         );
-        let schema = schema_editor::compose(catalog.clone(), script.clone());
         let connection_feature = connection_feature::compose(
             store.clone(),
             connections.clone(),
@@ -95,13 +93,15 @@ impl ApplicationServices {
             document: documents::compose(store.clone(), connections.clone(), operation.clone()),
             erd,
             job,
-            knowledge: store.clone(),
+            knowledge: knowledge::compose(
+                knowledge::adapters::SqliteKnowledgeRepository::new(store.clone()),
+                knowledge::adapters::HostedKnowledgeAuthority,
+            ),
             monitoring: monitoring::compose(store.clone(), connections.clone(), operation.clone()),
             operation: operation_service,
             providers,
             queries,
             safety: safety_settings::compose(store.clone(), connections.clone()),
-            schema,
             script,
             sql_documents,
             workspace: workspaces::compose(store, connections, connection_credentials),

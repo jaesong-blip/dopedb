@@ -25,7 +25,7 @@ pub struct AppState {
     pub(crate) broker: BrokerRuntime,
     /// Offline Skill bundle inventory and atomic per-user installer.
     pub(crate) skills: SkillManager,
-    /// PTY sessions, bounded output replay, and process-tree lifecycle.
+    /// Connection-pinned Shell PTYs and their process-tree lifecycle.
     pub(crate) terminals: TerminalsFeature,
     /// Official ACP client sessions. Authentication remains in local agent tooling.
     pub(crate) agents_acp: AcpRuntime,
@@ -63,12 +63,17 @@ impl AppState {
         let broker = BrokerRuntime::new(operation.runtime_id().into());
         let terminals = terminals::compose(store.clone(), broker.clone());
         let agent_plugins = AcpPluginManager::new()?;
-        let agents_acp = AcpRuntime::new(store.clone(), broker.clone(), agent_plugins.clone());
         let services = ApplicationServices::with_providers(
             store.clone(),
             connections.clone(),
             operation,
             providers,
+        );
+        let agents_acp = AcpRuntime::new(
+            store.clone(),
+            services.knowledge.clone(),
+            broker.clone(),
+            agent_plugins.clone(),
         );
         let skills = SkillManager::new()?;
         let started = startup_trace.stage_started();
@@ -158,10 +163,6 @@ impl AppState {
 
     pub(crate) async fn wait_for_post_paint_recovery(&self) -> AppResult<()> {
         self.post_paint_recovery.wait().await
-    }
-
-    pub(crate) fn knowledge_store(&self) -> &Store {
-        &self.store
     }
 
     #[cfg(feature = "packaged-benchmark")]

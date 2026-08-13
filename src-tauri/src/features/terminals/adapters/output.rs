@@ -5,7 +5,37 @@
 //! are discarded before xterm sees them. The parser is stateful so a control sequence
 //! split across read boundaries cannot bypass the filter.
 
+use tauri::ipc::Channel;
+
+use crate::kernel::identity::TerminalSessionId;
+
+use super::super::domain::TerminalOutputChunk;
+
 const MAX_CONTROL_SEQUENCE_BYTES: usize = 256;
+
+pub(super) struct TerminalOutputStream {
+    subscriber: Option<Channel<TerminalOutputChunk>>,
+}
+
+impl TerminalOutputStream {
+    pub(super) fn new(subscriber: Channel<TerminalOutputChunk>) -> Self {
+        Self {
+            subscriber: Some(subscriber),
+        }
+    }
+
+    pub(super) fn publish(&mut self, session_id: TerminalSessionId, bytes: Vec<u8>) {
+        let Some(subscriber) = self.subscriber.clone() else {
+            return;
+        };
+        if subscriber
+            .send(TerminalOutputChunk { session_id, bytes })
+            .is_err()
+        {
+            self.subscriber = None;
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScanState {

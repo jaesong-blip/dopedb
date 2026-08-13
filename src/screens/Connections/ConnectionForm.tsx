@@ -109,7 +109,7 @@ import {
   testConnectionProfile,
   upsertConnection,
 } from "../../features/connections/tauriAdapter";
-import { pickFile } from "../../ipc/commands";
+import { pickConnectionFile } from "../../features/connections/tauriAdapter";
 import type { Engine, Provider } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
 import { isDocumentEngine } from "../../lib/capabilities";
@@ -586,7 +586,7 @@ export function ConnectionForm({
       ),
   );
   const filteredCloudProviders = cloudProviders.filter((provider) =>
-    matchesAddSearch(
+    provider.provider === "gcpCloudSql" && matchesAddSearch(
       provider.label,
       provider.provider,
       t("connections.clouds"),
@@ -855,7 +855,7 @@ export function ConnectionForm({
   }
 
   async function pickExtraParameterFile(key: string) {
-    const file = await pickFile();
+    const file = await pickConnectionFile();
     if (file) setExtraParameter(key, file);
   }
 
@@ -1956,7 +1956,7 @@ export function ConnectionForm({
                         <Button
                           size="compact"
                           onClick={() =>
-                            void pickFile().then(
+                            void pickConnectionFile().then(
                               (file) =>
                                 file && set("database", file),
                             )
@@ -2961,18 +2961,20 @@ export function ConnectionForm({
                       </p>
                     </div>
                     <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
-                      <Button
-                        variant="primary"
-                        onClick={(event) =>
-                          openProviderCredentials(
-                            catalogCloudProvider,
-                            event.currentTarget,
-                          )
-                        }
-                      >
-                        <Icon name="key" />
-                        {t("connections.cloudCredentialDescription")}
-                      </Button>
+                      {catalogCloudProvider === "gcpCloudSql" ? (
+                        <Button
+                          variant="primary"
+                          onClick={(event) =>
+                            openProviderCredentials(
+                              catalogCloudProvider,
+                              event.currentTarget,
+                            )
+                          }
+                        >
+                          <Icon name="key" />
+                          {t("connections.cloudCredentialDescription")}
+                        </Button>
+                      ) : null}
                       {!isNew ? (
                         <ManagedAccessLauncher
                           connectionId={form.id}

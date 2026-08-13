@@ -7,10 +7,6 @@ import { Icon } from "../../components/Icon";
 import Skeleton from "../../components/Skeleton";
 import { Button } from "../../design-system/components/Button";
 import {
-  Field,
-  TextInput,
-} from "../../design-system/components/FormControls";
-import {
   ModalBackdrop,
   ModalFooter,
   ModalSurface,
@@ -80,7 +76,7 @@ function ProviderStatusBadge({
 }
 
 function supportsMemberLocal(integration: ProviderIntegrationSummary) {
-  return integration.provider !== "planetScale" && integration.credentialMethod !== "unsupported";
+  return integration.provider === "gcpCloudSql" && integration.credentialMethod === "adcWif";
 }
 
 function initialFocus(container: HTMLElement | null) {
@@ -110,15 +106,23 @@ export function ProviderCredentialDialog({
   const [revoking, setRevoking] = useState<string | null>(null);
   const [actionFailed, setActionFailed] = useState(false);
   const dialogRef = useRef<HTMLElement>(null);
+  const memberLocalIntegrations = useMemo(
+    () => integrations.data?.filter(supportsMemberLocal) ?? [],
+    [integrations.data],
+  );
+  const memberLocalBindings = useMemo(
+    () => bindings.data?.filter((binding) => binding.provider === "gcpCloudSql") ?? [],
+    [bindings.data],
+  );
 
   const selectedIntegration = useMemo(
-    () => integrations.data?.find((item) => item.id === state.selectedIntegrationId) ?? null,
-    [integrations.data, state.selectedIntegrationId],
+    () => memberLocalIntegrations.find((item) => item.id === state.selectedIntegrationId) ?? null,
+    [memberLocalIntegrations, state.selectedIntegrationId],
   );
 
   useEffect(() => {
     if (!initialProvider || state.selectedIntegrationId) return;
-    const matchingIntegration = integrations.data?.find(
+    const matchingIntegration = memberLocalIntegrations.find(
       (integration) => integration.provider === initialProvider,
     );
     if (matchingIntegration) {
@@ -127,7 +131,7 @@ export function ProviderCredentialDialog({
         integrationId: matchingIntegration.id,
       });
     }
-  }, [initialProvider, integrations.data, state.selectedIntegrationId]);
+  }, [initialProvider, memberLocalIntegrations, state.selectedIntegrationId]);
 
   const close = () => {
     dispatch({ type: "discard" });
@@ -198,15 +202,7 @@ export function ProviderCredentialDialog({
       dispatch({ type: "status", status: "unsupported" });
       return;
     }
-    if (selectedIntegration.provider === "neon" && !state.apiKey) {
-      dispatch({ type: "status", status: "credentialsRequired" });
-      return;
-    }
-    const credential = selectedIntegration.provider === "neon"
-      ? { type: "neonApiKey" as const, apiKey: state.apiKey }
-      : { type: "gcpAdc" as const };
-    // Keep the one-shot value only in this local call frame; the reducer-owned
-    // form state is cleared before the async desktop command begins.
+    const credential = { type: "gcpAdc" as const };
     dispatch({ type: "submit" });
     setPending("begin");
     try {
@@ -214,8 +210,6 @@ export function ProviderCredentialDialog({
         integrationId: selectedIntegration.id,
         credential,
       });
-      // Receipt and key are reducer-owned ephemeral values. The key clears before
-      // a verification request or query-cache invalidation can occur.
       dispatch({ type: "receipt", receipt });
       await verify(receipt);
     } catch {
@@ -308,12 +302,12 @@ export function ProviderCredentialDialog({
               {t("providerCredentials.actionError")}
             </p>
           ) : null}
-          {!loading && !loadFailed && integrations.data?.length === 0 ? (
+          {!loading && !loadFailed && memberLocalIntegrations.length === 0 ? (
             <p className="tw:mt-4 tw:mb-0 tw:text-sm tw:text-muted-foreground">
               {t("providerCredentials.empty")}
             </p>
           ) : null}
-          {!loading && !loadFailed && integrations.data && integrations.data.length > 0 ? (
+          {!loading && !loadFailed && memberLocalIntegrations.length > 0 ? (
             <>
               <div
                 className="tw:mt-4 tw:border-t tw:border-border-subtle"
@@ -322,7 +316,7 @@ export function ProviderCredentialDialog({
                 <p className="tw:m-0 tw:px-0 tw:py-2 tw:text-2xs tw:font-bold tw:tracking-[0.05em] tw:text-muted-foreground tw:uppercase">
                   {t("providerCredentials.select")}
                 </p>
-                {integrations.data.map((integration) => {
+                {memberLocalIntegrations.map((integration) => {
                   const selected = integration.id === state.selectedIntegrationId;
                   return (
                     <button
@@ -364,32 +358,9 @@ export function ProviderCredentialDialog({
                       </small>
                     </span>
                   </div>
-                  {selectedIntegration.provider === "neon" ? (
-                    <Field
-                      label={t("providerCredentials.apiKey")}
-                      hint={
-                        <small className="tw:font-normal">
-                          {t("providerCredentials.apiKeyHint")}
-                        </small>
-                      }
-                    >
-                      <TextInput
-                        autoComplete="off"
-                        type="password"
-                        value={state.apiKey}
-                        onChange={(event) => dispatch({ type: "setApiKey", value: event.target.value })}
-                        disabled={pending !== null}
-                      />
-                    </Field>
-                  ) : null}
                   {selectedIntegration.provider === "gcpCloudSql" ? (
                     <p className="tw:m-0 tw:border-l-2 tw:border-border-strong tw:px-2 tw:py-1 tw:text-sm tw:text-muted-foreground">
                       {t("providerCredentials.gcpHint")}
-                    </p>
-                  ) : null}
-                  {selectedIntegration.provider === "planetScale" ? (
-                    <p className="tw:m-0 tw:border-l-2 tw:border-border-strong tw:px-2 tw:py-1 tw:text-sm tw:text-muted-foreground">
-                      {t("providerCredentials.planetscaleHint")}
                     </p>
                   ) : null}
                   {visibleStatus ? (
@@ -413,7 +384,7 @@ export function ProviderCredentialDialog({
                 <p className="tw:m-0 tw:px-0 tw:py-2 tw:text-2xs tw:font-bold tw:tracking-[0.05em] tw:text-muted-foreground tw:uppercase">
                   {t("providerCredentials.memberLocal")}
                 </p>
-                {bindings.data?.length ? bindings.data.map((binding) => (
+                {memberLocalBindings.length ? memberLocalBindings.map((binding) => (
                   <div
                     className="tw:flex tw:min-h-control-xl tw:w-full tw:items-center tw:justify-between tw:gap-3 tw:border-t tw:border-border-subtle tw:bg-transparent tw:p-2"
                     key={binding.id}

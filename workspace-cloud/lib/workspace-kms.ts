@@ -3,6 +3,7 @@
 // service-account keys and reusable Google credentials have no representation.
 import "server-only";
 
+import { boundedJsonResponse } from "./bounded-json-response";
 import { env } from "./env";
 import {
   crc32c,
@@ -19,6 +20,7 @@ const IAM_CREDENTIALS_ORIGIN = "https://iamcredentials.googleapis.com";
 const KMS_ORIGIN = "https://cloudkms.googleapis.com";
 const CLOUD_KMS_SCOPE = "https://www.googleapis.com/auth/cloudkms";
 const REQUEST_TIMEOUT_MS = 15_000;
+const MAX_KMS_RESPONSE_BYTES = 128 * 1_024;
 
 type JsonObject = Record<string, unknown>;
 
@@ -53,7 +55,8 @@ async function jsonRequest(
   }).catch(() => {
     throw new WorkspaceKmsError("unavailable", 503);
   });
-  const body = await response.json().catch(() => null);
+  const body = await boundedJsonResponse(response, MAX_KMS_RESPONSE_BYTES)
+    .catch(() => null);
   if (!response.ok) throw new WorkspaceKmsError(kind, normalizeStatus(response.status));
   return object(body, kind);
 }

@@ -31,20 +31,32 @@ pub(super) fn row_to_active_resource_scope(
 pub(super) fn row_to_connection(r: &sqlx::sqlite::SqliteRow) -> AppResult<ConnectionProfile> {
     let extra_raw: String = r.try_get("extra_params")?;
     let extra_params: HashMap<String, String> =
-        serde_json::from_str(&extra_raw).unwrap_or_default();
+        serde_json::from_str(&extra_raw).map_err(|error| {
+            AppError::Config(format!(
+                "connection extra_params contains invalid JSON: {error}"
+            ))
+        })?;
     let provider_target = r
-        .try_get::<Option<String>, _>("provider_target")
-        .unwrap_or(None)
-        .map(|value| serde_json::from_str(&value))
+        .try_get::<Option<String>, _>("provider_target")?
+        .map(|value| {
+            serde_json::from_str(&value).map_err(|error| {
+                AppError::Config(format!(
+                    "connection provider_target contains invalid JSON: {error}"
+                ))
+            })
+        })
         .transpose()?;
+    let raw_port: i64 = r.try_get("port")?;
+    let port = u16::try_from(raw_port)
+        .map_err(|_| AppError::Config(format!("connection port {raw_port} is out of range")))?;
     Ok(ConnectionProfile {
         id: parse_uuid(r.try_get("id")?)?,
         name: r.try_get("name")?,
         engine: parse_engine(r.try_get("engine")?)?,
-        provider: parse_provider(r.try_get("provider").unwrap_or_else(|_| "auto".to_string()))?,
-        driver_id: r.try_get("driver_id").unwrap_or(None),
+        provider: parse_provider(r.try_get("provider")?)?,
+        driver_id: r.try_get("driver_id")?,
         host: r.try_get("host")?,
-        port: r.try_get::<i64, _>("port")? as u16,
+        port,
         database: r.try_get("db_name")?,
         username: r.try_get("username")?,
         sslmode: r.try_get("sslmode")?,
@@ -52,16 +64,10 @@ pub(super) fn row_to_connection(r: &sqlx::sqlite::SqliteRow) -> AppResult<Connec
         readonly_default: r.try_get("readonly_default")?,
         allow_writes: r.try_get("allow_writes")?,
         secret_ref: r.try_get("secret_ref")?,
-        env: r.try_get("env").unwrap_or(None),
-        schema_group: r.try_get("schema_group").unwrap_or(None),
-        workspace_access: parse_workspace_access(
-            r.try_get("workspace_access")
-                .unwrap_or_else(|_| "local".to_string()),
-        )?,
-        credential_mode: parse_credential_mode(
-            r.try_get("credential_mode")
-                .unwrap_or_else(|_| "local".to_string()),
-        )?,
+        env: r.try_get("env")?,
+        schema_group: r.try_get("schema_group")?,
+        workspace_access: parse_workspace_access(r.try_get("workspace_access")?)?,
+        credential_mode: parse_credential_mode(r.try_get("credential_mode")?)?,
         provider_target,
     })
 }
@@ -75,10 +81,14 @@ pub(super) fn row_to_connection_with_binding(
             profile.username = r
                 .try_get::<Option<String>, _>("binding_username")?
                 .unwrap_or_default();
-            profile.extra_params = r
-                .try_get::<Option<String>, _>("binding_extra_params")?
-                .and_then(|value| serde_json::from_str(&value).ok())
-                .unwrap_or_default();
+            profile.extra_params = match r.try_get::<Option<String>, _>("binding_extra_params")? {
+                Some(value) => serde_json::from_str(&value).map_err(|error| {
+                    AppError::Config(format!(
+                        "connection binding extra_params contains invalid JSON: {error}"
+                    ))
+                })?,
+                None => HashMap::new(),
+            };
             profile.secret_ref = r.try_get("binding_secret_ref")?;
         } else {
             profile.username.clear();

@@ -471,6 +471,7 @@ function parseColumn(value: unknown): AnalysisColumn {
     || (role === "free_text" && masking !== "redact")
     || (sensitivity === "restricted" && masking !== "redact")
     || (sensitivity === "confidential" && masking === "none")
+    || (masking === "bucket" && sensitivity !== "public")
     || (masking === "hash" && row.type !== "string")) {
     throw new Error("Unsafe Analysis Article column publication policy");
   }

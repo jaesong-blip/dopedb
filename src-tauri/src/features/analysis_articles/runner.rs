@@ -1,43 +1,41 @@
 //! Exact-revision, read-only Analysis Article execution.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
 use dopedb_protocol::{
-    AnalysisBlock, AnalysisColumn, AnalysisColumnMasking, AnalysisColumnType, AnalysisQueryReceipt,
-    AnalysisQueryState, AnalysisResultFragment,
+    AnalysisBlock, AnalysisColumn, AnalysisColumnMasking, AnalysisColumnType,
+    AnalysisResultFragment,
 };
+use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::audit::{self, RecordArgs};
-use crate::connection::{ConnectionAccess, ConnectionManager, DbPool};
 use crate::error::{AppError, AppResult};
 use crate::executor::cancel;
-use crate::model::{Engine, HistoryEntry, QueryKind, QueryResult};
-use crate::operations::canonical_hash;
-use crate::safety::{self, PoolRef};
-use crate::store::{PinnedConnection, Store};
 
 use super::config::{validate_block_config, BlockColumnConfig};
 use super::domain::{AnalysisDataSet, AnalysisDefinitionRunReceipt, AnalysisDefinitionRunRequest};
+use super::ports::{AnalysisReadExecutionPort, AnalysisReadExecutionRequest};
 use super::transforms::execute_transform;
-use super::validation::validate_definition;
+use super::validation::{max_article_result_bytes, validate_definition};
 
 const FRAGMENT_MAX_BYTES: usize = 1024 * 1024;
 const FRAGMENT_MAX_ROWS: usize = 5_000;
 const FRAGMENT_MAX_COUNT: usize = 256;
 
 #[derive(Clone)]
-pub(crate) struct AnalysisArticleRunner {
-    store: Store,
-    connections: ConnectionManager,
+pub(crate) struct AnalysisArticleRunner<E> {
+    execution: E,
 }
 
-impl AnalysisArticleRunner {
-    pub(crate) fn new(store: Store, connections: ConnectionManager) -> Self {
-        Self { store, connections }
+impl<E> AnalysisArticleRunner<E>
+where
+    E: AnalysisReadExecutionPort,
+{
+    pub(crate) fn new(execution: E) -> Self {
+        Self { execution }
     }
 
     pub(crate) async fn run_definition(
@@ -55,7 +53,9 @@ impl AnalysisArticleRunner {
             &request.connections,
             &request.parameter_values,
         )?;
-        self.verify_join_mappings(&request.definition).await?;
+        self.execution
+            .verify_join_mappings(&join_mapping_ids(&request.definition)?)
+            .await?;
         let cancellation = cancel::register(request.run_id);
         let connections = request
             .connections
@@ -74,138 +74,20 @@ impl AnalysisArticleRunner {
                 .ok_or_else(|| {
                     AppError::Config("Analysis Article query lost its connection authority".into())
                 })?;
-            let sql = render_sql(&query.sql, &query.parameter_ids, &parameters)?;
-            let query_run_id = Uuid::new_v4();
-            let operation_scope = self.connections.begin_operation_scope().await;
-            let local_connection_id = if let Some(workspace_id) = request.workspace_id {
-                self.store
-                    .local_connection_id_for_remote(workspace_id, authority.connection_id)
-                    .await?
-                    .ok_or_else(|| AppError::Blocked {
-                        reason: format!(
-                            "Analysis Article connection '{}' needs a local credential binding on this device",
-                            authority.alias
-                        ),
-                    })?
-            } else {
-                authority.connection_id
-            };
-            let pin = operation_scope.pin_connection(local_connection_id).await?;
-            if pin.connection_revision != authority.connection_revision {
-                return Err(AppError::Blocked {
-                    reason: format!(
-                        "Analysis Article connection '{}' changed from revision {} to {}",
-                        authority.alias, authority.connection_revision, pin.connection_revision
-                    ),
-                });
-            }
-            if pin.profile.engine == Engine::Mongodb {
-                return Err(AppError::Blocked {
-                    reason: "Analysis Articles currently require a relational read source; document sources must use a typed document node".into(),
-                });
-            }
-            let classification = safety::classify(&sql, pin.profile.engine)?;
-            if classification.kind != QueryKind::Read || classification.statement_count != 1 {
-                return Err(AppError::Blocked {
-                    reason: "Analysis Article queries must be one read-only statement".into(),
-                });
-            }
-            let settings = self.store.get_safety(local_connection_id.into()).await?;
-            let maximum_rows = query.max_rows.min(settings.max_rows.max(1));
-            let lease = operation_scope
-                .connect(pin.clone(), ConnectionAccess::Read)
+            let outcome = self
+                .execution
+                .execute_read(AnalysisReadExecutionRequest {
+                    workspace_id: request.workspace_id,
+                    authority,
+                    query,
+                    parameter_definitions: &request.definition.parameters,
+                    parameters: &parameters,
+                    run_id: Uuid::new_v4(),
+                    cancellation_id: request.run_id,
+                })
                 .await?;
-            let live = lease.live().sql()?;
-            let result = safety::run_read_only_byte_capped_cancellable(
-                pool_ref(live.ro()),
-                &sql,
-                maximum_rows,
-                query.max_bytes,
-                Some(&cancellation),
-            )
-            .await;
-            let result = match result {
-                Ok(result) => result,
-                Err(error) => {
-                    record_query(
-                        &self.store,
-                        &pin,
-                        &sql,
-                        "error",
-                        None,
-                        None,
-                        Some(error.to_string()),
-                    )
-                    .await;
-                    return Err(error);
-                }
-            };
-            if let Err(error) =
-                validate_query_result_columns(&query.columns, &result, query.id.as_str())
-            {
-                record_query(
-                    &self.store,
-                    &pin,
-                    &sql,
-                    "error",
-                    Some(result.row_count as i64),
-                    Some(result.duration_ms as i64),
-                    Some(error.to_string()),
-                )
-                .await;
-                return Err(error);
-            }
-            let byte_count = serde_json::to_vec(&result)?.len();
-            if byte_count > query.max_bytes {
-                let error = AppError::Blocked {
-                    reason: format!("Analysis query '{}' exceeded its byte budget", query.title),
-                };
-                record_query(
-                    &self.store,
-                    &pin,
-                    &sql,
-                    "error",
-                    Some(result.row_count as i64),
-                    Some(result.duration_ms as i64),
-                    Some(error.to_string()),
-                )
-                .await;
-                return Err(error);
-            }
-            record_query(
-                &self.store,
-                &pin,
-                &sql,
-                "ok",
-                Some(result.row_count as i64),
-                Some(result.duration_ms as i64),
-                None,
-            )
-            .await;
-            query_receipts.push(AnalysisQueryReceipt {
-                query_node_id: query.id.clone(),
-                connection_id: authority.connection_id,
-                connection_revision: authority.connection_revision,
-                query_run_id,
-                query_hash: canonical_hash(&serde_json::json!({
-                    "sql": query.sql,
-                    "parameterValues": parameters,
-                }))?,
-                schema_fingerprint: schema_fingerprint(&query.columns)?,
-                state: AnalysisQueryState::Succeeded,
-                row_count: result.row_count as u64,
-                byte_count: byte_count as u64,
-                duration_ms: result.duration_ms,
-            });
-            data.insert(
-                query.id.clone(),
-                AnalysisDataSet {
-                    columns: query.columns.clone(),
-                    rows: result.rows,
-                    truncated: result.truncated,
-                },
-            );
-            drop(lease);
+            query_receipts.push(outcome.receipt);
+            data.insert(query.id.clone(), outcome.data);
         }
 
         for transform in &request.definition.transforms {
@@ -241,112 +123,33 @@ impl AnalysisArticleRunner {
             finished_at: Utc::now(),
         })
     }
-
-    async fn verify_join_mappings(
-        &self,
-        definition: &dopedb_protocol::AnalysisArticleDefinition,
-    ) -> AppResult<()> {
-        let mut ids = HashSet::new();
-        for transform in &definition.transforms {
-            if !matches!(
-                transform.operation,
-                dopedb_protocol::AnalysisTransformOperation::Union
-                    | dopedb_protocol::AnalysisTransformOperation::InnerJoin
-                    | dopedb_protocol::AnalysisTransformOperation::LeftJoin
-            ) {
-                continue;
-            }
-            let id = transform
-                .config
-                .get("mappingProposalId")
-                .and_then(Value::as_str)
-                .and_then(|value| Uuid::parse_str(value).ok())
-                .ok_or_else(|| {
-                    AppError::Config("Analysis Article join mapping is invalid".into())
-                })?;
-            ids.insert(id);
-        }
-        for id in ids {
-            let approved = sqlx::query(
-                "SELECT 1 FROM knowledge_mapping_proposals WHERE id = ?1 AND state = 'approved' LIMIT 1",
-            )
-            .bind(id.to_string())
-            .fetch_optional(self.store.pool())
-            .await?
-            .is_some();
-            if !approved {
-                return Err(AppError::Blocked {
-                    reason: format!(
-                        "Analysis Article cross-source mapping {id} is not approved locally"
-                    ),
-                });
-            }
-        }
-        Ok(())
-    }
 }
 
-fn render_sql(
-    sql: &str,
-    parameter_ids: &[String],
-    parameters: &BTreeMap<String, Value>,
-) -> AppResult<String> {
-    let mut rendered = sql.to_owned();
-    for id in parameter_ids {
-        let value = parameters.get(id).ok_or_else(|| {
-            AppError::Config(format!("Analysis Article parameter is missing: {id}"))
-        })?;
-        let literal = match value {
-            Value::Null => "NULL".into(),
-            Value::Bool(value) => if *value { "TRUE" } else { "FALSE" }.into(),
-            Value::Number(value) => value.to_string(),
-            Value::String(value) => format!("'{}'", value.replace('\'', "''")),
-            Value::Array(_) | Value::Object(_) => {
-                return Err(AppError::Config(format!(
-                    "Analysis Article parameter is not scalar: {id}"
-                )))
-            }
-        };
-        let token = format!("{{{{{id}}}}}");
-        if rendered.matches(&token).count() != 1 {
-            return Err(AppError::Config(format!(
-                "Analysis Article parameter token changed: {id}"
-            )));
+fn join_mapping_ids(
+    definition: &dopedb_protocol::AnalysisArticleDefinition,
+) -> AppResult<Vec<Uuid>> {
+    let mut ids = Vec::new();
+    let mut seen = HashSet::new();
+    for transform in &definition.transforms {
+        if !matches!(
+            transform.operation,
+            dopedb_protocol::AnalysisTransformOperation::Union
+                | dopedb_protocol::AnalysisTransformOperation::InnerJoin
+                | dopedb_protocol::AnalysisTransformOperation::LeftJoin
+        ) {
+            continue;
         }
-        rendered = rendered.replace(&token, &literal);
+        let id = transform
+            .config
+            .get("mappingProposalId")
+            .and_then(Value::as_str)
+            .and_then(|value| Uuid::parse_str(value).ok())
+            .ok_or_else(|| AppError::Config("Analysis Article join mapping is invalid".into()))?;
+        if seen.insert(id) {
+            ids.push(id);
+        }
     }
-    if rendered.contains("{{") || rendered.contains("}}") {
-        return Err(AppError::Config(
-            "Analysis Article SQL contains an unresolved parameter".into(),
-        ));
-    }
-    Ok(rendered)
-}
-
-fn validate_query_result_columns(
-    declared: &[AnalysisColumn],
-    result: &QueryResult,
-    query_id: &str,
-) -> AppResult<()> {
-    let names = declared
-        .iter()
-        .map(|column| column.name.as_str())
-        .collect::<Vec<_>>();
-    if result
-        .columns
-        .iter()
-        .map(String::as_str)
-        .collect::<Vec<_>>()
-        != names
-        || result.rows.iter().any(|row| row.len() != declared.len())
-    {
-        return Err(AppError::Blocked {
-            reason: format!(
-                "Analysis query '{query_id}' result schema changed; review the Article before sharing new results"
-            ),
-        });
-    }
-    Ok(())
+    Ok(ids)
 }
 
 fn required_block_columns(
@@ -379,6 +182,7 @@ fn build_fragments(
     cancellation: &cancel::CancelHandle,
 ) -> AppResult<Vec<AnalysisResultFragment>> {
     let mut fragments = Vec::new();
+    let mut serialized_bytes = 0_usize;
     for block in &definition.blocks {
         let Some(source) = block.source_node_id.as_deref() else {
             continue;
@@ -427,14 +231,10 @@ fn build_fragments(
             &mut fragments,
             &block.id,
             &columns,
-            &rows,
+            rows,
             dataset.truncated,
+            &mut serialized_bytes,
         )?;
-        if fragments.len() > FRAGMENT_MAX_COUNT {
-            return Err(AppError::Blocked {
-                reason: "Analysis Article result needs more than 256 fragments".into(),
-            });
-        }
     }
     Ok(fragments)
 }
@@ -443,43 +243,76 @@ fn append_fragments(
     output: &mut Vec<AnalysisResultFragment>,
     block_id: &str,
     columns: &[AnalysisColumn],
-    rows: &[Vec<Value>],
+    rows: Vec<Vec<Value>>,
     source_truncated: bool,
+    serialized_bytes: &mut usize,
 ) -> AppResult<()> {
     let mut ordinal = 0_u16;
     let mut current = Vec::<Vec<Value>>::new();
+    let mut current_payload_bytes = 0_usize;
     let flush = |output: &mut Vec<AnalysisResultFragment>,
                  current: &mut Vec<Vec<Value>>,
                  ordinal: u16,
-                 source_truncated: bool|
+                 source_truncated: bool,
+                 serialized_bytes: &mut usize|
      -> AppResult<()> {
-        output.push(AnalysisResultFragment {
+        if output.len() >= FRAGMENT_MAX_COUNT {
+            return Err(AppError::Blocked {
+                reason: "Analysis Article result needs more than 256 fragments".into(),
+            });
+        }
+        let fragment = AnalysisResultFragment {
             version: 1,
             block_id: block_id.to_owned(),
             ordinal,
             columns: columns.to_vec(),
             rows: std::mem::take(current),
             truncated: source_truncated,
-        });
+        };
+        let fragment_bytes = serde_json::to_vec(&fragment)?.len();
+        if fragment_bytes > FRAGMENT_MAX_BYTES {
+            return Err(AppError::Blocked {
+                reason: format!(
+                    "Analysis Article block '{block_id}' produced a fragment larger than 1 MiB"
+                ),
+            });
+        }
+        let next_total = serialized_bytes
+            .checked_add(fragment_bytes)
+            .ok_or_else(|| AppError::Blocked {
+                reason: "Analysis Article shared result size overflowed".into(),
+            })?;
+        if next_total > max_article_result_bytes() {
+            return Err(AppError::Blocked {
+                reason: "Analysis Article shared result exceeds 16 MiB".into(),
+            });
+        }
+        *serialized_bytes = next_total;
+        output.push(fragment);
         Ok(())
     };
     if rows.is_empty() {
-        return flush(output, &mut current, ordinal, source_truncated);
-    }
-    for row in rows {
-        current.push(row.clone());
-        let candidate = AnalysisResultFragment {
-            version: 1,
-            block_id: block_id.to_owned(),
+        return flush(
+            output,
+            &mut current,
             ordinal,
-            columns: columns.to_vec(),
-            rows: current.clone(),
-            truncated: source_truncated,
-        };
-        if current.len() > FRAGMENT_MAX_ROWS
-            || serde_json::to_vec(&candidate)?.len() > FRAGMENT_MAX_BYTES
-        {
-            let last = current.pop().expect("candidate has one row");
+            source_truncated,
+            serialized_bytes,
+        );
+    }
+    let mut base_bytes =
+        empty_fragment_serialized_size(block_id, ordinal, columns, source_truncated)?;
+    for row in rows {
+        let row_bytes = serde_json::to_vec(&row)?.len();
+        let separator_bytes = usize::from(!current.is_empty());
+        let candidate_bytes = base_bytes
+            .checked_add(current_payload_bytes)
+            .and_then(|bytes| bytes.checked_add(separator_bytes))
+            .and_then(|bytes| bytes.checked_add(row_bytes))
+            .ok_or_else(|| AppError::Blocked {
+                reason: "Analysis Article fragment size overflowed".into(),
+            })?;
+        if current.len() >= FRAGMENT_MAX_ROWS || candidate_bytes > FRAGMENT_MAX_BYTES {
             if current.is_empty() {
                 return Err(AppError::Blocked {
                     reason: format!(
@@ -487,14 +320,68 @@ fn append_fragments(
                     ),
                 });
             }
-            flush(output, &mut current, ordinal, source_truncated)?;
+            flush(
+                output,
+                &mut current,
+                ordinal,
+                source_truncated,
+                serialized_bytes,
+            )?;
             ordinal = ordinal.checked_add(1).ok_or_else(|| AppError::Blocked {
                 reason: "Analysis Article fragment ordinal overflowed".into(),
             })?;
-            current.push(last);
+            current_payload_bytes = 0;
+            base_bytes =
+                empty_fragment_serialized_size(block_id, ordinal, columns, source_truncated)?;
+            if base_bytes
+                .checked_add(row_bytes)
+                .is_none_or(|bytes| bytes > FRAGMENT_MAX_BYTES)
+            {
+                return Err(AppError::Blocked {
+                    reason: format!(
+                        "Analysis Article block '{block_id}' has a row larger than 1 MiB"
+                    ),
+                });
+            }
         }
+        current_payload_bytes += usize::from(!current.is_empty()) + row_bytes;
+        current.push(row);
     }
-    flush(output, &mut current, ordinal, source_truncated)
+    flush(
+        output,
+        &mut current,
+        ordinal,
+        source_truncated,
+        serialized_bytes,
+    )
+}
+
+fn empty_fragment_serialized_size(
+    block_id: &str,
+    ordinal: u16,
+    columns: &[AnalysisColumn],
+    truncated: bool,
+) -> AppResult<usize> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct BorrowedFragment<'a> {
+        version: u32,
+        block_id: &'a str,
+        ordinal: u16,
+        columns: &'a [AnalysisColumn],
+        rows: &'a [Vec<Value>],
+        truncated: bool,
+    }
+
+    Ok(serde_json::to_vec(&BorrowedFragment {
+        version: 1,
+        block_id,
+        ordinal,
+        columns,
+        rows: &[],
+        truncated,
+    })?
+    .len())
 }
 
 fn mask_value(column: &AnalysisColumn, value: &Value) -> AppResult<Value> {
@@ -545,67 +432,44 @@ fn mask_value(column: &AnalysisColumn, value: &Value) -> AppResult<Value> {
     })
 }
 
-fn schema_fingerprint(columns: &[AnalysisColumn]) -> AppResult<String> {
-    canonical_hash(&serde_json::to_value(columns)?)
-}
-
 fn sha256(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
 
-async fn record_query(
-    store: &Store,
-    pin: &PinnedConnection,
-    sql: &str,
-    status: &str,
-    row_count: Option<i64>,
-    duration_ms: Option<i64>,
-    error: Option<String>,
-) {
-    if let Err(record_error) = audit::record(
-        store,
-        RecordArgs {
-            connection_id: pin.connection_id,
-            engine: pin.profile.engine,
-            agent_prompt: None,
-            sql: sql.to_owned(),
-            kind: QueryKind::Read,
-            action: "analysis_article:run".into(),
-            approved_by: None,
-            affected_estimate: row_count,
-            error: error.clone(),
-        },
-    )
-    .await
-    {
-        tracing::error!(connection_id = %pin.connection_id, %record_error, "Analysis Article audit record failed");
-    }
-    if let Err(history_error) = store
-        .insert_history_if_current(
-            pin,
-            &HistoryEntry {
-                id: Uuid::new_v4(),
-                connection_id: pin.connection_id,
-                sql: sql.to_owned(),
-                kind: QueryKind::Read,
-                status: status.into(),
-                row_count,
-                duration_ms,
-                error,
-                executed_at: Utc::now(),
-                origin: "analysis_article".into(),
-            },
-        )
-        .await
-    {
-        tracing::error!(connection_id = %pin.connection_id, %history_error, "Analysis Article history insert failed");
-    }
-}
+#[cfg(test)]
+pub(crate) fn assert_runner_safety_contract() {
+    super::adapters::assert_parameter_binding_contract();
 
-fn pool_ref(pool: &DbPool) -> PoolRef<'_> {
-    match pool {
-        DbPool::Postgres(pool) => PoolRef::Postgres(pool),
-        DbPool::Mysql(pool) => PoolRef::Mysql(pool),
-        DbPool::Sqlite(pool) => PoolRef::Sqlite(pool),
-    }
+    let column = AnalysisColumn {
+        name: "value".into(),
+        column_type: AnalysisColumnType::String,
+        nullable: false,
+        role: dopedb_protocol::AnalysisColumnRole::Dimension,
+        sensitivity: dopedb_protocol::AnalysisColumnSensitivity::Internal,
+        masking: AnalysisColumnMasking::None,
+    };
+    let mut fragments = Vec::new();
+    let mut at_shared_limit = max_article_result_bytes();
+    assert!(append_fragments(
+        &mut fragments,
+        "block",
+        std::slice::from_ref(&column),
+        Vec::new(),
+        false,
+        &mut at_shared_limit,
+    )
+    .is_err());
+    assert!(fragments.is_empty());
+
+    let mut serialized_bytes = 0;
+    assert!(append_fragments(
+        &mut fragments,
+        "block",
+        &[column],
+        vec![vec![Value::String("x".repeat(FRAGMENT_MAX_BYTES))]],
+        false,
+        &mut serialized_bytes,
+    )
+    .is_err());
+    assert!(fragments.is_empty());
 }

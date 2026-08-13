@@ -4,15 +4,13 @@
 //! both inventory and exact revalidation come from the authenticated control
 //! plane immediately before a local credential can be staged or committed.
 
-use std::time::Duration;
-
-use reqwest::{redirect::Policy, Client, Response, StatusCode, Url};
+use reqwest::{StatusCode, Url};
 use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::connection::keychain::fetch_workspace_session;
 use crate::error::{AppError, AppResult};
-use crate::features::workspaces::adapters::control_plane::validated_control_plane_origin;
+use crate::hosted_control_plane;
 use crate::kernel::identity::ProviderIntegrationId;
 
 use super::super::domain::{
@@ -23,11 +21,10 @@ use super::super::domain::{
 use super::super::ports::ProviderAuthorityPort;
 
 const MAX_INVENTORY_BODY_BYTES: usize = 64 * 1024;
+const MAX_PROVIDER_INTEGRATIONS: usize = 200;
 
 #[derive(Clone)]
-pub(crate) struct HostedProviderAuthority {
-    client: Client,
-}
+pub(crate) struct HostedProviderAuthority;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -62,13 +59,7 @@ enum RemoteVerificationTarget {
 
 impl HostedProviderAuthority {
     pub(crate) fn new() -> Self {
-        Self {
-            client: Client::builder()
-                .redirect(Policy::none())
-                .timeout(Duration::from_secs(10))
-                .build()
-                .expect("reqwest client configuration is valid"),
-        }
+        Self
     }
 
     async fn inventory(&self, scope: &ProviderScope) -> AppResult<Vec<ProviderIntegrationSummary>> {
@@ -77,7 +68,7 @@ impl HostedProviderAuthority {
                 reason: "provider integrations require an active hosted session".into(),
             }
         })?;
-        let origin = Url::parse(&validated_control_plane_origin()?)
+        let origin = Url::parse(&hosted_control_plane::origin()?)
             .map_err(|_| AppError::Config("workspace control-plane origin is invalid".into()))?;
         let path = format!(
             "api/v1/workspaces/{}/provider-integrations/local-authority",
@@ -86,8 +77,7 @@ impl HostedProviderAuthority {
         let url = origin
             .join(&path)
             .map_err(|_| AppError::Config("provider authority URL is invalid".into()))?;
-        let response = self
-            .client
+        let response = hosted_control_plane::client()?
             .get(url)
             .bearer_auth(token)
             .send()
@@ -105,7 +95,17 @@ impl HostedProviderAuthority {
                 "provider authority request failed".into(),
             ));
         }
-        let response = parse_inventory_body(&read_bounded_inventory_body(response).await?)?;
+        let response = hosted_control_plane::bounded_json_response::<InventoryResponse>(
+            response,
+            "provider authority",
+            MAX_INVENTORY_BODY_BYTES,
+        )
+        .await?;
+        if response.integrations.len() > MAX_PROVIDER_INTEGRATIONS {
+            return Err(AppError::Network(
+                "provider authority returned too many integrations".into(),
+            ));
+        }
         response
             .integrations
             .into_iter()
@@ -114,45 +114,7 @@ impl HostedProviderAuthority {
     }
 }
 
-/// Rejects an oversized declared body before allocation.  Chunk accounting in
-/// [`read_bounded_inventory_body`] remains authoritative for absent or lying
-/// headers.
-fn bounded_inventory_body_capacity(content_length: Option<u64>) -> AppResult<usize> {
-    if content_length.is_some_and(|length| length > MAX_INVENTORY_BODY_BYTES as u64) {
-        return Err(invalid_inventory_response());
-    }
-    Ok(content_length
-        .unwrap_or_default()
-        .min(MAX_INVENTORY_BODY_BYTES as u64) as usize)
-}
-
-fn append_bounded_inventory_body(body: &mut Vec<u8>, chunk: &[u8]) -> AppResult<()> {
-    let next_len = body
-        .len()
-        .checked_add(chunk.len())
-        .ok_or_else(invalid_inventory_response)?;
-    if next_len > MAX_INVENTORY_BODY_BYTES {
-        return Err(invalid_inventory_response());
-    }
-    body.extend_from_slice(chunk);
-    Ok(())
-}
-
-/// Reads the private control-plane inventory under one fixed 64KiB cap before
-/// parsing, so neither a missing nor a dishonest Content-Length can allocate
-/// an unbounded response or surface provider-controlled text.
-async fn read_bounded_inventory_body(mut response: Response) -> AppResult<Vec<u8>> {
-    let mut body = Vec::with_capacity(bounded_inventory_body_capacity(response.content_length())?);
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|_| invalid_inventory_response())?
-    {
-        append_bounded_inventory_body(&mut body, &chunk)?;
-    }
-    Ok(body)
-}
-
+#[cfg(test)]
 fn parse_inventory_body(body: &[u8]) -> AppResult<InventoryResponse> {
     if body.len() > MAX_INVENTORY_BODY_BYTES || body.contains(&0) {
         return Err(invalid_inventory_response());
@@ -160,6 +122,7 @@ fn parse_inventory_body(body: &[u8]) -> AppResult<InventoryResponse> {
     serde_json::from_slice(body).map_err(|_| invalid_inventory_response())
 }
 
+#[cfg(test)]
 fn invalid_inventory_response() -> AppError {
     AppError::Network("provider authority response is invalid".into())
 }
@@ -249,9 +212,7 @@ fn parse_integration(value: RemoteIntegration) -> AppResult<ProviderIntegrationS
         }
     };
     let credential_method = match provider {
-        LocalProvider::Neon if value.granted_scope.starts_with("projects:") => {
-            ProviderCredentialMethod::NeonApiKey
-        }
+        LocalProvider::Neon => ProviderCredentialMethod::Unsupported,
         LocalProvider::GcpCloudSql if value.granted_scope == "adcWif" => {
             ProviderCredentialMethod::GcpAdcWif
         }

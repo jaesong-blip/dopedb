@@ -1,10 +1,6 @@
 import { invoke } from "../../ipc/core";
 
-import type {
-  OperationDecision,
-  ScriptOperationProposal,
-  ScriptOutcome,
-} from "../../ipc/types";
+import type { ScriptOperationProposal } from "../../ipc/types";
 
 export function proposeTableChanges(
   connectionId: string,
@@ -18,31 +14,4 @@ export function proposeTableChanges(
     statements,
     catalogFingerprint,
   });
-}
-
-export function approveTableChanges(
-  operationId: string,
-  payloadHash: string,
-  reason?: string,
-): Promise<OperationDecision> {
-  return invoke("approve_operation", {
-    operationId,
-    payloadHash,
-    reason: reason ?? null,
-  });
-}
-
-export function rejectTableChanges(
-  operationId: string,
-  payloadHash: string,
-): Promise<OperationDecision> {
-  return invoke("reject_operation", {
-    operationId,
-    payloadHash,
-    reason: null,
-  });
-}
-
-export function runTableChanges(operationId: string): Promise<ScriptOutcome> {
-  return invoke("run_script", { operationId });
 }

@@ -9,7 +9,7 @@ impl OperationRepository {
         operation_id: Uuid,
         runtime_id: Uuid,
         details: &Value,
-    ) -> AppResult<OperationEventRecord> {
+    ) -> AppResult<()> {
         let _guard = self.write_lock.lock().await;
         let mut tx = self.pool.begin().await?;
         let current = fetch_operation_tx(&mut tx, operation_id).await?;
@@ -19,20 +19,20 @@ impl OperationRepository {
                 "progress can only be recorded for an executing operation",
             ));
         }
-        let event = self
-            .append_event_tx(
-                &mut tx,
-                operation_id,
-                OperationEventKind::Progress,
-                current.state,
-                details,
-                Utc::now(),
-            )
-            .await?;
+        self.append_event_tx(
+            &mut tx,
+            operation_id,
+            OperationEventKind::Progress,
+            current.state,
+            details,
+            Utc::now(),
+        )
+        .await?;
         tx.commit().await?;
-        Ok(event)
+        Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) async fn events(&self, operation_id: Uuid) -> AppResult<Vec<OperationEventRecord>> {
         let rows = sqlx::query(
             "SELECT * FROM operation_events
@@ -47,6 +47,7 @@ impl OperationRepository {
 
     /// Verify sequence continuity, every hash link, canonical event JSON, and the
     /// agreement between the ledger tail and the current projection.
+    #[cfg(test)]
     pub(crate) async fn verify_event_chain(&self, operation_id: Uuid) -> AppResult<bool> {
         let _guard = self.write_lock.lock().await;
         let projection = self.get(operation_id).await?;
@@ -93,7 +94,7 @@ impl OperationRepository {
         state: OperationState,
         details: &Value,
         created_at: DateTime<Utc>,
-    ) -> AppResult<OperationEventRecord> {
+    ) -> AppResult<()> {
         let details_json = canonical_json(details)?;
         if details_json.len() > MAX_RESPONSE_BYTES {
             return Err(AppError::Config(
@@ -148,16 +149,6 @@ impl OperationRepository {
         .bind(&hash)
         .execute(&mut **tx)
         .await?;
-        Ok(OperationEventRecord {
-            id: event_id,
-            operation_id,
-            sequence,
-            kind,
-            state,
-            details: serde_json::from_str(&details_json)?,
-            created_at,
-            prev_hash,
-            hash,
-        })
+        Ok(())
     }
 }

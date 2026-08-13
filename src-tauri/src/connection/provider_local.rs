@@ -9,15 +9,13 @@ use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
-use zeroize::Zeroizing;
-
 use super::cloud_sql_proxy::CloudSqlProxyConfig;
 use crate::error::{AppError, AppResult};
 use crate::kernel::identity::{
     AccountId, ConnectionId, ProviderBindingId, ProviderIntegrationId, WorkspaceId,
 };
 use crate::model::{ConnectionProfile, Engine, Provider};
+use chrono::{DateTime, Utc};
 
 pub(crate) type ProviderLocalFuture<'a, T> =
     Pin<Box<dyn Future<Output = AppResult<T>> + Send + 'a>>;
@@ -141,10 +139,8 @@ impl ProviderLocalTarget {
 
 /// The only secret carrier accepted by the connection runtime.  It intentionally
 /// implements neither Debug, Clone, nor serde traits.
-#[allow(dead_code)] // constructed by the provider feature composition boundary
 pub(crate) enum ProviderLocalSecret {
     ProfileSecret,
-    Ephemeral(Zeroizing<String>),
 }
 
 /// A resolver may only narrow the network fields of a cloned profile.  The
@@ -191,7 +187,6 @@ impl ProviderLocalBindingPin {
 }
 
 /// Secret-free request used to validate an existing local provider binding.
-#[allow(dead_code)] // read by the provider feature composition boundary
 pub(crate) struct ProviderLocalPinRequest<'a> {
     pub(crate) account_id: &'a AccountId,
     pub(crate) workspace_id: WorkspaceId,
@@ -199,7 +194,6 @@ pub(crate) struct ProviderLocalPinRequest<'a> {
     pub(crate) authority: &'a ProviderLocalTarget,
 }
 
-#[allow(dead_code)] // consumed by a provider feature implementation, never serialized here
 pub(crate) struct ProviderLocalResolveRequest<'a> {
     pub(crate) account_id: &'a AccountId,
     pub(crate) workspace_id: WorkspaceId,

@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, type SetStateAction } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { ConnectionProfile } from "../connections/domain";
-import { listConnections } from "../connections/tauriAdapter";
+import {
+  connectionQueryKeys,
+  connectionsQuery,
+} from "../connections/queries";
 import { errMessage } from "../../ipc/types";
-import { isTransientDbError } from "../../lib/queries";
 
 function runtimeFingerprint(profile: ConnectionProfile): string {
   return JSON.stringify([
@@ -42,49 +45,32 @@ export function changedConnectionRuntimeIds(
     .filter((id) => previousById.get(id) !== nextById.get(id));
 }
 
-export function useConnectionProfiles() {
-  const [connections, setConnections] = useState<ConnectionProfile[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
+export function useConnectionProfiles(scopeKey: string) {
+  const queryClient = useQueryClient();
+  const options = connectionsQuery(scopeKey);
+  const query = useQuery(options);
+  const queryKey = connectionQueryKeys.all(scopeKey);
 
-  const refresh = useCallback(
-    async function refreshProfiles(
-      attempt = 0,
-    ): Promise<ConnectionProfile[] | null> {
-      try {
-        const profiles = await listConnections();
-        setConnections(profiles);
-        setLoadError(null);
-        setLoaded(true);
-        return profiles;
-      } catch (error) {
-        if (attempt < 3 && isTransientDbError(error)) {
-          await new Promise<void>((resolve) =>
-            window.setTimeout(resolve, Math.min(1000 * 2 ** attempt, 8_000)),
-          );
-          return refreshProfiles(attempt + 1);
-        }
-        setLoadError(errMessage(error));
-        setLoaded(true);
-        return null;
-      }
-    },
-    [],
-  );
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  const refresh = useCallback(async (): Promise<ConnectionProfile[] | null> => {
+    const result = await queryClient.fetchQuery({
+      ...connectionsQuery(scopeKey),
+      staleTime: 0,
+    });
+    return result;
+  }, [queryClient, scopeKey]);
 
   return {
-    connections,
-    setConnections,
-    loaded,
-    loadError,
+    connections: query.data ?? [],
+    setConnections: useCallback(
+      (update: SetStateAction<ConnectionProfile[]>) => {
+        queryClient.setQueryData(queryKey, (current: ConnectionProfile[] = []) =>
+          typeof update === "function" ? update(current) : update
+        );
+      },
+      [queryClient, scopeKey],
+    ),
+    loaded: !query.isPending,
+    loadError: query.error ? errMessage(query.error) : null,
     refresh,
-    clear: useCallback(() => {
-      setConnections([]);
-      setLoaded(false);
-    }, []),
   };
 }

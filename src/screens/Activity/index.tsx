@@ -14,6 +14,11 @@ import {
 import { Icon, type IconName } from "../../components/Icon";
 import Skeleton from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
+import { Button } from "../../design-system/components/Button";
+import {
+  SelectInput,
+  TextInput,
+} from "../../design-system/components/FormControls";
 import { WorkbenchPane } from "../../design-system/components/Workbench";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import type {
@@ -385,9 +390,9 @@ export default function Activity({
             )}
             {(auditCursors.length > 1 || auditPage?.nextCursor) && (
               <div className="tw:flex tw:items-center tw:justify-end tw:gap-2">
-                <button
+                <Button
                   type="button"
-                  className="btn small"
+                  size="compact"
                   disabled={auditCursors.length <= 1 || audit.isFetching}
                   onClick={() => {
                     setSelectedAuditId(null);
@@ -395,10 +400,10 @@ export default function Activity({
                   }}
                 >
                   {t("common.prev")}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className="btn small"
+                  size="compact"
                   disabled={!auditPage?.nextCursor || audit.isFetching}
                   onClick={() => {
                     if (!auditPage?.nextCursor) return;
@@ -407,7 +412,7 @@ export default function Activity({
                   }}
                 >
                   {t("common.next")}
-                </button>
+                </Button>
               </div>
             )}
           </section>
@@ -421,28 +426,44 @@ export default function Activity({
                 {t("activity.queriesDescription")}
               </p>
             </div>
-            <button type="button" className="btn small" onClick={refresh} disabled={busy}>
+            <Button type="button" size="compact" onClick={refresh} disabled={busy}>
               {busy ? "..." : t("common.refresh")}
-            </button>
+            </Button>
           </div>
 
           {(page || hasFilters) && (
             <div className="tw:flex tw:items-center tw:gap-2 tw:max-[760px]:flex-col tw:max-[760px]:items-stretch">
-              <input
-                className="tw:min-w-0 tw:flex-1"
-                type="search"
-                placeholder={t("activity.filterSql")}
-                value={text}
-                onChange={(event) => setText(event.target.value)}
-              />
-              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-                <option value="">{t("activity.allStatuses")}</option>
-                {page?.statuses.map((status) => <option key={status} value={status}>{status}</option>)}
-              </select>
-              <select value={originFilter} onChange={(event) => setOriginFilter(event.target.value)}>
-                <option value="">{t("activity.allOrigins")}</option>
-                {page?.origins.map((origin) => <option key={origin} value={origin}>{origin}</option>)}
-              </select>
+              <span className="tw:min-w-0 tw:flex-1">
+                <TextInput
+                  density="compact"
+                  type="search"
+                  placeholder={t("activity.filterSql")}
+                  value={text}
+                  onChange={(event) => setText(event.target.value)}
+                />
+              </span>
+              <span className="tw:min-w-[140px]">
+                <SelectInput
+                  density="compact"
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value)}
+                  aria-label={t("activity.allStatuses")}
+                >
+                  <option value="">{t("activity.allStatuses")}</option>
+                  {page?.statuses.map((status) => <option key={status} value={status}>{status}</option>)}
+                </SelectInput>
+              </span>
+              <span className="tw:min-w-[140px]">
+                <SelectInput
+                  density="compact"
+                  value={originFilter}
+                  onChange={(event) => setOriginFilter(event.target.value)}
+                  aria-label={t("activity.allOrigins")}
+                >
+                  <option value="">{t("activity.allOrigins")}</option>
+                  {page?.origins.map((origin) => <option key={origin} value={origin}>{origin}</option>)}
+                </SelectInput>
+              </span>
             </div>
           )}
 
@@ -525,24 +546,24 @@ export default function Activity({
               <span className="tw:mr-auto tw:text-xs tw:text-muted-foreground">
                 {t("activity.pageRows", { count: rows.length })}
               </span>
-              <button
+              <Button
                 type="button"
-                className="btn small"
+                size="compact"
                 disabled={historyCursors.length <= 1 || history.isFetching}
                 onClick={() => setHistoryCursors((current) => current.slice(0, -1))}
               >
                 {t("common.prev")}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className="btn small"
+                size="compact"
                 disabled={!page?.nextCursor || history.isFetching}
                 onClick={() => {
                   if (page?.nextCursor) setHistoryCursors((current) => [...current, page.nextCursor]);
                 }}
               >
                 {t("common.next")}
-              </button>
+              </Button>
             </div>
           )}
         </section>

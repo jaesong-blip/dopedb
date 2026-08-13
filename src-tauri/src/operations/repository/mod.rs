@@ -23,11 +23,12 @@ use uuid::Uuid;
 use super::canonicalize::{canonical_json, CanonicalJson};
 use super::model::{
     actor_kind_str, approval_decision_str, event_kind_str, operation_kind_str, parse_actor_kind,
-    parse_approval_decision, parse_event_kind, parse_operation_kind, parse_risk_level, parse_state,
-    risk_level_str, state_str, NewOperation, OperationActor, OperationActorProvenance,
-    OperationApprovalCommand, OperationApprovalDecision, OperationApprovalRecord,
-    OperationApprover, OperationEventRecord, OperationRecord, RestartRecoveryReport,
+    parse_operation_kind, parse_risk_level, parse_state, risk_level_str, state_str, NewOperation,
+    OperationActor, OperationActorProvenance, OperationApprovalCommand, OperationApprovalDecision,
+    OperationRecord, RestartRecoveryReport,
 };
+#[cfg(test)]
+use super::model::{parse_event_kind, OperationEventRecord};
 use super::{ensure_transition, restart_recovery, RestartRecovery};
 use crate::error::{AppError, AppResult};
 use crate::store::Store;
@@ -44,14 +45,6 @@ impl OperationRepository {
     pub(crate) fn new(store: &Store) -> Self {
         Self {
             pool: store.pool().clone(),
-            write_lock: Arc::new(Mutex::new(())),
-        }
-    }
-
-    #[cfg(test)]
-    fn from_pool(pool: SqlitePool) -> Self {
-        Self {
-            pool,
             write_lock: Arc::new(Mutex::new(())),
         }
     }

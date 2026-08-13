@@ -162,8 +162,8 @@ export function buildAnalysisPublicSnapshot(input: {
   for (const fragment of input.fragments) {
     if (!selectedBlocks.has(fragment.blockId)) continue;
     if (fragment.columns.some((column) => column.sensitivity !== "public"
-      && column.masking === "none")) {
-      throw new Error("Analysis publication contains an unmasked private column");
+      && !["hash", "redact"].includes(column.masking))) {
+      throw new Error("Analysis publication contains a private column without irreversible masking");
     }
   }
   return parseAnalysisPublicSnapshot({

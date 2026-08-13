@@ -1,4 +1,4 @@
-//! Connection-pinned, PTY-backed Terminal Dock vertical slice.
+//! Connection-pinned, PTY-backed advanced Shell vertical slice.
 
 mod adapters;
 mod application;
@@ -19,8 +19,7 @@ use crate::store::Store;
 use adapters::DesktopTerminalAdapter;
 use application::TerminalUseCases;
 pub(crate) use domain::{
-    TerminalCreateRequest, TerminalFocusReceipt, TerminalOutputChunk, TerminalSessionSummary,
-    TerminalSize,
+    TerminalCreateRequest, TerminalOutputChunk, TerminalSessionSummary, TerminalSize,
 };
 
 type ComposedTerminalApplication = TerminalUseCases<DesktopTerminalAdapter>;
@@ -40,19 +39,6 @@ impl TerminalsFeature {
         self.application.create(request, output, events).await
     }
 
-    pub(crate) fn list(&self) -> AppResult<Vec<TerminalSessionSummary>> {
-        self.application.list()
-    }
-
-    pub(crate) async fn focus(
-        &self,
-        id: TerminalSessionId,
-        after_sequence: Option<u64>,
-        output: Channel<TerminalOutputChunk>,
-    ) -> AppResult<TerminalFocusReceipt> {
-        self.application.focus(id, after_sequence, output).await
-    }
-
     pub(crate) async fn write(&self, id: TerminalSessionId, bytes: Vec<u8>) -> AppResult<()> {
         self.application.write(id, bytes).await
     }
@@ -61,34 +47,8 @@ impl TerminalsFeature {
         self.application.resize(id, size).await
     }
 
-    pub(crate) async fn kill(
-        &self,
-        id: TerminalSessionId,
-        events: AppHandle,
-    ) -> AppResult<TerminalSessionSummary> {
-        self.application.kill(id, events).await
-    }
-
     pub(crate) async fn close(&self, id: TerminalSessionId, events: AppHandle) -> AppResult<()> {
         self.application.close(id, events).await
-    }
-
-    pub(crate) async fn restart(
-        &self,
-        id: TerminalSessionId,
-        output: Channel<TerminalOutputChunk>,
-        events: AppHandle,
-    ) -> AppResult<TerminalSessionSummary> {
-        self.application.restart(id, output, events).await
-    }
-
-    pub(crate) async fn rename(
-        &self,
-        id: TerminalSessionId,
-        name: String,
-        events: AppHandle,
-    ) -> AppResult<TerminalSessionSummary> {
-        self.application.rename(id, name, events).await
     }
 
     pub(crate) fn stop_connection(&self, connection_id: ConnectionId, events: &AppHandle) -> usize {

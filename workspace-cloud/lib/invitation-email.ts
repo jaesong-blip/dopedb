@@ -1,6 +1,8 @@
 // Optional Resend transport for Better Auth organization invitations. Deployments
 // without provider credentials retain the verified, email-bound copy-link workflow.
 import "server-only";
+
+import { env } from "./env";
 import { singleLineText } from "./http";
 import {
   localizedWorkspacePath,
@@ -24,8 +26,8 @@ export async function sendWorkspaceInvitation(
   appOrigin: string,
   request?: Request,
 ) {
-  const apiKey = process.env.RESEND_API_KEY?.trim();
-  const from = process.env.WORKSPACE_INVITATION_FROM?.trim();
+  const apiKey = env.resendApiKey();
+  const from = env.workspaceInvitationFrom();
   if (!apiKey || !from) return;
 
   const locale = workspaceLocaleFromCookieHeader(

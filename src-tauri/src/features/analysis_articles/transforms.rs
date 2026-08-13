@@ -23,7 +23,7 @@ use super::validation::max_article_result_bytes;
 const MAX_ROWS: usize = 50_000;
 
 fn cancelled(handle: &CancelHandle, index: usize) -> AppResult<()> {
-    if index % 256 == 0 && handle.is_cancelled() {
+    if index.is_multiple_of(256) && handle.is_cancelled() {
         return Err(AppError::Safety("Analysis Article run cancelled".into()));
     }
     Ok(())
@@ -334,9 +334,13 @@ fn aggregate(
                     AggregateFunction::Count => Value::from(state.count),
                     AggregateFunction::CountDistinct => Value::from(state.distinct.len() as u64),
                     AggregateFunction::Sum => number(state.sum),
-                    AggregateFunction::Avg => (state.numeric_count > 0)
-                        .then(|| number(state.sum / state.numeric_count as f64))
-                        .unwrap_or(Value::Null),
+                    AggregateFunction::Avg => {
+                        if state.numeric_count > 0 {
+                            number(state.sum / state.numeric_count as f64)
+                        } else {
+                            Value::Null
+                        }
+                    }
                     AggregateFunction::Min => state.minimum.unwrap_or(Value::Null),
                     AggregateFunction::Max => state.maximum.unwrap_or(Value::Null),
                 });
@@ -489,9 +493,11 @@ fn window(
                             counts[index] += 1;
                         }
                         if matches!(measure.function, WindowFunction::RunningAvg) {
-                            (counts[index] > 0)
-                                .then(|| number(sums[index] / counts[index] as f64))
-                                .unwrap_or(Value::Null)
+                            if counts[index] > 0 {
+                                number(sums[index] / counts[index] as f64)
+                            } else {
+                                Value::Null
+                            }
                         } else {
                             number(sums[index])
                         }

@@ -6,7 +6,6 @@
 
 use tauri::State;
 use uuid::Uuid;
-use zeroize::Zeroizing;
 
 use crate::error::AppResult;
 use crate::kernel::identity::{
@@ -22,10 +21,9 @@ use super::{
     VerifyProviderCredential,
 };
 
-/// Only the Neon secret-bearing variant crosses this boundary. GCP is an
-/// explicit keyless ADC/WIF request and therefore cannot stage a secret.
+/// Only an explicit keyless ADC/WIF request crosses this boundary. Provider
+/// API keys stay in the workspace service and never enter Desktop.
 pub(crate) enum BeginCredentialInput {
-    NeonApiKey { api_key: String },
     GcpAdc,
 }
 
@@ -43,13 +41,6 @@ impl<'de> serde::Deserialize<'de> for BeginCredentialInput {
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| serde::de::Error::custom("credential type is required"))?;
         match kind {
-            "neonApiKey" if object.len() == 2 => object
-                .get("apiKey")
-                .and_then(serde_json::Value::as_str)
-                .map(|api_key| Self::NeonApiKey {
-                    api_key: api_key.into(),
-                })
-                .ok_or_else(|| serde::de::Error::custom("Neon API key is required")),
             "gcpAdc" if object.len() == 1 => Ok(Self::GcpAdc),
             _ => Err(serde::de::Error::custom(
                 "unsupported provider credential input",
@@ -79,9 +70,6 @@ pub(crate) async fn begin_provider_credential_binding(
     credential: BeginCredentialInput,
 ) -> AppResult<ProviderCredentialReceipt> {
     let material = match credential {
-        BeginCredentialInput::NeonApiKey { api_key } => {
-            ProviderCredentialMaterial::NeonApiKey(Zeroizing::new(api_key))
-        }
         BeginCredentialInput::GcpAdc => ProviderCredentialMaterial::GcpAdc,
     };
     state

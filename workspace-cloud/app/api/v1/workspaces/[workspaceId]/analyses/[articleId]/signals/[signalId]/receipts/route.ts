@@ -19,6 +19,12 @@ import {
 import { authorizeWorkspace } from "../../../../../../../../../../lib/workspace-authorization";
 import { accessibleAnalysisArticle } from "../../../../../../../../../../lib/workspace-analysis-article-http";
 import {
+  analysisRunnerCapabilityHeader,
+  hashAnalysisRunnerCapability,
+  isAnalysisDesktopBearerRequest,
+  parseAnalysisRunnerCapability,
+} from "../../../../../../../../../../lib/workspace-analysis-runner-capability";
+import {
   commitAnalysisSignalReceipt,
   type AnalysisSignalAuthority,
 } from "../../../../../../../../../../lib/workspace-analysis-signal-store";
@@ -113,12 +119,21 @@ export async function GET(request: Request, context: RouteContext) {
 
 export async function POST(request: Request, context: RouteContext) {
   if (!mutationAllowed(request, env.appOrigin())) return jsonError("Invalid request origin", 403);
+  if (!isAnalysisDesktopBearerRequest(request)) {
+    return jsonError("Analysis signal evaluation requires a Desktop bearer session", 401);
+  }
   const { workspaceId, articleId, signalId } = await context.params;
   if (!isUuid(workspaceId) || !isUuid(articleId) || !isUuid(signalId)) {
     return jsonError("Invalid Analysis signal receipt scope", 400);
   }
   const authorization = await authorizeWorkspace(request, workspaceId, "view");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
+  const runnerCapability = parseAnalysisRunnerCapability(request);
+  if (!runnerCapability) return jsonError(
+    "Invalid Analysis runner capability",
+    request.headers.has(analysisRunnerCapabilityHeader) ? 403 : 428,
+  );
+  const runnerCapabilityHash = hashAnalysisRunnerCapability(runnerCapability);
   const body = await boundedJsonBody(request, 32 * 1024);
   const envelope = body.ok ? exactReceiptEnvelope(body.value) : null;
   if (!envelope) return jsonError("Invalid Analysis signal receipt", 400);
@@ -168,6 +183,7 @@ export async function POST(request: Request, context: RouteContext) {
       articleId,
       signalId,
       runnerId: envelope.runnerId,
+      runnerCapabilityHash,
       expectedSchemaFingerprint,
       receipt,
       authority: authority(authorization),

@@ -3,7 +3,13 @@
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../../../../../../../../lib/db";
 import { env } from "../../../../../../../../lib/env";
-import { isUuid, jsonError, mutationAllowed, privateJson } from "../../../../../../../../lib/http";
+import {
+  boundedJsonBody,
+  isUuid,
+  jsonError,
+  mutationAllowed,
+  privateJson,
+} from "../../../../../../../../lib/http";
 import { revokeActiveLeases } from "../../../../../../../../lib/provider-integrations";
 import {
   claimRevocationGate,
@@ -81,7 +87,14 @@ export async function POST(request: Request, context: RouteContext) {
   if (!mutationAllowed(request, env.appOrigin())) return jsonError("Invalid request origin", 403);
   const { workspaceId, connectionId } = await context.params;
   if (!isUuid(workspaceId) || !isUuid(connectionId)) return jsonError("Invalid workspace or connection id", 400);
-  const body = await request.json().catch(() => null) as { memberId?: unknown; capability?: unknown } | null;
+  const parsed = await boundedJsonBody(request, 1_024);
+  if (!parsed.ok) {
+    return jsonError(
+      parsed.reason === "too_large" ? "Connection grant is too large" : "Invalid connection grant",
+      parsed.reason === "too_large" ? 413 : 400,
+    );
+  }
+  const body = parsed.value as { memberId?: unknown; capability?: unknown } | null;
   if (!validMemberId(body?.memberId) || !["view", "use", "manage"].includes(String(body?.capability))) {
     return jsonError("Invalid connection grant", 400);
   }

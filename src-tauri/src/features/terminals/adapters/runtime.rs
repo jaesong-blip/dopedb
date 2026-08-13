@@ -16,14 +16,13 @@ use crate::kernel::identity::{ConnectionId, TerminalSessionId};
 use crate::store::PinnedConnection;
 
 use super::super::domain::{
-    TerminalCreateRequest, TerminalFocusReceipt, TerminalOutputChunk, TerminalProfile,
-    TerminalSessionSummary, TerminalSize,
+    TerminalCreateRequest, TerminalOutputChunk, TerminalSessionSummary, TerminalSize,
 };
 use super::authority::connection_pin;
-use super::environment::{command_for_profile, neutral_working_directory, LaunchEnvironment};
+use super::environment::{neutral_working_directory, shell_command, LaunchEnvironment};
 use super::process_tree::ProcessTree;
 use super::session::{
-    emit_state, RestartSeed, SessionLaunch, SessionResources, TerminalSession, FORCE_KILL_AFTER,
+    emit_state, SessionLaunch, SessionResources, TerminalSession, FORCE_KILL_AFTER,
 };
 
 const MAX_SESSIONS: usize = 16;
@@ -36,7 +35,6 @@ pub(super) struct PtyTerminalRuntime {
 
 pub(super) struct CreateContext<'a> {
     pub id: TerminalSessionId,
-    pub replacement_id: Option<TerminalSessionId>,
     pub connection: PinnedConnection,
     pub session_token: &'a str,
     pub runtime_file: Option<&'a Path>,
@@ -59,12 +57,7 @@ impl PtyTerminalRuntime {
         context: CreateContext<'_>,
     ) -> AppResult<TerminalSessionSummary> {
         self.prune_exited();
-        let replacement_is_running = context.replacement_id.is_some_and(|id| {
-            self.sessions
-                .get(&id)
-                .is_some_and(|session| !session.lifecycle().is_terminal())
-        });
-        if session_limit_reached(self.running_count(), replacement_is_running) {
+        if self.running_count() >= MAX_SESSIONS {
             return Err(AppError::Blocked {
                 reason: format!("at most {MAX_SESSIONS} Terminal sessions may run at once"),
             });
@@ -78,19 +71,15 @@ impl PtyTerminalRuntime {
             .size
             .validate()
             .map_err(|reason| AppError::Config(reason.into()))?;
-        let name = normalize_name(request.name.as_deref(), request.profile)?;
         let working_directory = neutral_working_directory()?;
-        let command = command_for_profile(
-            request.profile,
-            LaunchEnvironment {
-                session_id: context.id,
-                connection_id: ConnectionId::from(context.connection.connection_id),
-                session_token: context.session_token,
-                runtime_file: context.runtime_file,
-                cli_directory: context.cli_directory,
-                working_directory: &working_directory,
-            },
-        )?;
+        let command = shell_command(LaunchEnvironment {
+            session_id: context.id,
+            connection_id: ConnectionId::from(context.connection.connection_id),
+            session_token: context.session_token,
+            runtime_file: context.runtime_file,
+            cli_directory: context.cli_directory,
+            working_directory: &working_directory,
+        })?;
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(to_pty_size(size))
@@ -132,7 +121,7 @@ impl PtyTerminalRuntime {
                 connection: context.connection,
                 connection_pin,
             },
-            name,
+            "Shell".into(),
             size,
             SessionResources {
                 master: pair.master,
@@ -169,51 +158,12 @@ impl PtyTerminalRuntime {
         Ok(summary)
     }
 
-    pub(super) fn list(&self) -> Vec<TerminalSessionSummary> {
-        let mut sessions = self
-            .sessions
-            .iter()
-            .map(|entry| entry.value().summary())
-            .collect::<Vec<_>>();
-        sessions.sort_by_key(|session| session.created_at);
-        sessions
-    }
-
-    pub(super) fn focus(
-        &self,
-        id: TerminalSessionId,
-        after_sequence: Option<u64>,
-        output: Channel<TerminalOutputChunk>,
-    ) -> AppResult<TerminalFocusReceipt> {
-        let session = self.session(id)?;
-        let replay = session.attach(after_sequence, output)?;
-        Ok(TerminalFocusReceipt {
-            session: session.summary(),
-            replay_from: replay.replay_from,
-            replay_through: replay.replay_through,
-            replay_truncated: replay.truncated,
-        })
-    }
-
     pub(super) fn write(&self, id: TerminalSessionId, bytes: Vec<u8>) -> AppResult<()> {
         self.session(id)?.write(bytes)
     }
 
     pub(super) fn resize(&self, id: TerminalSessionId, size: TerminalSize) -> AppResult<()> {
         self.session(id)?.resize(size)
-    }
-
-    pub(super) fn rename(
-        &self,
-        id: TerminalSessionId,
-        name: &str,
-        app: &AppHandle,
-    ) -> AppResult<TerminalSessionSummary> {
-        let session = self.session(id)?;
-        let name = normalize_explicit_name(name)?;
-        let summary = session.rename(name);
-        emit_state(app, &summary);
-        Ok(summary)
     }
 
     pub(super) fn kill(
@@ -254,14 +204,6 @@ impl PtyTerminalRuntime {
         self.broker_sessions.revoke(id);
         self.sessions.remove(&id);
         Ok(())
-    }
-
-    pub(super) fn restart_seed(&self, id: TerminalSessionId) -> AppResult<RestartSeed> {
-        Ok(self.session(id)?.restart_seed())
-    }
-
-    pub(super) fn forget(&self, id: TerminalSessionId) {
-        self.sessions.remove(&id);
     }
 
     pub(super) fn stop_connection(&self, connection_id: ConnectionId, app: &AppHandle) -> usize {
@@ -355,29 +297,6 @@ impl PtyTerminalRuntime {
     }
 }
 
-fn normalize_name(name: Option<&str>, profile: TerminalProfile) -> AppResult<String> {
-    match name {
-        Some(name) => normalize_explicit_name(name),
-        None => Ok(profile.default_name().into()),
-    }
-}
-
-fn normalize_explicit_name(name: &str) -> AppResult<String> {
-    let normalized = name
-        .chars()
-        .filter(|character| !character.is_control())
-        .take(64)
-        .collect::<String>();
-    let normalized = normalized.trim();
-    if normalized.is_empty() {
-        Err(AppError::Config(
-            "Terminal session name cannot be empty".into(),
-        ))
-    } else {
-        Ok(normalized.into())
-    }
-}
-
 fn to_pty_size(size: TerminalSize) -> PtySize {
     PtySize {
         rows: size.rows,
@@ -385,8 +304,4 @@ fn to_pty_size(size: TerminalSize) -> PtySize {
         pixel_width: size.pixel_width,
         pixel_height: size.pixel_height,
     }
-}
-
-fn session_limit_reached(running: usize, replacement_is_running: bool) -> bool {
-    running.saturating_sub(usize::from(replacement_is_running)) >= MAX_SESSIONS
 }

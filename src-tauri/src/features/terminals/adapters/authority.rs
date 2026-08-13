@@ -27,14 +27,3 @@ pub(super) fn connection_pin(pin: &PinnedConnection) -> TerminalConnectionPin {
         policy,
     }
 }
-
-pub(super) fn connection_pin_matches(
-    terminal: &TerminalConnectionPin,
-    pin: &PinnedConnection,
-) -> bool {
-    terminal.workspace_id == WorkspaceId::from(pin.scope.workspace_id)
-        && terminal.account_scope == pin.scope.account_scope.storage_key()
-        && terminal.scope_generation == pin.scope.generation
-        && terminal.connection_id == ConnectionId::from(pin.connection_id)
-        && terminal.connection_revision == pin.connection_revision
-}

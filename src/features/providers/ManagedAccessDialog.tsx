@@ -17,7 +17,7 @@ import {
   StatusBadge,
   type StatusTone,
 } from "../../design-system/components/Status";
-import { approveOperation } from "../../ipc/commands";
+import { approveOperation } from "../operations/tauriAdapter";
 import { useI18n, type I18nKey } from "../../lib/i18n";
 import type {
   ProviderKind,

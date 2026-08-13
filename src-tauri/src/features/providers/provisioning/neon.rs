@@ -8,12 +8,12 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+#[cfg(test)]
 use chrono::Utc;
-use serde_json::json;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
 use crate::features::providers::adapters::{
     AuthorizedProvisioningResource, AuthorizedProvisioningTarget, ProvisioningTargetAuthorityPort,
 };
@@ -24,8 +24,9 @@ use crate::kernel::identity::ProviderIntegrationId;
 #[cfg(test)]
 use crate::model::Engine;
 use crate::model::{Provider, WorkspaceCredentialMode};
-use crate::operations::canonical_hash;
-use crate::store::{PinnedConnection, Store};
+use crate::store::PinnedConnection;
+#[cfg(test)]
+use crate::store::Store;
 
 use super::super::domain::LocalProvider;
 use super::application::{
@@ -34,153 +35,54 @@ use super::application::{
     ProvisioningStepEvidence,
 };
 use super::domain::{
-    ManagedAccessCapability, ProvisioningAccessMode, ProvisioningAction,
-    ProvisioningCapabilityManifest, ProvisioningIntent, ProvisioningPhase, ProvisioningPlan,
-    ProvisioningPlanStep, ProvisioningReceipt, ProvisioningRepairReason, ProvisioningTarget,
-    ProvisioningTargetSelector, ProvisioningVerification,
+    ProvisioningAccessMode, ProvisioningPlan, ProvisioningPlanStep, ProvisioningReceipt,
+    ProvisioningTarget, ProvisioningTargetSelector, ProvisioningVerification,
+};
+#[cfg(test)]
+use super::domain::{ProvisioningAction, ProvisioningIntent};
+use super::repository::ProvisioningRepository;
+use super::shared::{blocked, ManagedProvisioningContract, ManagedProvisioningScaffold};
+#[cfg(test)]
+use super::shared::{
+    execution_hash, full_capabilities, has_complete_smoke_plan, idempotency_key, ownership_marker,
+    plan_steps,
 };
 use super::{ProvisioningExecutionPermit, ProvisioningReadAuthority};
 
 pub(super) const NEON_MANIFEST_SHA256: &str =
     "2b4da5e4858086217b00a35e6ed53b2e826c34a90cbfc51ce889b27e8cdfd7b0";
 
+const CONTRACT: ManagedProvisioningContract = ManagedProvisioningContract {
+    local_provider: LocalProvider::Neon,
+    profile_provider: Provider::Neon,
+    manifest_sha256: NEON_MANIFEST_SHA256,
+    execution_contract: "dopedb-neon-provisioning-execution-v1",
+    idempotency_contract: "dopedb-neon-provisioning-idempotency-v1",
+    idempotency_prefix: "neon",
+    display_name: "Neon",
+    include_safe_migrations: false,
+};
+
 #[derive(Clone)]
 pub(crate) struct NeonProvisioningDriver {
-    store: Store,
-    target_authority: Arc<dyn ProvisioningTargetAuthorityPort>,
-    runtime: Arc<dyn ProvisioningRuntimePort>,
+    scaffold: ManagedProvisioningScaffold,
 }
 
 impl NeonProvisioningDriver {
     pub(crate) fn new(
-        store: Store,
+        repository: ProvisioningRepository,
         target_authority: Arc<dyn ProvisioningTargetAuthorityPort>,
         runtime: Arc<dyn ProvisioningRuntimePort>,
     ) -> Self {
         Self {
-            store,
-            target_authority,
-            runtime,
+            scaffold: ManagedProvisioningScaffold::new(
+                CONTRACT,
+                repository,
+                target_authority,
+                runtime,
+                target_matches_authority,
+            ),
         }
-    }
-
-    async fn pinned_connection(&self, target: &ProvisioningTarget) -> AppResult<PinnedConnection> {
-        let connection = self
-            .store
-            .pin_connection_for_view(Uuid::from(target.connection_id()))
-            .await?;
-        validate_connection(target, &connection)?;
-        Ok(connection)
-    }
-
-    async fn cleanup_connection(&self, target: &ProvisioningTarget) -> AppResult<PinnedConnection> {
-        let connection = self
-            .store
-            .pin_connection_for_view(Uuid::from(target.connection_id()))
-            .await?;
-        validate_cleanup_connection(target, &connection)?;
-        Ok(connection)
-    }
-
-    async fn target_status(
-        &self,
-        target: &ProvisioningTarget,
-    ) -> AppResult<(PinnedConnection, bool)> {
-        let connection = self.pinned_connection(target).await?;
-        let authorized = self.target_authority.target(&connection).await?;
-        let current = target_matches_authority(target, &authorized);
-        Ok((connection, current))
-    }
-
-    async fn revalidate_target(&self, target: &ProvisioningTarget) -> AppResult<PinnedConnection> {
-        let (connection, current) = self.target_status(target).await?;
-        if !current {
-            return Err(blocked("Neon managed target changed"));
-        }
-        Ok(connection)
-    }
-
-    async fn smoke(
-        &self,
-        target: &ProvisioningTarget,
-        access: ProvisioningAccessMode,
-    ) -> AppResult<()> {
-        self.runtime
-            .smoke(
-                Uuid::from(target.connection_id()),
-                target.connection_revision(),
-                LocalProvider::Neon,
-                target.engine(),
-                access,
-            )
-            .await
-    }
-
-    fn build_apply_plan(
-        &self,
-        target: &ProvisioningTarget,
-        access: ProvisioningAccessMode,
-        discriminator: &str,
-    ) -> AppResult<ProvisioningPlan> {
-        if access == ProvisioningAccessMode::Write && !target.write_available() {
-            return Err(blocked("Neon managed write access is unavailable"));
-        }
-        let actions = match access {
-            ProvisioningAccessMode::Read => vec![
-                (ProvisioningAction::VerifyProviderTarget, None),
-                (
-                    ProvisioningAction::SmokeTestReadCredential,
-                    Some(ProvisioningAccessMode::Read),
-                ),
-            ],
-            ProvisioningAccessMode::Write => vec![
-                (ProvisioningAction::VerifyProviderTarget, None),
-                (
-                    ProvisioningAction::SmokeTestReadCredential,
-                    Some(ProvisioningAccessMode::Read),
-                ),
-                (
-                    ProvisioningAction::SmokeTestWriteCredential,
-                    Some(ProvisioningAccessMode::Write),
-                ),
-            ],
-        };
-        let marker = ownership_marker(target);
-        ProvisioningPlan::new(
-            ProvisioningIntent::Apply,
-            NEON_MANIFEST_SHA256.into(),
-            target.clone(),
-            access,
-            full_capabilities(),
-            plan_steps(ProvisioningIntent::Apply, target, access, &marker, actions)?,
-            marker,
-            idempotency_key("apply", target, access, discriminator)?,
-        )
-    }
-
-    fn build_destroy_plan(
-        &self,
-        target: &ProvisioningTarget,
-        access: ProvisioningAccessMode,
-        marker: String,
-        discriminator: &str,
-    ) -> AppResult<ProvisioningPlan> {
-        ProvisioningPlan::new(
-            ProvisioningIntent::Destroy,
-            NEON_MANIFEST_SHA256.into(),
-            target.clone(),
-            access,
-            full_capabilities(),
-            plan_steps(
-                ProvisioningIntent::Destroy,
-                target,
-                access,
-                &marker,
-                vec![(ProvisioningAction::RevokeIssuedCredentials, None)],
-            )?,
-            marker,
-            idempotency_key("destroy", target, access, discriminator)?,
-        )
     }
 }
 
@@ -226,7 +128,10 @@ impl ProvisioningDriver for NeonProvisioningDriver {
             if cancellation.is_cancelled() {
                 return Err(blocked("Neon discovery was cancelled"));
             }
-            let connection = self.store.pin_connection_for_view(connection_id).await?;
+            let connection = self
+                .scaffold
+                .connection_for_discovery(connection_id)
+                .await?;
             if connection.profile.provider != Provider::Neon
                 || connection.profile.credential_mode != WorkspaceCredentialMode::Managed
             {
@@ -234,7 +139,7 @@ impl ProvisioningDriver for NeonProvisioningDriver {
             }
             // POST preparation performs live project/branch/database/endpoint and
             // owner/delegation checks using only the server-held integration key.
-            let authorized = self.target_authority.target(&connection).await?;
+            let authorized = self.scaffold.authorize(&connection).await?;
             let AuthorizedProvisioningResource::Neon {
                 project,
                 branch,
@@ -286,20 +191,10 @@ impl ProvisioningDriver for NeonProvisioningDriver {
         access: ProvisioningAccessMode,
         cancellation: &'a CancellationToken,
     ) -> DriverFuture<'a, ProvisioningPlan> {
-        Box::pin(async move {
-            if cancellation.is_cancelled() {
-                return Err(blocked("Neon planning was cancelled"));
-            }
-            validate_connection(target, connection)?;
-            let authorized = self.target_authority.target(connection).await?;
-            if !target_matches_authority(target, &authorized) {
-                return Err(blocked("Neon target changed before planning"));
-            }
-            if access == ProvisioningAccessMode::Write && !connection.profile.allow_writes {
-                return Err(blocked("Neon connection does not allow writes"));
-            }
-            self.build_apply_plan(target, access, "initial")
-        })
+        Box::pin(
+            self.scaffold
+                .plan_apply(target, connection, access, cancellation),
+        )
     }
 
     fn plan_destroy<'a>(
@@ -310,23 +205,10 @@ impl ProvisioningDriver for NeonProvisioningDriver {
         access: ProvisioningAccessMode,
         cancellation: &'a CancellationToken,
     ) -> DriverFuture<'a, (ProvisioningPlan, String)> {
-        Box::pin(async move {
-            if cancellation.is_cancelled() {
-                return Err(blocked("Neon destroy planning was cancelled"));
-            }
-            validate_cleanup_connection(target, connection)?;
-            if receipt.provider() != LocalProvider::Neon
-                || receipt.connection_id() != target.connection_id()
-                || receipt.target_fingerprint() != target.resource_fingerprint()
-                || receipt.ownership_marker() != ownership_marker(target)
-            {
-                return Err(blocked("Neon destroy receipt is invalid"));
-            }
-            let marker = receipt.ownership_marker().to_owned();
-            let plan =
-                self.build_destroy_plan(target, access, marker.clone(), &receipt.id().to_string())?;
-            Ok((plan, marker))
-        })
+        Box::pin(
+            self.scaffold
+                .plan_destroy(receipt, target, connection, access, cancellation),
+        )
     }
 
     fn plan_repair<'a>(
@@ -337,22 +219,10 @@ impl ProvisioningDriver for NeonProvisioningDriver {
         access: ProvisioningAccessMode,
         cancellation: &'a CancellationToken,
     ) -> DriverFuture<'a, ProvisioningPlan> {
-        Box::pin(async move {
-            if cancellation.is_cancelled() {
-                return Err(blocked("Neon repair planning was cancelled"));
-            }
-            validate_connection(target, connection)?;
-            if receipt.provider() != LocalProvider::Neon
-                || receipt.ownership_marker() != ownership_marker(target)
-            {
-                return Err(blocked("Neon repair receipt is invalid"));
-            }
-            let authorized = self.target_authority.target(connection).await?;
-            if !target_matches_authority(target, &authorized) {
-                return Err(blocked("Neon target must be rediscovered"));
-            }
-            self.build_apply_plan(target, access, &receipt.id().to_string())
-        })
+        Box::pin(
+            self.scaffold
+                .plan_repair(receipt, target, connection, access, cancellation),
+        )
     }
 
     fn inspect<'a>(
@@ -360,37 +230,7 @@ impl ProvisioningDriver for NeonProvisioningDriver {
         plan: &'a ProvisioningPlan,
         cancellation: &'a CancellationToken,
     ) -> DriverFuture<'a, ProvisioningInspection> {
-        Box::pin(async move {
-            if cancellation.is_cancelled() {
-                return Err(blocked("Neon inspection was cancelled"));
-            }
-            let (_, current) = self.target_status(plan.target()).await?;
-            if !current {
-                return Ok(ProvisioningInspection::Drift(
-                    ProvisioningRepairReason::ProviderDrift,
-                ));
-            }
-            if self
-                .smoke(plan.target(), ProvisioningAccessMode::Read)
-                .await
-                .is_err()
-                || (plan.access() == ProvisioningAccessMode::Write
-                    && self
-                        .smoke(plan.target(), ProvisioningAccessMode::Write)
-                        .await
-                        .is_err())
-            {
-                return Ok(ProvisioningInspection::Drift(
-                    ProvisioningRepairReason::CredentialSmokeFailed,
-                ));
-            }
-            Ok(ProvisioningInspection::Verified(
-                ProvisioningVerification::complete(
-                    Some(plan.target().provider_audit_id().into()),
-                    Utc::now(),
-                )?,
-            ))
-        })
+        Box::pin(self.scaffold.inspect(plan, cancellation))
     }
 
     fn execute_step<'a>(
@@ -400,65 +240,7 @@ impl ProvisioningDriver for NeonProvisioningDriver {
         permit: &'a ProvisioningExecutionPermit,
         cancellation: &'a CancellationToken,
     ) -> DriverFuture<'a, ProvisioningStepEvidence> {
-        Box::pin(async move {
-            plan.validate()?;
-            let expected = execution_hash(
-                plan.intent(),
-                plan.target(),
-                plan.access(),
-                plan.ownership_marker(),
-                step.action(),
-                step.access(),
-            )?;
-            if cancellation.is_cancelled()
-                || permit.operation_id.is_nil()
-                || permit.provider != LocalProvider::Neon
-                || permit.plan_sha256 != plan.payload_sha256()
-                || permit.execution_sha256 != step.execution_sha256()
-                || expected != step.execution_sha256()
-            {
-                return Err(blocked("Neon execution permit is invalid"));
-            }
-            match (plan.intent(), step.action(), step.access()) {
-                (ProvisioningIntent::Apply, ProvisioningAction::VerifyProviderTarget, None) => {
-                    self.revalidate_target(plan.target()).await?;
-                }
-                (
-                    ProvisioningIntent::Apply,
-                    ProvisioningAction::SmokeTestReadCredential,
-                    Some(ProvisioningAccessMode::Read),
-                ) => {
-                    self.smoke(plan.target(), ProvisioningAccessMode::Read)
-                        .await?
-                }
-                (
-                    ProvisioningIntent::Apply,
-                    ProvisioningAction::SmokeTestWriteCredential,
-                    Some(ProvisioningAccessMode::Write),
-                ) if plan.access() == ProvisioningAccessMode::Write => {
-                    self.smoke(plan.target(), ProvisioningAccessMode::Write)
-                        .await?;
-                }
-                (
-                    ProvisioningIntent::Destroy,
-                    ProvisioningAction::RevokeIssuedCredentials,
-                    None,
-                ) => {
-                    self.runtime
-                        .force_fence(Uuid::from(plan.target().connection_id()))
-                        .await?;
-                    let connection = self.cleanup_connection(plan.target()).await?;
-                    self.target_authority
-                        .destroy(&connection, plan.target(), plan.ownership_marker())
-                        .await?;
-                }
-                _ => return Err(blocked("Neon provisioning action is invalid")),
-            }
-            if cancellation.is_cancelled() {
-                return Err(blocked("Neon provisioning was cancelled"));
-            }
-            Ok(ProvisioningStepEvidence::exact(step))
-        })
+        Box::pin(self.scaffold.execute_step(plan, step, permit, cancellation))
     }
 
     fn verify<'a>(
@@ -466,19 +248,7 @@ impl ProvisioningDriver for NeonProvisioningDriver {
         plan: &'a ProvisioningPlan,
         cancellation: &'a CancellationToken,
     ) -> DriverFuture<'a, ProvisioningVerification> {
-        Box::pin(async move {
-            if cancellation.is_cancelled()
-                || plan.intent() != ProvisioningIntent::Apply
-                || !has_complete_smoke_plan(plan)
-            {
-                return Err(blocked("Neon verification plan is incomplete"));
-            }
-            self.revalidate_target(plan.target()).await?;
-            ProvisioningVerification::complete(
-                Some(plan.target().provider_audit_id().into()),
-                Utc::now(),
-            )
-        })
+        Box::pin(self.scaffold.verify(plan, cancellation))
     }
 }
 
@@ -487,135 +257,6 @@ fn ensure_authority(authority: &ProvisioningReadAuthority) -> AppResult<()> {
         || authority.manifest_sha256 != NEON_MANIFEST_SHA256
     {
         return Err(blocked("Neon discovery authority is invalid"));
-    }
-    Ok(())
-}
-
-fn full_capabilities() -> ProvisioningCapabilityManifest {
-    use ManagedAccessCapability::{
-        Apply, Destroy, Detect, Discover, Issue, Plan, Reconcile, Verify,
-    };
-    ProvisioningCapabilityManifest::new([
-        Detect, Discover, Plan, Apply, Verify, Issue, Reconcile, Destroy,
-    ])
-}
-
-fn plan_steps(
-    intent: ProvisioningIntent,
-    target: &ProvisioningTarget,
-    access: ProvisioningAccessMode,
-    marker: &str,
-    actions: Vec<(ProvisioningAction, Option<ProvisioningAccessMode>)>,
-) -> AppResult<Vec<ProvisioningPlanStep>> {
-    let phase = match intent {
-        ProvisioningIntent::Apply => ProvisioningPhase::Apply,
-        ProvisioningIntent::Destroy => ProvisioningPhase::Destroy,
-    };
-    actions
-        .into_iter()
-        .enumerate()
-        .map(|(index, (action, step_access))| {
-            ProvisioningPlanStep::new(
-                u16::try_from(index + 1).map_err(|_| blocked("Neon plan has too many steps"))?,
-                phase,
-                action,
-                step_access,
-                execution_hash(intent, target, access, marker, action, step_access)?,
-            )
-        })
-        .collect()
-}
-
-fn execution_hash(
-    intent: ProvisioningIntent,
-    target: &ProvisioningTarget,
-    access: ProvisioningAccessMode,
-    marker: &str,
-    action: ProvisioningAction,
-    step_access: Option<ProvisioningAccessMode>,
-) -> AppResult<String> {
-    canonical_hash(&json!({
-        "contract": "dopedb-neon-provisioning-execution-v1",
-        "manifestSha256": NEON_MANIFEST_SHA256,
-        "intent": intent,
-        "connectionId": Uuid::from(target.connection_id()),
-        "connectionRevision": target.connection_revision().to_string(),
-        "integrationId": Uuid::from(target.integration_id()),
-        "integrationGeneration": target.integration_generation().to_string(),
-        "resourceFingerprint": target.resource_fingerprint(),
-        "providerAuditId": target.provider_audit_id(),
-        "engine": target.engine(),
-        "production": target.production(),
-        "access": access,
-        "action": action,
-        "stepAccess": step_access,
-        "ownershipMarker": marker,
-    }))
-}
-
-fn idempotency_key(
-    intent: &str,
-    target: &ProvisioningTarget,
-    access: ProvisioningAccessMode,
-    discriminator: &str,
-) -> AppResult<String> {
-    let hash = canonical_hash(&json!({
-        "contract": "dopedb-neon-provisioning-idempotency-v1",
-        "intent": intent,
-        "connectionId": Uuid::from(target.connection_id()),
-        "connectionRevision": target.connection_revision().to_string(),
-        "integrationGeneration": target.integration_generation().to_string(),
-        "resourceFingerprint": target.resource_fingerprint(),
-        "access": access,
-        "discriminator": discriminator,
-    }))?;
-    Ok(format!("neon-{intent}-{}", &hash[..32]))
-}
-
-fn ownership_marker(target: &ProvisioningTarget) -> String {
-    format!(
-        "dopedb:{}:{}",
-        LocalProvider::Neon.storage_key(),
-        Uuid::from(target.connection_id())
-    )
-}
-
-fn validate_connection(
-    target: &ProvisioningTarget,
-    connection: &PinnedConnection,
-) -> AppResult<()> {
-    if target.provider() != LocalProvider::Neon
-        || Uuid::from(target.connection_id()) != connection.connection_id
-        || target.connection_revision() != connection.connection_revision
-        || target.engine() != connection.profile.engine
-        || connection.profile.provider != Provider::Neon
-        || connection.profile.credential_mode != WorkspaceCredentialMode::Managed
-        || connection.profile.database
-            != target
-                .selector(ProvisioningTargetSelector::Database)
-                .unwrap_or_default()
-    {
-        return Err(blocked("Neon connection pin changed"));
-    }
-    Ok(())
-}
-
-fn validate_cleanup_connection(
-    target: &ProvisioningTarget,
-    connection: &PinnedConnection,
-) -> AppResult<()> {
-    if target.provider() != LocalProvider::Neon
-        || Uuid::from(target.connection_id()) != connection.connection_id
-        || target.connection_revision() > connection.connection_revision
-        || target.engine() != connection.profile.engine
-        || connection.profile.provider != Provider::Neon
-        || connection.profile.credential_mode != WorkspaceCredentialMode::Managed
-        || connection.profile.database
-            != target
-                .selector(ProvisioningTargetSelector::Database)
-                .unwrap_or_default()
-    {
-        return Err(blocked("Neon cleanup target changed"));
     }
     Ok(())
 }
@@ -663,39 +304,6 @@ fn target_matches_authority(
             == target
                 .selector(ProvisioningTargetSelector::Database)
                 .unwrap_or_default()
-}
-
-fn has_complete_smoke_plan(plan: &ProvisioningPlan) -> bool {
-    let expected = match plan.access() {
-        ProvisioningAccessMode::Read => vec![
-            (ProvisioningAction::VerifyProviderTarget, None),
-            (
-                ProvisioningAction::SmokeTestReadCredential,
-                Some(ProvisioningAccessMode::Read),
-            ),
-        ],
-        ProvisioningAccessMode::Write => vec![
-            (ProvisioningAction::VerifyProviderTarget, None),
-            (
-                ProvisioningAction::SmokeTestReadCredential,
-                Some(ProvisioningAccessMode::Read),
-            ),
-            (
-                ProvisioningAction::SmokeTestWriteCredential,
-                Some(ProvisioningAccessMode::Write),
-            ),
-        ],
-    };
-    plan.steps()
-        .iter()
-        .map(|step| (step.action(), step.access()))
-        .eq(expected)
-}
-
-fn blocked(reason: &'static str) -> AppError {
-    AppError::Blocked {
-        reason: reason.into(),
-    }
 }
 
 #[cfg(test)]
@@ -748,8 +356,9 @@ pub(crate) fn assert_neon_driver_contract() {
     };
     assert!(target_matches_authority(&target, &authority));
 
-    let marker = ownership_marker(&target);
+    let marker = ownership_marker(CONTRACT, &target);
     let steps = plan_steps(
+        CONTRACT,
         ProvisioningIntent::Apply,
         &target,
         ProvisioningAccessMode::Write,
@@ -775,7 +384,14 @@ pub(crate) fn assert_neon_driver_contract() {
         full_capabilities(),
         steps,
         marker,
-        idempotency_key("apply", &target, ProvisioningAccessMode::Write, "fixture").unwrap(),
+        idempotency_key(
+            CONTRACT,
+            "apply",
+            &target,
+            ProvisioningAccessMode::Write,
+            "fixture",
+        )
+        .unwrap(),
     )
     .unwrap();
     assert!(has_complete_smoke_plan(&plan));
@@ -783,6 +399,7 @@ pub(crate) fn assert_neon_driver_contract() {
     assert_eq!(plan.target().integration_generation(), 17);
     assert_ne!(
         execution_hash(
+            CONTRACT,
             ProvisioningIntent::Apply,
             &target,
             ProvisioningAccessMode::Write,
@@ -792,6 +409,7 @@ pub(crate) fn assert_neon_driver_contract() {
         )
         .unwrap(),
         execution_hash(
+            CONTRACT,
             ProvisioningIntent::Apply,
             &target,
             ProvisioningAccessMode::Write,
@@ -862,6 +480,10 @@ pub(crate) async fn assert_neon_driver_failure_contract() {
     let connection = fixture_connection(&store, &target, Provider::Neon).await;
     let authority = Arc::new(FixtureTargetAuthority::new(authorized));
     let runtime = Arc::new(FixtureProvisioningRuntime::new(&target));
-    let driver = NeonProvisioningDriver::new(store, authority.clone(), runtime.clone());
+    let driver = NeonProvisioningDriver::new(
+        ProvisioningRepository::new(store),
+        authority.clone(),
+        runtime.clone(),
+    );
     assert_driver_failure_contract(&driver, &target, &connection, authority, runtime).await;
 }

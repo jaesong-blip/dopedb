@@ -4,6 +4,7 @@ import { authoritativeSession } from "../../../../lib/authoritative-session";
 import { db } from "../../../../lib/db";
 import { env } from "../../../../lib/env";
 import {
+  boundedJsonBody,
   isSafeDisplayText,
   jsonError,
   mutationAllowed,
@@ -60,7 +61,14 @@ export async function POST(request: Request) {
   if (!mutationAllowed(request, env.appOrigin())) return jsonError("Invalid request origin", 403);
   const session = await authoritativeSession(request);
   if (!session) return jsonError("Unauthorized", 401);
-  const body = (await request.json().catch(() => null)) as { name?: string } | null;
+  const parsed = await boundedJsonBody(request, 1_024);
+  if (!parsed.ok) {
+    return jsonError(
+      parsed.reason === "too_large" ? "Workspace request is too large" : "Invalid workspace request",
+      parsed.reason === "too_large" ? 413 : 400,
+    );
+  }
+  const body = parsed.value as { name?: string } | null;
   const name = body?.name?.trim();
   if (!name || !isSafeDisplayText(name, 120)) {
     return jsonError("Workspace name must be 1–120 single-line characters", 400);

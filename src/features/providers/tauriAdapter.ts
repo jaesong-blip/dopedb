@@ -30,7 +30,7 @@ function arrayResponse<T>(value: unknown, parse: (entry: unknown) => T): T[] {
 }
 
 /** The canonical desktop wire is intentionally narrower than receipt authority. */
-export function beginProviderCredentialBindingPayload(
+function beginProviderCredentialBindingPayload(
   request: BeginProviderCredentialBindingRequest,
 ) {
   return {

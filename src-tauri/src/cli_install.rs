@@ -210,14 +210,14 @@ fn global_cli_target() -> AppResult<PathBuf> {
 fn in_app_cli_target() -> AppResult<PathBuf> {
     #[cfg(feature = "packaged-benchmark")]
     {
-        return Ok(crate::app_paths::data_root()?
+        Ok(crate::app_paths::data_root()?
             .join("cli")
             .join("bin")
             .join(if cfg!(windows) {
                 "dopedb.exe"
             } else {
                 "dopedb"
-            }));
+            }))
     }
     #[cfg(not(feature = "packaged-benchmark"))]
     let base = dirs::data_local_dir()

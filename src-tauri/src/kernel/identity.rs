@@ -70,14 +70,6 @@ pub(crate) struct ConnectionJobId {
     pub(crate) job_id: JobId,
 }
 
-/// Complete ERD layout lookup identity. Layout UUIDs are meaningful only inside
-/// the connection whose catalog they present.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct ConnectionErdLayoutId {
-    pub(crate) connection_id: ConnectionId,
-    pub(crate) layout_id: ErdLayoutId,
-}
-
 /// Public account identity returned by the hosted authentication authority.
 ///
 /// It is deliberately distinct from [`AccountScopeId`]: an account identifies a

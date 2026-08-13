@@ -280,20 +280,20 @@ impl QueryPlatformAdapter {
             Some(execution) => (true, execution),
             None => (
                 false,
-                executor::execute(
+                executor::execute(executor::ExecutionRequest {
                     live,
                     engine,
-                    &classification,
-                    &payload.sql,
+                    classification: &classification,
+                    sql: &payload.sql,
                     namespace,
-                    &settings,
-                    if is_write {
+                    settings: &settings,
+                    grant: if is_write {
                         Some(claimed.grant())
                     } else {
                         None
                     },
-                    Some(&cancellation),
-                )
+                    cancellation: Some(&cancellation),
+                })
                 .await,
             ),
         };

@@ -14,7 +14,7 @@ use crate::store::Store;
 
 use adapters::{
     ConnectionWorkspaceRuntime, HostedWorkspaceControlPlane, ProcessWorkspaceConfiguration,
-    SqliteWorkspaceRepository,
+    SqliteWorkspaceRepository, SystemWorkspaceSshProfile,
 };
 pub(crate) use application::{
     WorkspaceConnectionCopyRequest, WorkspaceConnectionUpdateRequest,
@@ -22,9 +22,9 @@ pub(crate) use application::{
 };
 pub(crate) use domain::{
     RemoteWorkspace, Workspace, WorkspaceAccountMembership, WorkspaceAuthAccount,
-    WorkspaceAuthState, WorkspaceAuthUser, WorkspaceAuthorityFingerprint,
-    WorkspaceDeviceAuthorization, WorkspaceFeatureState, WorkspaceKind, WorkspaceLifecycleState,
-    WorkspaceLoginPoll, WorkspaceLoginPollStatus, WorkspacePullPage, WorkspaceRole,
+    WorkspaceAuthState, WorkspaceAuthUser, WorkspaceDeviceAuthorization, WorkspaceFeatureState,
+    WorkspaceKind, WorkspaceLifecycleState, WorkspaceLoginPoll, WorkspaceLoginPollStatus,
+    WorkspacePullPage, WorkspaceRole,
 };
 
 pub(crate) type WorkspacesFeature = WorkspaceUseCases<
@@ -33,6 +33,7 @@ pub(crate) type WorkspacesFeature = WorkspaceUseCases<
     HostedWorkspaceControlPlane,
     dyn ConnectionCredentialVault,
     ProcessWorkspaceConfiguration,
+    SystemWorkspaceSshProfile,
 >;
 
 pub(crate) fn compose(
@@ -46,5 +47,6 @@ pub(crate) fn compose(
         HostedWorkspaceControlPlane,
         credentials,
         ProcessWorkspaceConfiguration,
+        SystemWorkspaceSshProfile,
     )
 }

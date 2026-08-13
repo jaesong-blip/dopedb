@@ -11,40 +11,20 @@ use super::super::ports::{
 };
 use super::WorkspaceUseCases;
 
-impl<R, A, C, V, E> WorkspaceUseCases<R, A, C, V, E>
+impl<R, A, C, V, E, S> WorkspaceUseCases<R, A, C, V, E, S>
 where
     R: WorkspaceRepositoryPort,
     A: WorkspaceRuntimePort,
     C: WorkspaceControlPlanePort,
     V: ConnectionCredentialVault + ?Sized,
     E: WorkspaceConfigurationPort,
+    S: super::super::ports::WorkspaceSshProfilePort,
 {
     pub(crate) fn console_url(&self, workspace_id: Option<WorkspaceId>) -> AppResult<String> {
         self.control_plane.console_url(workspace_id)
     }
 
     pub(crate) async fn list(&self) -> AppResult<Vec<Workspace>> {
-        self.repository.list_workspaces().await
-    }
-
-    /// Explicitly refresh hosted memberships without changing the cached authentication
-    /// presentation. The desktop calls this after returning from web settings.
-    pub(crate) async fn refresh_memberships(&self) -> AppResult<Vec<Workspace>> {
-        let accounts = self.repository.accounts().await?;
-        for account in accounts {
-            match self.control_plane.auth_user(&account.user.id).await {
-                Ok(Some(user)) => self.sync_account_memberships(&user).await?,
-                Ok(None) => {
-                    self.runtime.remove_account(&account.user.id).await?;
-                }
-                Err(error) => tracing::warn!(
-                    user_id = %account.user.id,
-                    %error,
-                    "workspace account refresh deferred"
-                ),
-            }
-        }
-        self.ensure_active_account().await?;
         self.repository.list_workspaces().await
     }
 
@@ -115,9 +95,7 @@ where
         if active.kind == WorkspaceKind::Team
             && self.repository.active_account_id().await?.as_ref() == Some(&user.id)
         {
-            if let Err(error) = self.sync_workspace_resources(&user.id, active.id).await {
-                tracing::warn!(workspace_id = %active.id, %error, "workspace resource sync deferred after membership refresh");
-            }
+            self.sync_workspace_resources(&user.id, active.id).await?;
         }
         Ok(())
     }

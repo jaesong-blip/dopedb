@@ -7,6 +7,7 @@ import { createServer } from "vite";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = await createServer({
   root,
+  configFile: join(root, "vite.config.ts"),
   appType: "custom",
   logLevel: "error",
   server: { middlewareMode: true },

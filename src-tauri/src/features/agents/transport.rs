@@ -92,14 +92,16 @@ pub async fn list_agent_knowledge_environments(
 ) -> AppResult<Vec<AgentKnowledgeEnvironment>> {
     state.wait_for_post_paint_recovery().await?;
     let connection = state
-        .knowledge_store()
+        .services
+        .knowledge
         .pin_connection_for_read(Uuid::from(connection_id))
         .await?;
     if connection.scope.selected_account_id.is_some() {
         crate::features::knowledge::transport::sync_current_knowledge_access(&state).await?;
     }
     state
-        .knowledge_store()
+        .services
+        .knowledge
         .agent_knowledge_environments(&connection)
         .await
 }

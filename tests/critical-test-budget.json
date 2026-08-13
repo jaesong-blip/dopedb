@@ -29,9 +29,9 @@
       "tests": 3,
       "protects": "Skill install and update decisions without unsafe downgrades"
     },
-    "src/features/terminals/state.test.ts": {
+    "src/features/agents/sessionStore.test.ts": {
       "tests": 8,
-      "protects": "Connection-scoped terminal sessions and layout ownership"
+      "protects": "Exact-scope ACP session isolation, stale-event rejection, singleton list/listen ownership, and incomplete-inventory failure preservation"
     },
     "src/features/workbench/state.test.ts": {
       "tests": 4,
@@ -39,7 +39,7 @@
     },
     "src/features/workspaces/authPolicy.test.ts": {
       "tests": 3,
-      "protects": "Workspace authentication cooldown, request deduplication, and exact external authentication URL scope"
+      "protects": "Workspace authentication cooldown, request deduplication, exact external authentication URL scope, active-observer cache clearing, and role-only authority refetch"
     }
   },
   "rust": {
@@ -60,7 +60,7 @@
       "protects": "Analysis Article result-cache encryption, exact-authority binding, tamper rejection, and invalid-envelope denial"
     },
     "src-tauri/src/features/providers/adapters/authority_tests.rs": {
-      "tests": 6,
+      "tests": 5,
       "protects": "Provider inventory authority, duplicate-key-safe CLI JSON/exit status, literal fixed argv, Unicode/path/executable drift rejection, exact managed-target and connection-pinned receipts, cross-workspace/account scope CAS, restart-safe recovery, deterministic partial destroy repair, and Provider-audit hash-chain correlation"
     },
     "src-tauri/src/features/queries/domain_tests.rs": {
@@ -89,7 +89,7 @@
     },
     "src-tauri/src/store/tests/connections_scope.rs": {
       "tests": 4,
-      "protects": "Account isolation, credential binding, managed write projection, scope ABA rejection, bounded History/Audit metadata and exact detail reads, streamed audit verification identity, ACP provider migration, and ordered count/byte-bounded ACP replay batches"
+      "protects": "Account isolation, credential binding, managed write projection, scope ABA rejection, bounded History/Audit metadata and exact detail reads, streamed audit verification identity, ACP provider migration, active-session-preserving history pruning, and ordered count/byte-bounded ACP replay batches"
     },
     "tools/release-updater-verify/src/main.rs": {
       "tests": 4,

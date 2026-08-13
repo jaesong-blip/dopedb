@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use uuid::Uuid;
 
 pub const GRAPH_BUILD_ARTIFACT_SCHEMA_VERSION: u16 = 1;
@@ -14,6 +15,42 @@ pub const MAX_KNOWLEDGE_NODES: usize = 200_000;
 pub const MAX_KNOWLEDGE_EDGES: usize = 600_000;
 pub const MAX_KNOWLEDGE_EVIDENCE: usize = 600_000;
 pub const MAX_KNOWLEDGE_STRING_BYTES: usize = 16 * 1024;
+/// Canonical UTF-8 JSON ceiling for one immutable graph artifact. The hosted
+/// publisher rejects larger candidates before activation, and Desktop reserves
+/// a small envelope allowance when downloading the same artifact.
+pub const MAX_KNOWLEDGE_GRAPH_ARTIFACT_BYTES: usize = 120 * 1024 * 1024;
+pub const MAX_KNOWLEDGE_GRAPH_RESPONSE_BYTES: usize = 128 * 1024 * 1024;
+
+pub const fn knowledge_graph_artifact_size_allowed(serialized_bytes: usize) -> bool {
+    serialized_bytes <= MAX_KNOWLEDGE_GRAPH_ARTIFACT_BYTES
+}
+
+/// Serialize a Knowledge JSON value with object keys sorted recursively by their
+/// UTF-8 bytes. Array order is preserved. The hosted publisher and Desktop use
+/// these exact bytes for the immutable artifact digest and size ceiling.
+pub fn canonical_knowledge_json_bytes<T: Serialize + ?Sized>(
+    value: &T,
+) -> Result<Vec<u8>, serde_json::Error> {
+    fn sorted(value: Value) -> Value {
+        match value {
+            Value::Array(values) => Value::Array(values.into_iter().map(sorted).collect()),
+            Value::Object(values) => {
+                let mut entries = values.into_iter().collect::<Vec<_>>();
+                entries.sort_unstable_by(|(left, _), (right, _)| {
+                    left.as_bytes().cmp(right.as_bytes())
+                });
+                let mut object = Map::with_capacity(entries.len());
+                for (key, value) in entries {
+                    object.insert(key, sorted(value));
+                }
+                Value::Object(object)
+            }
+            scalar => scalar,
+        }
+    }
+
+    serde_json::to_vec(&sorted(serde_json::to_value(value)?))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -270,6 +307,9 @@ impl GraphBuildArtifactV1 {
             || self.edges.len() > MAX_KNOWLEDGE_EDGES
             || self.evidence.len() > MAX_KNOWLEDGE_EVIDENCE
             || !bounded_unique_paths(&self.changed_files)
+            || canonical_knowledge_json_bytes(self)
+                .map(|serialized| !knowledge_graph_artifact_size_allowed(serialized.len()))
+                .unwrap_or(true)
         {
             return false;
         }
@@ -372,6 +412,7 @@ fn safe_ref(value: &str) -> bool {
 fn safe_relative_path(value: &str) -> bool {
     safe_text(value)
         && !value.starts_with(['/', '\\'])
+        && !value.contains('\\')
         && !value
             .split(['/', '\\'])
             .any(|segment| segment.is_empty() || segment == "." || segment == "..")

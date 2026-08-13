@@ -199,18 +199,20 @@ export function AnalysisArticleEditor({
                     {bindings.map((binding) => {
                       const available = Boolean(binding.remoteConnectionId) && !binding.stale;
                       return (
-                        <label key={binding.id} className="tw:flex tw:min-h-control-lg tw:items-center tw:gap-2 tw:rounded-sm tw:px-2 tw:hover:bg-muted">
-                          <input
-                            type="checkbox"
-                            className="tw:size-4 tw:accent-primary"
+                        <div key={binding.id} className="tw:flex tw:min-h-control-lg tw:items-center tw:rounded-sm tw:px-2 tw:hover:bg-muted tw:[&>label]:flex-1">
+                          <CheckboxField
                             checked={Boolean(binding.remoteConnectionId && selectedConnectionIds.has(binding.remoteConnectionId))}
                             disabled={!available}
                             onChange={() => toggleBinding(binding)}
+                            label={(
+                              <>
+                                <StatusDot tone={binding.stale ? "warning" : available ? "success" : "danger"} />
+                                <span className="tw:min-w-0 tw:flex-1 tw:truncate tw:text-sm">{binding.alias || binding.connectionName}</span>
+                                <code className="tw:text-xs tw:text-muted-foreground">{binding.role} · r{binding.connectionRevision}</code>
+                              </>
+                            )}
                           />
-                          <StatusDot tone={binding.stale ? "warning" : available ? "success" : "danger"} />
-                          <span className="tw:min-w-0 tw:flex-1 tw:truncate tw:text-sm">{binding.alias || binding.connectionName}</span>
-                          <code className="tw:text-xs tw:text-muted-foreground">{binding.role} · r{binding.connectionRevision}</code>
-                        </label>
+                        </div>
                       );
                     })}
                   </div>

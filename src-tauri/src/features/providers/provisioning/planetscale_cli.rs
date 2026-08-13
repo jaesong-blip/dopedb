@@ -28,7 +28,6 @@ use super::ProvisioningReadAuthority;
 pub(super) const PLANETSCALE_MANIFEST_SHA256: &str =
     "03ec80011995764e16563fefbe987608d08c27803fac7cfa49c68d79f455ec3b";
 const MINIMUM_PSCALE_VERSION: &str = "0.308.0";
-const OFFICIAL_API_URL: &str = "https://api.planetscale.com";
 const MAX_TARGETS: usize = 256;
 const MAX_OBJECT_FIELDS: usize = 96;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
@@ -155,6 +154,10 @@ impl PlanetScaleInventory {
         ))
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "fixed CLI discovery keeps every expected target field explicit for fail-closed comparison"
+    )]
     pub(super) async fn discover_exact(
         &self,
         authority: &ProvisioningReadAuthority,
@@ -447,7 +450,13 @@ fn parse_auth_check(value: &Value) -> AppResult<ParsedAuthCheck> {
             value.auth_method.as_str(),
             "oauth" | "service_token" | "none"
         )
-        || value.api_url.as_deref() != Some(OFFICIAL_API_URL)
+        // The official CLI may report the endpoint it selected. This remains
+        // bounded diagnostic metadata: Desktop never treats it as authority or
+        // uses it to construct a provider request.
+        || value
+            .api_url
+            .as_deref()
+            .is_some_and(|api_url| !safe_text(api_url, 512))
         || value.agent_guide_command.as_deref() != Some("pscale agent-guide --format json")
         || value.issues.len() > 16
         || value.next_steps.len() > 16
@@ -731,18 +740,20 @@ pub(crate) fn assert_planetscale_cli_contract() {
         "authenticated": true,
         "auth_method": "oauth",
         "organization": "acme",
-        "api_url": OFFICIAL_API_URL,
+        "api_url": "cli-selected-endpoint",
         "agent_guide_command": "pscale agent-guide --format json",
         "next_steps": ["pscale database list --org acme --format json"]
     }))
     .unwrap();
     assert!(auth.authenticated);
     assert_eq!(auth.organization.as_deref(), Some("acme"));
+    let oversized_api_metadata = "x".repeat(513);
     assert!(parse_auth_check(&serde_json::json!({
         "status": "ok",
         "authenticated": true,
         "auth_method": "oauth",
-        "api_url": "https://attacker.invalid",
+        "organization": "acme",
+        "api_url": oversized_api_metadata,
         "agent_guide_command": "pscale agent-guide --format json"
     }))
     .is_err());

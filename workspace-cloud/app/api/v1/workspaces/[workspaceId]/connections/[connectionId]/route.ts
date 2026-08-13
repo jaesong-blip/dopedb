@@ -3,7 +3,13 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "../../../../../../../lib/db";
 import { env } from "../../../../../../../lib/env";
-import { isUuid, jsonError, mutationAllowed, privateJson } from "../../../../../../../lib/http";
+import {
+  boundedJsonBody,
+  isUuid,
+  jsonError,
+  mutationAllowed,
+  privateJson,
+} from "../../../../../../../lib/http";
 import { revokeActiveLeases } from "../../../../../../../lib/provider-integrations";
 import {
   claimRevocationGate,
@@ -59,7 +65,14 @@ export async function POST(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId) || !isUuid(connectionId)) {
     return jsonError("Invalid workspace or connection id", 400);
   }
-  const body = (await request.json().catch(() => null)) as { action?: unknown } | null;
+  const parsed = await boundedJsonBody(request, 256);
+  if (!parsed.ok) {
+    return jsonError(
+      parsed.reason === "too_large" ? "Connection action is too large" : "Invalid connection action",
+      parsed.reason === "too_large" ? 413 : 400,
+    );
+  }
+  const body = parsed.value as { action?: unknown } | null;
   if (body?.action !== "read" && body?.action !== "write") {
     return jsonError("Action must be read or write", 400);
   }
@@ -192,7 +205,14 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (!existing) return jsonError("Connection not found", 404);
   let input;
   try {
-    input = parseSharedConnection(await request.json(), {
+    const body = await boundedJsonBody(request, 64 * 1_024);
+    if (!body.ok) {
+      return jsonError(
+        body.reason === "too_large" ? "Connection template is too large" : "Invalid connection template",
+        body.reason === "too_large" ? 413 : 400,
+      );
+    }
+    input = parseSharedConnection(body.value, {
       credentialMode: existing.credentialMode === "managed" ? "managed" : "member_local",
     });
   } catch (error) {

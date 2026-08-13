@@ -17,6 +17,9 @@ const MAX_SOURCE_FILES = 100_000;
 const MAX_SOURCE_BYTES = 2 * 1024 * 1024 * 1024;
 const MAX_SOURCE_FILE_BYTES = 16 * 1024 * 1024;
 const GITHUB_REQUEST_TIMEOUT_MS = 8_000;
+const GITHUB_METADATA_RESPONSE_BYTES = 1024 * 1024;
+const GITHUB_TREE_RESPONSE_BYTES = 8 * 1024 * 1024;
+const GITHUB_BLOB_RESPONSE_BYTES = 24 * 1024 * 1024;
 
 type GithubInstallationToken = {
   token: string;
@@ -111,6 +114,7 @@ async function githubJson<T>(
   path: string,
   authorization: string,
   init: RequestInit = {},
+  maximumBytes = GITHUB_METADATA_RESPONSE_BYTES,
 ): Promise<T> {
   if (!path.startsWith("/") || path.includes("\\") || path.includes("\0")) {
     throw new Error("Invalid GitHub API path");
@@ -131,7 +135,41 @@ async function githubJson<T>(
   if (!response.ok) {
     throw new GithubKnowledgeRequestError(response.status);
   }
-  return await response.json() as T;
+  const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+  if (contentType !== "application/json" && !contentType?.endsWith("+json")) {
+    throw new Error("GitHub returned a non-JSON response");
+  }
+  const declaredLengthHeader = response.headers.get("content-length");
+  const declaredLength = declaredLengthHeader === null ? null : Number(declaredLengthHeader);
+  if (declaredLength !== null && (
+    !Number.isSafeInteger(declaredLength)
+    || declaredLength < 0
+    || declaredLength > maximumBytes
+  )) {
+    throw new Error("GitHub response exceeded the configured byte limit");
+  }
+  if (!response.body) throw new Error("GitHub returned an empty response");
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > maximumBytes) {
+      await reader.cancel();
+      throw new Error("GitHub response exceeded the configured byte limit");
+    }
+    chunks.push(value);
+  }
+  const body = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)), bytes);
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(body);
+  } catch {
+    throw new Error("GitHub returned invalid UTF-8 JSON");
+  }
+  return JSON.parse(text) as T;
 }
 
 export async function inspectGithubInstallation(installationId: bigint) {
@@ -171,20 +209,31 @@ export async function listGithubRepositories(installationId: bigint) {
       total_count: number;
       repositories: GithubRepository[];
     }>(`/installation/repositories?per_page=100&page=${page}`, token);
+    if (!Number.isSafeInteger(response.total_count) || response.total_count < 0) {
+      throw new Error("GitHub returned an invalid repository inventory size");
+    }
+    if (response.total_count > MAX_REPOSITORIES) {
+      throw new Error("GitHub installation exceeds the repository inventory limit");
+    }
+    if (!Array.isArray(response.repositories) || response.repositories.length > 100) {
+      throw new Error("GitHub returned an invalid repository inventory");
+    }
     for (const repository of response.repositories) {
       if (
-        Number.isSafeInteger(repository.id)
+        repository !== null
+        && typeof repository === "object"
+        && Number.isSafeInteger(repository.id)
         && repository.id > 0
         && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository.full_name)
         && /^[A-Za-z0-9._\/-]{1,255}$/.test(repository.default_branch)
       ) {
+        if (repositories.length >= MAX_REPOSITORIES) {
+          throw new Error("GitHub installation exceeds the repository inventory limit");
+        }
         repositories.push(repository);
       }
     }
     if (response.repositories.length < 100 || repositories.length >= response.total_count) break;
-  }
-  if (repositories.length > MAX_REPOSITORIES) {
-    throw new Error("GitHub installation exceeds the repository inventory limit");
   }
   return repositories.sort((left, right) => left.full_name.localeCompare(right.full_name));
 }
@@ -250,7 +299,7 @@ function supportedSourcePath(path: string) {
       || fileName.startsWith("dockerfile.")
       || (extension && SOURCE_EXTENSIONS.has(extension)))
     && segments.every((segment) => segment && segment !== "." && segment !== "..")
-    && !/[\u0000-\u001f\u007f]/.test(path)
+    && !/[\u0000-\u001f\u007f-\u009f]/.test(path)
     && !segments.some((segment) => EXCLUDED_SEGMENTS.has(segment)),
   );
 }
@@ -268,8 +317,12 @@ export async function githubSourceManifest(
   }>(
     `/repos/${checkedRepository(repository)}/git/trees/${commitSha}?recursive=1`,
     token,
+    {},
+    GITHUB_TREE_RESPONSE_BYTES,
   );
-  if (tree.truncated) throw new Error("GitHub repository tree is truncated");
+  if (tree.truncated || !Array.isArray(tree.tree) || tree.tree.length > MAX_SOURCE_FILES) {
+    throw new Error("GitHub repository tree is truncated or invalid");
+  }
   let totalBytes = 0;
   const files: GithubSourceFile[] = [];
   for (const item of tree.tree) {
@@ -290,7 +343,9 @@ export async function githubSourceManifest(
     }
     files.push({ path: item.path, blobSha: item.sha, bytes: item.size ?? 0 });
   }
-  return files.sort((left, right) => left.path.localeCompare(right.path));
+  return files.sort((left, right) =>
+    Buffer.compare(Buffer.from(left.path, "utf8"), Buffer.from(right.path, "utf8"))
+  );
 }
 
 async function readGithubBlobWithToken(
@@ -302,6 +357,8 @@ async function readGithubBlobWithToken(
   const blob = await githubJson<{ encoding: string; content: string; size: number }>(
     `/repos/${checkedRepository(repository)}/git/blobs/${blobSha}`,
     token,
+    {},
+    GITHUB_BLOB_RESPONSE_BYTES,
   );
   if (
     blob.encoding !== "base64"

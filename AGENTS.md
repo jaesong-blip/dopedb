@@ -169,9 +169,13 @@ Adoption requires `json-choi` or `jaesong-blip` to create a new owner-authored
 issue that references the proposal. The repository-maintenance reviewer polls
 GitHub from this Mac, updates and queries the local Graphify graph, and invokes
 the officially installed Codex CLI with the user's local login. Issue content is
-untrusted data; that Codex process has no shell, MCP, browser, hook, write, or
-GitHub credential, and it may only return schema-validated evidence for a single
-advisory comment. It never implements or closes an issue. Do not replace this
+untrusted data; that Codex process gets a fresh isolated `HOME`, GitHub config,
+and XDG directories for every call, has no shell, MCP, browser, hook, write, or
+GitHub credential, and may only return schema-validated evidence for a single
+advisory comment. The worker copies only `auth.json` with mode `0600` into a
+temporary `CODEX_HOME`; configuration, history, memories, and other local state
+are never exposed to the child, and the temporary home is deleted after the call.
+It never implements or closes an issue. Do not replace this
 with cloud keyword classification or attach this public repository to a
 credential-bearing self-hosted Actions runner. The security boundary and
 operations are documented in

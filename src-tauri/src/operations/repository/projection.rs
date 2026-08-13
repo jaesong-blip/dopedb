@@ -173,31 +173,7 @@ pub(super) fn row_to_operation(row: &sqlx::sqlite::SqliteRow) -> AppResult<Opera
     })
 }
 
-pub(super) fn row_to_approval(row: &sqlx::sqlite::SqliteRow) -> AppResult<OperationApprovalRecord> {
-    Ok(OperationApprovalRecord {
-        id: parse_uuid(row.try_get("id")?, "operation approval id")?,
-        operation_id: parse_uuid(
-            row.try_get("operation_id")?,
-            "operation approval operation id",
-        )?,
-        payload_hash: row.try_get("payload_hash")?,
-        approver: OperationApprover {
-            kind: parse_actor_kind(row.try_get::<String, _>("approver_kind")?.as_str())
-                .ok_or_else(|| AppError::Config("invalid stored operation approver kind".into()))?,
-            id: row.try_get("approver_id")?,
-        },
-        decision: parse_approval_decision(row.try_get::<String, _>("decision")?.as_str())
-            .ok_or_else(|| AppError::Config("invalid stored operation approval decision".into()))?,
-        reason: row.try_get("reason")?,
-        policy_revision: row.try_get("policy_revision")?,
-        created_at: parse_timestamp(row.try_get("created_at")?, "operation approval creation")?,
-        expires_at: parse_optional_timestamp(
-            row.try_get("expires_at")?,
-            "operation approval expiry",
-        )?,
-    })
-}
-
+#[cfg(test)]
 pub(super) fn row_to_event(row: &sqlx::sqlite::SqliteRow) -> AppResult<OperationEventRecord> {
     let event_json: String = row.try_get("event_json")?;
     Ok(OperationEventRecord {

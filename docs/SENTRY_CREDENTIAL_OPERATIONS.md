@@ -41,7 +41,8 @@ event; stack structure and allowlisted surface/runtime tags remain.
 
 Stable release builds upload hidden source maps from only one matrix worker,
 then remove map files from the packaged frontend. GitHub Actions reads the
-upload credential from the encrypted repository secret `SENTRY_AUTH_TOKEN`.
+upload credential from the approval-protected `stable-release` environment secret
+`SENTRY_AUTH_TOKEN`.
 That secret currently mirrors the authorized personal Keychain credential. If
 the personal token is rotated or an organization-scoped CI token is introduced,
 update the GitHub secret at the same time; the repository never stores either
@@ -56,7 +57,7 @@ value.
 3. When an organization-specific credential is required, add a separately
    named Keychain entry; do not overwrite `personal` silently.
 4. Inject a selected token only into the one Sentry CLI process that needs it,
-   then clear the environment variable. CI reads only the encrypted repository
+   then clear the environment variable. CI reads only the protected environment
    secret and never reads the workstation Keychain directly.
 
 ## Account changes

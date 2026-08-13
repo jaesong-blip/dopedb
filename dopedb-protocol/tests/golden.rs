@@ -1,6 +1,7 @@
 use dopedb_protocol::{
-    catalog::CatalogSnapshot, decode_arguments, AcpPluginArtifact, AcpPluginCompatibility,
-    AcpPluginId, AcpPluginLicense, AcpPluginManifestV1, AcpPluginProvider, AcpPluginUpstream,
+    canonical_knowledge_json_bytes, catalog::CatalogSnapshot, decode_arguments,
+    knowledge_graph_artifact_size_allowed, AcpPluginArtifact, AcpPluginCompatibility, AcpPluginId,
+    AcpPluginLicense, AcpPluginManifestV1, AcpPluginProvider, AcpPluginUpstream,
     AgentSessionRegisterArguments, AppOpenCommand, AppOpenResult, AuthenticationRequirement,
     CatalogSearchCommand, CatalogShowCommand, CommandName, CommandSpec, ConnectionListCommand,
     ConnectionShowCommand, ConnectionTestCommand, DatabaseListCommand, DocumentRunCommand,
@@ -11,10 +12,11 @@ use dopedb_protocol::{
     SkillStatusCommand, SkillsGetCommand, SkillsListCommand, SqlProposeCommand, StatusCommand,
     StatusResult, TableDescribeCommand, VersionCommand, VersionResult,
     ACP_PLUGIN_MANIFEST_SCHEMA_VERSION, COMMAND_SCHEMA_VERSION,
-    GRAPH_BUILD_ARTIFACT_SCHEMA_VERSION, PROTOCOL_MAX,
+    GRAPH_BUILD_ARTIFACT_SCHEMA_VERSION, MAX_KNOWLEDGE_GRAPH_ARTIFACT_BYTES, PROTOCOL_MAX,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 
 fn value(source: &str) -> Value {
     serde_json::from_str(source).expect("fixture must be valid JSON")
@@ -309,11 +311,54 @@ fn query_plan_request_matches_v14_command_schema_and_pinned_agent_registration()
         serde_json::from_str(graph_source).expect("knowledge artifact fixture must decode");
     assert_eq!(graph.schema_version, GRAPH_BUILD_ARTIFACT_SCHEMA_VERSION);
     assert!(graph.validate());
+    assert!(knowledge_graph_artifact_size_allowed(
+        canonical_knowledge_json_bytes(&graph).unwrap().len(),
+    ));
+    assert!(knowledge_graph_artifact_size_allowed(
+        MAX_KNOWLEDGE_GRAPH_ARTIFACT_BYTES,
+    ));
+    assert!(!knowledge_graph_artifact_size_allowed(
+        MAX_KNOWLEDGE_GRAPH_ARTIFACT_BYTES + 1,
+    ));
+    let canonical_graph = canonical_knowledge_json_bytes(&graph).unwrap();
+    let canonical_graph_sha256 = Sha256::digest(&canonical_graph)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    assert_eq!(
+        canonical_graph_sha256,
+        "cd6d4a78ca01576d8d2716ac1f168c1de3c75bbb7f73ded342edd93af28a55f0"
+    );
+    let canonical_vector = json!({
+        "z": [{"β": 2, "a": 1}, "한글"],
+        "a": {"😀": true, "\u{e000}": null, "2": "two", "10": "ten"},
+    });
+    let canonical_vector = canonical_knowledge_json_bytes(&canonical_vector).unwrap();
+    assert_eq!(
+        String::from_utf8(canonical_vector.clone()).unwrap(),
+        "{\"a\":{\"10\":\"ten\",\"2\":\"two\",\"\":null,\"😀\":true},\"z\":[{\"a\":1,\"β\":2},\"한글\"]}"
+    );
+    let canonical_vector_sha256 = Sha256::digest(canonical_vector)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    assert_eq!(
+        canonical_vector_sha256,
+        "d6168ccb84693cd24b6b4d6c462dac4ab5b258b5566a684a0bbfd186fcfeebbd"
+    );
     assert_eq!(serde_json::to_value(&graph).unwrap(), value(graph_source));
-    let mut unsafe_graph = serde_json::to_value(graph).unwrap();
+    let mut unsafe_graph = serde_json::to_value(&graph).unwrap();
     unsafe_graph["evidence"][0]["filePath"] = json!("../secrets.env");
     let unsafe_graph: GraphBuildArtifactV1 = serde_json::from_value(unsafe_graph).unwrap();
     assert!(!unsafe_graph.validate());
+    let mut backslash_graph = serde_json::to_value(&graph).unwrap();
+    backslash_graph["evidence"][0]["filePath"] = json!("src\\main.ts");
+    let backslash_graph: GraphBuildArtifactV1 = serde_json::from_value(backslash_graph).unwrap();
+    assert!(!backslash_graph.validate());
+    let mut prerelease_graph = serde_json::to_value(&graph).unwrap();
+    prerelease_graph["extractor"]["version"] = json!("1.0.0-beta");
+    let prerelease_graph: GraphBuildArtifactV1 = serde_json::from_value(prerelease_graph).unwrap();
+    assert!(!prerelease_graph.validate());
 }
 
 #[test]

@@ -72,13 +72,13 @@ export default function RetiredChatArchive({
               <span className="tw:text-muted-foreground">{t("common.loading")}</span>
             ) : threadsQuery.error ? (
               <span className="tw:text-ui tw:text-danger" role="alert">
-                {t("terminal.archiveLoadFailed", {
+                {t("agent.archiveLoadFailed", {
                   error: errMessage(threadsQuery.error),
                 })}
               </span>
             ) : threads.length === 0 ? (
               <span className="tw:text-muted-foreground">
-                {t("terminal.archiveEmpty")}
+                {t("agent.archiveEmpty")}
               </span>
             ) : (
               threads.map((thread) => (
@@ -92,8 +92,8 @@ export default function RetiredChatArchive({
                   <strong>{thread.title}</strong>
                   <span>
                     {thread.provider === "codex"
-                      ? t("terminal.codex")
-                      : t("terminal.claude")}
+                      ? "Codex"
+                      : "Claude"}
                     {" · "}
                     {date.format(new Date(thread.updatedAt))}
                   </span>
@@ -110,13 +110,13 @@ export default function RetiredChatArchive({
               <span className="tw:text-muted-foreground">{t("common.loading")}</span>
             ) : messagesQuery.error ? (
               <span className="tw:text-ui tw:text-danger" role="alert">
-                {t("terminal.archiveLoadFailed", {
+                {t("agent.archiveLoadFailed", {
                   error: errMessage(messagesQuery.error),
                 })}
               </span>
             ) : (messagesQuery.data ?? []).length === 0 ? (
               <span className="tw:text-muted-foreground">
-                {t("terminal.archiveNoMessages")}
+                {t("agent.archiveNoMessages")}
               </span>
             ) : (
               (messagesQuery.data ?? []).map((message) => (
@@ -127,10 +127,10 @@ export default function RetiredChatArchive({
                 >
                   <strong className="tw:text-xs tw:text-muted-foreground">
                     {message.role === "user"
-                      ? t("terminal.you")
+                      ? t("agent.you")
                       : activeThread.provider === "codex"
-                        ? t("terminal.codex")
-                        : t("terminal.claude")}
+                        ? "Codex"
+                        : "Claude"}
                   </strong>
                   <p className="tw:m-0 tw:leading-relaxed tw:whitespace-pre-wrap tw:break-words">
                     {message.text}

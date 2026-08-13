@@ -21,6 +21,39 @@ use crate::features::knowledge::ports::{
 
 const MAX_GRAPH_ARTIFACT_JSON_BYTES: usize = 256 * 1024 * 1024;
 
+type EnvironmentConnectionRow = (
+    String,
+    String,
+    String,
+    i64,
+    String,
+    i64,
+    i64,
+    String,
+    String,
+    String,
+);
+type KnowledgeScopeRow = (
+    String,
+    String,
+    i64,
+    String,
+    String,
+    String,
+    i64,
+    i64,
+    String,
+);
+type KnowledgeMappingRow = (
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+    DateTime<Utc>,
+);
+
 impl Store {
     pub(crate) async fn knowledge_projects(
         &self,
@@ -554,7 +587,7 @@ impl Store {
         });
         if !connections
             .iter()
-            .any(|value| value.connection_id == Uuid::from(connection.connection_id))
+            .any(|value| value.connection_id == connection.connection_id)
         {
             return Err(AppError::Blocked {
                 reason: "the current connection is not in the selected Environment grant".into(),
@@ -942,7 +975,7 @@ impl Store {
         self.environment_connections(connection.scope.workspace_id, project_environment_id)
             .await?
             .into_iter()
-            .find(|binding| binding.connection_id == Uuid::from(connection.connection_id))
+            .find(|binding| binding.connection_id == connection.connection_id)
             .ok_or_else(|| AppError::Config("the Environment connection binding was lost".into()))
     }
 
@@ -985,18 +1018,7 @@ impl Store {
         workspace_id: Uuid,
         project_environment_id: Uuid,
     ) -> AppResult<Vec<EnvironmentConnectionBinding>> {
-        let rows: Vec<(
-            String,
-            String,
-            String,
-            i64,
-            String,
-            i64,
-            i64,
-            String,
-            String,
-            String,
-        )> = sqlx::query_as(
+        let rows: Vec<EnvironmentConnectionRow> = sqlx::query_as(
             "SELECT binding.id, binding.workspace_id, binding.project_environment_id,
                         binding.environment_revision, binding.connection_id,
                         binding.connection_revision, connection.revision,
@@ -1338,17 +1360,7 @@ impl KnowledgeScopeRepositoryPort for Store {
     }
 
     async fn scopes(&self, workspace_id: Uuid) -> AppResult<Vec<StoredKnowledgeScope>> {
-        let rows: Vec<(
-            String,
-            String,
-            i64,
-            String,
-            String,
-            String,
-            i64,
-            i64,
-            String,
-        )> = sqlx::query_as(
+        let rows: Vec<KnowledgeScopeRow> = sqlx::query_as(
             "SELECT project.id, project.name, project.revision,
                     environment.id, environment.name, environment.risk_class,
                     environment.revision, source.environment_revision,
@@ -2094,15 +2106,7 @@ impl KnowledgeMappingRepositoryPort for Store {
         project_environment_id: Uuid,
         graph_revision_id: Uuid,
     ) -> AppResult<Vec<KnowledgeMappingProposal>> {
-        let rows: Vec<(
-            String,
-            String,
-            String,
-            String,
-            String,
-            String,
-            DateTime<Utc>,
-        )> = sqlx::query_as(
+        let rows: Vec<KnowledgeMappingRow> = sqlx::query_as(
             "SELECT id, schema_fingerprint, from_node_id, target_kind,
                         target_identity, state, proposed_at
                  FROM knowledge_mapping_proposals

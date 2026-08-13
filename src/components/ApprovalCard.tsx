@@ -8,16 +8,19 @@
 import { useEffect, useRef, useState } from "react";
 import {
   approveOperation,
-  cancelQuery,
   rejectOperation,
-} from "../ipc/commands";
+} from "../features/operations/tauriAdapter";
 import type {
   Engine,
   ExecOutcome,
   SafetySettings,
 } from "../ipc/types";
 import { errMessage, isQueryCancellationError } from "../ipc/types";
-import { proposeSql, runSql } from "../features/queries/tauriAdapter";
+import {
+  cancelQuery,
+  proposeSql,
+  runSql,
+} from "../features/queries/tauriAdapter";
 import type {
   Classification,
   PreviewReport,
@@ -31,6 +34,8 @@ import {
   StatusBadge,
   type StatusTone,
 } from "../design-system/components/Status";
+import { Button } from "../design-system/components/Button";
+import { TextInput } from "../design-system/components/FormControls";
 
 const ENGINE_LABEL: Record<Engine, string> = {
   postgres: "PostgreSQL",
@@ -332,14 +337,16 @@ export default function ApprovalCard({
         {t("approval.confirmationPrompt")}{" "}
         <code className="tw:font-mono">{confirmationPhrase}</code>
       </span>
-      <input
-        className="tw:w-full tw:max-w-[320px] tw:font-mono"
-        value={confirmation}
-        onChange={(event) => setConfirmation(event.target.value)}
-        placeholder={confirmationPhrase}
-        autoComplete="off"
-        spellCheck={false}
-      />
+      <span className="tw:w-full tw:max-w-[320px]">
+        <TextInput
+          monospace
+          value={confirmation}
+          onChange={(event) => setConfirmation(event.target.value)}
+          placeholder={confirmationPhrase}
+          autoComplete="off"
+          spellCheck={false}
+        />
+      </span>
     </label>
   );
   const compactStatus = writesBlocked
@@ -412,15 +419,14 @@ export default function ApprovalCard({
         // rejection to approve it, rather than forcing a re-issue.
         <div className="ds-action-row ds-control-row">
           <StatusGlyph label={t("approval.rejected")} icon="circleSlash" tone="danger" />
-          <button
-            className="btn"
+          <Button
             onClick={() => {
               setDecided(null);
               setProposalVersion((version) => version + 1);
             }}
           >
             {t("approval.reconsider")}
-          </button>
+          </Button>
         </div>
       ) : busy ? (
         <div className="ds-action-row ds-control-row">
@@ -428,9 +434,9 @@ export default function ApprovalCard({
             label={`${canAutoRun ? t("approval.readOnlyRunning") : t("approval.running")} ${elapsed}s`}
             icon="refresh"
           />
-          <button className="btn" onClick={cancel}>
+          <Button onClick={cancel}>
             {t("common.cancel")}
-          </button>
+          </Button>
         </div>
       ) : canAutoRun && !cancelled ? (
         <StatusGlyph label={t("approval.readOnlyAutoRunning")} icon="play" />
@@ -441,8 +447,8 @@ export default function ApprovalCard({
               {t("approval.writesDisabledBody")}
             </div>
           )}
-          <button
-            className="btn primary"
+          <Button
+            variant="primary"
             disabled={busy || !proposal || writesBlocked || !confirmationMatches}
             onClick={() => void execute()}
           >
@@ -451,14 +457,13 @@ export default function ApprovalCard({
                 ? t("approval.applyChange")
                 : t("approval.approveAndRunWrite")
               : t("sql.run")}
-          </button>
-          <button
-            className="btn"
+          </Button>
+          <Button
             disabled={busy || !proposal}
             onClick={() => void reject()}
           >
             {t("approval.reject")}
-          </button>
+          </Button>
         </div>
       )}
       {compact && (

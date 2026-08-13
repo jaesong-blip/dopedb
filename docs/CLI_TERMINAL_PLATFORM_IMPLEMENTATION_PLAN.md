@@ -942,10 +942,8 @@ struct TerminalManager {
 - PTY master
 - child/process killer
 - output reader task/thread
-- bounded replay buffer
 - size
 - pinned connection/workspace
-- agent profile
 - lifecycle state
 
 ### 8.2 Tauri command/channel
@@ -953,19 +951,18 @@ struct TerminalManager {
 Commands:
 
 - `terminal_create`
-- `terminal_list`
-- `terminal_focus`
 - `terminal_write`
 - `terminal_resize`
-- `terminal_kill`
-- `terminal_restart`
-- `terminal_rename`
-- `terminal_shutdown_all`
+- `terminal_close`
+
+앱 lifecycle과 workspace authority fence는 공개 IPC가 아니라 내부
+`stop_connection` / `stop_all` / `shutdown_all` 경계로 process tree를 정리한다.
+Terminal은 advanced Shell 경로만 소유하며 Codex/Claude 프로세스는 공식 ACP
+adapter lifecycle이 별도로 소유한다.
 
 고용량 output은 Tauri Channel을 사용한다. 상태 event 이름은 점을 쓰지 않는다.
 
 - `terminal:state`
-- `terminal:exit`
 - `operation:changed`
 - `job:progress`
 - `skill:inventory`

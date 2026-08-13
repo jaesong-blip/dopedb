@@ -13,11 +13,9 @@ use crate::kernel::identity::{ConnectionId, TerminalSessionId};
 use crate::store::Store;
 
 use super::super::domain::{
-    TerminalCreateRequest, TerminalFocusReceipt, TerminalOutputChunk, TerminalSessionSummary,
-    TerminalSize,
+    TerminalCreateRequest, TerminalOutputChunk, TerminalSessionSummary, TerminalSize,
 };
 use super::super::ports::TerminalSessionPort;
-use super::authority::connection_pin_matches;
 use super::runtime::{CreateContext, PtyTerminalRuntime};
 
 // Capabilities are memory-only and revoked as soon as the PTY leader exits. The
@@ -78,7 +76,6 @@ impl TerminalSessionPort for DesktopTerminalAdapter {
                 request,
                 CreateContext {
                     id: session_id,
-                    replacement_id: None,
                     connection,
                     session_token: token.as_str(),
                     runtime_file: runtime_file.as_deref(),
@@ -96,24 +93,6 @@ impl TerminalSessionPort for DesktopTerminalAdapter {
             broker_sessions.revoke(session_id);
         }
         result
-    }
-
-    fn list(&self) -> AppResult<Vec<TerminalSessionSummary>> {
-        Ok(self.runtime.list())
-    }
-
-    async fn focus(
-        &self,
-        id: TerminalSessionId,
-        after_sequence: Option<u64>,
-        output: Self::OutputSink,
-    ) -> AppResult<TerminalFocusReceipt> {
-        let runtime = self.runtime.clone();
-        tokio::task::spawn_blocking(move || runtime.focus(id, after_sequence, output))
-            .await
-            .map_err(|_| {
-                AppError::Config("the Terminal replay worker stopped unexpectedly".into())
-            })?
     }
 
     async fn write(&self, id: TerminalSessionId, bytes: Vec<u8>) -> AppResult<()> {
@@ -134,100 +113,12 @@ impl TerminalSessionPort for DesktopTerminalAdapter {
             })?
     }
 
-    async fn kill(
-        &self,
-        id: TerminalSessionId,
-        events: Self::EventSink,
-    ) -> AppResult<TerminalSessionSummary> {
-        let runtime = self.runtime.clone();
-        tokio::task::spawn_blocking(move || runtime.kill(id, &events))
-            .await
-            .map_err(|_| AppError::Config("the Terminal stop worker stopped unexpectedly".into()))?
-    }
-
     async fn close(&self, id: TerminalSessionId, events: Self::EventSink) -> AppResult<()> {
         let runtime = self.runtime.clone();
         tokio::task::spawn_blocking(move || runtime.close(id, &events))
             .await
             .map_err(|_| {
                 AppError::Config("the Terminal close worker stopped unexpectedly".into())
-            })?
-    }
-
-    async fn restart(
-        &self,
-        id: TerminalSessionId,
-        output: Self::OutputSink,
-        events: Self::EventSink,
-    ) -> AppResult<TerminalSessionSummary> {
-        let seed = self.runtime.restart_seed(id)?;
-        let current = self
-            .store
-            .pin_connection_for_read(seed.connection.connection_id)
-            .await?;
-        if !connection_pin_matches(&seed.connection_pin, &current) {
-            return Err(AppError::Blocked {
-                reason:
-                    "the pinned connection changed; create a new Terminal session instead of retargeting"
-                        .into(),
-            });
-        }
-        let cli_directory = Self::cli_directory().await?;
-        let _ = self.runtime.kill(id, &events)?;
-
-        let next_id = TerminalSessionId::from(Uuid::new_v4());
-        let issued = self.broker.sessions().issue(
-            next_id,
-            &current,
-            BrokerCapability::ALL,
-            TERMINAL_CAPABILITY_TTL,
-        )?;
-        let token = Zeroizing::new(issued.token().to_owned());
-        let runtime_file = self.broker.runtime_file();
-        let broker_sessions = self.broker.sessions().clone();
-        let create_runtime = self.runtime.clone();
-        let request = TerminalCreateRequest {
-            connection_id: ConnectionId::from(current.connection_id),
-            profile: seed.profile,
-            size: seed.size,
-            name: Some(seed.name),
-        };
-        let result = tokio::task::spawn_blocking(move || {
-            create_runtime.create(
-                request,
-                CreateContext {
-                    id: next_id,
-                    replacement_id: Some(id),
-                    connection: current,
-                    session_token: token.as_str(),
-                    runtime_file: runtime_file.as_deref(),
-                    cli_directory: &cli_directory,
-                    output,
-                    app: &events,
-                },
-            )
-        })
-        .await
-        .map_err(|_| AppError::Config("the Terminal restart worker stopped unexpectedly".into()))?;
-        if result.is_err() {
-            broker_sessions.revoke(next_id);
-        } else {
-            self.runtime.forget(id);
-        }
-        result
-    }
-
-    async fn rename(
-        &self,
-        id: TerminalSessionId,
-        name: String,
-        events: Self::EventSink,
-    ) -> AppResult<TerminalSessionSummary> {
-        let runtime = self.runtime.clone();
-        tokio::task::spawn_blocking(move || runtime.rename(id, &name, &events))
-            .await
-            .map_err(|_| {
-                AppError::Config("the Terminal rename worker stopped unexpectedly".into())
             })?
     }
 

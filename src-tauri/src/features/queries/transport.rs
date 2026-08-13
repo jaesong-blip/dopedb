@@ -406,6 +406,10 @@ pub(crate) async fn read_sql_result_page(
 /// Picks a native destination and writes an immutable result without exposing
 /// either row payloads or filesystem paths to the renderer.
 #[tauri::command]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Tauri IPC exposes stable named fields rather than a nested compatibility wrapper"
+)]
 pub(crate) async fn export_sql_result(
     state: State<'_, AppState>,
     app: tauri::AppHandle,

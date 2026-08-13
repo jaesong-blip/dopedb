@@ -13,7 +13,7 @@ import {
   revealJobArtifact,
   startJob,
 } from "../features/jobs/tauriAdapter";
-import { approveOperation } from "../ipc/commands";
+import { approveOperation } from "../features/operations/tauriAdapter";
 import {
   jobConnectionId,
   jobRelationRef,
@@ -34,7 +34,12 @@ import {
 } from "../ipc/types";
 import { Icon } from "./Icon";
 import { Button } from "../design-system/components/Button";
-import { Field } from "../design-system/components/FormControls";
+import {
+  CheckboxField,
+  Field,
+  SelectInput,
+  TextInput,
+} from "../design-system/components/FormControls";
 import { ProgressBar } from "../design-system/components/Progress";
 import { StatusDot, type StatusTone } from "../design-system/components/Status";
 import { InspectorHeader } from "../design-system/components/Workbench";
@@ -405,27 +410,29 @@ export default function JobPanel({
         role="group"
         aria-label={t("jobs.kind")}
       >
-        <button
-          className="btn small tw:justify-center"
+        <Button
+          size="compact"
+          active={kind === "export"}
           aria-pressed={kind === "export"}
           onClick={() => resetPlan("export", format)}
         >
           <Icon name="download" />
           {t("jobs.export")}
-        </button>
-        <button
-          className="btn small tw:justify-center"
+        </Button>
+        <Button
+          size="compact"
+          active={kind === "import"}
           aria-pressed={kind === "import"}
           onClick={() => resetPlan("import", format)}
         >
           <Icon name="upload" />
           {t("jobs.import")}
-        </button>
+        </Button>
       </div>
 
       <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_minmax(112px,0.45fr)] tw:gap-3 tw:border-t tw:border-border-subtle tw:pt-3 tw:@max-[760px]:grid-cols-1">
         <Field label={t("jobs.format")}>
-          <select
+          <SelectInput
             value={format}
             onChange={(event) =>
               resetPlan(kind, event.target.value as JobFormat)
@@ -436,11 +443,11 @@ export default function JobPanel({
                 {value.replace("_", " + ").toUpperCase()}
               </option>
             ))}
-          </select>
+          </SelectInput>
         </Field>
 
         <Field label={t("jobs.batchSize")}>
-          <input
+          <TextInput
             type="number"
             min={100}
             max={10_000}
@@ -468,14 +475,14 @@ export default function JobPanel({
               </small>
             )}
           </div>
-          <button
-            className="btn small"
+          <Button
+            size="compact"
             disabled={busy}
             onClick={() => void chooseFile()}
           >
             <Icon name="folder" />
             {t("jobs.chooseFile")}
-          </button>
+          </Button>
         </div>
 
         {kind === "import" &&
@@ -515,15 +522,11 @@ export default function JobPanel({
                 </div>
               )}
               <div className="tw:col-span-full tw:grid tw:gap-2 tw:@max-[760px]:col-span-1">
-                <label className="tw:inline-flex tw:items-center tw:gap-1">
-                  <input
-                    className="tw:w-auto"
-                    type="checkbox"
-                    checked={customMapping}
-                    onChange={(event) => setCustomMapping(event.target.checked)}
-                  />
-                  <span>{t("jobs.customMapping")}</span>
-                </label>
+                <CheckboxField
+                  checked={customMapping}
+                  onChange={(event) => setCustomMapping(event.target.checked)}
+                  label={t("jobs.customMapping")}
+                />
                 <p className="tw:m-0 tw:text-xs tw:text-muted-foreground">
                   {customMapping
                     ? t("jobs.customMappingHelp")
@@ -545,7 +548,8 @@ export default function JobPanel({
                           {source}
                         </code>
                         <Icon name="arrowRight" />
-                        <select
+                        <SelectInput
+                          density="compact"
                           value={targets[source] ?? ""}
                           onChange={(event) =>
                             setTargets((current) => ({
@@ -561,11 +565,9 @@ export default function JobPanel({
                               {column.name}
                             </option>
                           ))}
-                        </select>
-                        <label className="tw:inline-flex tw:items-center tw:gap-1 tw:text-xs tw:text-muted-foreground tw:@max-[760px]:col-start-3">
-                          <input
-                            className="tw:w-auto"
-                            type="checkbox"
+                        </SelectInput>
+                        <span className="tw:@max-[760px]:col-start-3">
+                          <CheckboxField
                             checked={required[source] ?? false}
                             disabled={!targets[source]}
                             onChange={(event) =>
@@ -574,9 +576,9 @@ export default function JobPanel({
                                 [source]: event.target.checked,
                               }))
                             }
+                            label={t("jobs.required")}
                           />
-                          {t("jobs.required")}
-                        </label>
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -588,7 +590,7 @@ export default function JobPanel({
         {kind === "import" && format !== "sql" && format !== "sql_gzip" && (
           <div className="tw:col-span-full tw:grid tw:grid-cols-[minmax(0,1fr)_minmax(112px,0.55fr)] tw:gap-2 tw:@max-[760px]:col-span-1 tw:@max-[760px]:grid-cols-1">
             <Field label={t("jobs.onError")}>
-              <select
+              <SelectInput
                 value={errorPolicy}
                 onChange={(event) =>
                   setErrorPolicy(event.target.value as JobErrorPolicy)
@@ -596,10 +598,10 @@ export default function JobPanel({
               >
                 <option value="stop">{t("jobs.stop")}</option>
                 <option value="continue">{t("jobs.continue")}</option>
-              </select>
+              </SelectInput>
             </Field>
             <Field label={t("jobs.maxErrors")}>
-              <input
+              <TextInput
                 type="number"
                 min={1}
                 max={1_000_000}
@@ -616,7 +618,7 @@ export default function JobPanel({
             </Field>
             <div className="tw:col-span-full tw:@max-[760px]:col-span-1">
               <Field label={t("jobs.nullValues")}>
-                <input
+                <TextInput
                   value={nullValues}
                   onChange={(event) => setNullValues(event.target.value)}
                   spellCheck={false}
@@ -639,13 +641,15 @@ export default function JobPanel({
           </p>
         )}
 
-        <button
-          className="btn primary tw:col-span-full tw:justify-center tw:@max-[760px]:col-span-1"
-          disabled={!canSubmit}
-          onClick={() => void submit()}
-        >
-          {busy ? t("common.loading") : t("jobs.create")}
-        </button>
+        <span className="tw:col-span-full tw:@max-[760px]:col-span-1">
+          <Button
+            variant="primary"
+            disabled={!canSubmit}
+            onClick={() => void submit()}
+          >
+            {busy ? t("common.loading") : t("jobs.create")}
+          </Button>
+        </span>
       </div>
 
       {approval && (
@@ -686,7 +690,8 @@ export default function JobPanel({
                 </span>
               }
             >
-              <input
+              <TextInput
+                monospace
                 value={confirmation}
                 onChange={(event) => setConfirmation(event.target.value)}
                 autoComplete="off"
@@ -695,8 +700,8 @@ export default function JobPanel({
             </Field>
           )}
           <div className="ds-action-row ds-control-row">
-            <button
-              className="btn primary"
+            <Button
+              variant="primary"
               disabled={
                 busy ||
                 (!!approval.confirmationPhrase &&
@@ -705,14 +710,13 @@ export default function JobPanel({
               onClick={() => void approveAndStart()}
             >
               {t("jobs.approveAndStart")}
-            </button>
-            <button
-              className="btn"
+            </Button>
+            <Button
               disabled={busy}
               onClick={() => void cancelApproval()}
             >
               {t("common.cancel")}
-            </button>
+            </Button>
           </div>
         </section>
       )}
@@ -789,8 +793,8 @@ export default function JobPanel({
                   )}
                   <div className="ds-control-row tw:flex tw:justify-end tw:gap-1">
                     {(job.state === "queued" || job.state === "paused") && (
-                      <button
-                        className="btn small"
+                      <Button
+                        size="compact"
                         disabled={jobBusy}
                         onClick={() =>
                           job.kind === "import" && job.state === "queued"
@@ -804,17 +808,17 @@ export default function JobPanel({
                           : job.state === "paused"
                             ? t("jobs.resume")
                             : t("jobs.start")}
-                      </button>
+                      </Button>
                     )}
                     {job.state === "running" && job.resumable && (
-                      <button
-                        className="btn small"
+                      <Button
+                        size="compact"
                         disabled={jobBusy}
                         onClick={() => void mutateJob(job, "pause")}
                       >
                         <Icon name="pause" />
                         {t("jobs.pause")}
-                      </button>
+                      </Button>
                     )}
                     {![
                       "cancel_requested",
@@ -822,14 +826,14 @@ export default function JobPanel({
                       "succeeded",
                       "failed",
                     ].includes(job.state) && (
-                      <button
-                        className="btn small"
+                      <Button
+                        size="compact"
                         disabled={jobBusy}
                         onClick={() => void mutateJob(job, "cancel")}
                       >
                         <Icon name="close" />
                         {t("common.cancel")}
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -880,8 +884,9 @@ export default function JobPanel({
             </p>
           )}
           {detail.artifacts.map((artifact) => (
-            <button
-              className="btn small tw:w-full tw:justify-start tw:[&>small]:text-muted-foreground tw:[&>span]:min-w-0 tw:[&>span]:flex-1 tw:[&>span]:overflow-hidden tw:[&>span]:text-ellipsis tw:[&>span]:whitespace-nowrap"
+            <Button
+              presentation="menuItem"
+              size="compact"
               key={artifact.id}
               onClick={() =>
                 void revealJobArtifact(scopedConnectionId, artifact.id).catch(
@@ -890,9 +895,13 @@ export default function JobPanel({
               }
             >
               <Icon name="folder" />
-              <span>{artifact.displayName}</span>
-              <small>{bytes(artifact.sizeBytes)}</small>
-            </button>
+              <span className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+                {artifact.displayName}
+              </span>
+              <small className="tw:text-muted-foreground">
+                {bytes(artifact.sizeBytes)}
+              </small>
+            </Button>
           ))}
         </section>
       )}

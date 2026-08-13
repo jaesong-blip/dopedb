@@ -1,8 +1,12 @@
 import { createHash } from "node:crypto";
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import { inspectGithubInstallation } from "@/lib/knowledge/github-app";
+import {
+  knowledgeMutationAuthority,
+  knowledgeMutationAuthoritySql,
+} from "@/lib/knowledge/mutation-authority";
 import {
   knowledgeGithubInstallation,
   knowledgeGithubSetupState,
@@ -41,10 +45,16 @@ export async function GET(request: Request) {
   ) {
     return redirect("failed");
   }
+  const authority = knowledgeMutationAuthority(
+    authorization,
+    setup.organizationId,
+    "manage",
+  );
   const consumed = await db.delete(knowledgeGithubSetupState).where(and(
     eq(knowledgeGithubSetupState.stateHash, stateHash),
     eq(knowledgeGithubSetupState.userId, authorization.session.user.id),
     gt(knowledgeGithubSetupState.expiresAt, new Date()),
+    knowledgeMutationAuthoritySql(authority, setup.organizationId),
   )).returning({ stateHash: knowledgeGithubSetupState.stateHash });
   if (consumed.length !== 1) return redirect("failed");
   try {
@@ -59,25 +69,21 @@ export async function GET(request: Request) {
     ) {
       return redirect("failed");
     }
-    await db.insert(knowledgeGithubInstallation).values({
-      organizationId: setup.organizationId,
-      installationId,
-      accountId: String(installation.account.id),
-      accountLogin: installation.account.login,
-      status: "active",
-      createdByUserId: authorization.session.user.id,
-    }).onConflictDoUpdate({
-      target: [
-        knowledgeGithubInstallation.organizationId,
-        knowledgeGithubInstallation.installationId,
-      ],
-      set: {
-        accountId: String(installation.account.id),
-        accountLogin: installation.account.login,
-        status: "active",
-        updatedAt: new Date(),
-      },
-    });
+    const connected = await db.execute<{ id: string }>(sql`
+      INSERT INTO ${knowledgeGithubInstallation}
+        ("organization_id", "installation_id", "account_id", "account_login",
+         "status", "created_by_user_id")
+      SELECT ${setup.organizationId}, ${installationId}, ${String(installation.account.id)},
+        ${installation.account.login}, 'active', ${authorization.session.user.id}
+      WHERE ${knowledgeMutationAuthoritySql(authority, setup.organizationId)}
+      ON CONFLICT ("organization_id", "installation_id") DO UPDATE SET
+        "account_id" = EXCLUDED."account_id",
+        "account_login" = EXCLUDED."account_login",
+        "status" = 'active',
+        "updated_at" = now()
+      RETURNING "id"::text AS "id"
+    `);
+    if (connected.rows.length !== 1) return redirect("failed");
     return redirect("connected");
   } catch {
     return redirect("failed");

@@ -2,7 +2,13 @@
 // while discovering them; this endpoint consumes a session/member-bound opaque
 // receipt through the one-statement import command.
 import { env } from "../../../../../../../../lib/env";
-import { isUuid, jsonError, mutationAllowed, privateJson } from "../../../../../../../../lib/http";
+import {
+  boundedJsonBody,
+  isUuid,
+  jsonError,
+  mutationAllowed,
+  privateJson,
+} from "../../../../../../../../lib/http";
 import { importProviderReceipt } from "../../../../../../../../lib/provider-import-store";
 import { authorizeWorkspace } from "../../../../../../../../lib/workspace-authorization";
 import { publicConnection } from "../../../../../../../../lib/workspace-connections";
@@ -27,7 +33,16 @@ export async function POST(request: Request, context: RouteContext) {
   if (authorization.role !== "admin" && authorization.role !== "owner") {
     return jsonError("Workspace access denied", 403);
   }
-  const body = await request.json().catch(() => null) as {
+  const parsed = await boundedJsonBody(request, 2 * 1_024);
+  if (!parsed.ok) {
+    return jsonError(
+      parsed.reason === "too_large"
+        ? "Provider import request is too large"
+        : "Invalid provider import request",
+      parsed.reason === "too_large" ? 413 : 400,
+    );
+  }
+  const body = parsed.value as {
     connectionId?: unknown;
     receipt?: unknown;
     idempotencyKey?: unknown;

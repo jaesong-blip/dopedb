@@ -7,6 +7,7 @@ import type {
   AnalysisColumn,
   AnalysisParameterValue,
 } from "./workspace-analysis-articles";
+import { canonicalHash } from "./workspace-versioning";
 
 export const analysisRunStates = [
   "queued",
@@ -49,12 +50,64 @@ export type AnalysisResultFragmentPayload = Readonly<{
   truncated: boolean;
 }>;
 
+export type AnalysisResultFragmentReference = Readonly<{
+  blockId: string;
+  ordinal: number;
+  payloadHash: string;
+}>;
+
 export type AnalysisRunCompletion = Readonly<{
   state: "succeeded" | "failed" | "cancelled" | "stale";
   queryReceipts: readonly AnalysisQueryReceiptInput[];
-  fragments: readonly AnalysisResultFragmentPayload[];
+  fragmentManifest: readonly AnalysisResultFragmentReference[];
+  /** Temporary rolling-deploy input. New callers always stage and send a manifest. */
+  inlineFragments: readonly AnalysisResultFragmentPayload[];
   error: Readonly<{ kind: string; message: string }> | null;
 }>;
+
+function compareIds(left: string, right: string) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+/**
+ * Hashes the durable result evidence in a transport-order-independent form so a
+ * later read can prove that every staged fragment is still present.
+ */
+export function analysisRunResultHash(
+  receipts: readonly AnalysisQueryReceiptInput[],
+  fragments: readonly AnalysisResultFragmentReference[],
+) {
+  return canonicalHash({
+    receipts: [...receipts].sort((left, right) => compareIds(left.queryNodeId, right.queryNodeId)),
+    fragments: [...fragments].sort((left, right) => compareIds(left.blockId, right.blockId)
+      || left.ordinal - right.ordinal),
+  });
+}
+
+/**
+ * Proves that an unexpired stored fragment set is exactly the one committed by
+ * the runner. Callers deliberately pass only rows whose retention deadline is
+ * still in the future, so removing or expiring even one fragment invalidates
+ * the manifest hash instead of returning a misleading partial result.
+ */
+export function analysisRunEvidenceIsComplete(input: Readonly<{
+  resultHash: string | null;
+  rowCount: number;
+  byteCount: number;
+  receipts: readonly AnalysisQueryReceiptInput[];
+  fragments: readonly (AnalysisResultFragmentReference & Readonly<{
+    plaintextBytes: number;
+  }>)[];
+}>) {
+  return input.resultHash !== null
+    && input.resultHash === analysisRunResultHash(input.receipts, input.fragments)
+    && input.rowCount === input.receipts.reduce((sum, receipt) => sum + receipt.rowCount, 0)
+    && input.byteCount === input.fragments.reduce(
+      (sum, fragment) => sum + fragment.plaintextBytes,
+      0,
+    )
+    && input.fragments.length <= 256;
+}
 
 export type AnalysisRunnerRegistration = Readonly<{
   deviceId: string;
@@ -231,6 +284,10 @@ function parseColumn(value: unknown): AnalysisColumn {
     || (row.role === "free_text" && row.masking !== "redact")
     || (row.sensitivity === "restricted" && row.masking !== "redact")
     || (row.sensitivity === "confidential" && row.masking === "none")
+    // The control plane cannot prove that a client-derived bucket did not simply
+    // reuse a raw value with the same shape. Keep bucketing local to public data;
+    // private values require a one-way hash or full redaction at this boundary.
+    || (row.masking === "bucket" && row.sensitivity !== "public")
     || (row.masking === "hash" && row.type !== "string")) {
     throw new Error("Invalid result fragment column");
   }
@@ -242,6 +299,31 @@ function parseColumn(value: unknown): AnalysisColumn {
     sensitivity: row.sensitivity as AnalysisColumn["sensitivity"],
     masking: row.masking as AnalysisColumn["masking"],
   };
+}
+
+function validBucketValue(
+  column: AnalysisColumn,
+  value: string | number | boolean | null,
+): boolean {
+  if (value === null) return true;
+  switch (column.type) {
+    case "date":
+    case "datetime":
+      return typeof value === "string" && /^\d{4}-(?:0[1-9]|1[0-2])$/.test(value);
+    case "number":
+    case "duration":
+    case "currency":
+    case "percent": {
+      if (typeof value !== "number" || !Number.isFinite(value)) return false;
+      const magnitude = value === 0 ? 1 : 10 ** Math.floor(Math.log10(Math.abs(value)));
+      return Object.is(Math.floor(value / magnitude) * magnitude, value);
+    }
+    case "string":
+    case "json":
+      return typeof value === "string" && ["0-3", "4-7", "8-15", "16+"].includes(value);
+    case "boolean":
+      return typeof value === "boolean";
+  }
 }
 
 export function parseAnalysisResultFragment(value: unknown): AnalysisResultFragmentPayload {
@@ -260,7 +342,8 @@ export function parseAnalysisResultFragment(value: unknown): AnalysisResultFragm
       const column = columns[index]!;
       return !validValue(cell)
         || (column.masking === "redact" && cell !== null)
-        || (column.masking === "hash" && !(typeof cell === "string" && /^[0-9a-f]{64}$/.test(cell)));
+        || (column.masking === "hash" && !(typeof cell === "string" && /^[0-9a-f]{64}$/.test(cell)))
+        || (column.masking === "bucket" && !validBucketValue(column, cell));
     })) {
       throw new Error("Invalid Analysis Article result row");
     }
@@ -278,20 +361,68 @@ export function parseAnalysisResultFragment(value: unknown): AnalysisResultFragm
   return { version: 1, blockId: row.blockId, ordinal, columns, rows, truncated: row.truncated };
 }
 
+/**
+ * A successful run is useful evidence only when every source-backed block owns
+ * one complete fragment sequence. This is shared by staged manifests and the
+ * temporary inline protocol so neither transport can omit a block or a middle
+ * fragment while still claiming success.
+ */
+export function analysisResultFragmentsAreComplete(
+  definition: AnalysisArticleDefinition,
+  fragments: readonly Pick<AnalysisResultFragmentReference, "blockId" | "ordinal">[],
+) {
+  const expectedBlockIds = new Set(
+    definition.blocks.flatMap((block) => block.sourceNodeId ? [block.id] : []),
+  );
+  const ordinalsByBlock = new Map<string, Set<number>>();
+  for (const fragment of fragments) {
+    if (!expectedBlockIds.has(fragment.blockId)) return false;
+    const ordinals = ordinalsByBlock.get(fragment.blockId) ?? new Set<number>();
+    if (ordinals.has(fragment.ordinal)) return false;
+    ordinals.add(fragment.ordinal);
+    ordinalsByBlock.set(fragment.blockId, ordinals);
+  }
+  if (ordinalsByBlock.size !== expectedBlockIds.size) return false;
+  return [...expectedBlockIds].every((blockId) => {
+    const ordinals = ordinalsByBlock.get(blockId);
+    if (!ordinals || ordinals.size === 0) return false;
+    return [...ordinals].every((ordinal) => ordinal >= 0 && ordinal < ordinals.size);
+  });
+}
+
 export function parseAnalysisRunCompletion(
   value: unknown,
   definition: AnalysisArticleDefinition,
 ): AnalysisRunCompletion {
-  const row = exactRecord(value, ["state", "queryReceipts", "fragments", "error"]);
+  const stagedRow = exactRecord(value, ["state", "queryReceipts", "fragmentManifest", "error"]);
+  const inlineRow = exactRecord(value, ["state", "queryReceipts", "fragments", "error"]);
+  const row = stagedRow ?? inlineRow;
   if (!row || !["succeeded", "failed", "cancelled", "stale"].includes(String(row.state))
     || !Array.isArray(row.queryReceipts) || row.queryReceipts.length > 64
-    || !Array.isArray(row.fragments) || row.fragments.length > 256) {
+    || (stagedRow !== null
+      && (!Array.isArray(stagedRow.fragmentManifest) || stagedRow.fragmentManifest.length > 256))
+    || (inlineRow !== null
+      && (!Array.isArray(inlineRow.fragments) || inlineRow.fragments.length > 256))) {
     throw new Error("Invalid Analysis Article run completion");
   }
   const receipts = row.queryReceipts.map(parseReceipt);
-  const fragments = row.fragments.map(parseAnalysisResultFragment);
+  const fragmentManifest = (stagedRow?.fragmentManifest as unknown[] | undefined ?? []).map((candidate) => {
+    const fragment = exactRecord(candidate, ["blockId", "ordinal", "payloadHash"]);
+    const ordinal = safeInteger(fragment?.ordinal, 0, 255);
+    if (!fragment || typeof fragment.blockId !== "string" || !ID.test(fragment.blockId)
+      || ordinal === null || typeof fragment.payloadHash !== "string"
+      || !HASH.test(fragment.payloadHash)) {
+      throw new Error("Invalid Analysis Article result manifest");
+    }
+    return { blockId: fragment.blockId, ordinal, payloadHash: fragment.payloadHash };
+  });
+  const inlineFragments = (inlineRow?.fragments as unknown[] | undefined ?? [])
+    .map(parseAnalysisResultFragment);
   if (new Set(receipts.map((receipt) => receipt.queryNodeId)).size !== receipts.length
-    || new Set(fragments.map((fragment) => `${fragment.blockId}:${fragment.ordinal}`)).size !== fragments.length) {
+    || new Set(fragmentManifest.map((fragment) => `${fragment.blockId}:${fragment.ordinal}`)).size
+      !== fragmentManifest.length
+    || new Set(inlineFragments.map((fragment) => `${fragment.blockId}:${fragment.ordinal}`)).size
+      !== inlineFragments.length) {
     throw new Error("Duplicate Analysis Article run evidence");
   }
   const queryById = new Map(definition.queries.map((query) => [query.id, query]));
@@ -300,7 +431,10 @@ export function parseAnalysisRunCompletion(
     return !query || query.maxRows < receipt.rowCount || query.maxBytes < receipt.byteCount;
   })) throw new Error("Analysis Article query receipt exceeds its definition");
   const dataBlockIds = new Set(definition.blocks.flatMap((block) => block.sourceNodeId ? [block.id] : []));
-  if (fragments.some((fragment) => !dataBlockIds.has(fragment.blockId))) {
+  if (fragmentManifest.some((fragment) => !dataBlockIds.has(fragment.blockId))) {
+    throw new Error("Analysis Article result references an unknown data block");
+  }
+  if (inlineFragments.some((fragment) => !dataBlockIds.has(fragment.blockId))) {
     throw new Error("Analysis Article result references an unknown data block");
   }
   const errorRow = row.error === null ? null : exactRecord(row.error, ["kind", "message"]);
@@ -310,21 +444,19 @@ export function parseAnalysisRunCompletion(
     ? { kind: errorRow.kind, message: errorRow.message }
     : null;
   const succeeded = row.state === "succeeded";
+  const resultFragments = stagedRow ? fragmentManifest : inlineFragments;
   if ((succeeded && (receipts.length !== definition.queries.length
-    || receipts.some((receipt) => receipt.state !== "succeeded") || error !== null))
+    || receipts.some((receipt) => receipt.state !== "succeeded") || error !== null
+    || !analysisResultFragmentsAreComplete(definition, resultFragments)))
     || (!succeeded && error === null)
-    || (!succeeded && fragments.length > 0)) {
+    || (!succeeded && (fragmentManifest.length > 0 || inlineFragments.length > 0))) {
     throw new Error("Analysis Article completion state is inconsistent");
   }
-  const encodedBytes = fragments.reduce(
-    (total, fragment) => total + new TextEncoder().encode(JSON.stringify(fragment)).byteLength,
-    0,
-  );
-  if (encodedBytes > 16 * 1024 * 1024) throw new Error("Analysis Article result is too large");
   return {
     state: row.state as AnalysisRunCompletion["state"],
     queryReceipts: receipts,
-    fragments,
+    fragmentManifest,
+    inlineFragments,
     error,
   };
 }

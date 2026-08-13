@@ -10,7 +10,7 @@ use futures::stream::{self, StreamExt, TryStreamExt};
 use mongodb::bson::{Bson, Document};
 use mongodb::results::CollectionType;
 
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::features::catalog::{
     Catalog, CatalogOverview, CatalogOverviewDetailState, CatalogOverviewRelation, Column, Index,
     Table,
@@ -115,24 +115,21 @@ async fn table_for(
 
     // The three probes are independent reads — run them concurrently so a
     // remote server pays one round-trip latency per collection, not three.
-    let (columns, indexes, row_estimate) = futures::join!(
+    let (columns, indexes, row_estimate) = futures::try_join!(
         sample_columns(&coll),
         collection_indexes(&coll, is_view),
         async {
             if is_view {
-                None
+                Ok(None)
             } else {
-                coll.estimated_document_count().await.ok().map(|n| n as i64)
+                let count = coll.estimated_document_count().await?;
+                let count = i64::try_from(count).map_err(|_| {
+                    AppError::Config("MongoDB row estimate exceeds the catalog range".into())
+                })?;
+                Ok::<_, AppError>(Some(count))
             }
         },
-    );
-
-    // A per-collection sampling failure (odd validators, missing read
-    // privileges) degrades to "no columns" rather than sinking the catalog.
-    let columns = columns.unwrap_or_else(|e| {
-        tracing::warn!("sampling collection {name} failed: {e}");
-        Vec::new()
-    });
+    )?;
 
     Ok(Table {
         schema: None,
@@ -151,16 +148,18 @@ async fn table_for(
 }
 
 /// Exact index metadata via `listIndexes` (unlike the sampled columns).
-/// Best-effort: views (and permission errors) yield an empty list.
-async fn collection_indexes(coll: &mongodb::Collection<Document>, is_view: bool) -> Vec<Index> {
+/// Views have no collection indexes; every actual driver error is propagated so
+/// callers never mistake an incomplete catalog for a complete one.
+async fn collection_indexes(
+    coll: &mongodb::Collection<Document>,
+    is_view: bool,
+) -> AppResult<Vec<Index>> {
     if is_view {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let Ok(mut cursor) = coll.list_indexes().await else {
-        return Vec::new();
-    };
+    let mut cursor = coll.list_indexes().await?;
     let mut indexes = Vec::new();
-    while let Some(model) = cursor.try_next().await.unwrap_or(None) {
+    while let Some(model) = cursor.try_next().await? {
         let options = model.options.as_ref();
         let index_name = options.and_then(|o| o.name.clone()).unwrap_or_default();
         // `_id_` is implicit — its PK-ness is already on the column.
@@ -174,7 +173,7 @@ async fn collection_indexes(coll: &mongodb::Collection<Document>, is_view: bool)
             ..Index::default()
         });
     }
-    indexes
+    Ok(indexes)
 }
 
 /// Union the top-level fields of up to [`SAMPLE_DOCS`] documents into columns.

@@ -4,6 +4,7 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
+import { boundedJsonResponse } from "../bounded-json-response";
 import {
   gcpCloudSqlEngine,
   gcpDatabaseUsername,
@@ -30,6 +31,7 @@ const TOKEN_CREATOR_PROPAGATION_TIMEOUT_MS = 180_000;
 const CLOUD_SQL_IDENTITY_PROPAGATION_TIMEOUT_MS = 90_000;
 const DATA_API_PROPAGATION_TIMEOUT_MS = 30_000;
 const PROPAGATION_RETRY_INTERVAL_MS = 5_000;
+const MAX_GOOGLE_RESPONSE_BYTES = 2 * 1_024 * 1_024;
 const POOL_ID = "dopedb-vercel";
 const PROVIDER_ID = "dopedb-vercel";
 const REQUIRED_SERVICES = [
@@ -303,8 +305,12 @@ async function googleRequest(
       502,
     );
   });
-  if (allowNotFound && response.status === 404) return null;
-  const body = await response.json().catch(() => null);
+  if (allowNotFound && response.status === 404) {
+    await response.body?.cancel().catch(() => undefined);
+    return null;
+  }
+  const body = await boundedJsonResponse(response, MAX_GOOGLE_RESPONSE_BYTES)
+    .catch(() => null);
   if (!response.ok || !body) {
     throw new GcpUpstreamRequestError(
       upstreamMessage(response.status, url, body),

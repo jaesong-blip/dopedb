@@ -10,24 +10,28 @@ import {
 } from "@tanstack/react-query";
 import {
   auditVerify,
-  cliInstallationStatus,
+  getAuditEntry,
+  getHistoryEntry,
+  listAuditPage,
+  listHistoryPage,
+} from "../features/activity/tauriAdapter";
+import {
   getCatalog,
   getDatabaseCatalog,
   getDatabaseCatalogOverview,
   getDatabaseCatalogSnapshot,
   getCatalogOverview,
   getCatalogSnapshot,
-  getMonitoringStatus,
-  getAuditEntry,
-  getHistoryEntry,
-  legacyMcpCleanupStatus,
-  listAuditPage,
-  listHistoryPage,
   listConnectionDatabases,
   refreshCatalog,
-  runDocumentRead,
+} from "../features/catalog/tauriAdapter";
+import { runDocumentRead } from "../features/documentQueries/tauriAdapter";
+import { getMonitoringStatus } from "../features/monitoring/tauriAdapter";
+import {
+  cliInstallationStatus,
+  legacyMcpCleanupStatus,
   skillStatus,
-} from "../ipc/commands";
+} from "../features/skills/tauriAdapter";
 import type {
   Catalog,
   CatalogOverview,
@@ -60,6 +64,7 @@ export type CatalogScope = {
   ready: boolean;
   workspaceId: string | null;
   accountScope: string | null;
+  workspaceKind: "personal" | "team" | null;
   error?: unknown;
   recover?: () => Promise<void>;
 };
@@ -80,11 +85,13 @@ export function useCatalogScope(): CatalogScope {
   const context = useQuery(workspaceContextQuery());
   const auth = useQuery(workspaceAuthStateQuery());
   const workspace = context.data?.active;
-  const teamWorkspace = workspace?.kind === "team";
-  // Local catalogs are account-independent, so auth refreshes cannot re-key them.
-  const accountId = teamWorkspace ? (auth.data?.user?.id ?? "anonymous") : "local";
+  // Even a personal workspace can be used while signed in. Include the concrete
+  // account generation so logging out or changing accounts cannot reuse catalog or
+  // Knowledge data retained by a previous identity.
+  const accountId = auth.data?.user?.id ?? "anonymous";
+  const authorityGeneration = auth.data?.authorityGeneration ?? "unresolved";
   const key = workspace
-    ? `workspace:${workspace.kind}:${workspace.id}:account:${accountId}`
+    ? `workspace:${workspace.kind}:${workspace.id}:account:${accountId}:authority:${authorityGeneration}`
     : "workspace:unresolved";
   // Hold one committed render across a scope replacement before enabling new reads.
   const [settledKey, setSettledKey] = useState(key);
@@ -94,26 +101,23 @@ export function useCatalogScope(): CatalogScope {
   // Background errors with cached data must not hide a valid catalog.
   const error = context.data === undefined
     ? context.error ?? undefined
-    : teamWorkspace && auth.data === undefined
+    : auth.data === undefined
       ? auth.error ?? undefined
       : undefined;
-  const prerequisiteReady = !!workspace && (!teamWorkspace || auth.data !== undefined);
+  const prerequisiteReady = !!workspace && auth.data !== undefined;
   return {
     key,
     ready: settledKey === key && (prerequisiteReady || error !== undefined),
     workspaceId: workspace?.id ?? null,
-    accountScope: workspace
-      ? teamWorkspace
-        ? auth.data?.user?.id ?? null
-        : "personal"
-      : null,
+    accountScope: workspace ? auth.data?.user?.id ?? null : null,
+    workspaceKind: workspace?.kind ?? null,
     error,
     recover: error === undefined
       ? undefined
       : async () => {
         const refreshed = context.data === undefined ? await context.refetch() : undefined;
         const active = context.data?.active ?? refreshed?.data?.active;
-        if (active?.kind === "team" && auth.data === undefined) {
+        if (active && auth.data === undefined) {
           await auth.refetch();
         }
       },

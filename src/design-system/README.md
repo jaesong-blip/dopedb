@@ -47,9 +47,9 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며 vendor widget�
 - 같은 시각·상호작용 계약이 반복되면 class 문자열을 복사하지 않고
   `src/design-system/components/`의 실제 공용 컴포넌트나 `system.css`의 정본
   primitive로 승격하고 이 문서에 등록한다.
-- `.btn`, `.badge`, `.ds-panel`, `.ds-toolbar` 같은 상호작용 primitive는
-  `system.css`가 계속 소유한다. utility로 같은 primitive를 화면마다 재구현하지
-  않는다.
+- 버튼은 `src/design-system/components/Button.tsx`가 소유한다. `.badge`,
+  `.ds-panel`, `.ds-toolbar`처럼 비 React surface에 필요한 정본 primitive만
+  `system.css`가 소유한다. utility로 같은 primitive를 화면마다 재구현하지 않는다.
 - 새 screen/component CSS와 CSS module은 만들지 않는다. CSS 추가는 token,
   reset, 정본 primitive, 문서화된 vendor integration
   경계에만 허용한다.
@@ -185,8 +185,8 @@ color를 거부한다.
 | --- | --- | --- | --- |
 | core chrome | `tokens.css`의 surface/foreground/selection/focus/status 역할 | 모든 제품 화면과 공용 primitive | neutral surface가 기본이며 다른 palette의 색을 navigation·button·panel에 사용하지 않음 |
 | analysis chart | `scoped-palettes.css`의 `--ds-chart-*` | `AnalysisArticleVisualization` | 네 번째 이후 series는 muted foreground로 수렴하며 core status 색을 series에 사용하지 않음 |
-| terminal ANSI | `scoped-palettes.css`의 `--ds-terminal-*` | `resolvePtyTheme` | xterm host의 background/foreground/selection은 core 역할을 별도 주입하고 ANSI 색은 terminal 밖에서 사용하지 않음 |
 | Agent syntax | `scoped-palettes.css`의 `--ds-syntax-*` | `agentSyntax`의 완료된 code fence | grammar/highlighter가 없으면 색 없는 escaped code를 표시하며 terminal ANSI 역할을 빌리지 않음 |
+| terminal ANSI | `scoped-palettes.css`의 `--ds-terminal-*` | `resolvePtyTheme` | xterm host의 background/foreground/selection은 core 역할을 별도 주입하고 ANSI 색은 terminal 밖에서 사용하지 않음 |
 | provider/engine brand | `src/assets/db-icons/`와 `AgentProviderMark`의 로컬 정본 SVG | `EngineMark`, `AgentProviderMark` | asset이 없으면 accessible text/neutral glyph를 사용하고 brand pigment를 chrome 상태색으로 승격하지 않음 |
 | ERD export artifact | `artifactPalettes.ts`의 `ERD_EXPORT_PALETTE` | `erdExport.ts` | live CSS와 무관한 deterministic SVG/PNG/PDF 출력 전용이며 앱 surface에서는 사용하지 않음 |
 
@@ -636,21 +636,21 @@ database ERD는 이 renderer가 아니라 기존 React Flow + ELK surface가 소
 
 ### 버튼
 
-기본 클래스는 `.btn`이며 DopeDB toolbar의 낮은 chrome 무게를 표현한다.
+모든 일반 버튼은 `Button`을 사용한다. Tailwind utility 조합이나 전역 selector로
+버튼의 variant와 밀도를 다시 만들지 않는다.
 
-| 조합 | 용도 |
+| prop | 용도 |
 | --- | --- |
-| `.btn.primary` | 저장·확인·실행 등 한 흐름의 단일 affirmative action |
-| `.btn` | toolbar 또는 독립 outline action |
-| `.btn.ghost` | icon button과 list-row action |
-| `.btn.link` | 문장 안의 inline action |
-| `.btn.danger` | 삭제·폐기·되돌릴 수 없는 action |
-| `.btn.danger-ghost` | toolbar의 삭제 후보 action; 최종 확인 전에는 채우지 않음 |
-| `.btn.small` | 32px dense toolbar control |
-| `.btn.small.icon-only` | 32px toolbar icon action; padding 없는 정사각형 |
-| `.btn.small.icon-only.icon-xs` | 24px close·dismiss·inline remove action |
+| `variant="primary"` | 저장·확인·실행 등 한 흐름의 단일 affirmative action |
+| 기본 `variant` | toolbar 또는 독립 outline action |
+| `variant="ghost"` | icon button과 list-row action |
+| `variant="danger"` | 삭제·폐기·되돌릴 수 없는 최종 action |
+| `variant="dangerGhost"` | toolbar의 삭제 후보 action; 최종 확인 전에는 채우지 않음 |
+| `size="compact"` | 32px dense toolbar control |
+| `size="compact" iconOnly` | 32px toolbar icon action; padding 없는 정사각형 |
+| `size="xs" iconOnly` | 24px close·dismiss·inline remove action |
 
-Cancel, Close, Dismiss는 destructive가 아니다. 기본 `.btn` 또는 `.btn.ghost`를
+Cancel, Close, Dismiss는 destructive가 아니다. 기본 variant 또는 `ghost`를
 사용한다.
 
 아이콘 버튼은 중요도에 따라 세 단계만 사용한다.
@@ -659,15 +659,14 @@ Cancel, Close, Dismiss는 destructive가 아니다. 기본 `.btn` 또는 `.btn.g
 2. 32px: toolbar, pagination, refresh, overflow menu의 기본 icon action
 3. 36px: title toolbar의 workspace처럼 앱의 주 navigation action
 
-새로 만들거나 수정하는 아이콘 명령은 `.btn.icon-only`를 직접 조합하지 않고
-`Button iconOnly`를 사용한다. `title` 또는 `aria-label`은 접근 가능한 이름과
+아이콘 명령은 `Button iconOnly`를 사용한다. `title` 또는 `aria-label`은 접근 가능한 이름과
 canonical `Tooltip`의 hover/focus 문구를 함께 제공한다. `pnpm
 check:ui-primitives`는 raw icon-only button의 재도입과 이름 없는 `Button
 iconOnly`를 차단한다. 보통 icon action은 투명한 surface로 시작하고
 hover/active에서만 중립 배경을 드러낸다.
 삭제 icon도 idle 상태에서는 빨간 채움 상자로 만들지 않고 의미색 glyph를 사용하며,
-최종 확인 action만 `.btn.danger`의 채움 surface를 사용한다. 변경한 화면에서는
-단일 아이콘 `.btn`의 정사각형 규격과 접근 가능한 이름을 직접 확인한다.
+최종 확인 action만 `variant="danger"`의 채움 surface를 사용한다. 변경한 화면에서는
+단일 아이콘 `Button`의 정사각형 규격과 접근 가능한 이름을 직접 확인한다.
 
 ### Surface
 
@@ -768,7 +767,7 @@ toolbar의 command overflow menu는 반드시 portal 기반 `ToolbarMenu`를 사
   뒤집는다.
 - pane의 `overflow: hidden/auto`에 잘리지 않는다.
 - `Esc`, 바깥 클릭, 위·아래/Home/End 키 이동을 제공한다.
-- 각 항목은 박스형 `.btn`을 중첩하지 않고 평평한
+- 각 항목은 박스형 `Button`을 중첩하지 않고 평평한
   `role="menuitem"` `.ds-menu-item`을 사용한다.
 
 과거의 `.toolbar-menu`와 `.toolbar-menu-panel`은 금지한다.
@@ -806,9 +805,9 @@ Tauri 최소 창 크기에서는 explorer와 main을 세로로 고정 분할하�
 대신 `minmax(0, 1fr)`를 사용한다.
 화면별 높이는 해당 행에 `--ds-row-control-size`를 지정한다. 공통 규칙은 이 값을
 재정의하지 않고 `--ds-control-field` fallback만 사용하므로 CSS import 순서에 따라
-32px/36px control이 뒤섞이지 않는다. `.btn.small`과 `.icon-only`처럼 크기를
-명시한 control은 `--ds-control-local-size`가 row fallback보다 우선하므로, 뒤에서
-로드된 `.ds-control-row`가 32px 버튼을 다시 36px로 키울 수 없다.
+32px/36px control이 뒤섞이지 않는다. `Button`의 `size`와 `iconOnly` prop이
+명시한 control 크기는 row의 암묵적 fallback보다 우선하므로, 뒤에서 로드된
+`.ds-control-row`가 32px 버튼을 다시 36px로 키우지 않는다.
 
 ## 새 UI를 추가할 때
 

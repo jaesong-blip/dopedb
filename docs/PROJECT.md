@@ -21,7 +21,8 @@ Current scope:
 - Workspace control plane: Next.js under `workspace-cloud/`, hosted separately at
   `app.dopedb.dev`
 - Databases: PostgreSQL, MySQL/MariaDB, SQLite, MongoDB
-- Agent runtime: connection-pinned Claude/Codex ACP sessions plus an advanced Shell PTY path
+- Agent runtime: connection-pinned Claude/Codex ACP sessions plus an explicit
+  Settings → Command line advanced Shell PTY path
 - Shared access: team workspaces, roles, invitations, secretless connection
   templates, member-local bindings, and managed PlanetScale, Neon, and GCP Cloud
   SQL credential issuance
@@ -55,7 +56,9 @@ The Rust core owns the trust boundary:
 - `cli_install.rs`: immutable sidecar resolution plus explicit per-user CLI/PATH installation
 - `skills/`: bounded inventory plus atomic Codex/Claude Code Skill install, repair,
   backup, and removal
-- `terminal/`: connection-pinned PTY lifecycle, secret-free child environment, and process-tree cleanup
+- `features/terminals/`: optional developer PTY runtime and process-tree cleanup;
+  its only Desktop entry is the explicit Settings → Command line advanced Shell
+  dialog, and it is not the ACP Agent execution path
 - `legacy_mcp_cleanup.rs`: explicit preview, backup, and targeted cleanup for retired client entries
 - `store/`: local SQLite app store under the platform app data directory, including
   connection-scoped saved dashboard definitions
@@ -114,7 +117,7 @@ Inventory scans
 are bounded and reject symlinks/reparse points. Only a known, byte-exact managed snapshot
 may be updated or removed automatically; repair preserves every conflicting directory.
 
-## Agent Sessions, Terminal, and CLI Behavior
+## Agent Sessions and CLI Behavior
 
 Opening an AI Chat starts the official Claude Agent or Codex ACP adapter and pins the
 session to the selected workspace, account, connection revision, and database policy.
@@ -123,16 +126,21 @@ are never selected by normal clients. A signed manifest must point back to the e
 stable release that supplied it, and a missing newest release falls back only across a
 bounded list of older stable tags. Adapter publication therefore stays independent of
 app, CLI, and Skill versions without relying on a mutable GitHub Release alias.
-The advanced Shell Terminal uses the same authority boundary through a PTY. A connection,
-account, membership, or authority change revokes either session instead of silently
-retargeting it. Child environments exclude database URLs, provider secrets, API keys,
-and OS credential-store values. Provider authentication remains owned by the user's
-local `claude` or `codex` login.
+The Desktop exposes AI Chat, approval, result, and recovery surfaces rather than a
+general shell tool window. The optional developer PTY is an explicit advanced dialog
+under Settings → Command line, not the ACP execution path. A connection, account,
+membership, or authority change revokes every related ACP, Broker, and PTY session instead
+of silently retargeting it. Child environments exclude database URLs, provider secrets,
+API keys, and OS credential-store values. Provider authentication remains owned by the
+user's local `claude` or `codex` login.
 
 Outside built-in AI Chat, the signed `dopedb` CLI discovers an owner-only Unix socket or Windows named pipe.
-Database commands require an ephemeral Terminal-session capability that lives in
-process memory. The capability is never a database credential, never enters argv, and
-cannot be moved to another Terminal. ACP does not execute this public CLI. Registration
+Database commands require an ephemeral connection-pinned Broker capability that lives
+in process memory. The protocol retains the historical `TerminalSession` wire name for
+compatibility; only the explicit connection-pinned advanced dialog consumes that path.
+The capability is never a database credential, never enters argv, and cannot be moved
+to another process. ACP does not
+execute this public CLI. Registration
 consumes the same bearer shape only as a one-time, descriptor-bound capability inside the
 app-only Agent bridge launcher; stdio MCP settings and Agent descendants carry a session identifier,
 not the bearer, and the Broker revalidates their OS ancestry for every request. The command
@@ -140,9 +148,9 @@ surface covers secret-free connection summaries, canonical catalog/schema/table 
 typed MongoDB reads, SQL read planning/execution, provenance-bound dashboard creation,
 immutable SQL proposals, and operation receipts.
 
-The desktop Agent activity view keeps at most 200 in-memory completion records containing
-only command, request/session/connection identifiers, state, and a stable error code. It
-does not retain result rows, SQL text, Terminal output, session tokens, or credentials.
+The bounded activity projection keeps only command, request/session/connection
+identifiers, state, and a stable error code. It does not retain result rows, SQL text,
+PTY output, session tokens, or credentials.
 
 Every SQL data read remains a mandatory two-step Broker operation. `dopedb query plan` validates
 one SELECT, runs non-executing EXPLAIN, gathers aggregate database-pressure signals, and
@@ -155,7 +163,8 @@ or `count` JSON shapes; unknown fields and write stages such as `$out` or `$merg
 closed.
 
 Each successful SQL query returns a durable `queryRunId`. After explicit user agreement,
-`dopedb dashboard create` must reference that exact ID from the same Terminal. DopeDB
+`dopedb dashboard create` must reference that exact ID from the same pinned Broker
+session. DopeDB
 loads the connection and SQL from the successful history row instead of accepting
 replacements. Dashboard creation writes only to `app.db`. Opening a dashboard reloads
 and revalidates its versioned declarative visualization (`auto`, `metric`, `line`, `bar`,
@@ -264,13 +273,19 @@ Stable release runs only on an owner-created `app-v*` tag whose commit is alread
 
 Contributors use `work/<github-login>/<topic>` branches and may manually dispatch `.github/workflows/canary.yml` from `main` for their own branch only. Canary builds publish through a per-user `canary-<github-login>` environment as unsigned prereleases without updater artifacts, updater signatures, or `latest.json`. See `CONTRIBUTING.md` for the exact commands.
 
-Required repository secrets:
+Required protected `stable-release` environment secrets:
 
 ```txt
 TAURI_SIGNING_PRIVATE_KEY
+TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+SENTRY_AUTH_TOKEN
 ```
 
-The local updater key path used during setup was `~/.tauri/dopedb-updater.key`. Do not commit private keys.
+GitHub does not expose existing secret values. The repository owner must recreate
+these names in `stable-release`, verify the protected workflow, and only then remove
+any repository-level copies. AI agents and source changes do not read, migrate, or
+delete signing material. The local updater key path used during setup was
+`~/.tauri/dopedb-updater.key`. Do not commit private keys.
 
 The checked-in `.release/macos-distribution.json` currently selects
 `legacy-unsigned`. In that mode stable releases do not read or require Apple
@@ -313,6 +328,12 @@ update the affected safety tests whenever an upgrade changes parser, database, b
 or credential-store behavior. The desktop and both Next.js apps build with
 TypeScript 7. pnpm 11 supply-chain policy, Next.js CLI type-checking, and audited
 toolchain holds are documented in [`dependencies.md`](dependencies.md).
+
+Dependency ownership follows deployment boundaries rather than an implicit monorepo
+lock: the desktop uses the root `pnpm-lock.yaml`, `workspace-cloud/` owns its lock and
+workspace policy, and `site/` owns its own. CI installs and audits each directory with
+its matching frozen lockfile. Do not satisfy a child deployment dependency by adding
+it only to the root package.
 
 ## macOS Distribution
 

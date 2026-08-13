@@ -13,6 +13,7 @@ mod driver;
 mod error;
 mod executor;
 pub mod features;
+mod hosted_control_plane;
 mod introspect;
 mod kernel;
 mod legacy_mcp_cleanup;
@@ -164,7 +165,6 @@ pub fn run() {
             commands::remove_skill,
             commands::skill_self_test,
             startup::record_startup_mark,
-            startup::runtime_startup_summary,
             packaged_benchmark::packaged_benchmark_config,
             packaged_benchmark::prepare_packaged_benchmark_workload,
             packaged_benchmark::set_packaged_benchmark_compact_window,
@@ -174,15 +174,9 @@ pub fn run() {
             legacy_mcp_cleanup::legacy_mcp_cleanup_status,
             legacy_mcp_cleanup::legacy_mcp_cleanup_apply,
             features::terminals::transport::terminal_create,
-            features::terminals::transport::terminal_list,
-            features::terminals::transport::terminal_focus,
             features::terminals::transport::terminal_write,
             features::terminals::transport::terminal_resize,
-            features::terminals::transport::terminal_kill,
             features::terminals::transport::terminal_close,
-            features::terminals::transport::terminal_restart,
-            features::terminals::transport::terminal_rename,
-            features::terminals::transport::terminal_shutdown_all,
             features::workspaces::transport::workspace_auth_state,
             features::workspaces::transport::refresh_workspace_auth_state,
             features::workspaces::transport::workspace_sign_out,
@@ -191,7 +185,6 @@ pub fn run() {
             features::workspaces::transport::poll_workspace_login,
             features::workspaces::transport::workspace_console_url,
             features::workspaces::transport::list_workspaces,
-            features::workspaces::transport::refresh_workspace_memberships,
             features::workspaces::transport::get_active_workspace,
             features::workspaces::transport::set_active_workspace,
             features::workspaces::transport::set_active_workspace_account,
@@ -210,7 +203,6 @@ pub fn run() {
             features::knowledge::transport::revoke_knowledge_source,
             features::knowledge::transport::sync_knowledge_source,
             features::knowledge::transport::search_knowledge_graph,
-            features::knowledge::transport::find_knowledge_graph_path,
             features::knowledge::transport::list_knowledge_mappings,
             features::knowledge::transport::decide_knowledge_mapping,
             features::knowledge::transport::list_knowledge_environment_connections,
@@ -240,11 +232,7 @@ pub fn run() {
             features::connections::transport::delete_connection,
             features::connections::transport::test_connection,
             features::connections::transport::test_connection_profile,
-            features::analysis_articles::transport::run_analysis_article_definition,
-            features::analysis_articles::transport::cancel_analysis_article_definition_run,
             features::analysis_articles::transport::list_analysis_articles_command,
-            features::analysis_articles::transport::get_analysis_article_command,
-            features::analysis_articles::transport::create_analysis_article_command,
             features::analysis_articles::transport::update_analysis_article_command,
             features::analysis_articles::transport::transition_analysis_article_command,
             features::analysis_articles::transport::transfer_analysis_article_command,
@@ -309,9 +297,6 @@ pub fn run() {
             commands::propose_script,
             commands::propose_table_changes,
             commands::run_script,
-            features::schema_editor::transport::preview_schema_change,
-            features::schema_editor::transport::propose_schema_change,
-            features::schema_editor::transport::run_schema_change,
             features::sql_documents::transport::list_sql_documents,
             features::sql_documents::transport::list_sql_document_revision_page,
             features::sql_documents::transport::get_sql_document_revision,
@@ -320,7 +305,6 @@ pub fn run() {
             features::sql_documents::transport::delete_sql_document,
             features::erd::transport::list_erd_layouts,
             features::erd::transport::save_erd_layout,
-            features::erd::transport::delete_erd_layout,
             features::jobs::transport::pick_job_input,
             features::jobs::transport::pick_job_output,
             features::jobs::transport::inspect_job_input,

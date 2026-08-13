@@ -46,7 +46,7 @@ function safePath(value: unknown): value is string {
     && value.length <= 4_096
     && !value.startsWith("/")
     && !value.includes("\\")
-    && !/[\u0000-\u001f\u007f]/.test(value)
+    && !/[\u0000-\u001f\u007f-\u009f]/.test(value)
     && value.split("/").every((segment) => segment && segment !== "." && segment !== "..");
 }
 

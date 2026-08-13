@@ -22,7 +22,7 @@ import { useI18n } from "../../lib/i18n";
 import { useCatalogScope } from "../../lib/queries";
 import { workspaceAuthStateQuery } from "../../features/workspaces/queries";
 import { requestWorkspaceLogin } from "../../features/workspaces/loginRequest";
-import { listConnections } from "../../features/connections/tauriAdapter";
+import { connectionsQuery } from "../../features/connections/queries";
 import type {
   GithubKnowledgeRepository,
   KnowledgeEnvironmentFocus,
@@ -51,9 +51,31 @@ import {
 } from "../../features/knowledge/tauriAdapter";
 import AnalysisArticles from "./AnalysisArticles";
 
-function repositoryLabel(repository: GithubKnowledgeRepository): string {
-  return `${repository.fullName}${repository.private ? " · Private" : ""}`;
+function repositoryLabel(
+  repository: GithubKnowledgeRepository,
+  privateLabel: string,
+): string {
+  return `${repository.fullName}${repository.private ? ` · ${privateLabel}` : ""}`;
 }
+
+const mappingStateKey = {
+  proposed: "knowledge.mappingStateProposed",
+  approved: "knowledge.mappingStateApproved",
+  rejected: "knowledge.mappingStateRejected",
+  stale: "knowledge.mappingStateStale",
+} as const;
+
+const mappingTargetKey = {
+  table: "knowledge.mappingTargetTable",
+  column: "knowledge.mappingTargetColumn",
+} as const;
+
+const sourceHealthKey = {
+  ready: "knowledge.sourceHealthReady",
+  syncing: "knowledge.sourceHealthSyncing",
+  stale: "knowledge.sourceHealthStale",
+  failed: "knowledge.sourceHealthFailed",
+} as const;
 
 export default function Knowledge({
   environmentFocus,
@@ -73,38 +95,27 @@ export default function Knowledge({
   const catalogScope = useCatalogScope();
   const workspaceAuth = useQuery(workspaceAuthStateQuery());
   const signedInPersonalAccount =
-    catalogScope.accountScope === "personal" &&
+    catalogScope.workspaceKind === "personal" &&
     workspaceAuth.data?.authenticated === true
       ? workspaceAuth.data.user
       : null;
-  const personalWorkspace = catalogScope.accountScope === "personal";
+  const personalWorkspace = catalogScope.workspaceKind === "personal";
   const personalAuthResolved =
     !personalWorkspace || workspaceAuth.data !== undefined || workspaceAuth.isError;
-  const knowledgeAccountKey = signedInPersonalAccount?.id ??
-    (catalogScope.accountScope === "personal"
-      ? personalAuthResolved
-        ? "offline"
-        : "resolving"
-      : catalogScope.accountScope ?? "unresolved");
   const projectKey = ["knowledge", "projects", catalogScope.key] as const;
   const sourceKey = [
     "knowledge",
     "sources",
     catalogScope.key,
-    knowledgeAccountKey,
   ] as const;
   const repositoryKey = [
     "knowledge",
     "github-repositories",
     catalogScope.key,
-    knowledgeAccountKey,
   ] as const;
-  const sharedWorkspace =
-    catalogScope.accountScope !== null &&
-    catalogScope.accountScope !== "personal";
+  const sharedWorkspace = catalogScope.accountScope !== null;
   const githubProviderVisible = sharedWorkspace || personalWorkspace;
   const githubAvailable = sharedWorkspace || signedInPersonalAccount !== null;
-  const connectionsKey = ["connections", catalogScope.key] as const;
   const projects = useQuery({ queryKey: projectKey, queryFn: listKnowledgeProjects });
   const sources = useQuery({
     queryKey: sourceKey,
@@ -117,7 +128,7 @@ export default function Knowledge({
     enabled: githubAvailable,
     retry: false,
   });
-  const connections = useQuery({ queryKey: connectionsKey, queryFn: listConnections });
+  const connections = useQuery(connectionsQuery(catalogScope.key));
   const [projectId, setProjectId] = useState("");
   const [environmentId, setEnvironmentId] = useState("");
   const [provider, setProvider] = useState<"github" | "local_folder">("github");
@@ -209,7 +220,7 @@ export default function Knowledge({
     setView("sources");
     setProvider(githubProviderVisible ? "github" : "local_folder");
     setActionError(null);
-  }, [catalogScope.key, githubProviderVisible, knowledgeAccountKey]);
+  }, [catalogScope.key, githubProviderVisible]);
 
   useEffect(() => {
     if (!projects.data?.length || projectId) return;
@@ -489,6 +500,7 @@ export default function Knowledge({
         environment={selectedEnvironment}
         bindings={environmentConnections.data ?? []}
         sharedWorkspace={sharedWorkspace}
+        scopeKey={catalogScope.key}
         focusId={environmentFocus?.resourceId}
         onOpenAgent={onOpenAgent}
         onNewConnection={onNewConnection}
@@ -497,12 +509,12 @@ export default function Knowledge({
   }
   const viewTitle =
     view === "databases"
-      ? "Databases"
+      ? t("knowledge.viewDatabases")
       : view === "mappings"
-          ? "Mapping review"
+          ? t("knowledge.viewMappings")
           : view === "explore"
-            ? "Explore"
-            : "Data sources";
+            ? t("knowledge.viewExplore")
+            : t("knowledge.viewSources");
 
   return (
     <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[1100px] tw:gap-5 tw:p-5 tw:@max-[720px]:p-3">
@@ -550,7 +562,7 @@ export default function Knowledge({
 
       {projects.isSuccess && (projects.data?.length ?? 0) === 0 ? (
         <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">
-          Create a Project from the Projects section in Explorer to organize this workspace.
+          {t("knowledge.emptyProjects")}
         </p>
       ) : null}
 
@@ -558,16 +570,19 @@ export default function Knowledge({
         <section data-primary-flow className="tw:grid tw:gap-4 tw:border-b tw:border-border-subtle tw:pb-5">
           <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-start tw:justify-between tw:gap-3">
             <div className="tw:grid tw:gap-1">
-              <h2 className="tw:m-0 tw:text-base tw:font-semibold">Connect a source</h2>
+              <h2 className="tw:m-0 tw:text-base tw:font-semibold">{t("knowledge.connectSource")}</h2>
               <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">
-                Connect to {selectedProject?.name} / {selectedEnvironment?.name}. This scope will not change when a branch moves.
+                {t("knowledge.connectSourceScope", {
+                  project: selectedProject?.name ?? "",
+                  environment: selectedEnvironment?.name ?? "",
+                })}
               </p>
             </div>
-            <div className="tw:inline-flex tw:gap-1" role="group" aria-label="Source provider">
+            <div className="tw:inline-flex tw:gap-1" role="group" aria-label={t("knowledge.sourceProvider")}>
               {githubProviderVisible ? (
                 <Button size="compact" variant={provider === "github" ? "selected" : "ghost"} onClick={() => setProvider("github")}>GitHub</Button>
               ) : null}
-              <Button size="compact" variant={provider === "local_folder" ? "selected" : "ghost"} onClick={() => setProvider("local_folder")}><Icon name="folder" />Local Folder</Button>
+              <Button size="compact" variant={provider === "local_folder" ? "selected" : "ghost"} onClick={() => setProvider("local_folder")}><Icon name="folder" />{t("knowledge.localFolder")}</Button>
             </div>
           </div>
 
@@ -590,7 +605,7 @@ export default function Knowledge({
                 </Button>
               </div>
             ) : repositories.isPending ? (
-              <LoadingLabel>Loading GitHub repositories…</LoadingLabel>
+              <LoadingLabel>{t("knowledge.loadingRepositories")}</LoadingLabel>
             ) : repositories.error || (repositories.data?.length ?? 0) === 0 ? (
               <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-3">
                 <span className="tw:text-sm tw:text-muted-foreground">{t("knowledge.githubAccessHint")}</span>
@@ -602,12 +617,12 @@ export default function Knowledge({
                     setActionError(errMessage(error));
                   }
                 }}>{t("knowledge.githubAccessAction")}</Button>
-                <Button variant="ghost" onClick={() => void repositories.refetch()}><Icon name="refresh" />Refresh</Button>
+                <Button variant="ghost" onClick={() => void repositories.refetch()}><Icon name="refresh" />{t("knowledge.refresh")}</Button>
               </div>
             ) : (
               <>
                 <div className="tw:grid tw:grid-cols-2 tw:gap-3 tw:@max-[620px]:grid-cols-1">
-                  <Field label="Repository">
+                  <Field label={t("knowledge.repository")}>
                     <SelectInput value={repositoryId} onChange={(event) => {
                       const repository = repositories.data?.find((candidate) => candidate.id === event.target.value);
                       setRepositoryId(event.target.value);
@@ -617,15 +632,15 @@ export default function Knowledge({
                       }
                     }}>
                       {repositories.data?.filter((repository) => !repository.archived).map((repository) => (
-                        <option key={`${repository.installationId}:${repository.id}`} value={repository.id}>{repositoryLabel(repository)}</option>
+                        <option key={`${repository.installationId}:${repository.id}`} value={repository.id}>{repositoryLabel(repository, t("knowledge.privateRepository"))}</option>
                       ))}
                     </SelectInput>
                   </Field>
-                  <Field label="Branch or ref">
+                  <Field label={t("knowledge.branchRef")}>
                     <TextInput value={refName} onChange={(event) => setRefName(event.target.value)} />
                   </Field>
                 </div>
-                <Field label="Display name">
+                <Field label={t("knowledge.displayName")}>
                   <TextInput value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
                 </Field>
                 <div>
@@ -640,24 +655,24 @@ export default function Knowledge({
                       refName: refName.trim(),
                       displayName: displayName.trim(),
                     });
-                  }}>{connectGithub.isPending ? "Connecting…" : "Connect repository"}</Button>
+                  }}>{connectGithub.isPending ? t("knowledge.connecting") : t("knowledge.connectRepository")}</Button>
                 </div>
               </>
             )
           ) : (
             <>
-              <Field label="Display name">
-                <TextInput value={displayName} placeholder="Web app" onChange={(event) => setDisplayName(event.target.value)} />
+              <Field label={t("knowledge.displayName")}>
+                <TextInput value={displayName} placeholder={t("knowledge.localPlaceholder")} onChange={(event) => setDisplayName(event.target.value)} />
               </Field>
               <p className="tw:m-0 tw:text-sm tw:leading-relaxed tw:text-muted-foreground">
-                The selected path stays in the OS credential store. This source starts local-only and is never published automatically.
+                {t("knowledge.localSafety")}
               </p>
               <div>
                 <Button variant="primary" disabled={!environmentId || !displayName.trim() || pending} onClick={() => connectLocal.mutate({
                   projectId,
                   projectEnvironmentId: environmentId,
                   displayName: displayName.trim(),
-                })}><Icon name="folder" />{connectLocal.isPending ? "Scanning…" : "Choose folder"}</Button>
+                })}><Icon name="folder" />{connectLocal.isPending ? t("knowledge.scanning") : t("knowledge.chooseFolder")}</Button>
               </div>
             </>
           )}
@@ -671,22 +686,22 @@ export default function Knowledge({
         <section data-primary-flow className="tw:grid tw:gap-3 tw:border-b tw:border-border-subtle tw:pb-5">
           <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-start tw:justify-between tw:gap-3">
             <div className="tw:grid tw:gap-1">
-              <h2 className="tw:m-0 tw:text-base tw:font-semibold">Mapping review</h2>
+              <h2 className="tw:m-0 tw:text-base tw:font-semibold">{t("knowledge.mappingTitle")}</h2>
               <p className="tw:m-0 tw:max-w-[720px] tw:text-sm tw:leading-relaxed tw:text-muted-foreground">
-                Agents can propose code-to-table relations, but only your approval makes one trusted. Every proposal is pinned to the exact graph, connection, and schema revisions shown here.
+                {t("knowledge.mappingBody")}
               </p>
             </div>
-            <Button iconOnly size="compact" variant="ghost" title="Refresh mappings" onClick={() => void mappings.refetch()}>
+            <Button iconOnly size="compact" variant="ghost" title={t("knowledge.refreshMappings")} onClick={() => void mappings.refetch()}>
               <Icon name="refresh" />
             </Button>
           </div>
           {mappings.isPending ? (
-            <LoadingLabel>Loading mapping proposals…</LoadingLabel>
+            <LoadingLabel>{t("knowledge.loadingMappings")}</LoadingLabel>
           ) : mappings.error ? (
             <InlineNotice tone="danger" icon="alert">{errMessage(mappings.error)}</InlineNotice>
           ) : (mappings.data?.length ?? 0) === 0 ? (
             <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">
-              No mapping has been proposed in this Environment. Agents can propose one after resolving an exact live schema object.
+              {t("knowledge.emptyMappings")}
             </p>
           ) : (
             <div className="tw:grid tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle">
@@ -696,8 +711,8 @@ export default function Knowledge({
                   <article key={mapping.id} className="tw:grid tw:min-w-0 tw:grid-cols-[minmax(0,1fr)_auto] tw:items-center tw:gap-3 tw:border-b tw:border-border-subtle tw:px-3 tw:py-3 tw:last:border-b-0 tw:@max-[680px]:grid-cols-1">
                     <div className="tw:grid tw:min-w-0 tw:gap-1.5">
                       <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2">
-                        <StatusBadge tone={tone} density="compact">{mapping.state}</StatusBadge>
-                        <StatusBadge density="compact">{mapping.targetKind}</StatusBadge>
+                        <StatusBadge tone={tone} density="compact">{t(mappingStateKey[mapping.state])}</StatusBadge>
+                        <StatusBadge density="compact">{t(mappingTargetKey[mapping.targetKind])}</StatusBadge>
                         <span className="tw:truncate tw:text-xs tw:text-muted-foreground">{mapping.database}</span>
                       </div>
                       <div className="tw:grid tw:min-w-0 tw:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] tw:items-center tw:gap-2 tw:text-sm tw:@max-[560px]:grid-cols-1">
@@ -706,16 +721,20 @@ export default function Knowledge({
                         <code className="tw:truncate tw:text-xs">{mapping.targetIdentity}</code>
                       </div>
                       <span className="tw:truncate tw:font-mono tw:text-[11px] tw:text-muted-foreground">
-                        graph {mapping.graphRevisionId.slice(0, 8)} · connection r{mapping.connectionRevision} · schema {mapping.schemaFingerprint.slice(0, 8)}
+                        {t("knowledge.mappingRevision", {
+                          graph: mapping.graphRevisionId.slice(0, 8),
+                          connection: mapping.connectionRevision,
+                          schema: mapping.schemaFingerprint.slice(0, 8),
+                        })}
                       </span>
                     </div>
                     {mapping.state === "proposed" ? (
                       <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2 tw:@max-[680px]:justify-start">
                         <Button size="compact" variant="primary" disabled={decideMapping.isPending} onClick={() => decideMapping.mutate({ proposalId: mapping.id, graphRevisionId: mapping.graphRevisionId, decision: "approved" })}>
-                          <Icon name="check" />Approve
+                          <Icon name="check" />{t("knowledge.approve")}
                         </Button>
                         <Button size="compact" variant="dangerGhost" disabled={decideMapping.isPending} onClick={() => decideMapping.mutate({ proposalId: mapping.id, graphRevisionId: mapping.graphRevisionId, decision: "rejected" })}>
-                          Reject
+                          {t("knowledge.reject")}
                         </Button>
                       </div>
                     ) : null}
@@ -731,20 +750,20 @@ export default function Knowledge({
         <section className="tw:grid tw:gap-3 tw:border-b tw:border-border-subtle tw:pb-5">
           <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-start tw:justify-between tw:gap-3">
             <div className="tw:grid tw:min-w-0 tw:gap-1">
-              <h2 className="tw:m-0 tw:text-base tw:font-semibold">Environment databases</h2>
+              <h2 className="tw:m-0 tw:text-base tw:font-semibold">{t("knowledge.environmentDatabases")}</h2>
               <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">
-                Bind exact connection revisions to this Environment. A binding names a resource; it never grants credentials or wider access.
+                {t("knowledge.environmentDatabasesBody")}
               </p>
             </div>
             {onNewConnection ? (
               <Button size="compact" onClick={onNewConnection}>
                 <Icon name="plus" />
-                New connection
+                {t("knowledge.newConnection")}
               </Button>
             ) : null}
           </div>
           <div className="tw:grid tw:grid-cols-[minmax(0,1.2fr)_minmax(0,.7fr)_minmax(0,1fr)_auto] tw:items-end tw:gap-2 tw:@max-[760px]:grid-cols-2 tw:@max-[520px]:grid-cols-1">
-            <Field label="Database connection">
+            <Field label={t("knowledge.databaseConnection")}>
               <SelectInput value={connectionId} onChange={(event) => {
                 const connection = connections.data?.find((candidate) => candidate.id === event.target.value);
                 setConnectionId(event.target.value);
@@ -755,10 +774,10 @@ export default function Knowledge({
                 ))}
               </SelectInput>
             </Field>
-            <Field label="Role">
-              <TextInput value={connectionRole} placeholder="primary" onChange={(event) => setConnectionRole(event.target.value)} />
+            <Field label={t("knowledge.role")}>
+              <TextInput value={connectionRole} placeholder={t("knowledge.rolePlaceholder")} onChange={(event) => setConnectionRole(event.target.value)} />
             </Field>
-            <Field label="Alias">
+            <Field label={t("knowledge.alias")}>
               <TextInput value={connectionAlias} onChange={(event) => setConnectionAlias(event.target.value)} />
             </Field>
             <Button
@@ -771,15 +790,15 @@ export default function Knowledge({
                 alias: connectionAlias.trim(),
               })}
             >
-              {bindConnection.isPending ? "Binding…" : "Bind database"}
+              {bindConnection.isPending ? t("knowledge.binding") : t("knowledge.bindDatabase")}
             </Button>
           </div>
           {assignableConnections.length > 0 ? (
             <div className="tw:grid tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle">
               <div className="tw:grid tw:gap-1 tw:border-b tw:border-border-subtle tw:bg-surface-subtle tw:px-3 tw:py-2">
-                <strong className="tw:text-sm">Connections not assigned to this Environment</strong>
+                <strong className="tw:text-sm">{t("knowledge.unassignedConnections")}</strong>
                 <span className="tw:text-xs tw:text-muted-foreground">
-                  Select a connection to review it, then create an exact Environment binding above.
+                  {t("knowledge.unassignedConnectionsBody")}
                 </span>
               </div>
               {assignableConnections.map((connection) => (
@@ -798,27 +817,27 @@ export default function Knowledge({
                         setConnectionAlias(connection.name);
                       }}
                     >
-                      {connection.id === connectionId ? "Selected" : "Review binding"}
+                      {connection.id === connectionId ? t("knowledge.selected") : t("knowledge.reviewBinding")}
                     </Button>
                   </div>
                 ))}
             </div>
           ) : null}
           {environmentConnections.isPending ? (
-            <LoadingLabel>Loading Environment databases…</LoadingLabel>
+            <LoadingLabel>{t("knowledge.loadingDatabases")}</LoadingLabel>
           ) : (environmentConnections.data?.length ?? 0) === 0 ? (
-            <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">No database is bound to this Environment.</p>
+            <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">{t("knowledge.emptyDatabases")}</p>
           ) : (
             <div className="tw:grid tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle">
               {environmentConnections.data?.map((binding) => (
                 <div key={binding.id} className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:items-center tw:gap-3 tw:border-b tw:border-border-subtle tw:px-3 tw:py-2 tw:last:border-b-0">
                   <span className="tw:grid tw:min-w-0 tw:gap-0.5">
                     <strong className="tw:truncate tw:text-sm">{binding.alias}</strong>
-                    <span className="tw:truncate tw:text-xs tw:text-muted-foreground">{binding.connectionName} · {binding.role} · revision {binding.connectionRevision}</span>
+                    <span className="tw:truncate tw:text-xs tw:text-muted-foreground">{t("knowledge.bindingMeta", { name: binding.connectionName, role: binding.role, revision: binding.connectionRevision })}</span>
                   </span>
                   <span className="tw:flex tw:items-center tw:gap-2">
-                    {binding.stale ? <StatusBadge tone="warning">Reconfirm</StatusBadge> : <StatusBadge tone="success">Pinned</StatusBadge>}
-                    <ConfirmButton size="compact" variant="dangerGhost" disabled={unbindConnection.isPending} onConfirm={() => unbindConnection.mutate({ environmentId, bindingId: binding.id })}>Remove</ConfirmButton>
+                    {binding.stale ? <StatusBadge tone="warning">{t("knowledge.reconfirm")}</StatusBadge> : <StatusBadge tone="success">{t("knowledge.pinned")}</StatusBadge>}
+                    <ConfirmButton size="compact" variant="dangerGhost" disabled={unbindConnection.isPending} onConfirm={() => unbindConnection.mutate({ environmentId, bindingId: binding.id })}>{t("knowledge.remove")}</ConfirmButton>
                   </span>
                 </div>
               ))}
@@ -830,11 +849,11 @@ export default function Knowledge({
       {(projects.data?.length ?? 0) > 0 && view === "sources" ? (
       <section className="tw:grid tw:gap-3">
         <div className="tw:flex tw:items-center tw:justify-between tw:gap-3">
-          <h2 className="tw:m-0 tw:text-base tw:font-semibold">Sources</h2>
-          <Button iconOnly size="compact" variant="ghost" title="Refresh sources" onClick={() => void sources.refetch()}><Icon name="refresh" /></Button>
+          <h2 className="tw:m-0 tw:text-base tw:font-semibold">{t("knowledge.sources")}</h2>
+          <Button iconOnly size="compact" variant="ghost" title={t("knowledge.refreshSources")} onClick={() => void sources.refetch()}><Icon name="refresh" /></Button>
         </div>
-        {sources.isPending ? <LoadingLabel>Loading sources…</LoadingLabel> : selectedEnvironmentSources.length === 0 ? (
-          <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">No source is connected to this Environment yet.</p>
+        {sources.isPending ? <LoadingLabel>{t("knowledge.loadingSources")}</LoadingLabel> : selectedEnvironmentSources.length === 0 ? (
+          <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">{t("knowledge.emptySources")}</p>
         ) : (
           <div className="tw:grid tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle">
             {selectedEnvironmentSources.map((source) => {
@@ -846,26 +865,31 @@ export default function Knowledge({
                   <div className="tw:grid tw:min-w-0 tw:gap-1">
                     <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2">
                       <strong className="tw:truncate tw:text-sm">{source.displayName}</strong>
-                      <StatusBadge tone={tone} density="compact">{visibleHealth}</StatusBadge>
+                      <StatusBadge tone={tone} density="compact">{t(sourceHealthKey[visibleHealth])}</StatusBadge>
                       <StatusBadge density="compact">
-                        {source.provider === "github" ? "GitHub" : "Local Folder"}
+                        {source.provider === "github" ? "GitHub" : t("knowledge.localFolder")}
                       </StatusBadge>
                     </div>
-                    <span className="tw:truncate tw:text-xs tw:text-muted-foreground">{source.projectName} / {source.environmentName} · {knowledgeRevisionLabel(source.revision)}</span>
+                    <span className="tw:truncate tw:text-xs tw:text-muted-foreground">{source.projectName} / {source.environmentName} · {knowledgeRevisionLabel(source.revision, {
+                      dirty: t("knowledge.revisionDirty"),
+                      snapshot: t("knowledge.revisionSnapshot"),
+                    })}</span>
                     {source.provider === "local_folder" && !source.localCapabilityAvailable ? (
-                      <span className="tw:text-xs tw:text-warning">Choose the folder again on this device to restore access.</span>
+                      <span className="tw:text-xs tw:text-warning">{t("knowledge.restoreLocalFolder")}</span>
                     ) : null}
                     {activity?.state === "failed" ? (
                       <span className="tw:text-xs tw:text-danger">
-                        Automatic sync failed ({activity.errorKind ?? "unknown"}). The last healthy graph remains active.
+                        {t("knowledge.syncFailed", {
+                          error: activity.errorKind ?? t("knowledge.unknownSyncError"),
+                        })}
                       </span>
                     ) : null}
                   </div>
                   <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2 tw:@max-[560px]:justify-start">
                     <Button size="compact" disabled={sync.isPending || activity?.state === "syncing"} onClick={() => sync.mutate(source.sourceId)}>
-                      <Icon name="refresh" />{(sync.isPending && sync.variables === source.sourceId) || activity?.state === "syncing" ? "Syncing…" : activity?.state === "failed" ? "Retry" : "Sync"}
+                      <Icon name="refresh" />{(sync.isPending && sync.variables === source.sourceId) || activity?.state === "syncing" ? t("knowledge.syncing") : activity?.state === "failed" ? t("knowledge.retry") : t("knowledge.sync")}
                     </Button>
-                    <ConfirmButton size="compact" variant="dangerGhost" disabled={revoke.isPending || sync.isPending} onConfirm={() => revoke.mutate(source.sourceId)}>Remove</ConfirmButton>
+                    <ConfirmButton size="compact" variant="dangerGhost" disabled={revoke.isPending || sync.isPending} onConfirm={() => revoke.mutate(source.sourceId)}>{t("knowledge.remove")}</ConfirmButton>
                   </div>
                 </article>
               );
@@ -878,23 +902,23 @@ export default function Knowledge({
       {(projects.data?.length ?? 0) > 0 && view === "explore" ? (
         <section data-primary-flow className="tw:grid tw:gap-3 tw:border-t tw:border-border-subtle tw:pt-5">
           <div className="tw:grid tw:gap-1">
-            <h2 className="tw:m-0 tw:text-base tw:font-semibold">Explore</h2>
-            <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">Search the active immutable revision. Results retain their exact source-qualified identity.</p>
+            <h2 className="tw:m-0 tw:text-base tw:font-semibold">{t("knowledge.viewExplore")}</h2>
+            <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">{t("knowledge.exploreBody")}</p>
           </div>
           <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:items-end tw:gap-2 tw:@max-[620px]:grid-cols-1">
-            <Field label="Code, route, event, or table">
+            <Field label={t("knowledge.searchField")}>
               <TextInput value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => {
                 if (event.key === "Enter" && searchQuery.trim() && environmentId) {
                   search.mutate({ environmentId, query: searchQuery.trim() });
                 }
               }} />
             </Field>
-            <Button variant="primary" disabled={!searchQuery.trim() || !environmentId || search.isPending} onClick={() => search.mutate({ environmentId, query: searchQuery.trim() })}>{search.isPending ? "Searching…" : "Search"}</Button>
+            <Button variant="primary" disabled={!searchQuery.trim() || !environmentId || search.isPending} onClick={() => search.mutate({ environmentId, query: searchQuery.trim() })}>{search.isPending ? t("knowledge.searching") : t("knowledge.search")}</Button>
           </div>
           {search.data ? (
             <div className="tw:grid tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle">
               {search.data.matches.length === 0 ? (
-                <p className="tw:m-0 tw:p-3 tw:text-sm tw:text-muted-foreground">No matching node in this graph revision.</p>
+                <p className="tw:m-0 tw:p-3 tw:text-sm tw:text-muted-foreground">{t("knowledge.emptySearch")}</p>
               ) : search.data.matches.map((match) => (
                 <div key={`${match.graphRevisionId}:${match.node.id}`} className="tw:grid tw:min-w-0 tw:grid-cols-[auto_minmax(0,1fr)] tw:items-center tw:gap-2 tw:border-b tw:border-border-subtle tw:px-3 tw:py-2 tw:last:border-b-0">
                   <StatusBadge density="compact">{match.node.kind}</StatusBadge>

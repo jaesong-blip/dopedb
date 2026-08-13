@@ -216,6 +216,139 @@ pub(crate) fn delete_legacy_workspace_session() -> AppResult<()> {
     delete_workspace_session_account(LEGACY_WORKSPACE_SESSION_ACCOUNT)
 }
 
+fn analysis_runner_capability_account(
+    user_id: &str,
+    workspace_id: Uuid,
+    device_id: Uuid,
+    runner_id: Uuid,
+) -> AppResult<String> {
+    let user_id = Uuid::parse_str(user_id)
+        .map_err(|_| AppError::Config("workspace account id is invalid".into()))?;
+    Ok(format!(
+        "analysis-runner-capability:v1:{user_id}:{workspace_id}:{device_id}:{runner_id}"
+    ))
+}
+
+fn store_analysis_runner_capability_account(account: &str, capability: &str) -> AppResult<()> {
+    #[cfg(feature = "packaged-benchmark")]
+    {
+        let _ = (account, capability);
+        Err(AppError::Blocked {
+            reason: "Analysis runner possession requires the operating system credential store"
+                .into(),
+        })
+    }
+    #[cfg(not(feature = "packaged-benchmark"))]
+    {
+        entry(account)?.set_password(capability)?;
+        remember_secret(account, capability);
+        Ok(())
+    }
+}
+
+fn fetch_analysis_runner_capability_account(account: &str) -> AppResult<Option<String>> {
+    if let Some(capability) = cached_secret(account) {
+        return Ok(Some(capability));
+    }
+    #[cfg(feature = "packaged-benchmark")]
+    {
+        Err(AppError::Blocked {
+            reason: "Analysis runner possession requires the operating system credential store"
+                .into(),
+        })
+    }
+    #[cfg(not(feature = "packaged-benchmark"))]
+    match entry(account)?.get_password() {
+        Ok(capability) => {
+            remember_secret(account, &capability);
+            Ok(Some(capability))
+        }
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn delete_analysis_runner_capability_account(account: &str) -> AppResult<()> {
+    forget_secret(account);
+    #[cfg(feature = "packaged-benchmark")]
+    return Ok(());
+    #[cfg(not(feature = "packaged-benchmark"))]
+    match entry(account)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// Persist one Analysis runner possession capability in the OS credential store.
+/// The raw capability never enters SQLite, IPC, logs, or workspace metadata.
+pub(crate) fn store_analysis_runner_capability(
+    user_id: &str,
+    workspace_id: Uuid,
+    device_id: Uuid,
+    runner_id: Uuid,
+    capability: &str,
+) -> AppResult<()> {
+    if capability.len() != 64
+        || !capability
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(AppError::Config(
+            "Analysis runner capability is invalid".into(),
+        ));
+    }
+    store_analysis_runner_capability_account(
+        &analysis_runner_capability_account(user_id, workspace_id, device_id, runner_id)?,
+        capability,
+    )
+}
+
+/// Load one Analysis runner possession capability without exposing it to the webview.
+pub(crate) fn fetch_analysis_runner_capability(
+    user_id: &str,
+    workspace_id: Uuid,
+    device_id: Uuid,
+    runner_id: Uuid,
+) -> AppResult<Option<Zeroizing<String>>> {
+    let capability = fetch_analysis_runner_capability_account(
+        &analysis_runner_capability_account(user_id, workspace_id, device_id, runner_id)?,
+    )?;
+    match capability {
+        Some(capability)
+            if capability.len() == 64
+                && capability
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)) =>
+        {
+            Ok(Some(Zeroizing::new(capability)))
+        }
+        Some(_) => {
+            delete_analysis_runner_capability_account(&analysis_runner_capability_account(
+                user_id,
+                workspace_id,
+                device_id,
+                runner_id,
+            )?)?;
+            Ok(None)
+        }
+        None => Ok(None),
+    }
+}
+
+pub(crate) fn delete_analysis_runner_capability(
+    user_id: &str,
+    workspace_id: Uuid,
+    device_id: Uuid,
+    runner_id: Uuid,
+) -> AppResult<()> {
+    delete_analysis_runner_capability_account(&analysis_runner_capability_account(
+        user_id,
+        workspace_id,
+        device_id,
+        runner_id,
+    )?)
+}
+
 /// Device-bound key for encrypted, local-only Analysis Article result recovery.
 /// The key never enters SQLite, IPC, workspace sync, logs, or an Agent process.
 pub(crate) fn analysis_result_cache_key() -> AppResult<Zeroizing<[u8; 32]>> {

@@ -21,8 +21,9 @@ use sqlx::Acquire;
 /// store used by the Analysis Article runner; definitions remain control-plane
 /// authoritative and result recovery remains encrypted. Version 19 replaces the
 /// final retired Dashboard operation vocabulary while preserving its immutable
-/// approval and event provenance.
-pub(super) const LOCAL_SCHEMA_VERSION: i64 = 19;
+/// approval and event provenance. Version 20 rejects malformed connection JSON
+/// and ports at the SQLite write boundary instead of relying only on projections.
+pub(super) const LOCAL_SCHEMA_VERSION: i64 = 20;
 
 pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
     let version: i64 = sqlx::query_scalar("PRAGMA user_version")
@@ -142,7 +143,114 @@ pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
         set_local_schema_version(pool, 19).await?;
         migrated = true;
     }
+    if version < 20 {
+        ensure_connection_integrity_guards(pool).await?;
+        set_local_schema_version(pool, 20).await?;
+        migrated = true;
+    }
     Ok(migrated)
+}
+
+/// Current-schema connection rows are security-relevant authority inputs. Keep
+/// legacy conversion in migrations and reject malformed values at every later
+/// SQLite write, even if a future caller bypasses the repository projection.
+async fn ensure_connection_integrity_guards(pool: &SqlitePool) -> AppResult<()> {
+    let invalid_connections: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM connections
+         WHERE typeof(port) <> 'integer'
+            OR port < 0
+            OR port > 65535
+            OR CASE
+                 WHEN json_valid(extra_params) THEN json_type(extra_params) <> 'object'
+                 ELSE 1
+               END
+            OR CASE
+                 WHEN provider_target IS NULL THEN 0
+                 WHEN json_valid(provider_target) THEN json_type(provider_target) <> 'object'
+                 ELSE 1
+               END",
+    )
+    .fetch_one(pool)
+    .await?;
+    let invalid_bindings: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM workspace_connection_bindings
+         WHERE CASE
+                 WHEN json_valid(extra_params) THEN json_type(extra_params) <> 'object'
+                 ELSE 1
+               END",
+    )
+    .fetch_one(pool)
+    .await?;
+    if invalid_connections != 0 || invalid_bindings != 0 {
+        return Err(AppError::Config(format!(
+            "local connection store contains {invalid_connections} invalid connection row(s) and {invalid_bindings} invalid credential binding row(s)"
+        )));
+    }
+
+    sqlx::raw_sql(
+        r#"
+        CREATE TRIGGER IF NOT EXISTS connections_integrity_insert
+        BEFORE INSERT ON connections
+        WHEN typeof(NEW.port) <> 'integer'
+          OR NEW.port < 0
+          OR NEW.port > 65535
+          OR CASE
+               WHEN json_valid(NEW.extra_params) THEN json_type(NEW.extra_params) <> 'object'
+               ELSE 1
+             END
+          OR CASE
+               WHEN NEW.provider_target IS NULL THEN 0
+               WHEN json_valid(NEW.provider_target) THEN json_type(NEW.provider_target) <> 'object'
+               ELSE 1
+             END
+        BEGIN
+            SELECT RAISE(ABORT, 'connection integrity constraint failed');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS connections_integrity_update
+        BEFORE UPDATE OF port, extra_params, provider_target ON connections
+        WHEN typeof(NEW.port) <> 'integer'
+          OR NEW.port < 0
+          OR NEW.port > 65535
+          OR CASE
+               WHEN json_valid(NEW.extra_params) THEN json_type(NEW.extra_params) <> 'object'
+               ELSE 1
+             END
+          OR CASE
+               WHEN NEW.provider_target IS NULL THEN 0
+               WHEN json_valid(NEW.provider_target) THEN json_type(NEW.provider_target) <> 'object'
+               ELSE 1
+             END
+        BEGIN
+            SELECT RAISE(ABORT, 'connection integrity constraint failed');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS workspace_connection_bindings_integrity_insert
+        BEFORE INSERT ON workspace_connection_bindings
+        WHEN CASE
+               WHEN json_valid(NEW.extra_params) THEN json_type(NEW.extra_params) <> 'object'
+               ELSE 1
+             END
+        BEGIN
+            SELECT RAISE(ABORT, 'connection binding integrity constraint failed');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS workspace_connection_bindings_integrity_update
+        BEFORE UPDATE OF extra_params ON workspace_connection_bindings
+        WHEN CASE
+               WHEN json_valid(NEW.extra_params) THEN json_type(NEW.extra_params) <> 'object'
+               ELSE 1
+             END
+        BEGIN
+            SELECT RAISE(ABORT, 'connection binding integrity constraint failed');
+        END;
+        "#,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 /// Rebuild the immutable parent table once so a removed Dashboard command does not

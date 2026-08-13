@@ -26,7 +26,7 @@ export function collectPoisonMutexDiagnostics({ read, relative, sourceFiles }) {
   )) {
     const filePath = relative(file);
     if (
-      /(?:^|\/)(?:tests|[^/]+_tests)\.rs$/.test(filePath) ||
+      /(?:^|\/)(?:tests|test_support|[^/]+_tests)\.rs$/.test(filePath) ||
       /\.(?:test|spec)\.[^.]+$/.test(filePath)
     ) {
       continue;

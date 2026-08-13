@@ -11,13 +11,14 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
-use crate::error::{AppError, AppResult};
-use crate::executor::cancel;
-use crate::features::workspaces::adapters::control_plane::{
-    analysis_refresh_lease_is_active, claim_analysis_refresh_lease, complete_analysis_run,
+use super::adapters::hosted::{
+    analysis_refresh_lease_is_active, analysis_runner_capability_is_missing,
+    analysis_runner_registration_guard, claim_analysis_refresh_lease, complete_analysis_run,
     get_analysis_run, register_analysis_runner, release_analysis_refresh_lease, start_analysis_run,
     RemoteAnalysisLease, RemoteAnalysisRun,
 };
+use crate::error::{AppError, AppResult};
+use crate::executor::cancel;
 use crate::features::workspaces::WorkspaceKind;
 use crate::state::AppState;
 
@@ -96,33 +97,57 @@ async fn poll_active_scope(
     background_launch: bool,
 ) -> AppResult<()> {
     let state = app.state::<AppState>();
-    let scope = state.knowledge_store().active_resource_scope().await?;
+    let scope = state.services.knowledge.active_resource_scope().await?;
     if scope.workspace_kind != WorkspaceKind::Team {
         return Ok(());
     }
     let Some(account_id) = scope.selected_account_id.as_deref() else {
         return Ok(());
     };
-    let device_id = state
-        .knowledge_store()
-        .automation_runner_device_id()
+    let registration_guard = analysis_runner_registration_guard().await;
+    let mut device_id = state
+        .services
+        .analysis_article
+        .runner_device_id(account_id, scope.workspace_id)
         .await?
         .to_string();
     emit(app, "registering", None, None, None);
-    let runner = register_analysis_runner(
+    let runner = match register_analysis_runner(
         account_id,
         scope.workspace_id,
         &device_id,
         background_allowed,
     )
-    .await?;
+    .await
+    {
+        Ok(runner) => runner,
+        Err(error) if analysis_runner_capability_is_missing(&error) => {
+            device_id = state
+                .services
+                .analysis_article
+                .replace_runner_device_id(account_id, scope.workspace_id)
+                .await?
+                .to_string();
+            register_analysis_runner(
+                account_id,
+                scope.workspace_id,
+                &device_id,
+                background_allowed,
+            )
+            .await?
+        }
+        Err(error) => return Err(error),
+    };
+    drop(registration_guard);
     for _ in 0..MAX_CLAIMS_PER_TICK {
         let Some(lease) = claim_analysis_refresh_lease(
             account_id,
             scope.workspace_id,
-            runner.id,
+            runner.runner.id,
             &device_id,
             background_launch,
+            runner.capability(),
+            runner.generation(),
         )
         .await?
         else {
@@ -166,6 +191,8 @@ async fn execute_lease(
         run_id,
         AnalysisRunTrigger::Schedule,
         &lease.parameter_values,
+        lease.runner_capability.as_str(),
+        lease.runner_capability_generation,
         Some(&lease),
     )
     .await;
@@ -224,12 +251,20 @@ async fn execute_lease(
             }
         }
     };
-    if state.knowledge_store().active_resource_scope().await? != *scope {
+    if state.services.knowledge.active_resource_scope().await? != *scope {
         cancel::cancel(run_id);
         let error = AppError::Blocked {
             reason: "active workspace changed during scheduled Analysis refresh".into(),
         };
-        let _ = complete_failure(account_id, scope.workspace_id, article.id, run_id, &error).await;
+        let _ = complete_failure(
+            account_id,
+            scope.workspace_id,
+            article.id,
+            run_id,
+            lease.runner_capability.as_str(),
+            &error,
+        )
+        .await;
         return Err(error);
     }
     match local {
@@ -248,6 +283,7 @@ async fn execute_lease(
                     scope.workspace_id,
                     article.id,
                     run_id,
+                    lease.runner_capability.as_str(),
                     AnalysisRunState::Cancelled,
                     &result.query_receipts,
                     &[],
@@ -261,6 +297,7 @@ async fn execute_lease(
                 scope.workspace_id,
                 article.id,
                 run_id,
+                lease.runner_capability.as_str(),
                 AnalysisRunState::Succeeded,
                 &result.query_receipts,
                 &result.fragments,
@@ -268,15 +305,18 @@ async fn execute_lease(
             )
             .await?;
             if let Err(error) = super::signals::evaluate_analysis_signals(
-                Some(app),
-                state,
-                account_id,
-                scope.workspace_id,
-                &article,
-                lease.runner_id,
-                &run,
-                &result.fragments,
-                None,
+                super::signals::AnalysisSignalEvaluation {
+                    app: Some(app),
+                    state,
+                    account_id,
+                    workspace_id: scope.workspace_id,
+                    article: &article,
+                    runner_id: lease.runner_id,
+                    runner_capability: lease.runner_capability.as_str(),
+                    run: &run,
+                    fragments: &result.fragments,
+                    execution_error: None,
+                },
             )
             .await
             {
@@ -290,19 +330,29 @@ async fn execute_lease(
             Ok(())
         }
         Err(error) => {
-            let run = complete_failure(account_id, scope.workspace_id, article.id, run_id, &error)
-                .await?;
+            let run = complete_failure(
+                account_id,
+                scope.workspace_id,
+                article.id,
+                run_id,
+                lease.runner_capability.as_str(),
+                &error,
+            )
+            .await?;
             if run.state != AnalysisRunState::Cancelled {
                 if let Err(signal_error) = super::signals::evaluate_analysis_signals(
-                    Some(app),
-                    state,
-                    account_id,
-                    scope.workspace_id,
-                    &article,
-                    lease.runner_id,
-                    &run,
-                    &[],
-                    Some(&error),
+                    super::signals::AnalysisSignalEvaluation {
+                        app: Some(app),
+                        state,
+                        account_id,
+                        workspace_id: scope.workspace_id,
+                        article: &article,
+                        runner_id: lease.runner_id,
+                        runner_capability: lease.runner_capability.as_str(),
+                        run: &run,
+                        fragments: &[],
+                        execution_error: Some(&error),
+                    },
                 )
                 .await
                 {
@@ -324,6 +374,7 @@ async fn complete_failure(
     workspace_id: Uuid,
     article_id: Uuid,
     run_id: Uuid,
+    runner_capability: &str,
     error: &AppError,
 ) -> AppResult<RemoteAnalysisRun> {
     let cancelled = matches!(
@@ -339,6 +390,7 @@ async fn complete_failure(
         workspace_id,
         article_id,
         run_id,
+        runner_capability,
         if cancelled {
             AnalysisRunState::Cancelled
         } else if matches!(error, AppError::Blocked { .. } | AppError::NotFound(_)) {

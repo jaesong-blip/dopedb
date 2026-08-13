@@ -4,6 +4,7 @@
 // safety pipeline (classify/preview/approve/audit) applies. Never executes directly.
 import { useMemo, useState } from "react";
 import { Button } from "../design-system/components/Button";
+import { TextInput } from "../design-system/components/FormControls";
 import { useI18n } from "../lib/i18n";
 import {
   InspectorFooter,
@@ -186,7 +187,8 @@ export default function RowEditor({
                 )}
               </label>
               <div className="tw:flex tw:items-center tw:gap-2 tw:[&>input]:min-w-0 tw:[&>input]:flex-1">
-                <input
+                <TextInput
+                  density="compact"
                   type={isNumericType(c.dataType) ? "number" : "text"}
                   value={isNull ? "" : vals[c.name] ?? ""}
                   disabled={isNull || readonly}

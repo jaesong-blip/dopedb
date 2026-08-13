@@ -5,6 +5,22 @@ import "server-only";
 import { auth } from "./auth";
 
 /**
+ * Keep browser-cookie and native-Bearer authentication mutually exclusive.
+ *
+ * Better Auth's bearer plugin deliberately falls through when a malformed or
+ * invalid Authorization value cannot be verified. Passing the original request
+ * headers in that case would let a valid browser cookie authenticate a route
+ * that explicitly opted into native Bearer authority. Once Authorization is
+ * present, preserve only that proof and fail closed instead of falling back to
+ * any ambient cookie.
+ */
+export function authoritativeSessionHeaders(request: Pick<Request, "headers">): Headers {
+  const authorization = request.headers.get("authorization");
+  if (authorization === null) return request.headers;
+  return new Headers({ authorization });
+}
+
+/**
  * Resolves the current Better Auth session from its durable server-side store.
  *
  * Better Auth's supported `disableCookieCache` query deliberately bypasses the
@@ -14,7 +30,7 @@ import { auth } from "./auth";
  */
 export function authoritativeSession(request: Request) {
   return auth.api.getSession({
-    headers: request.headers,
+    headers: authoritativeSessionHeaders(request),
     query: { disableCookieCache: true },
   });
 }

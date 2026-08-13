@@ -2,6 +2,13 @@
 
 use super::*;
 
+#[derive(Debug, Deserialize)]
+struct OAuthErrorResponse {
+    error: Option<String>,
+    error_description: Option<String>,
+    message: Option<String>,
+}
+
 /// Start a single-use ten-minute device authorization request.
 pub(super) async fn begin_login() -> AppResult<WorkspaceDeviceAuthorization> {
     let origin = origin()?;
@@ -14,10 +21,12 @@ pub(super) async fn begin_login() -> AppResult<WorkspaceDeviceAuthorization> {
     if !response.status().is_success() {
         return Err(oauth_error(response).await);
     }
-    let value = response
-        .json::<DeviceCodeResponse>()
-        .await
-        .map_err(|error| request_error("reading workspace login response", error))?;
+    let value: DeviceCodeResponse = crate::hosted_control_plane::bounded_json_response(
+        response,
+        "reading workspace login response",
+        MAX_AUTH_RESPONSE_BYTES,
+    )
+    .await?;
     let expected_verification_prefix = format!("{origin}/auth/device?user_code=");
     if !valid_device_code(&value.device_code)
         || !value
@@ -53,10 +62,12 @@ async fn session_for_token(token: &str) -> AppResult<Option<WorkspaceAuthUser>> 
     if !response.status().is_success() {
         return Err(oauth_error(response).await);
     }
-    let session = response
-        .json::<SessionResponse>()
-        .await
-        .map_err(|error| request_error("reading workspace session", error))?;
+    let session: SessionResponse = crate::hosted_control_plane::bounded_json_response(
+        response,
+        "reading workspace session",
+        MAX_AUTH_RESPONSE_BYTES,
+    )
+    .await?;
     if Uuid::parse_str(&session.user.id).is_err()
         || session.user.email.trim().is_empty()
         || session.user.email.len() > 320
@@ -153,10 +164,17 @@ pub(super) async fn remote_workspaces(user_id: &str) -> AppResult<Vec<RemoteWork
     if !response.status().is_success() {
         return Err(oauth_error(response).await);
     }
-    let payload = response
-        .json::<WorkspacesResponse>()
-        .await
-        .map_err(|error| request_error("reading workspace memberships", error))?;
+    let payload: WorkspacesResponse = crate::hosted_control_plane::bounded_json_response(
+        response,
+        "reading workspace memberships",
+        MAX_WORKSPACE_LIST_RESPONSE_BYTES,
+    )
+    .await?;
+    require_response_item_count(
+        payload.workspaces.len(),
+        MAX_WORKSPACES_PER_ACCOUNT,
+        "workspace memberships",
+    )?;
     let mut workspaces = Vec::with_capacity(payload.workspaces.len());
     for workspace in payload.workspaces {
         let id = Uuid::parse_str(&workspace.id)
@@ -193,13 +211,13 @@ pub(super) async fn poll_login(device_code: &str) -> AppResult<WorkspaceLoginPol
         .map_err(|error| request_error("polling workspace login", error))?;
 
     if response.status().is_success() {
-        let token = Zeroizing::new(
-            response
-                .json::<TokenResponse>()
-                .await
-                .map_err(|error| request_error("reading workspace session token", error))?
-                .access_token,
-        );
+        let payload: TokenResponse = crate::hosted_control_plane::bounded_json_response(
+            response,
+            "reading workspace session token",
+            MAX_AUTH_RESPONSE_BYTES,
+        )
+        .await?;
+        let token = Zeroizing::new(payload.access_token);
         if token.len() < 20 || token.len() > 4096 || token.chars().any(char::is_whitespace) {
             return Err(AppError::Network(
                 "workspace login returned an invalid session token".into(),
@@ -216,10 +234,12 @@ pub(super) async fn poll_login(device_code: &str) -> AppResult<WorkspaceLoginPol
     }
 
     let status = response.status();
-    let body = response
-        .json::<OAuthErrorResponse>()
-        .await
-        .map_err(|error| request_error("reading workspace login status", error))?;
+    let body: OAuthErrorResponse = crate::hosted_control_plane::bounded_json_response(
+        response,
+        "reading workspace login status",
+        MAX_AUTH_RESPONSE_BYTES,
+    )
+    .await?;
     let poll_status = match body.error.as_deref() {
         Some("authorization_pending") => WorkspaceLoginPollStatus::Pending,
         Some("slow_down") => WorkspaceLoginPollStatus::SlowDown,

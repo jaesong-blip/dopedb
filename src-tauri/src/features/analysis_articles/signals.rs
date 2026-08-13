@@ -13,15 +13,15 @@ use tauri::AppHandle;
 use tauri_plugin_notification::NotificationExt;
 use uuid::Uuid;
 
-use crate::error::{AppError, AppResult};
-use crate::features::workspaces::adapters::control_plane::{
+use super::adapters::hosted::{
     list_analysis_signals, submit_analysis_signal_receipt, AnalysisSignalChannel,
     AnalysisSignalCondition, AnalysisSignalObservedState, AnalysisSignalReceiptRequest,
     RemoteAnalysisRun, RemoteAnalysisSignal,
 };
+use super::ports::{LocalAnalysisSignalMetricSample, LocalAnalysisSignalState};
+use crate::error::{AppError, AppResult};
 use crate::operations::canonical_hash;
 use crate::state::AppState;
-use crate::store::{LocalAnalysisSignalMetricSample, LocalAnalysisSignalState};
 
 const MAX_BASELINE_SAMPLES: usize = 1_000;
 
@@ -39,17 +39,34 @@ struct MetricObservation {
     error_kind: Option<String>,
 }
 
+pub(crate) struct AnalysisSignalEvaluation<'a> {
+    pub(crate) app: Option<&'a AppHandle>,
+    pub(crate) state: &'a AppState,
+    pub(crate) account_id: &'a str,
+    pub(crate) workspace_id: Uuid,
+    pub(crate) article: &'a AnalysisArticleRecord,
+    pub(crate) runner_id: Uuid,
+    pub(crate) runner_capability: &'a str,
+    pub(crate) run: &'a RemoteAnalysisRun,
+    pub(crate) fragments: &'a [AnalysisResultFragment],
+    pub(crate) execution_error: Option<&'a AppError>,
+}
+
 pub(crate) async fn evaluate_analysis_signals(
-    app: Option<&AppHandle>,
-    state: &AppState,
-    account_id: &str,
-    workspace_id: Uuid,
-    article: &AnalysisArticleRecord,
-    runner_id: Uuid,
-    run: &RemoteAnalysisRun,
-    fragments: &[AnalysisResultFragment],
-    execution_error: Option<&AppError>,
+    evaluation: AnalysisSignalEvaluation<'_>,
 ) -> AppResult<()> {
+    let AnalysisSignalEvaluation {
+        app,
+        state,
+        account_id,
+        workspace_id,
+        article,
+        runner_id,
+        runner_capability,
+        run,
+        fragments,
+        execution_error,
+    } = evaluation;
     if article.live_revision != Some(run.article_revision)
         || article.id != run.article_id
         || !matches!(
@@ -72,6 +89,7 @@ pub(crate) async fn evaluate_analysis_signals(
             workspace_id,
             article,
             runner_id,
+            runner_capability,
             run,
             fragments,
             execution_error,
@@ -99,6 +117,7 @@ async fn evaluate_one(
     workspace_id: Uuid,
     article: &AnalysisArticleRecord,
     runner_id: Uuid,
+    runner_capability: &str,
     run: &RemoteAnalysisRun,
     fragments: &[AnalysisResultFragment],
     execution_error: Option<&AppError>,
@@ -130,8 +149,9 @@ async fn evaluate_one(
     let revision = u64::try_from(signal.revision)
         .map_err(|_| AppError::Config("Analysis signal revision exceeds local storage".into()))?;
     state
-        .knowledge_store()
-        .record_analysis_signal_metric_sample(
+        .services
+        .analysis_article
+        .record_signal_sample(
             workspace_id,
             account_id,
             signal.id,
@@ -176,6 +196,7 @@ async fn evaluate_one(
         article.id,
         signal.id,
         runner_id,
+        runner_capability,
         &receipt,
     )
     .await?;
@@ -296,8 +317,9 @@ async fn observe_metric(
     }
     let value = value.expect("validated finite metric");
     let recent = state
-        .knowledge_store()
-        .recent_analysis_signal_metric_samples(
+        .services
+        .analysis_article
+        .recent_signal_samples(
             workspace_id,
             account_id,
             signal.id,

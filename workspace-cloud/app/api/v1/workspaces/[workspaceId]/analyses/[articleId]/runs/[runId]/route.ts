@@ -21,11 +21,22 @@ import {
 import { authorizeWorkspace } from "../../../../../../../../../lib/workspace-authorization";
 import { accessibleAnalysisArticle } from "../../../../../../../../../lib/workspace-analysis-article-http";
 import {
+  analysisRunnerCapabilityHeader,
+  hashAnalysisRunnerCapability,
+  isAnalysisDesktopBearerRequest,
+  parseAnalysisRunnerCapability,
+} from "../../../../../../../../../lib/workspace-analysis-runner-capability";
+import {
+  canStageAnalysisRunFragment,
   commitAnalysisRunCompletion,
+  stageAnalysisRunFragment,
   type AnalysisRunAuthority,
 } from "../../../../../../../../../lib/workspace-analysis-run-store";
 import { sealAnalysisResultFragments } from "../../../../../../../../../lib/workspace-analysis-results";
-import { parseAnalysisRunCompletion } from "../../../../../../../../../lib/workspace-analysis-runs";
+import {
+  analysisResultFragmentsAreComplete,
+  parseAnalysisRunCompletion,
+} from "../../../../../../../../../lib/workspace-analysis-runs";
 import {
   analysisBlockResultColumns,
   parseAnalysisArticleVersionPayload,
@@ -121,12 +132,21 @@ export async function GET(request: Request, context: RouteContext) {
 
 export async function PATCH(request: Request, context: RouteContext) {
   if (!mutationAllowed(request, env.appOrigin())) return jsonError("Invalid request origin", 403);
+  if (!isAnalysisDesktopBearerRequest(request)) {
+    return jsonError("Analysis run completion requires a Desktop bearer session", 401);
+  }
   const { workspaceId, articleId, runId } = await context.params;
   if (!isUuid(workspaceId) || !isUuid(articleId) || !isUuid(runId)) {
     return jsonError("Invalid Analysis Article run scope", 400);
   }
   const authorization = await authorizeWorkspace(request, workspaceId, "view");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
+  const runnerCapability = parseAnalysisRunnerCapability(request);
+  if (!runnerCapability) return jsonError(
+    "Invalid Analysis runner capability",
+    request.headers.has(analysisRunnerCapabilityHeader) ? 403 : 428,
+  );
+  const runnerCapabilityHash = hashAnalysisRunnerCapability(runnerCapability);
   const run = await db.query.workspaceAnalysisArticleRun.findFirst({
     where: and(
       eq(workspaceAnalysisArticleRun.organizationId, workspaceId),
@@ -135,7 +155,6 @@ export async function PATCH(request: Request, context: RouteContext) {
     ),
   });
   if (!run) return jsonError("Analysis Article run not found", 404);
-  if (run.state !== "running") return jsonError("Analysis Article run is already terminal", 409);
   const revision = await runRevision(workspaceId, articleId, run.articleRevision);
   if (!revision) return jsonError("Analysis Article revision is unavailable", 409);
   const articleProjection = await db.query.workspaceAnalysisArticle.findFirst({
@@ -148,7 +167,10 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (!articleProjection || articleProjection.deletedAt) {
     return jsonError("Analysis Article is unavailable", 409);
   }
-  const body = await boundedJsonBody(request, 17 * 1024 * 1024);
+  // New clients send only a small staged-fragment manifest. Keep a bounded
+  // temporary inline path so Desktop and cloud can roll independently; payloads
+  // above Vercel's buffered request ceiling require the staged protocol.
+  const body = await boundedJsonBody(request, 4 * 1024 * 1024);
   if (!body.ok) return jsonError("Invalid Analysis Article completion", 400);
   let completion;
   try {
@@ -167,47 +189,117 @@ export async function PATCH(request: Request, context: RouteContext) {
       return jsonError("Analysis Article query receipt does not match the immutable revision", 409);
     }
   }
-  const blockById = new Map(revision.definition.blocks.map((block) => [block.id, block]));
-  for (const fragment of completion.fragments) {
-    const block = blockById.get(fragment.blockId);
-    let columns;
-    try {
-      columns = block ? analysisBlockResultColumns(revision.definition, block) : null;
-    } catch {
-      columns = null;
+  if (run.state !== "running") {
+    const replayManifest = completion.inlineFragments.length > 0
+      ? completion.inlineFragments.map((fragment) => ({
+        blockId: fragment.blockId,
+        ordinal: fragment.ordinal,
+        payloadHash: canonicalHash(fragment),
+      }))
+      : completion.fragmentManifest;
+    const replayed = await commitAnalysisRunCompletion({
+      organizationId: workspaceId,
+      articleId,
+      runId,
+      runnerId: run.runnerId,
+      runnerCapabilityHash,
+      completion: { ...completion, fragmentManifest: replayManifest, inlineFragments: [] },
+      fragmentManifest: replayManifest,
+      authority: authority(authorization),
+    });
+    if (!replayed) return jsonError("Analysis Article run is already terminal", 409);
+    return privateJson({ run: replayed }, {
+      headers: { "x-dopedb-analysis-result-protocol": "staged-v1" },
+    });
+  }
+  let fragmentManifest = completion.fragmentManifest;
+  if (completion.inlineFragments.length > 0) {
+    const blockById = new Map(revision.definition.blocks.map((block) => [block.id, block]));
+    for (const fragment of completion.inlineFragments) {
+      const block = blockById.get(fragment.blockId);
+      let columns;
+      try {
+        columns = block ? analysisBlockResultColumns(revision.definition, block) : null;
+      } catch {
+        columns = null;
+      }
+      if (!columns?.length || canonicalHash(fragment.columns) !== canonicalHash(columns)) {
+        return jsonError("Analysis Article result schema does not match its block source", 409);
+      }
     }
-    if (!columns?.length || canonicalHash(fragment.columns) !== canonicalHash(columns)) {
-      return jsonError("Analysis Article result schema does not match its block source", 409);
+    const preflight = await canStageAnalysisRunFragment({
+      organizationId: workspaceId,
+      articleId,
+      runId,
+      runnerId: run.runnerId,
+      runnerCapabilityHash,
+      authority: authority(authorization),
+    });
+    if (!preflight) {
+      return jsonError("Analysis result staging authority changed", 409);
     }
+    const expiresAt = new Date(
+      (run.startedAt ?? run.createdAt).valueOf()
+        + revision.definition.refresh.resultRetentionDays * 24 * 60 * 60 * 1_000,
+    );
+    const sealed = await sealAnalysisResultFragments({
+      request,
+      workspaceId,
+      actorUserId: authorization.session.user.id,
+      runId,
+      expiresAt,
+      fragments: completion.inlineFragments,
+    });
+    const stagedManifest = [];
+    for (const fragment of sealed) {
+      const staged = await stageAnalysisRunFragment({
+        organizationId: workspaceId,
+        articleId,
+        runId,
+        runnerId: run.runnerId,
+        runnerCapabilityHash,
+        fragment,
+        authority: authority(authorization),
+      });
+      if (!staged || staged.payloadHash !== fragment.payloadHash) {
+        return jsonError("Analysis result staging authority changed or its budget was exceeded", 409);
+      }
+      stagedManifest.push({
+        blockId: String(staged.blockId),
+        ordinal: Number(staged.ordinal),
+        payloadHash: String(staged.payloadHash),
+      });
+    }
+    fragmentManifest = stagedManifest;
   }
   const mayStoreSharedResults = articleProjection.liveRevision === run.articleRevision
-    || (articleProjection.revision === run.articleRevision && articleProjection.state === "review");
-  if (completion.fragments.length > 0 && !mayStoreSharedResults) {
+    || (
+      articleProjection.revision === run.articleRevision
+      && articleProjection.state === "review"
+      && revision.definition.refresh.shareReviewedResults
+    );
+  if (fragmentManifest.length > 0 && !mayStoreSharedResults) {
     return jsonError(
-      "Draft run results stay on Desktop until the Article enters review",
+      "Draft and private review results stay on Desktop until shared result storage is enabled",
       409,
     );
   }
-  const expiresAt = new Date(
-    Date.now() + revision.definition.refresh.resultRetentionDays * 24 * 60 * 60 * 1_000,
-  );
-  const sealedFragments = completion.fragments.length === 0 ? [] : await sealAnalysisResultFragments({
-    request,
-    workspaceId,
-    actorUserId: authorization.session.user.id,
-    runId,
-    expiresAt,
-    fragments: completion.fragments,
-  });
+  if (completion.state === "succeeded"
+    && !analysisResultFragmentsAreComplete(revision.definition, fragmentManifest)) {
+    return jsonError("Analysis Article shared results are incomplete", 409);
+  }
   const updated = await commitAnalysisRunCompletion({
     organizationId: workspaceId,
     articleId,
     runId,
     runnerId: run.runnerId,
-    completion,
-    sealedFragments,
+    runnerCapabilityHash,
+    completion: { ...completion, fragmentManifest, inlineFragments: [] },
+    fragmentManifest,
     authority: authority(authorization),
   });
   if (!updated) return jsonError("Analysis run authority changed before completion", 409);
-  return privateJson({ run: updated });
+  return privateJson({ run: updated }, {
+    headers: { "x-dopedb-analysis-result-protocol": "staged-v1" },
+  });
 }

@@ -1,37 +1,28 @@
-import { useEffect, useReducer } from "react";
+import { useState } from "react";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 
 import { errMessage } from "../../ipc/types";
 import { getTableDdl } from "./tauriAdapter";
 
-type DdlState = {
-  text: string | null;
-  error: string | null;
-  copied: boolean;
-};
+export const tableDdlQueryKey = (
+  connectionId: string,
+  table: string,
+  schema?: string | null,
+  database?: string | null,
+) => ["tableDdl", connectionId, database ?? null, schema ?? null, table] as const;
 
-type DdlAction =
-  | { type: "loading" }
-  | { type: "loaded"; text: string }
-  | { type: "failed"; message: string }
-  | { type: "copied"; copied: boolean };
-
-const initialState: DdlState = {
-  text: null,
-  error: null,
-  copied: false,
-};
-
-function reducer(state: DdlState, action: DdlAction): DdlState {
-  switch (action.type) {
-    case "loading":
-      return initialState;
-    case "loaded":
-      return { text: action.text, error: null, copied: false };
-    case "failed":
-      return { text: null, error: action.message, copied: false };
-    case "copied":
-      return { ...state, copied: action.copied };
-  }
+export function tableDdlQuery(
+  connectionId: string,
+  table: string,
+  schema?: string | null,
+  database?: string | null,
+) {
+  return queryOptions({
+    queryKey: tableDdlQueryKey(connectionId, table, schema, database),
+    queryFn: () => getTableDdl(connectionId, table, schema, database),
+    staleTime: Infinity,
+    retry: false,
+  });
 }
 
 export function useTableDdl(
@@ -40,31 +31,19 @@ export function useTableDdl(
   schema?: string | null,
   database?: string | null,
 ) {
-  const [state, dispatch] = useReducer(reducer, initialState);
-
-  useEffect(() => {
-    let active = true;
-    dispatch({ type: "loading" });
-    getTableDdl(connectionId, table, schema, database)
-      .then((text) => active && dispatch({ type: "loaded", text }))
-      .catch(
-        (cause) =>
-          active &&
-          dispatch({ type: "failed", message: errMessage(cause) }),
-      );
-    return () => {
-      active = false;
-    };
-  }, [connectionId, database, schema, table]);
+  const query = useQuery(tableDdlQuery(connectionId, table, schema, database));
+  const [copied, setCopied] = useState(false);
 
   return {
-    ...state,
+    text: query.data ?? null,
+    error: query.error ? errMessage(query.error) : null,
+    copied,
     copy: async () => {
-      if (!state.text) return;
-      await navigator.clipboard.writeText(state.text);
-      dispatch({ type: "copied", copied: true });
+      if (!query.data) return;
+      await navigator.clipboard.writeText(query.data);
+      setCopied(true);
       window.setTimeout(
-        () => dispatch({ type: "copied", copied: false }),
+        () => setCopied(false),
         1_500,
       );
     },

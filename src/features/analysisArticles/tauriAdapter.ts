@@ -40,16 +40,6 @@ export function listAnalysisArticles(
   });
 }
 
-export function getAnalysisArticle(articleId: string): Promise<AnalysisArticleRecord> {
-  return invoke("get_analysis_article_command", { articleId });
-}
-
-export function createAnalysisArticle(
-  article: SharedAnalysisArticleCreate,
-): Promise<AnalysisArticleRecord> {
-  return invoke("create_analysis_article_command", { article });
-}
-
 export function updateAnalysisArticle(
   articleId: string,
   expectedRevision: number,

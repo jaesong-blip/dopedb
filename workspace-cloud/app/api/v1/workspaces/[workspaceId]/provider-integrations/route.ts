@@ -5,6 +5,7 @@ import { and, eq, gt, inArray, isNull, lt } from "drizzle-orm";
 import { db } from "../../../../../../lib/db";
 import { env } from "../../../../../../lib/env";
 import {
+  boundedJsonBody,
   isUuid,
   jsonError,
   mutationAllowed,
@@ -171,7 +172,16 @@ export async function POST(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId)) return jsonError("Invalid workspace id", 400);
   const authorization = await authorizeWorkspace(request, workspaceId, "manage");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
-  const body = (await request.json().catch(() => null)) as {
+  const parsed = await boundedJsonBody(request, 64 * 1_024);
+  if (!parsed.ok) {
+    return jsonError(
+      parsed.reason === "too_large"
+        ? "Provider integration request is too large"
+        : "Invalid provider integration request",
+      parsed.reason === "too_large" ? 413 : 400,
+    );
+  }
+  const body = parsed.value as {
     provider?: unknown;
     configuration?: unknown;
     setupId?: unknown;

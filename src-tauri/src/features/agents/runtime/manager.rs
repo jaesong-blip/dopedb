@@ -910,7 +910,7 @@ fn stable_catalog_tags(refs: Vec<GitHubTagRef>) -> Vec<String> {
             })
         })
         .collect::<Vec<_>>();
-    releases.sort_by(|left, right| right.0.cmp(&left.0));
+    releases.sort_by_key(|release| std::cmp::Reverse(release.0));
     releases.dedup_by(|left, right| left.1 == right.1);
     releases.into_iter().map(|(_, tag)| tag).collect()
 }

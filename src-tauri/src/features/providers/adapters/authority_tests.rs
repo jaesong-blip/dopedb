@@ -1,9 +1,8 @@
 //! Focused hosted-provider authority adapter tests.
 
 use super::{
-    append_bounded_inventory_body, bounded_inventory_body_capacity, parse_integration,
-    parse_inventory_body, read_bounded_inventory_body, RemoteIntegration, RemoteVerificationTarget,
-    MAX_INVENTORY_BODY_BYTES,
+    parse_integration, parse_inventory_body, InventoryResponse, RemoteIntegration,
+    RemoteVerificationTarget, MAX_INVENTORY_BODY_BYTES,
 };
 use reqwest::{redirect::Policy, Client, Response};
 use tokio::{
@@ -51,27 +50,6 @@ async fn local_response(raw: Vec<u8>) -> Response {
     response
 }
 
-#[test]
-fn inventory_body_cap_rejects_declared_or_streamed_oversize_without_trusting_headers() {
-    assert!(bounded_inventory_body_capacity(Some(MAX_INVENTORY_BODY_BYTES as u64 + 1)).is_err());
-    assert_eq!(bounded_inventory_body_capacity(None).unwrap(), 0);
-
-    let mut body = Vec::new();
-    append_bounded_inventory_body(&mut body, &vec![b'x'; MAX_INVENTORY_BODY_BYTES])
-        .expect("an exact-sized streamed chunk is retained");
-    assert_eq!(body.len(), MAX_INVENTORY_BODY_BYTES);
-    assert!(append_bounded_inventory_body(&mut body, b"x").is_err());
-
-    // A missing or false small Content-Length follows the same chunk cap.
-    let mut missing_length_body = Vec::new();
-    append_bounded_inventory_body(
-        &mut missing_length_body,
-        &vec![b'x'; MAX_INVENTORY_BODY_BYTES - 1],
-    )
-    .unwrap();
-    assert!(append_bounded_inventory_body(&mut missing_length_body, b"xx").is_err());
-}
-
 #[tokio::test]
 async fn inventory_reader_enforces_content_length_and_streaming_caps() {
     Box::pin(crate::features::providers::provisioning::assert_repository_fences()).await;
@@ -87,42 +65,57 @@ async fn inventory_reader_enforces_content_length_and_streaming_caps() {
 
     let declared_oversize = local_response(
         format!(
-            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
             MAX_INVENTORY_BODY_BYTES + 1
         )
         .into_bytes(),
     )
     .await;
-    assert!(read_bounded_inventory_body(declared_oversize)
+    assert!(
+        crate::hosted_control_plane::bounded_json_response::<InventoryResponse>(
+            declared_oversize,
+            "provider authority fixture",
+            MAX_INVENTORY_BODY_BYTES,
+        )
         .await
-        .is_err());
+        .is_err()
+    );
 
     let streamed_oversize = local_response(
         format!(
-            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n{0:X}\r\n{1}\r\n1\r\nx\r\n0\r\n\r\n",
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n{0:X}\r\n{1}\r\n1\r\nx\r\n0\r\n\r\n",
             MAX_INVENTORY_BODY_BYTES,
             "x".repeat(MAX_INVENTORY_BODY_BYTES),
         )
         .into_bytes(),
     )
     .await;
-    assert!(read_bounded_inventory_body(streamed_oversize)
+    assert!(
+        crate::hosted_control_plane::bounded_json_response::<InventoryResponse>(
+            streamed_oversize,
+            "provider authority fixture",
+            MAX_INVENTORY_BODY_BYTES,
+        )
         .await
-        .is_err());
+        .is_err()
+    );
 
-    let exact_body = vec![b' '; MAX_INVENTORY_BODY_BYTES];
+    let mut exact_body = br#"{"integrations":[]}"#.to_vec();
+    exact_body.resize(MAX_INVENTORY_BODY_BYTES, b' ');
     let mut exact_wire = format!(
-        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nContent-Type: application/problem+json; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         exact_body.len()
     )
     .into_bytes();
     exact_wire.extend_from_slice(&exact_body);
-    assert_eq!(
-        read_bounded_inventory_body(local_response(exact_wire).await)
-            .await
-            .expect("exact boundary is accepted"),
-        exact_body
-    );
+    let parsed = crate::hosted_control_plane::bounded_json_response::<InventoryResponse>(
+        local_response(exact_wire).await,
+        "provider authority fixture",
+        MAX_INVENTORY_BODY_BYTES,
+    )
+    .await
+    .expect("exact boundary is accepted");
+    assert!(parsed.integrations.is_empty());
 }
 
 #[test]

@@ -168,6 +168,21 @@ impl GcloudSnapshot {
             .unwrap_or_else(|| unreachable!("snapshot path is unavailable after cleanup"))
     }
 
+    /// Adds the ephemeral bearer consumed only by a subsequent official gcloud
+    /// command. It shares the descriptor-rooted snapshot cleanup and never
+    /// enters persistent application configuration.
+    pub(crate) fn materialize_access_token(&self, token: &[u8]) -> AppResult<PathBuf> {
+        if token.is_empty()
+            || token.len() > 64 * 1024
+            || token.iter().any(|byte| !byte.is_ascii_graphic())
+        {
+            return Err(blocked("GCP ADC credential was rejected"));
+        }
+        let path = self.config_directory().join("access-token");
+        write_private(&path, token)?;
+        Ok(path)
+    }
+
     /// Removes every process-owned gcloud artifact after the child has exited.
     /// Two descriptor-rooted attempts run first. Only while the pathname is
     /// still proven to be this opened private root may the Rust standard

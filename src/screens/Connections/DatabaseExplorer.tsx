@@ -26,6 +26,7 @@ import {
 } from "../../features/connections/tauriAdapter";
 import { SCHEMA_SCOPE_PARAMETER } from "../../features/catalogExplorer/scopeFilter";
 import { ProviderCredentialDialog } from "../../features/providers/ProviderCredentialDialog";
+import { connectionQueryKeys } from "../../features/connections/queries";
 import type { ProviderKind } from "../../features/providers/domain";
 import type {
   EnvironmentConnection,
@@ -42,6 +43,7 @@ import {
 } from "../../features/knowledge/tauriAdapter";
 import type { AnalysisArticleRecord } from "../../features/analysisArticles/domain";
 import { listAnalysisArticles } from "../../features/analysisArticles/tauriAdapter";
+import { analysisQueryKeys } from "../../features/analysisArticles/queryKeys";
 import { EnvironmentSetupDialog } from "../../features/knowledge/components/EnvironmentSetupDialog";
 import { ProjectSetupDialog } from "../../features/knowledge/components/ProjectSetupDialog";
 import {
@@ -175,8 +177,7 @@ export function DatabaseExplorer({
   const knowledgeEnabled =
     catalogScope.ready &&
     catalogScope.accountScope !== null;
-  const sharedKnowledgeWorkspace =
-    knowledgeEnabled && catalogScope.accountScope !== "personal";
+  const sharedKnowledgeWorkspace = knowledgeEnabled;
   const knowledgeProjects = useQuery({
     queryKey: ["knowledge", "projects", catalogScope.key],
     queryFn: listKnowledgeProjects,
@@ -225,10 +226,7 @@ export function DatabaseExplorer({
   );
   const environmentAnalysisQueries = useQueries({
     queries: projectEnvironmentIds.map((environmentId) => ({
-      queryKey: [
-        "analysis-articles",
-        environmentId,
-      ],
+      queryKey: analysisQueryKeys.articles(catalogScope.key, environmentId),
       queryFn: () => listAnalysisArticles(environmentId),
       enabled:
         sharedKnowledgeWorkspace &&
@@ -553,7 +551,7 @@ export function DatabaseExplorer({
     try {
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["connections", scopeKey],
+          queryKey: connectionQueryKeys.all(scopeKey),
           refetchType: "active",
         }),
         queryClient.invalidateQueries({
@@ -569,7 +567,7 @@ export function DatabaseExplorer({
           refetchType: "active",
         }),
         queryClient.invalidateQueries({
-          queryKey: ["analysis-articles"],
+          queryKey: analysisQueryKeys.articles(scopeKey),
           refetchType: "active",
         }),
         selectedId ? refreshSchema(selectedId) : Promise.resolve(),
@@ -996,7 +994,10 @@ export function DatabaseExplorer({
                   onClick={() =>
                     onOpenProjectEnvironment(environment.id, "sources")
                   }
-                  title={`${source.provider === "github" ? "GitHub" : t("connections.environmentLocalFolder")} · ${knowledgeRevisionLabel(source.revision)}`}
+                  title={`${source.provider === "github" ? "GitHub" : t("connections.environmentLocalFolder")} · ${knowledgeRevisionLabel(source.revision, {
+                    dirty: t("knowledge.revisionDirty"),
+                    snapshot: t("knowledge.revisionSnapshot"),
+                  })}`}
                 >
                   <StatusDot tone={knowledgeSourceTone(source)} />
                   <Icon
@@ -1445,27 +1446,11 @@ export function DatabaseExplorer({
               <ToolWindowAction
                 leading={<Icon name="key" />}
                 trailing={<Icon name="chevronRight" />}
-                onClick={() => openProviderCredentials("neon")}
-              >
-                {t("connections.providerNeon")}
-              </ToolWindowAction>
-              <ToolWindowAction
-                leading={<Icon name="key" />}
-                trailing={<Icon name="chevronRight" />}
                 onClick={() =>
                   openProviderCredentials("gcpCloudSql")
                 }
               >
                 {t("connections.providerGcpCloudSql")}
-              </ToolWindowAction>
-              <ToolWindowAction
-                leading={<Icon name="key" />}
-                trailing={<Icon name="chevronRight" />}
-                onClick={() =>
-                  openProviderCredentials("planetScale")
-                }
-              >
-                {t("connections.providerPlanetScale")}
               </ToolWindowAction>
             </ToolWindowSection>
 

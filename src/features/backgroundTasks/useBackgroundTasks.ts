@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 
 import type { ConnectionProfile } from "../connections/domain";
@@ -9,9 +9,8 @@ import {
 import type { AcpSessionSummary } from "../agents/domain";
 import {
   cancelAgentAcpSession,
-  listAgentAcpSessions,
-  onAgentAcpChanged,
 } from "../agents/tauriAdapter";
+import { useAcpSessionSnapshot } from "../agents/sessionStore";
 import type { Job } from "../jobs/domain";
 import { cancelJob } from "../jobs/tauriAdapter";
 import { jobsQuery, qk } from "../../lib/queries";
@@ -30,20 +29,6 @@ const ACTIVE_AGENT_STATES = new Set<AcpSessionSummary["lifecycle"]>([
   "running",
   "waitingPermission",
 ]);
-
-function mergeAgentSessions(
-  current: AcpSessionSummary[],
-  incoming: AcpSessionSummary[],
-) {
-  const merged = new Map(current.map((session) => [session.id, session]));
-  for (const session of incoming) {
-    const existing = merged.get(session.id);
-    if (!existing || existing.updatedAt <= session.updatedAt) {
-      merged.set(session.id, session);
-    }
-  }
-  return [...merged.values()];
-}
 
 function jobProgress(job: Job) {
   if (job.rowsTotal && job.rowsTotal > 0) {
@@ -82,7 +67,10 @@ export function useBackgroundTasks({
   const queryClient = useQueryClient();
   const postPaintReady = usePostPaintReady();
   const querySessions = useQueryServiceActivities(queryServiceStore);
-  const [agentSessions, setAgentSessions] = useState<AcpSessionSummary[]>([]);
+  const agentSessions = useAcpSessionSnapshot(
+    workspaceScopeKey,
+    postPaintReady,
+  ).sessions;
   const [cancellingKeys, setCancellingKeys] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -92,44 +80,6 @@ export function useBackgroundTasks({
       enabled: postPaintReady,
     })),
   });
-
-  useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    setAgentSessions([]);
-    if (!postPaintReady) return;
-
-    void onAgentAcpChanged((change) => {
-      if (disposed) return;
-      setAgentSessions((current) =>
-        mergeAgentSessions(current, [change.session])
-      );
-    })
-      .then((stopListening) => {
-        if (disposed) {
-          stopListening();
-          return;
-        }
-        unlisten = stopListening;
-      })
-      .catch(() => {});
-
-    void listAgentAcpSessions()
-      .then((loaded) => {
-        if (!disposed) {
-          setAgentSessions((current) => mergeAgentSessions(current, loaded));
-        }
-      })
-      .catch(() => {
-        // The Agent panel owns detailed load errors. The
-        // status bar remains a truthful projection of the tasks it can observe.
-      });
-
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, [postPaintReady, workspaceScopeKey]);
 
   const tasks = useMemo(() => {
     const connectionNames = new Map(

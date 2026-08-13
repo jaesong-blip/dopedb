@@ -76,7 +76,6 @@ import ShellLayout from "./ShellLayout";
 import WorkbenchContent, {
   type EditingConnection,
 } from "./WorkbenchContent";
-import type { AppArea } from "./navigation";
 import { useAvailableUpdate } from "./useAvailableUpdate";
 import {
   changedConnectionRuntimeIds,
@@ -86,12 +85,11 @@ import { useOperationNudge } from "./useOperationNudge";
 import { useResponsiveShell } from "./useResponsiveShell";
 import { useSafetySettings } from "./useSafetySettings";
 import { useSidebarWidth } from "./useSidebarWidth";
-import { useTerminalDock } from "./useTerminalDock";
+import { useAgentDock } from "./useAgentDock";
 import { useToolWindowLayout } from "./useToolWindowLayout";
 import {
   preloadSqlEditor,
   useActivitySeen,
-  usePersistentAppArea,
   usePersistentSelectedConnection,
   useRestoredWorkbenchState,
   useSqlEditorPreload,
@@ -133,8 +131,7 @@ function Shell() {
     loaded: connectionsLoaded,
     loadError,
     refresh,
-    clear: clearConnections,
-  } = useConnectionProfiles();
+  } = useConnectionProfiles(catalogScope.key);
   const {
     databaseExplorerOpen,
     localHistoryOpen,
@@ -188,21 +185,20 @@ function Shell() {
   const restoreSearchEverywhereFocusRef = useRef(false);
   const lastShiftAtRef = useRef(0);
   const { legacyAuditOpen, restoredDocumentKind } = useRestoredWorkbenchState();
-  const [area, setArea] = usePersistentAppArea();
   const [knowledgeEnvironmentFocus, setKnowledgeEnvironmentFocus] =
     useState<KnowledgeEnvironmentFocus | null>(null);
   const [agentComposerRequest, setAgentComposerRequest] =
     useState<AgentComposerRequest | null>(null);
   const {
-    open: terminalDockOpen,
-    width: terminalDockWidth,
-    buttonRef: terminalButtonRef,
-    show: openTerminalDock,
-    close: closeTerminalDock,
-    resize: updateTerminalDockWidth,
-  } = useTerminalDock();
+    open: agentDockOpen,
+    width: agentDockWidth,
+    buttonRef: agentButtonRef,
+    show: openAgentDock,
+    close: closeAgentDock,
+    resize: updateAgentDockWidth,
+  } = useAgentDock();
   const {
-    terminalOverlay,
+    agentOverlay,
     compact: compactShell,
     mobileExplorerOpen,
     setMobileExplorerOpen,
@@ -254,11 +250,11 @@ function Shell() {
     catalogScope.key,
     searchEverywhereOpen && catalogScope.ready,
   );
-  const showTerminalDock =
-    terminalDockOpen && !!selected && editing === null;
+  const showAgentDock =
+    agentDockOpen && !!selected && editing === null;
   useEffect(() => {
-    if (compactShell && showTerminalDock && servicesOpen) closeServices();
-  }, [closeServices, compactShell, servicesOpen, showTerminalDock]);
+    if (compactShell && showAgentDock && servicesOpen) closeServices();
+  }, [closeServices, compactShell, servicesOpen, showAgentDock]);
   // Schema diff is a SQL-only comparison feature — a group whose connections are MongoDB
   // is never a valid diff candidate, even if one somehow carries a schemaGroup value.
   const schemaGroups = useMemo(
@@ -346,9 +342,12 @@ function Shell() {
     setEditing(null);
     setSettingsOpen(false);
     setSchemaDiffGroupKey(null);
+    setKnowledgeEnvironmentFocus(null);
     clearSafety();
-    clearConnections();
-    await refresh();
+    // The workspace/account owner already removed the previous query generation.
+    // Let the observer for the new catalogScope key perform its own read; calling
+    // this render's refresh closure here would cache the new backend workspace
+    // under the previous account key during the transition.
   }
 
   async function refreshWorkspaceData() {
@@ -363,7 +362,7 @@ function Shell() {
     () => toast(t("app.toastAgentQuery")),
     [t, toast],
   );
-  useOperationNudge(latest?.id ?? null, showTerminalDock, notifyOperation);
+  useOperationNudge(latest?.id ?? null, showAgentDock, notifyOperation);
 
   useActivitySeen(activeDocument?.kind ?? null, unseen, markSeen);
 
@@ -383,7 +382,7 @@ function Shell() {
       return;
     }
     workbench.activate(document);
-    setArea("workspace");
+    setKnowledgeEnvironmentFocus(null);
   }
 
   function openAgentArchiveSettings() {
@@ -400,14 +399,14 @@ function Shell() {
     setEditing(null);
   }
 
-  function openOrFocusTerminalDock() {
+  function openOrFocusAgentDock() {
     if (!selected) return;
     setAgentComposerRequest(null);
     if (compactShell) {
       closeServices();
       setMobileExplorerOpen(false);
     }
-    if (showTerminalDock) {
+    if (showAgentDock) {
       window.requestAnimationFrame(() => {
         document
           .querySelector<HTMLButtonElement>(
@@ -421,7 +420,7 @@ function Shell() {
     setEditing(null);
     setSchemaDiffGroupKey(null);
     setMobileExplorerOpen(false);
-    openTerminalDock();
+    openAgentDock();
   }
 
   function openAgentTask(
@@ -442,14 +441,14 @@ function Shell() {
         : null,
     );
     if (selected?.id !== connectionId) {
-      selectConnection(connectionId, "workspace");
+      selectConnection(connectionId);
     }
     if (compactShell) closeServices();
     setSettingsOpen(false);
     setEditing(null);
     setSchemaDiffGroupKey(null);
     setMobileExplorerOpen(false);
-    if (!showTerminalDock) openTerminalDock();
+    if (!showAgentDock) openAgentDock();
     window.requestAnimationFrame(() => {
       document
         .querySelector<HTMLButtonElement>(
@@ -467,7 +466,7 @@ function Shell() {
     }
   }
 
-  function selectConnection(id: string, nextArea: AppArea = area) {
+  function selectConnection(id: string) {
     const connection = conns.find((candidate) => candidate.id === id);
     const initial = connection && isDocumentEngine(connection.engine)
       ? queryDocument(id, "documents")
@@ -478,7 +477,7 @@ function Shell() {
     setSettingsOpen(false);
     setSchemaDiffGroupKey(null);
     setMobileExplorerOpen(false);
-    setArea(nextArea);
+    setKnowledgeEnvironmentFocus(null);
     focusMainAfterMobileSelection();
   }
 
@@ -486,13 +485,13 @@ function Shell() {
     transaction: WorkspaceManualTransaction,
   ) {
     if (selectedId !== transaction.connectionId) {
-      selectConnection(transaction.connectionId, "workspace");
+      selectConnection(transaction.connectionId);
       return;
     }
     setEditing(null);
     setSettingsOpen(false);
     setSchemaDiffGroupKey(null);
-    setArea("workspace");
+    setKnowledgeEnvironmentFocus(null);
     focusMainAfterMobileSelection();
   }
 
@@ -523,7 +522,7 @@ function Shell() {
       setMobileExplorerOpen(false);
       if (mobileExplorerOpen) focusMainAfterMobileSelection();
     }
-    setArea("workspace");
+    setKnowledgeEnvironmentFocus(null);
   }
 
   function openTableDocument(connection: ConnectionProfile, table: CatalogTable) {
@@ -620,7 +619,7 @@ function Shell() {
       setEditing(null);
       setSettingsOpen(false);
       setSchemaDiffGroupKey(null);
-      setArea("workspace");
+      setKnowledgeEnvironmentFocus(null);
       toast(t("connections.demoCreated"));
     } catch (error) {
       toast(errMessage(error), "error");
@@ -674,10 +673,10 @@ function Shell() {
       {
         id: "action:ai-chat",
         kind: "action",
-        label: t("terminal.agentTitle"),
+        label: t("agent.acpTitle"),
         keywords: ["codex", "agent", "acp"],
         disabled: !selected,
-        run: openOrFocusTerminalDock,
+        run: openOrFocusAgentDock,
       },
       {
         id: "action:settings",
@@ -715,7 +714,7 @@ function Shell() {
           connection.env ?? "",
           connection.username,
         ],
-        run: () => selectConnection(connection.id, "workspace"),
+        run: () => selectConnection(connection.id),
       }),
     );
 
@@ -798,7 +797,7 @@ function Shell() {
               if (table) {
                 openTableDocument(connection, table);
               } else {
-                selectConnection(connection.id, "workspace");
+                selectConnection(connection.id);
               }
             } catch (error) {
               toast(errMessage(error), "error");
@@ -884,7 +883,6 @@ function Shell() {
       connections={conns}
       safety={safety}
       safetyError={safetyError}
-      area={area}
       selectedDocuments={selectedDocuments}
       activeDocument={activeDocument}
       activeDocumentId={activeDocumentId}
@@ -931,14 +929,13 @@ function Shell() {
         setSchemaDiffGroupKey(null);
       }}
       onDeletedConnection={handleDeletedConnection}
-      onSelectConnection={(id) => selectConnection(id, area)}
+      onSelectConnection={selectConnection}
       onActivateDocument={workbench.activateId}
       onRenameDocument={workbench.updateTitle}
       onCloseDocument={closeDocument}
       onNewQuery={() => void openQueryDocument()}
       onSearchEverywhere={openSearchEverywhere}
       onOpenActivity={() => openStableDocument("activity")}
-      onOpenTerminal={openOrFocusTerminalDock}
       onOpenAgentTask={openAgentTask}
       onSetQueryTitle={setActiveQueryTitle}
       onSetQueryDatabase={setActiveQueryDatabase}
@@ -949,7 +946,7 @@ function Shell() {
       onShowQueryServices={(sessionId) => {
         queryServices.activateNewestSession(sessionId);
         if (compactShell) {
-          closeTerminalDock();
+          closeAgentDock();
           setMobileExplorerOpen(false);
         }
         showServices();
@@ -966,7 +963,6 @@ function Shell() {
   return (
     <>
       <ShellLayout
-      area={area}
       settingsOpen={settingsOpen}
       activeSchemaGroupKey={schemaDiffGroupKey}
       connections={conns}
@@ -999,37 +995,20 @@ function Shell() {
       unseenOperationCount={unseen}
       sidebarWidth={sidebarW}
       mainRef={mainRef}
-      terminalButtonRef={terminalButtonRef}
+      agentButtonRef={agentButtonRef}
       searchEverywhereButtonRef={searchEverywhereButtonRef}
       mainContent={mainContent}
       availableUpdate={availableUpdate}
-      showTerminalDock={showTerminalDock}
+      agentDockOpen={showAgentDock}
       agentComposerRequest={agentComposerRequest}
       searchEverywhereOpen={searchEverywhereOpen}
-      terminalOverlay={terminalOverlay}
-      terminalWidth={terminalDockWidth}
+      agentOverlay={agentOverlay}
+      agentWidth={agentDockWidth}
       creatingDemo={creatingDemo}
       onWorkspaceScopeChanged={reloadWorkspaceScope}
       onWorkspaceDataRefreshed={refreshWorkspaceData}
       onNewConnection={startNewConnection}
       onCreateDemoDatabase={() => void createDemoDatabase()}
-      onArea={(next) => {
-        const sameArea = next === area && !settingsOpen;
-        setSettingsOpen(false);
-        setEditing(null);
-        setSchemaDiffGroupKey(null);
-        setArea(next);
-        if (!compactShell) showDatabaseExplorer();
-        if (next === "workspace" && selected) {
-          openStableDocument("schema", false);
-        }
-        if (compactShell) {
-          closeServices();
-          closeTerminalDock();
-          if (sameArea && mobileExplorerOpen) dismissMobileExplorer();
-          else setMobileExplorerOpen(true);
-        }
-      }}
       onOpenProjectEnvironment={(
         environmentId: string | null,
         view: KnowledgeEnvironmentView,
@@ -1044,7 +1023,6 @@ function Shell() {
           resourceId,
           requestId: Date.now(),
         });
-        setArea("knowledge");
         if (!compactShell) showDatabaseExplorer();
         setMobileExplorerOpen(false);
       }}
@@ -1054,7 +1032,7 @@ function Shell() {
           return;
         }
         closeServices();
-        closeTerminalDock();
+        closeAgentDock();
         if (databaseExplorerOpen && mobileExplorerOpen) {
           dismissMobileExplorer();
           return;
@@ -1068,7 +1046,7 @@ function Shell() {
           return;
         }
         closeServices();
-        closeTerminalDock();
+        closeAgentDock();
         if (localHistoryOpen && mobileExplorerOpen) {
           dismissMobileExplorer();
           return;
@@ -1079,7 +1057,7 @@ function Shell() {
       onCloseLocalHistory={closeLocalHistory}
       onToggleServices={() => {
         if (compactShell && !servicesOpen) {
-          closeTerminalDock();
+          closeAgentDock();
           setMobileExplorerOpen(false);
         }
         toggleServices();
@@ -1097,11 +1075,11 @@ function Shell() {
       onRevealDatabaseContext={() => {
         setSettingsOpen(false);
         setSchemaDiffGroupKey(null);
-        setArea("workspace");
+        setKnowledgeEnvironmentFocus(null);
         showDatabaseExplorer();
         if (compactShell) {
           closeServices();
-          closeTerminalDock();
+          closeAgentDock();
           setMobileExplorerOpen(true);
         }
         setExplorerRevealRequest((request) => request + 1);
@@ -1117,7 +1095,7 @@ function Shell() {
         setMobileExplorerOpen(false);
         if (compactShell) {
           closeServices();
-          closeTerminalDock();
+          closeAgentDock();
         }
       }}
       onSafetySettings={() => {
@@ -1127,7 +1105,7 @@ function Shell() {
         setMobileExplorerOpen(false);
         if (compactShell) {
           closeServices();
-          closeTerminalDock();
+          closeAgentDock();
         }
       }}
       onOpenNotifications={() => {
@@ -1136,12 +1114,12 @@ function Shell() {
       }}
       onNewQuery={() => void openQueryDocument()}
       onOpenAgentArchive={openAgentArchiveSettings}
-      onOpenTerminal={openOrFocusTerminalDock}
+      onOpenAgent={openOrFocusAgentDock}
       onSearchEverywhere={openSearchEverywhere}
-      onSelectWorkspaceConnection={(id) => selectConnection(id, "workspace")}
+      onSelectWorkspaceConnection={selectConnection}
       onOpenTable={openTableDocument}
       onOpenSchemaDiff={(group) => {
-        setArea("workspace");
+        setKnowledgeEnvironmentFocus(null);
         setEditing(null);
         setSettingsOpen(false);
         setSchemaDiffGroupKey(group.key);
@@ -1170,8 +1148,8 @@ function Shell() {
       onStartSidebarDrag={startSidebarDrag}
       onResetSidebar={resetSidebarWidth}
       onOpenUpdateSettings={openUpdateSettings}
-      onTerminalWidthChange={updateTerminalDockWidth}
-      onCloseTerminal={closeTerminalDock}
+      onAgentWidthChange={updateAgentDockWidth}
+      onCloseAgent={closeAgentDock}
       />
       <SkillStartupGate />
       {searchEverywhereOpen ? (

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import type { WorkbenchDocument } from "../workbench/domain";
-import type { AppArea } from "./navigation";
 
 export function preloadSqlEditor() {
   void import("../../components/SqlViewer").catch(() => undefined);
@@ -19,17 +18,6 @@ export function useSqlEditorPreload(
     const id = window.setTimeout(preloadSqlEditor, 300);
     return () => window.clearTimeout(id);
   }, [selectedConnectionId, supportsSql]);
-}
-
-export function usePersistentAppArea() {
-  const [area, setArea] = useState<AppArea>(() => {
-    return "workspace";
-  });
-  useEffect(() => {
-    localStorage.setItem("appArea", area === "knowledge" ? "workspace" : area);
-    localStorage.setItem("tab", "data");
-  }, [area]);
-  return [area, setArea] as const;
 }
 
 export function usePersistentSelectedConnection() {

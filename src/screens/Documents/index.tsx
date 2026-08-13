@@ -3,7 +3,10 @@
 // textareas, parsed client-side, then run through a durable single-use read plan.
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { proposeDocumentQuery, runDocumentQuery } from "../../ipc/commands";
+import {
+  proposeDocumentQuery,
+  runDocumentQuery,
+} from "../../features/documentQueries/tauriAdapter";
 import type {
   DocumentPage,
   DocumentQuery,

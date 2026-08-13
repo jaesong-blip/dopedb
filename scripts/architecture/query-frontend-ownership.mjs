@@ -3,6 +3,7 @@ import { parse } from "@babel/parser";
 
 const queryAdapterOwner = "src/features/queries/tauriAdapter.ts";
 const queryDomainOwner = "src/features/queries/domain.ts";
+const tauriInvokeOwner = "src/ipc/core.ts";
 const queryCommands = [
   "inspect_sql",
   "propose_sql",
@@ -99,7 +100,8 @@ export function inspectFrontendQueryOwnership(filePath, source) {
   for (const statement of program.body) {
     if (statement.type !== "ImportDeclaration") continue;
     const module = statement.source.value;
-    const isTauriCore = module === "@tauri-apps/api/core";
+    const isTauriCore = module === "@tauri-apps/api/core"
+      || isFeatureModule(filePath, module, tauriInvokeOwner);
     const isQueryAdapter = isFeatureModule(filePath, module, queryAdapterOwner);
     const isQueryDomain = isFeatureModule(filePath, module, queryDomainOwner);
     for (const specifier of statement.specifiers) {
@@ -165,7 +167,7 @@ export function inspectFrontendQueryOwnership(filePath, source) {
       return declaration.declarations.some((item) => isQueryReference(item.init));
     }
     if (declaration.type === "TSTypeAliasDeclaration") {
-      return containsQueryReference(declaration.typeAnnotation);
+      return isQueryReference(declaration.typeAnnotation);
     }
     return isQueryReference(declaration);
   }
@@ -296,7 +298,7 @@ export function inspectFrontendQueryOwnership(filePath, source) {
   walkAst(program, (node) => {
     if (node.type !== "CallExpression" || !isInvokeReference(node.callee)) return;
     const command = node.arguments[0];
-    if (!isTestFile && command?.type !== "StringLiteral") {
+    if (!isTestFile && filePath !== tauriInvokeOwner && command?.type !== "StringLiteral") {
       issues.push(`${filePath}: Tauri invoke command names must be static quoted literals`);
       return;
     }
@@ -307,10 +309,12 @@ export function inspectFrontendQueryOwnership(filePath, source) {
   });
 
   walkAst(program, (node, parent) => {
-    if (!isTestFile && node.type === "MemberExpression" && isInvokeReference(node.object)) {
+    if (!isTestFile && filePath !== tauriInvokeOwner
+      && node.type === "MemberExpression" && isInvokeReference(node.object)) {
       issues.push(`${filePath}: Tauri invoke must not be wrapped through a member alias`);
     }
-    if (!isTestFile && node.type === "Identifier" && invokeBindings.has(node.name)) {
+    if (!isTestFile && filePath !== tauriInvokeOwner
+      && node.type === "Identifier" && invokeBindings.has(node.name)) {
       const isImportLocal =
         parent?.type === "ImportSpecifier" &&
         (parent.local === node || parent.imported === node);

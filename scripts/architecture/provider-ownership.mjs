@@ -10,11 +10,13 @@ const requiredRustModules = [
   "src-tauri/src/features/providers/transport.rs",
   "src-tauri/src/features/providers/adapters/mod.rs",
   "src-tauri/src/features/providers/adapters/authority.rs",
+  "src-tauri/src/features/providers/adapters/gcp_adc.rs",
   "src-tauri/src/features/providers/adapters/keychain_vault.rs",
+  "src-tauri/src/features/providers/adapters/local_connection.rs",
+  "src-tauri/src/features/providers/adapters/provisioning_authority.rs",
   "src-tauri/src/features/providers/adapters/receipt_registry.rs",
   "src-tauri/src/features/providers/adapters/sqlite_bindings.rs",
   "src-tauri/src/features/providers/adapters/sqlite_repository.rs",
-  "src-tauri/src/features/providers/adapters/verifier.rs",
 ];
 
 const requiredFrontendModules = [
@@ -30,6 +32,32 @@ const providerCommands = [
   "begin_provider_credential_binding",
   "verify_provider_credential_binding",
   "revoke_provider_credential_binding",
+];
+
+const controlPlaneHttpAdapters = new Set([
+  "src-tauri/src/features/providers/adapters/authority.rs",
+  "src-tauri/src/features/providers/adapters/provisioning_authority.rs",
+]);
+
+const hostedProviderJsonAdapters = [
+  "workspace-cloud/lib/providers/gcp-cloud-bootstrap.ts",
+  "workspace-cloud/lib/providers/gcp-cloud-oauth.ts",
+  "workspace-cloud/lib/providers/gcp-cloud-sql.ts",
+  "workspace-cloud/lib/providers/neon.ts",
+  "workspace-cloud/lib/providers/planetscale.ts",
+  "workspace-cloud/lib/providers/vercel-oidc.ts",
+  "workspace-cloud/lib/workspace-kms.ts",
+];
+
+const directProviderHttpRules = [
+  [
+    /\breqwest(?:::[A-Za-z_][A-Za-z0-9_]*)*::(?:Client|RequestBuilder)\b|\buse\s+reqwest(?:::[A-Za-z_][A-Za-z0-9_]*)*::\{[^;]*\b(?:Client|RequestBuilder)\b/s,
+    "Provider production code must not construct an HTTP client; use the official provider CLI or the DopeDB control plane",
+  ],
+  [
+    /(?:console\.neon\.tech|api\.neon\.tech|sqladmin\.googleapis\.com|api\.planetscale\.com)/i,
+    "Provider production code must not embed a provider API origin; use the official provider CLI or the DopeDB control plane",
+  ],
 ];
 
 function requireFile({ exists }, diagnostics, filePath) {
@@ -68,11 +96,42 @@ export function collectProviderOwnershipDiagnostics(context) {
     .filter((filePath) => filePath.endsWith(".rs"));
   const providerProductionFiles = providerRustFiles.filter((filePath) => !isTestModule(filePath));
   for (const filePath of providerProductionFiles) {
-    const lines = lineCount(read(filePath));
+    const source = productionRust(read(filePath));
+    const lines = lineCount(source);
     if (lines > ratchet.featureFileLineLimit) {
       diagnostics.push(
         `${filePath}: Provider module has ${lines} lines; keep it below ${ratchet.featureFileLineLimit}`,
       );
+    }
+    if (!controlPlaneHttpAdapters.has(filePath)) {
+      for (const [pattern, reason] of directProviderHttpRules) {
+        if (pattern.test(source)) diagnostics.push(`${filePath}: ${reason}`);
+      }
+    }
+  }
+
+  for (const filePath of controlPlaneHttpAdapters) {
+    if (!exists(filePath)) continue;
+    const source = productionRust(read(filePath));
+    if (/crate::features::workspaces::adapters::control_plane/.test(source)) {
+      diagnostics.push(
+        `${filePath}: Provider hosted adapters must depend on the top-level hosted_control_plane boundary`,
+      );
+    }
+    if (!/crate::hosted_control_plane/.test(source)) {
+      diagnostics.push(`${filePath}: Provider hosted adapter bypasses hosted_control_plane`);
+    }
+  }
+
+  for (const filePath of hostedProviderJsonAdapters) {
+    requireFile(context, diagnostics, filePath);
+    if (!exists(filePath)) continue;
+    const source = read(filePath);
+    if (/\bresponse\.json\s*\(/.test(source)) {
+      diagnostics.push(`${filePath}: Hosted provider JSON must use the bounded response reader`);
+    }
+    if (!/boundedJsonResponse/.test(source)) {
+      diagnostics.push(`${filePath}: Hosted provider adapter bypasses boundedJsonResponse`);
     }
   }
 
@@ -137,6 +196,7 @@ export function collectProviderOwnershipDiagnostics(context) {
     "src/ipc/types.ts",
     "src-tauri/src/commands/mod.rs",
   ]) {
+    if (!exists(filePath)) continue;
     const source = read(filePath);
     if (
       providerCommands.some((command) => source.includes(command)) ||

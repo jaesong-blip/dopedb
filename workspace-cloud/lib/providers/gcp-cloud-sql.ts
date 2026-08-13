@@ -2,6 +2,7 @@
 // Customer service-account keys are never created, uploaded, or persisted.
 import "server-only";
 
+import { boundedJsonResponse } from "../bounded-json-response";
 import {
   GCP_LEASE_SECONDS,
   gcpCloudSqlEngine,
@@ -27,6 +28,8 @@ const SQL_ADMIN_ORIGIN = "https://sqladmin.googleapis.com/sql/v1beta4";
 const CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
 const SQL_LOGIN_SCOPE = "https://www.googleapis.com/auth/sqlservice.login";
 const REQUEST_TIMEOUT_MS = 15_000;
+const MAX_TOKEN_RESPONSE_BYTES = 64 * 1_024;
+const MAX_SQL_ADMIN_RESPONSE_BYTES = 512 * 1_024;
 type JsonObject = Record<string, unknown>;
 type GcpRequestStage =
   | "federation"
@@ -60,8 +63,13 @@ function object(value: unknown): JsonObject {
   return value as JsonObject;
 }
 
-function requiredString(value: unknown, field: string) {
-  if (typeof value !== "string" || !value || value.length > 64 * 1_024) {
+function requiredString(value: unknown, field: string, maxLength: number) {
+  if (
+    typeof value !== "string"
+    || !value
+    || value.length > maxLength
+    || /[\u0000-\u001f\u007f]/.test(value)
+  ) {
     throw new ProviderRequestError("gcpCloudSql", `GCP response omitted ${field}`, 502);
   }
   return value;
@@ -121,7 +129,10 @@ async function jsonRequest(
   }).catch(() => {
     throw new ProviderRequestError(provider, "GCP API is unavailable", 502);
   });
-  const body = await response.json().catch(() => null);
+  const responseLimit = stage.startsWith("cloudSqlAdmin.")
+    ? MAX_SQL_ADMIN_RESPONSE_BYTES
+    : MAX_TOKEN_RESPONSE_BYTES;
+  const body = await boundedJsonResponse(response, responseLimit).catch(() => null);
   if (!response.ok) {
     const status = normalizeGcpUpstreamStatus(response.status);
     const googleError = body && typeof body === "object" && !Array.isArray(body)
@@ -164,7 +175,7 @@ async function federatedToken(
       subjectTokenType: "urn:ietf:params:oauth:token-type:jwt",
     }),
   });
-  return requiredString(body.access_token, "federated access token");
+  return requiredString(body.access_token, "federated access token", 32 * 1_024);
 }
 
 async function serviceAccountToken(input: {
@@ -193,8 +204,12 @@ async function serviceAccountToken(input: {
       }),
     },
   );
-  const accessToken = requiredString(body.accessToken, "service account access token");
-  const expiresAt = requiredString(body.expireTime, "service account token expiry");
+  const accessToken = requiredString(
+    body.accessToken,
+    "service account access token",
+    32 * 1_024,
+  );
+  const expiresAt = requiredString(body.expireTime, "service account token expiry", 64);
   const validMs = new Date(expiresAt).valueOf() - Date.now();
   if (
     !Number.isFinite(validMs)
@@ -340,7 +355,7 @@ async function listGcpCloudSqlInstancesWithToken(
   );
   const kind = gcpCloudSqlEngine(row.databaseVersion);
   if (!kind) return [];
-  const name = requiredString(row.name, "instance name");
+  const name = requiredString(row.name, "instance name", 128);
   if (name !== credential.instanceId) {
     throw new ProviderRequestError(
       "gcpCloudSql",

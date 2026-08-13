@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { Icon } from "../../components/Icon";
 import WorkbenchDocumentStrip from "../../components/WorkbenchDocumentStrip";
 import { WorkbenchEmptyState } from "../../design-system/components/Workbench";
+import { Button } from "../../design-system/components/Button";
 import type { ConnectionProfile } from "../connections/domain";
 import type { ConnectionLaunchPreset } from "../connections/presets";
 import type { KnowledgeEnvironmentFocus } from "../knowledge/domain";
@@ -26,7 +27,6 @@ import Settings, { type SettingsSection } from "../../screens/Settings";
 import Sql from "../../screens/Sql";
 import TableData from "../../screens/Tables";
 import ConnectionPicker from "./ConnectionPicker";
-import type { AppArea } from "./navigation";
 
 export type EditingConnection = ConnectionProfile | "new" | null;
 
@@ -53,7 +53,6 @@ type Props = {
   connections: ConnectionProfile[];
   safety: SafetySettings | null;
   safetyError: string | null;
-  area: AppArea;
   selectedDocuments: WorkbenchDocument[];
   activeDocument: WorkbenchDocument | null;
   activeDocumentId: string | null;
@@ -84,7 +83,6 @@ type Props = {
   onNewQuery: () => void;
   onSearchEverywhere: (returnFocus?: HTMLElement | null) => void;
   onOpenActivity: () => void;
-  onOpenTerminal: () => void;
   onOpenAgentTask: (
     connectionId: string,
     environmentId?: string,
@@ -116,7 +114,6 @@ export default function WorkbenchContent(props: Props) {
     connections,
     safety,
     safetyError,
-    area,
     selectedDocuments,
     activeDocument,
     activeDocumentId,
@@ -179,7 +176,7 @@ export default function WorkbenchContent(props: Props) {
     );
   }
 
-  if (area === "knowledge") {
+  if (props.knowledgeEnvironmentFocus) {
     return withSettings(
       <section className="scrollbar-sleek tw:min-h-0 tw:flex-1 tw:overflow-auto tw:bg-background">
         <Knowledge
@@ -197,9 +194,9 @@ export default function WorkbenchContent(props: Props) {
         <div className="tw:break-words tw:text-ui tw:text-danger" role="alert">
           {t("app.couldNotLoadConnections", { error: loadError })}
         </div>
-        <button className="btn" onClick={props.onRetryConnections}>
+        <Button onClick={props.onRetryConnections}>
           {t("app.retry")}
-        </button>
+        </Button>
       </div>,
     );
   }
@@ -216,9 +213,9 @@ export default function WorkbenchContent(props: Props) {
   const safetyFallback = safetyError ? (
     <div className="tw:text-ui tw:text-danger" role="alert">
       {t("app.loadSafetyFailed", { error: safetyError })}{" "}
-      <button className="btn small" onClick={props.onRetrySafety}>
+      <Button size="compact" onClick={props.onRetrySafety}>
         {t("app.retry")}
-      </button>
+      </Button>
     </div>
   ) : (
     <div className="tw:text-muted-foreground">{t("app.loading")}</div>
@@ -226,7 +223,7 @@ export default function WorkbenchContent(props: Props) {
 
   return (
     <>
-      {selected && area === "workspace" && (
+      {selected && (
         <WorkbenchDocumentStrip
           documents={selectedDocuments}
           activeId={activeDocumentId}
@@ -239,10 +236,8 @@ export default function WorkbenchContent(props: Props) {
       )}
 
       <section
-        data-area={area}
         data-workbench-pane
         data-edge-to-edge={
-          area === "workspace" &&
           activeDocument !== null &&
           activeDocument.kind !== "welcome"
         }
@@ -259,10 +254,10 @@ export default function WorkbenchContent(props: Props) {
             <span>
               {supportsSql ? t("tabs.sql") : t("tabs.documents")}
             </span>
-            <button className="btn primary" onClick={props.onNewQuery}>
+            <Button variant="primary" onClick={props.onNewQuery}>
               <Icon name="plus" />
               {supportsSql ? t("tabs.sql") : t("tabs.documents")}
-            </button>
+            </Button>
           </WorkbenchEmptyState>
         ) : activeDocument.kind === "welcome" ? (
           <Onboarding

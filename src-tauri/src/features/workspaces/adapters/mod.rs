@@ -6,4 +6,5 @@ mod local;
 pub(crate) use control_plane::HostedWorkspaceControlPlane;
 pub(crate) use local::{
     ConnectionWorkspaceRuntime, ProcessWorkspaceConfiguration, SqliteWorkspaceRepository,
+    SystemWorkspaceSshProfile,
 };

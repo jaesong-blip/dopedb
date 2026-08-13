@@ -52,3 +52,8 @@ export function testConnectionProfile(
 ): Promise<void> {
   return invoke("test_connection_profile", { profile, password });
 }
+
+/** Native picker for SQLite and certificate paths; null means user cancellation. */
+export function pickConnectionFile(): Promise<string | null> {
+  return invoke("pick_file");
+}

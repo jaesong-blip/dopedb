@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import EngineMark from "../../components/EngineMark";
 import { EnvironmentBadge } from "../../design-system/components/EnvironmentBadge";
 import { Icon } from "../../components/Icon";
+import { Button } from "../../design-system/components/Button";
 import type { ConnectionProfile } from "../connections/domain";
 import { ProviderTargetLabel } from "../connections/ProviderTargetLabel";
 import { useI18n } from "../../lib/i18n";
@@ -98,8 +99,8 @@ export default function ConnectionPicker({
         <h2 className="tw:m-0 tw:text-heading tw:leading-tight">
           {t("app.connectionPickerTitle")}
         </h2>
-        <button
-          className="btn small"
+        <Button
+          size="compact"
           onClick={(event) => {
             event.currentTarget.focus({ preventScroll: true });
             onNew();
@@ -107,7 +108,7 @@ export default function ConnectionPicker({
         >
           <Icon name="plus" />
           {t("connections.new")}
-        </button>
+        </Button>
       </div>
 
       {grouped.length > 0 && (

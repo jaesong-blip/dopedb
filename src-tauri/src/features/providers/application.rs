@@ -14,14 +14,12 @@ use super::domain::{
 use super::ports::{
     GcpAdcVerifier, ProviderAuthorityPort, ProviderBindingRepository,
     ProviderBindingRevocationPort, ProviderCredentialVault, ProviderReceiptRegistry,
-    ProviderVerifier,
 };
 
 #[derive(Clone)]
-pub(crate) struct ProviderUseCases<R, V, P, G, Q, A> {
+pub(crate) struct ProviderUseCases<R, V, G, Q, A> {
     repository: R,
     vault: V,
-    verifier: P,
     gcp_verifier: G,
     receipts: Q,
     authority: A,
@@ -29,11 +27,10 @@ pub(crate) struct ProviderUseCases<R, V, P, G, Q, A> {
     process_device: DeviceId,
 }
 
-impl<R, V, P, G, Q, A> ProviderUseCases<R, V, P, G, Q, A>
+impl<R, V, G, Q, A> ProviderUseCases<R, V, G, Q, A>
 where
     R: ProviderBindingRepository,
     V: ProviderCredentialVault,
-    P: ProviderVerifier,
     G: GcpAdcVerifier,
     Q: ProviderReceiptRegistry,
     A: ProviderAuthorityPort,
@@ -41,7 +38,6 @@ where
     pub(crate) fn new(
         repository: R,
         vault: V,
-        verifier: P,
         gcp_verifier: G,
         receipts: Q,
         authority: A,
@@ -50,7 +46,6 @@ where
         Self {
             repository,
             vault,
-            verifier,
             gcp_verifier,
             receipts,
             authority,
@@ -101,16 +96,6 @@ where
         let scope = self.repository.active_scope().await?;
         let binding = self.authority.revalidate(&scope, integration_id).await?;
         let staged = match material {
-            ProviderCredentialMaterial::NeonApiKey(secret) => {
-                if binding.provider != LocalProvider::Neon || secret.is_empty() {
-                    return Err(AppError::Blocked {
-                        reason: "Neon API key is not allowed for this provider integration".into(),
-                    });
-                }
-                let id = ProviderBindingId::from(Uuid::new_v4());
-                self.vault.store(&binding, id, &secret)?;
-                Some(id)
-            }
             ProviderCredentialMaterial::GcpAdc => {
                 if binding.provider != LocalProvider::GcpCloudSql {
                     return Err(AppError::Blocked {
@@ -169,17 +154,10 @@ where
         };
         let verification_result = match binding.provider {
             LocalProvider::Neon => {
-                let secret = match self.vault.fetch(&binding, staged_id) {
-                    Ok(secret) => secret,
-                    Err(error) => {
-                        self.cleanup_staged(&binding, staged_id).await?;
-                        return Err(error);
-                    }
-                };
-                self.verifier
-                    .verify(&binding, secret)
-                    .await
-                    .map(|value| (value, Some(staged_id)))
+                self.cleanup_staged(&binding, staged_id).await?;
+                return Err(AppError::Blocked {
+                    reason: "Neon credentials are managed by the workspace integration".into(),
+                });
             }
             LocalProvider::GcpCloudSql => self
                 .gcp_verifier
@@ -201,15 +179,7 @@ where
                 return Err(error);
             }
         };
-        let principal = match verification {
-            ProviderVerification::Verified(principal) => principal,
-            ProviderVerification::Unsupported => {
-                self.cleanup_staged(&binding, staged_id).await?;
-                return Err(AppError::Blocked {
-                    reason: "provider credential method is unsupported".into(),
-                });
-            }
-        };
+        let ProviderVerification::Verified(principal) = verification;
         let old = match self
             .repository
             .commit(&binding, staged_id, keyring_ref, &principal.display)
@@ -267,7 +237,6 @@ where
         if let Some(error) = failure {
             return Err(error);
         }
-        self.vault.clear_scope(None);
         Ok(())
     }
 

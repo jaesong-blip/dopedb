@@ -4,6 +4,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../../../../../../../../lib/db";
 import { env } from "../../../../../../../../lib/env";
 import {
+  boundedJsonBody,
   isUuid,
   jsonError,
   mutationAllowed,
@@ -51,7 +52,14 @@ export async function PUT(request: Request, context: RouteContext) {
     ),
   });
   if (!connection) return jsonError("Connection not found", 404);
-  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  const parsed = await boundedJsonBody(request, 256);
+  if (!parsed.ok) {
+    return jsonError(
+      parsed.reason === "too_large" ? "Credential mode request is too large" : "Invalid credential mode",
+      parsed.reason === "too_large" ? 413 : 400,
+    );
+  }
+  const body = parsed.value as Record<string, unknown> | null;
   if (
     !body
     || Object.keys(body).length !== 1

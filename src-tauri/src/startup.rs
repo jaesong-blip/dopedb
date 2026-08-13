@@ -9,6 +9,7 @@ use tauri::State;
 use tokio::sync::watch;
 
 use crate::error::{AppError, AppResult};
+use crate::kernel::sync::lock_unpoisoned;
 use crate::state::AppState;
 
 #[derive(Debug, Clone, Serialize)]
@@ -23,6 +24,7 @@ pub(crate) struct StartupStage {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg(feature = "packaged-benchmark")]
 pub(crate) struct StartupSummary {
     elapsed_ms: u64,
     stages: Vec<StartupStage>,
@@ -82,11 +84,7 @@ impl StartupTrace {
             status = stage.status,
             "desktop startup stage"
         );
-        self.inner
-            .stages
-            .lock()
-            .expect("startup trace mutex poisoned")
-            .push(stage);
+        lock_unpoisoned(&self.inner.stages).push(stage);
     }
 
     pub(crate) fn mark_once(
@@ -96,11 +94,7 @@ impl StartupTrace {
         succeeded: bool,
     ) {
         let elapsed = self.inner.process_started.elapsed();
-        let mut stages = self
-            .inner
-            .stages
-            .lock()
-            .expect("startup trace mutex poisoned");
+        let mut stages = lock_unpoisoned(&self.inner.stages);
         if stages.iter().any(|stage| stage.name == name) {
             return;
         }
@@ -124,15 +118,11 @@ impl StartupTrace {
         );
     }
 
+    #[cfg(feature = "packaged-benchmark")]
     pub(crate) fn summary(&self) -> StartupSummary {
         StartupSummary {
             elapsed_ms: millis(self.inner.process_started.elapsed()),
-            stages: self
-                .inner
-                .stages
-                .lock()
-                .expect("startup trace mutex poisoned")
-                .clone(),
+            stages: lock_unpoisoned(&self.inner.stages).clone(),
         }
     }
 }
@@ -220,9 +210,4 @@ pub(crate) fn record_startup_mark(
         }
     }
     Ok(())
-}
-
-#[tauri::command]
-pub(crate) fn runtime_startup_summary(state: State<'_, AppState>) -> StartupSummary {
-    state.startup_trace.summary()
 }

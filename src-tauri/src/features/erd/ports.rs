@@ -58,14 +58,6 @@ pub(crate) trait ErdRepositoryPort: Clone + Send + Sync + 'static {
         authority: &ErdAuthority,
         command: SaveErdLayoutCommand,
     ) -> impl Future<Output = AppResult<SaveErdRepositoryOutcome>> + Send;
-
-    fn delete(
-        &self,
-        authority: &ErdAuthority,
-        id: ErdLayoutId,
-        expected_revision: i64,
-        deleted_at: String,
-    ) -> impl Future<Output = AppResult<bool>> + Send;
 }
 
 pub(crate) trait ErdGeneratorPort: Clone + Send + Sync + 'static {

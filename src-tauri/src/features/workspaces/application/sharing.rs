@@ -17,13 +17,14 @@ use super::{
     WorkspaceCredentialBindingRequest, WorkspaceUseCases,
 };
 
-impl<R, A, C, V, E> WorkspaceUseCases<R, A, C, V, E>
+impl<R, A, C, V, E, S> WorkspaceUseCases<R, A, C, V, E, S>
 where
     R: WorkspaceRepositoryPort,
     A: WorkspaceRuntimePort,
     C: WorkspaceControlPlanePort,
     V: ConnectionCredentialVault + ?Sized,
     E: WorkspaceConfigurationPort,
+    S: super::super::ports::WorkspaceSshProfilePort,
 {
     /// Copy a local connection into a team workspace. Only its redacted template
     /// crosses the network; the caller's credential is duplicated locally under the
@@ -324,21 +325,9 @@ where
                 reason: "your workspace role cannot execute this connection".into(),
             });
         }
-        let mut binding_extra_params = profile.extra_params.clone();
-        if let Some(ssh_alias) = ssh_alias {
-            let ssh_alias = ssh_alias.trim();
-            if ssh_alias.is_empty() {
-                binding_extra_params.remove(crate::connection::ssh::SSH_ALIAS_PARAMETER);
-            } else {
-                binding_extra_params.insert(
-                    crate::connection::ssh::SSH_ALIAS_PARAMETER.into(),
-                    ssh_alias.into(),
-                );
-            }
-        }
-        let mut binding_profile = profile.clone();
-        binding_profile.extra_params = binding_extra_params.clone();
-        crate::connection::ssh::validate_profile(&binding_profile)?;
+        let binding_extra_params = self
+            .ssh_profiles
+            .bind_alias(&profile, ssh_alias.as_deref())?;
         let account_user_id = mutation.selected_account_id()?;
         let previous_credential_id = profile
             .secret_ref

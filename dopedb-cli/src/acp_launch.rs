@@ -7,36 +7,11 @@
 use dopedb_cli::agent_launch_policy::{
     adapter_command, take_registration_authentication, validate_descriptor, verify_launch_files,
 };
-use dopedb_protocol::{
-    AcpPluginId, AgentSessionRegisterArguments, AgentSessionRegisterCommand, EmptyArguments,
-};
+use dopedb_protocol::{AgentSessionRegisterArguments, AgentSessionRegisterCommand, EmptyArguments};
 
 use crate::client::{BrokerClient, ClientError};
 
-pub(crate) async fn run(
-    plugin_id: AcpPluginId,
-    adapter_bundle_version: String,
-    runtime_executable: String,
-    runtime_resolved_executable: String,
-    runtime_sha256: String,
-    adapter_entrypoint: String,
-    adapter_entrypoint_sha256: String,
-    provider_cli_executable: String,
-    provider_cli_resolved_executable: String,
-    provider_cli_sha256: String,
-) -> Result<(), ClientError> {
-    let registration = AgentSessionRegisterArguments {
-        plugin_id,
-        adapter_bundle_version,
-        runtime_executable,
-        runtime_resolved_executable,
-        runtime_sha256,
-        adapter_entrypoint,
-        adapter_entrypoint_sha256,
-        provider_cli_executable,
-        provider_cli_resolved_executable,
-        provider_cli_sha256,
-    };
+pub(crate) async fn run(registration: AgentSessionRegisterArguments) -> Result<(), ClientError> {
     validate_registration(&registration)?;
 
     // Capture the bootstrap capability in a zeroizing allocation and scrub the

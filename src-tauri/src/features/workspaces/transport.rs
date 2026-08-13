@@ -9,29 +9,19 @@ use crate::model::ConnectionProfile;
 use crate::state::AppState;
 
 use super::{
-    Workspace, WorkspaceAuthState, WorkspaceAuthorityFingerprint, WorkspaceConnectionCopyRequest,
+    Workspace, WorkspaceAuthState, WorkspaceConnectionCopyRequest,
     WorkspaceConnectionUpdateRequest, WorkspaceCredentialBindingRequest,
     WorkspaceDeviceAuthorization, WorkspaceFeatureState, WorkspaceLoginPoll,
     WorkspaceLoginPollStatus,
 };
 
-async fn revoke_if_authority_changed(
-    state: &AppState,
-    app: &tauri::AppHandle,
-    before: &WorkspaceAuthorityFingerprint,
-) -> AppResult<()> {
-    match state.services.workspace.authority_fingerprint().await {
-        Ok(after) if &after == before => Ok(()),
-        Ok(_) => {
-            state.terminals.stop_all(app);
-            state.agents_acp.shutdown_all();
-            state.services.providers.invalidate_scope().await
-        }
-        // An authority read failure is not evidence that a durable local
-        // binding vanished. Keep it tombstone-safe until a later successful
-        // authoritative inventory can reconcile it.
-        Err(_) => Ok(()),
-    }
+fn fence_runtime_authority(state: &AppState, app: &tauri::AppHandle) {
+    // Runtime grants fail closed. This fence does not depend on a second
+    // authority read: a failed read must never leave an old process capability
+    // alive after an authority-changing command was attempted.
+    state.terminals.stop_all(app);
+    state.agents_acp.shutdown_all();
+    state.broker.revoke_all_sessions();
 }
 
 /// A successful workspace authority snapshot is the only input allowed to
@@ -65,13 +55,21 @@ pub async fn refresh_workspace_auth_state(
     state: State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> AppResult<WorkspaceAuthState> {
-    let before = state.services.workspace.authority_fingerprint().await?;
+    fence_runtime_authority(&state, &app);
     let result = state.services.workspace.refresh_auth_state().await;
-    revoke_if_authority_changed(&state, &app, &before).await?;
-    if result.is_ok() {
-        reconcile_provider_grants_after_refresh(&state).await?;
+    match result {
+        Ok(auth_state) => {
+            state.services.providers.invalidate_scope().await?;
+            reconcile_provider_grants_after_refresh(&state).await?;
+            Ok(auth_state)
+        }
+        Err(error) => {
+            if let Err(cleanup_error) = state.services.providers.invalidate_scope().await {
+                tracing::warn!(%cleanup_error, "provider scope cleanup failed after workspace auth refresh failure");
+            }
+            Err(error)
+        }
     }
-    result
 }
 
 #[tauri::command]
@@ -88,7 +86,10 @@ pub async fn workspace_sign_out(
         .workspace
         .resolve_sign_out_account(user_id)
         .await?;
-    state.terminals.stop_all(&app);
+    fence_runtime_authority(&state, &app);
+    // Tombstone every member-local provider binding while the account record is
+    // still present. A cleanup failure leaves the account signed in but all
+    // process authority fenced, so retry cannot resurrect an unfenced grant.
     state.services.providers.sign_out(Some(&account_id)).await?;
     state.services.workspace.sign_out(Some(account_id)).await
 }
@@ -98,7 +99,7 @@ pub async fn workspace_sign_out_all(
     state: State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> AppResult<WorkspaceAuthState> {
-    state.terminals.stop_all(&app);
+    fence_runtime_authority(&state, &app);
     state.services.providers.sign_out(None).await?;
     state.services.workspace.sign_out_all().await
 }
@@ -116,9 +117,14 @@ pub async fn poll_workspace_login(
     app: tauri::AppHandle,
     device_code: String,
 ) -> AppResult<WorkspaceLoginPoll> {
+    // A poll can atomically persist a newly authenticated account. Fence before
+    // entering that mutation so concurrent Agent/PTY work cannot observe the
+    // new account through a capability issued for the previous authority.
+    fence_runtime_authority(&state, &app);
     let result = state.services.workspace.poll_login(&device_code).await?;
     if result.status == WorkspaceLoginPollStatus::SignedIn {
-        state.terminals.stop_all(&app);
+        state.services.providers.invalidate_scope().await?;
+        reconcile_provider_grants_after_refresh(&state).await?;
     }
     Ok(result)
 }
@@ -137,20 +143,6 @@ pub async fn list_workspaces(state: State<'_, AppState>) -> AppResult<Vec<Worksp
 }
 
 #[tauri::command]
-pub async fn refresh_workspace_memberships(
-    state: State<'_, AppState>,
-    app: tauri::AppHandle,
-) -> AppResult<Vec<Workspace>> {
-    let before = state.services.workspace.authority_fingerprint().await?;
-    let result = state.services.workspace.refresh_memberships().await;
-    revoke_if_authority_changed(&state, &app, &before).await?;
-    if result.is_ok() {
-        reconcile_provider_grants_after_refresh(&state).await?;
-    }
-    result
-}
-
-#[tauri::command]
 pub async fn get_active_workspace(state: State<'_, AppState>) -> AppResult<Workspace> {
     state.services.workspace.active().await
 }
@@ -162,9 +154,11 @@ pub async fn set_active_workspace(
     id: WorkspaceId,
     account_user_id: Option<AccountId>,
 ) -> AppResult<Workspace> {
-    let before = state.services.workspace.authority_fingerprint().await?;
+    fence_runtime_authority(&state, &app);
     let result = state.services.workspace.activate(id, account_user_id).await;
-    revoke_if_authority_changed(&state, &app, &before).await?;
+    if result.is_ok() {
+        state.services.providers.invalidate_scope().await?;
+    }
     result
 }
 
@@ -174,9 +168,11 @@ pub async fn set_active_workspace_account(
     app: tauri::AppHandle,
     user_id: AccountId,
 ) -> AppResult<Workspace> {
-    let before = state.services.workspace.authority_fingerprint().await?;
+    fence_runtime_authority(&state, &app);
     let result = state.services.workspace.activate_account(user_id).await;
-    revoke_if_authority_changed(&state, &app, &before).await?;
+    if result.is_ok() {
+        state.services.providers.invalidate_scope().await?;
+    }
     result
 }
 

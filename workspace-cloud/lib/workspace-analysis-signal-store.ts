@@ -283,6 +283,7 @@ export async function commitAnalysisSignalReceipt(input: {
   articleId: string;
   signalId: string;
   runnerId: string;
+  runnerCapabilityHash: string;
   expectedSchemaFingerprint: string;
   receipt: AnalysisSignalReceipt;
   authority: AnalysisSignalAuthority;
@@ -318,12 +319,14 @@ export async function commitAnalysisSignalReceipt(input: {
         AND signal."deleted_at" IS NULL
       FOR UPDATE OF signal
     ), runner_authority AS MATERIALIZED (
-      SELECT runner."id"
+      SELECT runner."id", runner."runner_capability_generation"
       FROM ${workspaceAnalysisRunner} runner
       JOIN authority ON runner."member_id" = authority."id"
       WHERE runner."organization_id" = ${input.organizationId}
         AND runner."id" = ${input.runnerId}::uuid
         AND runner."revoked_at" IS NULL
+        AND runner."runner_capability_hash" = ${input.runnerCapabilityHash}
+        AND runner."runner_capability_generation" IS NOT NULL
       FOR UPDATE OF runner
     ), run_authority AS MATERIALIZED (
       SELECT run."id", run."result_hash"
@@ -333,6 +336,7 @@ export async function commitAnalysisSignalReceipt(input: {
       JOIN runner_authority ON runner_authority."id" = run."runner_id"
       WHERE run."organization_id" = ${input.organizationId}
         AND run."id" = ${input.receipt.runId}::uuid
+        AND run."runner_capability_generation" = runner_authority."runner_capability_generation"
         AND ${input.receipt.schemaFingerprint} = ${input.expectedSchemaFingerprint}
         AND (
           (${input.receipt.observedState} IN ('normal', 'firing', 'no_data')

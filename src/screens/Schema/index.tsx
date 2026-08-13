@@ -16,6 +16,7 @@ import { Icon } from "../../components/Icon";
 import InfoTip from "../../components/InfoTip";
 import Skeleton from "../../components/Skeleton";
 import { Button } from "../../design-system/components/Button";
+import { TextInput } from "../../design-system/components/FormControls";
 import {
   WorkbenchEmptyState,
   WorkbenchPane,
@@ -161,15 +162,17 @@ export default function SchemaExplorer({
           <div className="tw:text-ui tw:text-danger">
             {errMessage(overviewQuery.error)}
           </div>
-          <button
-            className="btn small tw:self-start"
+          <span className="tw:self-start">
+          <Button
+            size="compact"
             type="button"
             disabled={overviewQuery.isFetching}
             onClick={() => void overviewQuery.refetch()}
           >
             <Icon name="refresh" />
             {t("common.refresh")}
-          </button>
+          </Button>
+          </span>
         </SchemaFrame>
       );
     }
@@ -198,13 +201,13 @@ export default function SchemaExplorer({
             })}
           </strong>
           <span>{t("schema.detailsDeferredDescription")}</span>
-          <button
-            className="btn primary"
+          <Button
+            variant="primary"
             type="button"
             onClick={() => setDetailsRequested(true)}
           >
             {t("schema.loadDetails")}
-          </button>
+          </Button>
         </WorkbenchEmptyState>
       </SchemaFrame>
     );
@@ -215,8 +218,9 @@ export default function SchemaExplorer({
     return (
       <SchemaFrame>
         <div className="tw:text-ui tw:text-danger">{errMessage(error)}</div>
-        <button
-          className="btn small tw:self-start"
+        <span className="tw:self-start">
+        <Button
+          size="compact"
           type="button"
           disabled={catalogQueryResult.isFetching || snapshotQuery.isFetching}
           aria-busy={catalogQueryResult.isFetching || snapshotQuery.isFetching}
@@ -224,7 +228,8 @@ export default function SchemaExplorer({
         >
           <Icon name="refresh" />
           {t("common.refresh")}
-        </button>
+        </Button>
+        </span>
       </SchemaFrame>
     );
   }
@@ -245,13 +250,15 @@ export default function SchemaExplorer({
           {t("schema.fkCount", { count: physicalRelationshipCount })}
         </span>
         <div className="ds-control-row tw:ml-auto tw:flex tw:min-w-0 tw:items-center tw:gap-2 tw:@max-[760px]:ml-0 tw:@max-[760px]:w-full">
-          <input
-            className="tw:min-h-control-md tw:w-[min(320px,42vw)] tw:@max-[760px]:min-w-0 tw:@max-[760px]:flex-1"
-            value={filter}
-            onChange={(event) => setFilter(event.target.value)}
-            placeholder={t("schema.filterPlaceholder")}
-            type="search"
-          />
+          <span className="tw:w-[min(320px,42vw)] tw:min-w-0 tw:@max-[760px]:flex-1">
+            <TextInput
+              density="compact"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+              placeholder={t("schema.filterPlaceholder")}
+              type="search"
+            />
+          </span>
           <Button
             aria-expanded={inspectorOpen}
             aria-controls="schema-inspector"
@@ -316,12 +323,12 @@ export default function SchemaExplorer({
                       catalogQueryResult.data.tables,
                       selected,
                     ) && (
-                      <button
-                        className="btn small"
+                      <Button
+                        size="compact"
                         onClick={() => openRelation(selected)}
                       >
                         {t("schema.openData")}
-                      </button>
+                      </Button>
                     )}
                   </div>
                   <div className="tw:mt-3 tw:grid tw:gap-0 tw:border-t tw:border-border-subtle">

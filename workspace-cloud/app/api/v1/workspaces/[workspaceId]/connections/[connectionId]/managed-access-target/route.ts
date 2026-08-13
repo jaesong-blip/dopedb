@@ -1,7 +1,12 @@
 // Returns one expiring, secret-free canonical target for the desktop Managed
 // Access planner. POST may refresh workspace-owned OAuth before pinning; DELETE
 // is the cleanup-only revocation boundary. Neither endpoint delivers a secret.
-import { isUuid, jsonError, privateJson } from "../../../../../../../../lib/http";
+import {
+  boundedJsonBody,
+  isUuid,
+  jsonError,
+  privateJson,
+} from "../../../../../../../../lib/http";
 import {
   activeProviderIntegration,
   gcpCredential,
@@ -89,12 +94,17 @@ export async function POST(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId) || !isUuid(connectionId)) {
     return jsonError("Invalid workspace or connection id", 400);
   }
-  const bodyText = await request.text();
-  if (!bodyText || bodyText.length > 64) {
-    return jsonError("Invalid managed provisioning request", 400);
+  const parsed = await boundedJsonBody(request, 64);
+  if (!parsed.ok) {
+    return jsonError(
+      parsed.reason === "too_large"
+        ? "Managed provisioning request is too large"
+        : "Invalid managed provisioning request",
+      parsed.reason === "too_large" ? 413 : 400,
+    );
   }
   try {
-    const body = JSON.parse(bodyText) as Record<string, unknown>;
+    const body = parsed.value as Record<string, unknown>;
     if (
       !body
       || Array.isArray(body)
@@ -204,9 +214,14 @@ export async function DELETE(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId) || !isUuid(connectionId)) {
     return jsonError("Invalid workspace or connection id", 400);
   }
-  const bodyText = await request.text();
-  if (!bodyText || bodyText.length > 1_024) {
-    return jsonError("Invalid managed provisioning destroy request", 400);
+  const parsed = await boundedJsonBody(request, 1_024);
+  if (!parsed.ok) {
+    return jsonError(
+      parsed.reason === "too_large"
+        ? "Managed provisioning destroy request is too large"
+        : "Invalid managed provisioning destroy request",
+      parsed.reason === "too_large" ? 413 : 400,
+    );
   }
   let pins: {
     connectionRevision: string;
@@ -217,7 +232,7 @@ export async function DELETE(request: Request, context: RouteContext) {
     ownershipMarker: string;
   };
   try {
-    const body = JSON.parse(bodyText) as Record<string, unknown>;
+    const body = parsed.value as Record<string, unknown>;
     const fields = [
       "action",
       "connectionRevision",

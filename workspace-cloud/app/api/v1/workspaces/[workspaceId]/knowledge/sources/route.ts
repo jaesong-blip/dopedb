@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import {
@@ -13,6 +13,10 @@ import {
   listGithubRepositories,
   resolveGithubCommit,
 } from "@/lib/knowledge/github-app";
+import {
+  knowledgeMutationAuthority,
+  knowledgeMutationAuthoritySql,
+} from "@/lib/knowledge/mutation-authority";
 import { enqueueInitialGithubKnowledgeSync } from "@/lib/knowledge/sync-queue";
 import {
   knowledgeGithubInstallation,
@@ -62,6 +66,7 @@ export async function POST(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId)) return jsonError("Invalid workspace id", 400);
   const authorization = await authorizeWorkspace(request, workspaceId, "manage");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
+  const authority = knowledgeMutationAuthority(authorization, workspaceId, "manage");
   const parsed = await boundedJsonBody(request, 16 * 1024);
   const body = parsed.ok ? parsed.value as Record<string, unknown> : null;
   if (
@@ -129,27 +134,36 @@ export async function POST(request: Request, context: RouteContext) {
       repository.full_name,
       body.refName,
     );
-    const [inserted] = await db.insert(knowledgeSource).values({
-      id: body.sourceId,
-      organizationId: workspaceId,
-      projectId: body.projectId,
-      projectEnvironmentId: body.projectEnvironmentId,
-      environmentRevision: environment.revision,
-      provider: "github",
-      displayName: body.displayName.trim(),
-      visibility: "shared_graph",
-      githubInstallationId: installation.id,
-      repositoryId: body.repositoryId,
-      repositoryFullName: repository.full_name,
-      refName: body.refName,
-      commitSha,
-      syncState: "pending",
-    }).onConflictDoNothing().returning({
-      id: knowledgeSource.id,
-      syncRevision: knowledgeSource.syncRevision,
-      environmentRevision: knowledgeSource.environmentRevision,
-      commitSha: knowledgeSource.commitSha,
-    });
+    const insertedResult = await db.execute<{
+      id: string;
+      syncRevision: number;
+      environmentRevision: number;
+      commitSha: string;
+    }>(sql`
+      INSERT INTO ${knowledgeSource}
+        ("id", "organization_id", "project_id", "project_environment_id",
+         "environment_revision", "provider", "display_name", "visibility",
+         "github_installation_id", "repository_id", "repository_full_name",
+         "ref_name", "commit_sha", "sync_state")
+      SELECT ${body.sourceId}::uuid, ${workspaceId}, environment."project_id",
+        environment."id", environment."revision", 'github', ${body.displayName.trim()},
+        'shared_graph', installation."id", ${body.repositoryId}, ${repository.full_name},
+        ${body.refName}, ${commitSha}, 'pending'
+      FROM ${knowledgeProjectEnvironment} AS environment
+      JOIN ${knowledgeGithubInstallation} AS installation
+        ON installation."organization_id" = environment."organization_id"
+       AND installation."id" = ${installation.id}::uuid
+       AND installation."status" = 'active'
+      WHERE environment."organization_id" = ${workspaceId}
+        AND environment."id" = ${body.projectEnvironmentId}::uuid
+        AND environment."project_id" = ${body.projectId}::uuid
+        AND environment."revision" = ${environment.revision}
+        AND ${knowledgeMutationAuthoritySql(authority, workspaceId)}
+      ON CONFLICT DO NOTHING
+      RETURNING "id"::text, "sync_revision"::integer AS "syncRevision",
+        "environment_revision"::integer AS "environmentRevision", "commit_sha" AS "commitSha"
+    `);
+    const inserted = insertedResult.rows[0];
     const [source] = inserted ? [inserted] : await db.select({
       id: knowledgeSource.id,
       syncRevision: knowledgeSource.syncRevision,
@@ -178,11 +192,13 @@ export async function POST(request: Request, context: RouteContext) {
         || source.refName !== body.refName
       ))
     ) return jsonError("Knowledge source id is already bound", 409);
-    await enqueueInitialGithubKnowledgeSync({
+    const jobId = await enqueueInitialGithubKnowledgeSync({
       organizationId: workspaceId,
       sourceId: body.sourceId,
       commitSha,
+      authority,
     });
+    if (!jobId) return jsonError("Knowledge source authority changed", 409);
     return privateJson({ source }, { status: 201 });
   } catch {
     return jsonError("GitHub source verification failed", 424);

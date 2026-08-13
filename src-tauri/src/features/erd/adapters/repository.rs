@@ -146,31 +146,6 @@ impl ErdRepositoryPort for SqliteErdRepository {
             }
         }
     }
-
-    async fn delete(
-        &self,
-        authority: &ErdAuthority,
-        id: ErdLayoutId,
-        expected_revision: i64,
-        deleted_at: String,
-    ) -> AppResult<bool> {
-        let update = sqlx::query(
-            "UPDATE erd_layouts
-             SET deleted_at = ?1, updated_at = ?1, revision = revision + 1,
-                 sync_status = CASE WHEN remote_id IS NULL THEN 'local' ELSE 'dirty' END
-             WHERE id = ?2 AND workspace_id = ?3 AND account_scope = ?4
-               AND connection_id = ?5 AND revision = ?6 AND deleted_at IS NULL",
-        )
-        .bind(deleted_at)
-        .bind(id.to_string())
-        .bind(authority.resource.workspace_id.to_string())
-        .bind(authority.account_scope.as_str())
-        .bind(authority.resource.connection_id.to_string())
-        .bind(expected_revision)
-        .execute(self.store.pool())
-        .await?;
-        Ok(update.rows_affected() == 1)
-    }
 }
 
 async fn load_scoped_layout(

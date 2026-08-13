@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import LazySqlViewer from "../../components/LazySqlViewer";
+import { Button } from "../../design-system/components/Button";
 import {
   ModalBackdrop,
   ModalFooter,
@@ -73,16 +74,15 @@ export default function DdlModal({
           {text != null && <LazySqlViewer value={text} minHeight="240px" />}
         </div>
         <ModalFooter>
-          <button
-            className="btn"
+          <Button
             onClick={() => void copy()}
             disabled={!text}
           >
             {copied ? t("common.copied") : t("common.copy")}
-          </button>
-          <button className="btn" ref={closeRef} onClick={onClose}>
+          </Button>
+          <Button ref={closeRef} onClick={onClose}>
             {t("common.close")}
-          </button>
+          </Button>
         </ModalFooter>
       </ModalSurface>
     </ModalBackdrop>

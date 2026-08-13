@@ -1,18 +1,5 @@
 import { invoke } from "../../ipc/core";
 
-export type StartupStage = {
-  name: string;
-  classification: "critical" | "post_paint";
-  startedMs: number;
-  durationMs: number;
-  status: "ready" | "failed";
-};
-
-export type StartupSummary = {
-  elapsedMs: number;
-  stages: StartupStage[];
-};
-
 export type PackagedBenchmarkRendererMetrics = {
   rendererElapsedMs: number;
   reactCommitCount: number;
@@ -79,10 +66,6 @@ export function recordStartupMark(
   succeeded = true,
 ): Promise<void> {
   return invoke("record_startup_mark", { mark, succeeded });
-}
-
-export function runtimeStartupSummary(): Promise<StartupSummary> {
-  return invoke("runtime_startup_summary");
 }
 
 export function packagedBenchmarkConfig(): Promise<PackagedBenchmarkConfig> {

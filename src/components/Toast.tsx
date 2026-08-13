@@ -1,6 +1,7 @@
 // Tiny toast system: context + hook + a fixed corner stack. 3s auto-dismiss,
 // success/error variants. useToast() returns a `toast(msg, variant?)` fn.
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
+import { useI18n } from "../lib/i18n";
 
 type Variant = "success" | "error";
 interface ToastItem {
@@ -18,6 +19,7 @@ export function useToast(): ToastFn {
 }
 
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const { t } = useI18n();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const idRef = useRef(0);
 
@@ -37,7 +39,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       <div
         className="tw:pointer-events-none tw:fixed tw:right-4 tw:bottom-4 tw:z-[var(--ds-z-toast)] tw:flex tw:flex-col tw:gap-2 tw:max-[640px]:right-3 tw:max-[640px]:bottom-3 tw:max-[640px]:left-3"
         role="region"
-        aria-label="Notifications"
+        aria-label={t("ide.notifications")}
       >
         {toasts.map((t) => (
           <div

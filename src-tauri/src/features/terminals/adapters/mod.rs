@@ -1,11 +1,10 @@
-//! Desktop adapters for Terminal Dock use cases.
+//! Desktop adapters for the connection-pinned advanced Shell.
 
 mod authority;
 mod desktop;
 mod environment;
 mod output;
 mod process_tree;
-mod replay;
 mod runtime;
 mod session;
 

@@ -85,19 +85,6 @@ pub(crate) struct OperationApprovalCommand {
     pub now: DateTime<Utc>,
 }
 
-#[derive(Clone)]
-pub(crate) struct OperationApprovalRecord {
-    pub id: Uuid,
-    pub operation_id: Uuid,
-    pub payload_hash: String,
-    pub approver: OperationApprover,
-    pub decision: OperationApprovalDecision,
-    pub reason: Option<String>,
-    pub policy_revision: String,
-    pub created_at: DateTime<Utc>,
-    pub expires_at: Option<DateTime<Utc>>,
-}
-
 /// Complete internal projection loaded from local SQLite. The payload is deliberately
 /// not serializable as an adapter response.
 #[derive(Clone)]
@@ -129,6 +116,7 @@ pub(crate) struct OperationRecord {
     pub updated_at: DateTime<Utc>,
 }
 
+#[cfg(test)]
 #[derive(Clone)]
 pub(crate) struct OperationEventRecord {
     pub id: Uuid,
@@ -176,14 +164,6 @@ pub(super) const fn approval_decision_str(value: OperationApprovalDecision) -> &
     match value {
         OperationApprovalDecision::Approved => "approved",
         OperationApprovalDecision::Rejected => "rejected",
-    }
-}
-
-pub(super) fn parse_approval_decision(value: &str) -> Option<OperationApprovalDecision> {
-    match value {
-        "approved" => Some(OperationApprovalDecision::Approved),
-        "rejected" => Some(OperationApprovalDecision::Rejected),
-        _ => None,
     }
 }
 
@@ -295,6 +275,7 @@ pub(super) const fn event_kind_str(value: OperationEventKind) -> &'static str {
     }
 }
 
+#[cfg(test)]
 pub(super) fn parse_event_kind(value: &str) -> Option<OperationEventKind> {
     match value {
         "proposed" => Some(OperationEventKind::Proposed),

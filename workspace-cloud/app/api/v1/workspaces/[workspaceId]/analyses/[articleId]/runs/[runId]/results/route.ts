@@ -4,14 +4,16 @@
 import { and, asc, eq, gt } from "drizzle-orm";
 
 import { db } from "../../../../../../../../../../lib/db";
-import { isUuid, jsonError, privateJson } from "../../../../../../../../../../lib/http";
+import { isUuid, jsonError, privateJsonStream } from "../../../../../../../../../../lib/http";
 import {
+  workspaceAnalysisArticleQueryReceipt,
   workspaceAnalysisArticleRun,
   workspaceAnalysisResultFragment,
 } from "../../../../../../../../../../lib/schema";
 import { authorizeWorkspace } from "../../../../../../../../../../lib/workspace-authorization";
 import { accessibleAnalysisArticle } from "../../../../../../../../../../lib/workspace-analysis-article-http";
 import { openAnalysisResultFragments } from "../../../../../../../../../../lib/workspace-analysis-results";
+import { analysisRunEvidenceIsComplete } from "../../../../../../../../../../lib/workspace-analysis-runs";
 import { hasWorkspaceCapability } from "../../../../../../../../../../lib/workspace-permissions";
 
 type RouteContext = {
@@ -50,14 +52,52 @@ export async function GET(request: Request, context: RouteContext) {
     ),
   });
   if (!run) return jsonError("Analysis Article result not found", 404);
-  const stored = await db.select().from(workspaceAnalysisResultFragment).where(and(
-    eq(workspaceAnalysisResultFragment.organizationId, workspaceId),
-    eq(workspaceAnalysisResultFragment.runId, runId),
-    gt(workspaceAnalysisResultFragment.expiresAt, new Date()),
-  )).orderBy(
-    asc(workspaceAnalysisResultFragment.blockId),
-    asc(workspaceAnalysisResultFragment.ordinal),
-  );
+  const now = new Date();
+  const [stored, receipts] = await Promise.all([
+    db.select().from(workspaceAnalysisResultFragment).where(and(
+      eq(workspaceAnalysisResultFragment.organizationId, workspaceId),
+      eq(workspaceAnalysisResultFragment.runId, runId),
+      gt(workspaceAnalysisResultFragment.expiresAt, now),
+    )).orderBy(
+      asc(workspaceAnalysisResultFragment.blockId),
+      asc(workspaceAnalysisResultFragment.ordinal),
+    ),
+    db.select({
+      queryNodeId: workspaceAnalysisArticleQueryReceipt.queryNodeId,
+      connectionId: workspaceAnalysisArticleQueryReceipt.connectionId,
+      connectionRevision: workspaceAnalysisArticleQueryReceipt.connectionRevision,
+      queryRunId: workspaceAnalysisArticleQueryReceipt.queryRunId,
+      queryHash: workspaceAnalysisArticleQueryReceipt.queryHash,
+      schemaFingerprint: workspaceAnalysisArticleQueryReceipt.schemaFingerprint,
+      state: workspaceAnalysisArticleQueryReceipt.state,
+      rowCount: workspaceAnalysisArticleQueryReceipt.rowCount,
+      byteCount: workspaceAnalysisArticleQueryReceipt.byteCount,
+      durationMs: workspaceAnalysisArticleQueryReceipt.durationMs,
+    }).from(workspaceAnalysisArticleQueryReceipt).where(and(
+      eq(workspaceAnalysisArticleQueryReceipt.organizationId, workspaceId),
+      eq(workspaceAnalysisArticleQueryReceipt.runId, runId),
+    )),
+  ]);
+  const typedReceipts = receipts.map((receipt) => ({
+    ...receipt,
+    state: receipt.state as "succeeded" | "failed" | "cancelled" | "stale",
+  }));
+  const manifest = stored.map((fragment) => ({
+    blockId: fragment.blockId,
+    ordinal: fragment.ordinal,
+    payloadHash: fragment.payloadHash,
+    plaintextBytes: fragment.plaintextBytes,
+  }));
+  const complete = analysisRunEvidenceIsComplete({
+    resultHash: run.resultHash,
+    rowCount: run.rowCount,
+    byteCount: run.byteCount,
+    receipts: typedReceipts,
+    fragments: manifest,
+  });
+  if (!complete) {
+    return jsonError("Analysis Article result is temporarily unavailable", 503);
+  }
   try {
     const fragments = await openAnalysisResultFragments({
       request,
@@ -73,7 +113,13 @@ export async function GET(request: Request, context: RouteContext) {
         payloadHash: fragment.payloadHash,
       })),
     });
-    return privateJson({
+    // KMS work can straddle a retention deadline. Recheck immediately before
+    // returning plaintext so a fragment selected while valid is never served
+    // after its expiry.
+    if (stored.some((fragment) => fragment.expiresAt <= new Date())) {
+      return jsonError("Analysis Article result is temporarily unavailable", 503);
+    }
+    return privateJsonStream({
       run: {
         id: run.id,
         articleId: run.articleId,

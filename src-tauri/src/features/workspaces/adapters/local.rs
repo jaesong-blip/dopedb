@@ -16,8 +16,36 @@ use super::super::domain::{
 };
 use super::super::ports::{
     WorkspaceConfigurationPort, WorkspaceConnectionMutationPort, WorkspaceRepositoryPort,
-    WorkspaceRuntimePort,
+    WorkspaceRuntimePort, WorkspaceSshProfilePort,
 };
+
+#[derive(Clone, Copy)]
+pub(crate) struct SystemWorkspaceSshProfile;
+
+impl WorkspaceSshProfilePort for SystemWorkspaceSshProfile {
+    fn bind_alias(
+        &self,
+        profile: &ConnectionProfile,
+        alias: Option<&str>,
+    ) -> AppResult<HashMap<String, String>> {
+        let mut extra_params = profile.extra_params.clone();
+        if let Some(alias) = alias {
+            let alias = alias.trim();
+            if alias.is_empty() {
+                extra_params.remove(crate::connection::ssh::SSH_ALIAS_PARAMETER);
+            } else {
+                extra_params.insert(
+                    crate::connection::ssh::SSH_ALIAS_PARAMETER.into(),
+                    alias.into(),
+                );
+            }
+        }
+        let mut candidate = profile.clone();
+        candidate.extra_params = extra_params.clone();
+        crate::connection::ssh::validate_profile(&candidate)?;
+        Ok(extra_params)
+    }
+}
 
 #[derive(Clone)]
 pub(crate) struct SqliteWorkspaceRepository {

@@ -13,6 +13,12 @@ import {
 import { authorizeWorkspace } from "../../../../../../../../lib/workspace-authorization";
 import { workspaceAnalysisArticleRun } from "../../../../../../../../lib/schema";
 import { accessibleAnalysisArticle } from "../../../../../../../../lib/workspace-analysis-article-http";
+import {
+  analysisRunnerCapabilityHeader,
+  hashAnalysisRunnerCapability,
+  isAnalysisDesktopBearerRequest,
+  parseAnalysisRunnerCapability,
+} from "../../../../../../../../lib/workspace-analysis-runner-capability";
 import { hashAnalysisLeaseCapability } from "../../../../../../../../lib/workspace-analysis-runner-store";
 import {
   commitAnalysisRunCreate,
@@ -85,12 +91,20 @@ export async function GET(request: Request, context: RouteContext) {
 
 export async function POST(request: Request, context: RouteContext) {
   if (!mutationAllowed(request, env.appOrigin())) return jsonError("Invalid request origin", 403);
+  if (!isAnalysisDesktopBearerRequest(request)) {
+    return jsonError("Analysis run execution requires a Desktop bearer session", 401);
+  }
   const { workspaceId, articleId } = await context.params;
   if (!isUuid(workspaceId) || !isUuid(articleId)) {
     return jsonError("Invalid workspace or Analysis Article id", 400);
   }
   const authorization = await authorizeWorkspace(request, workspaceId, "view");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
+  const runnerCapability = parseAnalysisRunnerCapability(request);
+  if (!runnerCapability) return jsonError(
+    "Invalid Analysis runner capability",
+    request.headers.has(analysisRunnerCapabilityHeader) ? 403 : 428,
+  );
   const body = await boundedJsonBody(request, 128 * 1024);
   if (!body.ok || !body.value || typeof body.value !== "object" || Array.isArray(body.value)) {
     return jsonError("Invalid Analysis Article run request", 400);
@@ -127,7 +141,7 @@ export async function POST(request: Request, context: RouteContext) {
   const leaseCapability = request.headers.get("x-dopedb-analysis-capability")?.trim() ?? null;
   if (run.trigger === "schedule") {
     if (!leaseId || !isUuid(leaseId) || !leaseCapability || !/^[0-9a-f]{64}$/.test(leaseCapability)) {
-      return jsonError("A scheduled run requires its refresh lease capability", 401);
+      return jsonError("A scheduled run requires its refresh lease capability", 403);
     }
   } else if (run.trigger === "signal") {
     return jsonError("Signal evaluation starts from an Article signal, not the manual run API", 409);
@@ -140,6 +154,7 @@ export async function POST(request: Request, context: RouteContext) {
     run,
     parameterHash: canonicalHash(run.parameterValues),
     definitionHash: canonicalHash(article.definition),
+    runnerCapabilityHash: hashAnalysisRunnerCapability(runnerCapability),
     leaseId: run.trigger === "schedule" ? leaseId : null,
     leaseCapabilityHash: run.trigger === "schedule" && leaseCapability
       ? hashAnalysisLeaseCapability(leaseCapability)

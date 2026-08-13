@@ -1475,9 +1475,7 @@ async fn catalog_search(
     validate_text(&query, MAX_CATALOG_SEARCH_QUERY_BYTES, "catalog query")?;
     let requested_limit = arguments.limit.unwrap_or(DEFAULT_CATALOG_MATCHES);
     if arguments.kinds.len() > MAX_CATALOG_SEARCH_KINDS || requested_limit == 0 {
-        return Err(format!(
-            "catalog search arguments exceed the configured bounds"
-        ));
+        return Err("catalog search arguments exceed the configured bounds".to_owned());
     }
     let limit = requested_limit.min(MAX_CATALOG_SEARCH_MATCHES);
     let result = broker_request::<CatalogSearchCommand>(

@@ -2,17 +2,16 @@
 
 use std::future::Future;
 use std::pin::Pin;
-use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use reqwest::{redirect::Policy, Client, Response, StatusCode, Url};
+use reqwest::{StatusCode, Url};
 use serde::Deserialize;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use crate::connection::keychain::{delete_workspace_session, fetch_workspace_session};
 use crate::error::{AppError, AppResult};
-use crate::features::workspaces::adapters::control_plane::validated_control_plane_origin;
+use crate::hosted_control_plane;
 use crate::kernel::identity::ProviderIntegrationId;
 use crate::model::{Engine, Provider, WorkspaceCredentialMode};
 use crate::store::PinnedConnection;
@@ -67,9 +66,7 @@ pub(crate) struct AuthorizedProvisioningTarget {
 }
 
 #[derive(Clone)]
-pub(crate) struct HostedProvisioningTargetAuthority {
-    client: Client,
-}
+pub(crate) struct HostedProvisioningTargetAuthority;
 
 pub(crate) trait ProvisioningTargetAuthorityPort: Send + Sync + 'static {
     fn target<'a>(
@@ -87,13 +84,7 @@ pub(crate) trait ProvisioningTargetAuthorityPort: Send + Sync + 'static {
 
 impl HostedProvisioningTargetAuthority {
     pub(crate) fn new() -> Self {
-        Self {
-            client: Client::builder()
-                .redirect(Policy::none())
-                .timeout(Duration::from_secs(10))
-                .build()
-                .expect("provider provisioning HTTP client configuration is valid"),
-        }
+        Self
     }
 
     async fn fetch_target(
@@ -111,7 +102,7 @@ impl HostedProvisioningTargetAuthority {
         let token = fetch_workspace_session(account_id)?
             .map(Zeroizing::new)
             .ok_or_else(|| blocked("Managed Access requires an authenticated session"))?;
-        let origin = Url::parse(&validated_control_plane_origin()?)
+        let origin = Url::parse(&hosted_control_plane::origin()?)
             .map_err(|_| AppError::Config("workspace control-plane origin is invalid".into()))?;
         let url = origin
             .join(&format!(
@@ -119,8 +110,7 @@ impl HostedProvisioningTargetAuthority {
                 connection.scope.workspace_id, connection.connection_id
             ))
             .map_err(|_| AppError::Config("Managed Access target URL is invalid".into()))?;
-        let response = self
-            .client
+        let response = hosted_control_plane::client()?
             .post(url)
             .bearer_auth(token.as_str())
             .header("x-dopedb-managed-provisioning-contract", "lifecycle-v1")
@@ -134,8 +124,14 @@ impl HostedProvisioningTargetAuthority {
         if !response.status().is_success() {
             return Err(blocked("Managed Access target is unavailable"));
         }
-        let body = read_bounded(response).await?;
-        parse_target_response(&body, connection)
+        let response = hosted_control_plane::bounded_json_response::<TargetResponse>(
+            response,
+            "Managed Access target",
+            MAX_TARGET_BODY_BYTES,
+        )
+        .await
+        .map_err(|_| invalid_response())?;
+        parse_target_response_value(response, connection)
     }
 
     async fn destroy_target(
@@ -169,7 +165,7 @@ impl HostedProvisioningTargetAuthority {
         let token = fetch_workspace_session(account_id)?
             .map(Zeroizing::new)
             .ok_or_else(|| blocked("Managed Access requires an authenticated session"))?;
-        let origin = Url::parse(&validated_control_plane_origin()?)
+        let origin = Url::parse(&hosted_control_plane::origin()?)
             .map_err(|_| AppError::Config("workspace control-plane origin is invalid".into()))?;
         let url = origin
             .join(&format!(
@@ -177,8 +173,7 @@ impl HostedProvisioningTargetAuthority {
                 connection.scope.workspace_id, connection.connection_id
             ))
             .map_err(|_| AppError::Config("Managed Access target URL is invalid".into()))?;
-        let response = self
-            .client
+        let response = hosted_control_plane::client()?
             .delete(url)
             .bearer_auth(token.as_str())
             .header("x-dopedb-managed-provisioning-contract", "lifecycle-v1")
@@ -200,9 +195,13 @@ impl HostedProvisioningTargetAuthority {
         if !response.status().is_success() {
             return Err(blocked("Managed Access destroy is unavailable"));
         }
-        let body = read_bounded(response).await?;
-        let response: DestroyResponse =
-            serde_json::from_slice(&body).map_err(|_| invalid_response())?;
+        let response = hosted_control_plane::bounded_json_response::<DestroyResponse>(
+            response,
+            "Managed Access destroy",
+            MAX_TARGET_BODY_BYTES,
+        )
+        .await
+        .map_err(|_| invalid_response())?;
         if !response.destroyed
             || response.revoked > 10_000
             || response.provider_audit_id != target.provider_audit_id()
@@ -314,28 +313,7 @@ struct PlanetScaleResource {
     engine: String,
 }
 
-async fn read_bounded(mut response: Response) -> AppResult<Vec<u8>> {
-    if response
-        .content_length()
-        .is_some_and(|length| length > MAX_TARGET_BODY_BYTES as u64)
-    {
-        return Err(invalid_response());
-    }
-    let mut body = Vec::with_capacity(
-        response
-            .content_length()
-            .unwrap_or_default()
-            .min(MAX_TARGET_BODY_BYTES as u64) as usize,
-    );
-    while let Some(chunk) = response.chunk().await.map_err(|_| invalid_response())? {
-        if body.len().saturating_add(chunk.len()) > MAX_TARGET_BODY_BYTES {
-            return Err(invalid_response());
-        }
-        body.extend_from_slice(&chunk);
-    }
-    Ok(body)
-}
-
+#[cfg(test)]
 fn parse_target_response(
     body: &[u8],
     connection: &PinnedConnection,
@@ -344,6 +322,13 @@ fn parse_target_response(
         return Err(invalid_response());
     }
     let response: TargetResponse = serde_json::from_slice(body).map_err(|_| invalid_response())?;
+    parse_target_response_value(response, connection)
+}
+
+fn parse_target_response_value(
+    response: TargetResponse,
+    connection: &PinnedConnection,
+) -> AppResult<AuthorizedProvisioningTarget> {
     parse_target(
         response.target,
         response.verification.provider_audit_id,

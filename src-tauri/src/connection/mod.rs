@@ -24,10 +24,6 @@ pub(crate) use provider_local::{
     ProviderLocalPinRequest, ProviderLocalResolveRequest, ProviderLocalResource,
     ProviderLocalSecret, ProviderLocalTarget,
 };
-// These are part of the provider-feature implementation contract. The provider
-// feature consumes them through this narrow adapter boundary while the runtime
-// itself only handles the object-safe port.
-#[allow(unused_imports)]
 pub(crate) use provider_local::{ProviderLocalFuture, ResolvedProviderLocalConnection};
 pub(crate) use remote_authority::{
     ManagedConnectionLease, RemoteAuthorityFuture, RemoteConnectionAuthority,

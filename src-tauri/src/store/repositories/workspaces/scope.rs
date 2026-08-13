@@ -2,6 +2,43 @@
 
 use super::super::super::*;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ActiveTeamMembershipAuthority {
+    workspace_id: String,
+    account_id: String,
+    role: WorkspaceRole,
+}
+
+pub(super) async fn active_team_membership_authority(
+    tx: &mut Transaction<'_, Sqlite>,
+) -> AppResult<Option<ActiveTeamMembershipAuthority>> {
+    let row: Option<(String, String, String)> = sqlx::query_as(
+        "SELECT workspace.value, account.value, member.role
+         FROM app_settings workspace
+         JOIN app_settings account
+           ON account.key = 'active_workspace_account_id'
+         JOIN workspaces active
+           ON workspace.key = 'active_workspace_id'
+          AND active.id = workspace.value
+          AND active.kind = 'team'
+          AND active.lifecycle_state = 'active'
+         JOIN workspace_members member
+           ON member.workspace_id = active.id
+          AND member.user_id = account.value
+          AND member.status = 'active'",
+    )
+    .fetch_optional(&mut **tx)
+    .await?;
+    row.map(|(workspace_id, account_id, role)| {
+        Ok(ActiveTeamMembershipAuthority {
+            workspace_id,
+            account_id,
+            role: parse_workspace_role(role)?,
+        })
+    })
+    .transpose()
+}
+
 pub(in crate::store) fn active_scope_from_row(
     row: &sqlx::sqlite::SqliteRow,
 ) -> AppResult<ActiveResourceScope> {
@@ -96,6 +133,7 @@ pub(in crate::store) async fn bump_active_scope_generation(
 pub(super) async fn repair_active_scope_after_membership_change(
     tx: &mut Transaction<'_, Sqlite>,
     now: DateTime<Utc>,
+    previous_team_authority: Option<&ActiveTeamMembershipAuthority>,
 ) -> AppResult<bool> {
     let current: Option<(String, Option<String>)> = sqlx::query_as(
         "SELECT workspace.value, account.value
@@ -149,10 +187,12 @@ pub(super) async fn repair_active_scope_after_membership_change(
     .fetch_one(&mut **tx)
     .await?;
     if current_is_valid {
-        if account_setting_repaired {
+        let current_team_authority = active_team_membership_authority(tx).await?;
+        let authority_changed = previous_team_authority != current_team_authority.as_ref();
+        if account_setting_repaired || authority_changed {
             bump_active_scope_generation(tx).await?;
         }
-        return Ok(account_setting_repaired);
+        return Ok(account_setting_repaired || authority_changed);
     }
 
     // Membership repair never chooses a different Team on the user's behalf.
@@ -189,7 +229,13 @@ pub(super) async fn repair_active_scope_after_membership_change(
 
 pub(in crate::store) async fn repair_active_scope_on_open(pool: &SqlitePool) -> AppResult<()> {
     let mut tx = pool.begin().await?;
-    repair_active_scope_after_membership_change(&mut tx, Utc::now()).await?;
+    let previous_team_authority = active_team_membership_authority(&mut tx).await?;
+    repair_active_scope_after_membership_change(
+        &mut tx,
+        Utc::now(),
+        previous_team_authority.as_ref(),
+    )
+    .await?;
     tx.commit().await?;
     Ok(())
 }

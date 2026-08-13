@@ -16,28 +16,12 @@ use crate::connection::keychain::{
     delete_knowledge_source_root, fetch_knowledge_source_root, store_knowledge_source_root,
 };
 use crate::error::{AppError, AppResult};
-use crate::features::workspaces::adapters::control_plane::{
-    begin_knowledge_github_install,
-    bind_environment_connection as bind_remote_environment_connection,
-    create_current_knowledge_grant,
-    create_knowledge_environment as create_remote_knowledge_environment, create_knowledge_project,
-    decide_remote_knowledge_mapping, delete_knowledge_source, download_knowledge_graph,
-    ensure_personal_knowledge_scope, list_current_knowledge_grants,
-    list_environment_connections as list_remote_environment_connections,
-    list_knowledge_github_repositories, list_knowledge_projects, list_remote_knowledge_mappings,
-    list_remote_knowledge_sources, request_knowledge_source_sync,
-    revoke_environment_connection as revoke_remote_environment_connection,
-    AppendKnowledgeEnvironmentRequest, CreateKnowledgeEnvironmentRequest,
-    CreateKnowledgeProjectRequest, RemoteGithubRepository, RemoteKnowledgeEnvironment,
-    RemoteKnowledgeGrant, RemoteKnowledgeProject, RemoteKnowledgeSource,
-};
 use crate::features::workspaces::WorkspaceKind;
 use crate::kernel::identity::{AccountId, WorkspaceId};
 use crate::state::AppState;
 use crate::store::ActiveResourceScope;
 
-use super::adapters::github::GithubSourceControlPlane;
-use super::application::{graph_path, search_graphs, KnowledgePathResult, KnowledgeSearchResult};
+use super::application::{search_graphs, KnowledgeSearchResult};
 use super::domain::{
     validate_graph_publish, EnvironmentRiskClass, KnowledgeMappingProposal, MappingProposalState,
     Project, ProjectDefinition, ProjectEnvironment, SourceBindingDraft, SourceHealthState,
@@ -45,8 +29,10 @@ use super::domain::{
 };
 use super::extractor::build_graph;
 use super::ports::{
-    KnowledgeGrantPort, KnowledgeGraphRepositoryPort, KnowledgeMappingRepositoryPort,
-    KnowledgeScopeRepositoryPort, LocalKnowledgeSourcePort,
+    AppendKnowledgeEnvironmentRequest, CreateKnowledgeEnvironmentRequest,
+    CreateKnowledgeProjectRequest, LocalKnowledgeSourcePort, RemoteGithubRepository,
+    RemoteKnowledgeEnvironment, RemoteKnowledgeGrant, RemoteKnowledgeProject,
+    RemoteKnowledgeSource,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -234,11 +220,15 @@ struct ActiveRemoteKnowledgeScope {
 }
 
 async fn active_remote_scope(state: &AppState) -> AppResult<ActiveRemoteKnowledgeScope> {
-    let scope = state.knowledge_store().active_resource_scope().await?;
+    let scope = state.services.knowledge.active_resource_scope().await?;
     let account = selected_remote_account(&scope)?;
     let projects = active_project_inventory(state, &scope).await?;
     if scope.workspace_kind == WorkspaceKind::Personal {
-        let remote = ensure_personal_knowledge_scope(account.as_str(), &projects).await?;
+        let remote = state
+            .services
+            .knowledge
+            .ensure_personal_scope(account.as_str(), &projects)
+            .await?;
         return Ok(ActiveRemoteKnowledgeScope {
             local_scope: scope,
             account,
@@ -302,16 +292,22 @@ async fn active_project_inventory(
 ) -> AppResult<Vec<RemoteKnowledgeProject>> {
     if scope.workspace_kind == WorkspaceKind::Personal {
         return state
-            .knowledge_store()
+            .services
+            .knowledge
             .knowledge_projects(scope.workspace_id)
             .await
             .map(|projects| projects.into_iter().map(project_projection).collect());
     };
     let account = selected_team_account(scope)?;
-    let projects = list_knowledge_projects(account.as_str(), scope.workspace_id).await?;
+    let projects = state
+        .services
+        .knowledge
+        .list_remote_projects(account.as_str(), scope.workspace_id)
+        .await?;
     for project in &projects {
         state
-            .knowledge_store()
+            .services
+            .knowledge
             .save_knowledge_project(&project_definition(scope.workspace_id, project))
             .await?;
     }
@@ -394,7 +390,8 @@ async fn project_source(
             .flatten()
             .is_some();
     let active_index = state
-        .knowledge_store()
+        .services
+        .knowledge
         .active_for_source(scope.binding.source_id)
         .await?;
     let active_index_available = active_index.is_some();
@@ -448,7 +445,7 @@ fn unchanged_graph(
             previous.source_revision_sha256 == snapshot.source_revision_sha256
                 && previous.binding.source_id == snapshot.binding.source_id
         })
-        .and_then(|_| previous_artifact)
+        .and(previous_artifact)
         .filter(|artifact| artifact.binding.source_id == snapshot.binding.source_id)
         .cloned()
 }
@@ -457,11 +454,15 @@ fn unchanged_graph(
 pub(crate) async fn list_knowledge_projects_command(
     state: State<'_, AppState>,
 ) -> AppResult<Vec<RemoteKnowledgeProject>> {
-    let scope = state.knowledge_store().active_resource_scope().await?;
+    let scope = state.services.knowledge.active_resource_scope().await?;
     let projects = active_project_inventory(&state, &scope).await?;
     if scope.workspace_kind == WorkspaceKind::Team {
         let account = selected_team_account(&scope)?;
-        let grants = list_current_knowledge_grants(account.as_str(), scope.workspace_id).await?;
+        let grants = state
+            .services
+            .knowledge
+            .list_current_grants(account.as_str(), scope.workspace_id)
+            .await?;
         sync_current_knowledge_access_with_projects(
             &state,
             &scope,
@@ -481,7 +482,8 @@ pub(crate) async fn sync_current_knowledge_access(state: &AppState) -> AppResult
     if remote.local_scope.workspace_kind == WorkspaceKind::Team {
         for project in &projects {
             state
-                .knowledge_store()
+                .services
+                .knowledge
                 .save_knowledge_project(&project_definition(
                     remote.local_scope.workspace_id,
                     project,
@@ -489,12 +491,17 @@ pub(crate) async fn sync_current_knowledge_access(state: &AppState) -> AppResult
                 .await?;
         }
     }
-    let mut grants =
-        list_current_knowledge_grants(remote.account.as_str(), remote.remote_workspace_id).await?;
+    let mut grants = state
+        .services
+        .knowledge
+        .list_current_grants(remote.account.as_str(), remote.remote_workspace_id)
+        .await?;
     if let Some(member_id) = remote.personal_member_id.as_deref() {
-        let sources =
-            list_remote_knowledge_sources(remote.account.as_str(), remote.remote_workspace_id)
-                .await?;
+        let sources = state
+            .services
+            .knowledge
+            .list_remote_sources(remote.account.as_str(), remote.remote_workspace_id)
+            .await?;
         let mut created = false;
         for project in &projects {
             for environment in &project.environments {
@@ -521,20 +528,25 @@ pub(crate) async fn sync_current_knowledge_access(state: &AppState) -> AppResult
                 {
                     continue;
                 }
-                create_current_knowledge_grant(
-                    remote.account.as_str(),
-                    remote.remote_workspace_id,
-                    member_id,
-                    environment.id,
-                )
-                .await?;
+                state
+                    .services
+                    .knowledge
+                    .create_current_grant(
+                        remote.account.as_str(),
+                        remote.remote_workspace_id,
+                        member_id,
+                        environment.id,
+                    )
+                    .await?;
                 created = true;
             }
         }
         if created {
-            grants =
-                list_current_knowledge_grants(remote.account.as_str(), remote.remote_workspace_id)
-                    .await?;
+            grants = state
+                .services
+                .knowledge
+                .list_current_grants(remote.account.as_str(), remote.remote_workspace_id)
+                .await?;
         }
     }
     sync_current_knowledge_access_with_projects(
@@ -587,7 +599,8 @@ async fn sync_current_knowledge_access_with_projects(
                 .flat_map(|grant| grant.graph_revision_ids.iter().copied())
                 .collect::<Vec<_>>();
             state
-                .knowledge_store()
+                .services
+                .knowledge
                 .retain_granted_environment_heads(environment.id, &allowed_graph_revision_ids)
                 .await?;
         }
@@ -618,20 +631,24 @@ async fn sync_current_knowledge_access_with_projects(
         };
         for graph_scope in &grant.graph_scopes {
             let artifact = match state
-                .knowledge_store()
+                .services
+                .knowledge
                 .by_revision(graph_scope.graph_revision_id)
                 .await?
             {
                 Some(artifact) => artifact,
                 None => {
-                    download_knowledge_graph(
-                        account.as_str(),
-                        remote_workspace_id,
-                        grant.id,
-                        graph_scope.source_id,
-                        graph_scope.graph_revision_id,
-                    )
-                    .await?
+                    state
+                        .services
+                        .knowledge
+                        .download_remote_graph(
+                            account.as_str(),
+                            remote_workspace_id,
+                            grant.id,
+                            graph_scope.source_id,
+                            graph_scope.graph_revision_id,
+                        )
+                        .await?
                 }
             };
             if artifact.binding.project_id != project.id
@@ -644,7 +661,8 @@ async fn sync_current_knowledge_access_with_projects(
                 ));
             }
             state
-                .knowledge_store()
+                .services
+                .knowledge
                 .save_scope(
                     &project,
                     &environment,
@@ -653,18 +671,21 @@ async fn sync_current_knowledge_access_with_projects(
                 )
                 .await?;
             state
-                .knowledge_store()
+                .services
+                .knowledge
                 .import_granted_active_graph(&artifact)
                 .await?;
         }
     }
     state
-        .knowledge_store()
+        .services
+        .knowledge
         .revoke_knowledge_grants_for_account(scope.workspace_id, account.as_str())
         .await?;
     for grant in grants {
         state
-            .knowledge_store()
+            .services
+            .knowledge
             .save_grant(&super::domain::KnowledgeGrant {
                 id: grant.id,
                 workspace_id: WorkspaceId::from(scope.workspace_id),
@@ -685,7 +706,7 @@ pub(crate) async fn create_knowledge_project_command(
     state: State<'_, AppState>,
     input: CreateProjectInput,
 ) -> AppResult<RemoteKnowledgeProject> {
-    let scope = state.knowledge_store().active_resource_scope().await?;
+    let scope = state.services.knowledge.active_resource_scope().await?;
     if scope.workspace_kind == WorkspaceKind::Personal {
         let environments = input
             .environments
@@ -693,23 +714,28 @@ pub(crate) async fn create_knowledge_project_command(
             .map(|environment| (environment.name, environment.risk_class))
             .collect::<Vec<_>>();
         return state
-            .knowledge_store()
+            .services
+            .knowledge
             .create_knowledge_project(scope.workspace_id, &input.name, &environments)
             .await
             .map(project_projection);
     }
     let account = selected_team_account(&scope)?;
-    let project = create_knowledge_project(
-        account.as_str(),
-        scope.workspace_id,
-        &CreateKnowledgeProjectRequest {
-            name: input.name,
-            environments: input.environments,
-        },
-    )
-    .await?;
+    let project = state
+        .services
+        .knowledge
+        .create_remote_project(
+            account.as_str(),
+            scope.workspace_id,
+            &CreateKnowledgeProjectRequest {
+                name: input.name,
+                environments: input.environments,
+            },
+        )
+        .await?;
     state
-        .knowledge_store()
+        .services
+        .knowledge
         .save_knowledge_project(&project_definition(scope.workspace_id, &project))
         .await?;
     Ok(project)
@@ -720,7 +746,7 @@ pub(crate) async fn create_knowledge_environment_command(
     state: State<'_, AppState>,
     input: CreateEnvironmentInput,
 ) -> AppResult<RemoteKnowledgeProject> {
-    let scope = state.knowledge_store().active_resource_scope().await?;
+    let scope = state.services.knowledge.active_resource_scope().await?;
     let projects = active_project_inventory(&state, &scope).await?;
     let project = projects
         .iter()
@@ -728,7 +754,8 @@ pub(crate) async fn create_knowledge_environment_command(
         .ok_or_else(|| AppError::NotFound("the active workspace Project".into()))?;
     if scope.workspace_kind == WorkspaceKind::Personal {
         return state
-            .knowledge_store()
+            .services
+            .knowledge
             .create_knowledge_environment(
                 scope.workspace_id,
                 input.project_id,
@@ -739,19 +766,23 @@ pub(crate) async fn create_knowledge_environment_command(
             .map(project_projection);
     }
     let account = selected_team_account(&scope)?;
-    let updated = create_remote_knowledge_environment(
-        account.as_str(),
-        scope.workspace_id,
-        input.project_id,
-        &AppendKnowledgeEnvironmentRequest {
-            expected_project_revision: project.revision,
-            name: input.name,
-            risk_class: input.risk_class,
-        },
-    )
-    .await?;
+    let updated = state
+        .services
+        .knowledge
+        .create_remote_environment(
+            account.as_str(),
+            scope.workspace_id,
+            input.project_id,
+            &AppendKnowledgeEnvironmentRequest {
+                expected_project_revision: project.revision,
+                name: input.name,
+                risk_class: input.risk_class,
+            },
+        )
+        .await?;
     state
-        .knowledge_store()
+        .services
+        .knowledge
         .save_knowledge_project(&project_definition(scope.workspace_id, &updated))
         .await?;
     Ok(updated)
@@ -762,7 +793,11 @@ pub(crate) async fn begin_knowledge_github_install_command(
     state: State<'_, AppState>,
 ) -> AppResult<String> {
     let remote = active_remote_scope(&state).await?;
-    begin_knowledge_github_install(remote.account.as_str(), remote.remote_workspace_id).await
+    state
+        .services
+        .knowledge
+        .begin_github_install(remote.account.as_str(), remote.remote_workspace_id)
+        .await
 }
 
 #[tauri::command]
@@ -770,7 +805,11 @@ pub(crate) async fn list_knowledge_github_repositories_command(
     state: State<'_, AppState>,
 ) -> AppResult<Vec<RemoteGithubRepository>> {
     let remote = active_remote_scope(&state).await?;
-    list_knowledge_github_repositories(remote.account.as_str(), remote.remote_workspace_id).await
+    state
+        .services
+        .knowledge
+        .list_github_repositories(remote.account.as_str(), remote.remote_workspace_id)
+        .await
 }
 
 #[tauri::command]
@@ -785,11 +824,6 @@ pub(crate) async fn connect_knowledge_github_source(
         input.project_id,
         input.project_environment_id,
     )?;
-    let adapter = GithubSourceControlPlane::new(
-        remote.account,
-        WorkspaceId::from(remote.remote_workspace_id),
-        environment.clone(),
-    );
     let draft = SourceBindingDraft {
         source_id: Uuid::new_v4(),
         project_id: project.id,
@@ -804,9 +838,19 @@ pub(crate) async fn connect_knowledge_github_source(
             ref_name: input.ref_name,
         },
     };
-    let binding = adapter.bind(&draft).await?;
+    let binding = state
+        .services
+        .knowledge
+        .bind_github_source(
+            remote.account.as_str(),
+            remote.remote_workspace_id,
+            &environment,
+            &draft,
+        )
+        .await?;
     state
-        .knowledge_store()
+        .services
+        .knowledge
         .save_scope(&project, &environment, &binding, environment.revision)
         .await?;
     project_source(
@@ -829,7 +873,7 @@ pub(crate) async fn connect_knowledge_local_folder(
 ) -> AppResult<Option<KnowledgeSourceProjection>> {
     use tauri_plugin_dialog::DialogExt;
 
-    let scope = state.knowledge_store().active_resource_scope().await?;
+    let scope = state.services.knowledge.active_resource_scope().await?;
     let projects = active_project_inventory(&state, &scope).await?;
     let (project, environment) = domain_scope(
         WorkspaceId::from(scope.workspace_id),
@@ -868,7 +912,8 @@ pub(crate) async fn connect_knowledge_local_folder(
         return Err(error);
     }
     if let Err(error) = state
-        .knowledge_store()
+        .services
+        .knowledge
         .save_scope(
             &project,
             &environment,
@@ -881,8 +926,8 @@ pub(crate) async fn connect_knowledge_local_folder(
         let _ = state.local_knowledge_sources.revoke(&binding).await;
         return Err(error);
     }
-    if let Err(error) = state.knowledge_store().save_snapshot(&snapshot).await {
-        let _ = state.knowledge_store().remove_scope(source_id).await;
+    if let Err(error) = state.services.knowledge.save_snapshot(&snapshot).await {
+        let _ = state.services.knowledge.remove_scope(source_id).await;
         let _ = delete_knowledge_source_root(source_id);
         let _ = state.local_knowledge_sources.revoke(&binding).await;
         return Err(error);
@@ -907,21 +952,29 @@ pub(crate) async fn connect_knowledge_local_folder(
 pub(crate) async fn list_knowledge_sources(
     state: State<'_, AppState>,
 ) -> AppResult<Vec<KnowledgeSourceProjection>> {
-    let scope = state.knowledge_store().active_resource_scope().await?;
+    let scope = state.services.knowledge.active_resource_scope().await?;
     let (remote_projects, remote_sources, remote_authoritative) = if scope.workspace_kind
         == WorkspaceKind::Team
     {
         let account = selected_team_account(&scope)?;
-        let projects = list_knowledge_projects(account.as_str(), scope.workspace_id).await?;
-        let sources = list_remote_knowledge_sources(account.as_str(), scope.workspace_id).await?;
+        let projects = state
+            .services
+            .knowledge
+            .list_remote_projects(account.as_str(), scope.workspace_id)
+            .await?;
+        let sources = state
+            .services
+            .knowledge
+            .list_remote_sources(account.as_str(), scope.workspace_id)
+            .await?;
         (projects, sources, true)
     } else if scope.selected_account_id.is_some() {
         match active_remote_scope(&state).await {
-            Ok(remote) => match list_remote_knowledge_sources(
-                remote.account.as_str(),
-                remote.remote_workspace_id,
-            )
-            .await
+            Ok(remote) => match state
+                .services
+                .knowledge
+                .list_remote_sources(remote.account.as_str(), remote.remote_workspace_id)
+                .await
             {
                 Ok(sources) => (remote.projects, sources, true),
                 Err(error) => {
@@ -955,12 +1008,13 @@ pub(crate) async fn list_knowledge_sources(
             }
             let binding = remote_github_binding(source)?;
             state
-                .knowledge_store()
+                .services
+                .knowledge
                 .save_scope(&project, &environment, &binding, environment.revision)
                 .await?;
         }
     }
-    let sources = state.knowledge_store().scopes(scope.workspace_id).await?;
+    let sources = state.services.knowledge.scopes(scope.workspace_id).await?;
     let mut projections = Vec::with_capacity(sources.len());
     for source in sources {
         let remote = remote_sources
@@ -969,7 +1023,8 @@ pub(crate) async fn list_knowledge_sources(
         if source.binding.provider == KnowledgeSourceProvider::Github && remote.is_none() {
             if remote_authoritative && scope.workspace_kind == WorkspaceKind::Team {
                 state
-                    .knowledge_store()
+                    .services
+                    .knowledge
                     .remove_scope(source.binding.source_id)
                     .await?;
             }
@@ -986,9 +1041,10 @@ pub(crate) async fn revoke_knowledge_source(
     source_id: Uuid,
 ) -> AppResult<()> {
     state.knowledge_watches.stop(source_id);
-    let scope = state.knowledge_store().active_resource_scope().await?;
+    let scope = state.services.knowledge.active_resource_scope().await?;
     let source = state
-        .knowledge_store()
+        .services
+        .knowledge
         .scopes(scope.workspace_id)
         .await?
         .into_iter()
@@ -997,19 +1053,22 @@ pub(crate) async fn revoke_knowledge_source(
     match source.binding.provider {
         KnowledgeSourceProvider::Github => {
             let remote = active_remote_scope(&state).await?;
-            delete_knowledge_source(
-                remote.account.as_str(),
-                remote.remote_workspace_id,
-                source_id,
-            )
-            .await?;
+            state
+                .services
+                .knowledge
+                .delete_remote_source(
+                    remote.account.as_str(),
+                    remote.remote_workspace_id,
+                    source_id,
+                )
+                .await?;
         }
         KnowledgeSourceProvider::LocalFolder => {
             let _ = state.local_knowledge_sources.revoke(&source.binding).await;
             delete_knowledge_source_root(source_id)?;
         }
     }
-    state.knowledge_store().remove_scope(source_id).await
+    state.services.knowledge.remove_scope(source_id).await
 }
 
 #[tauri::command]
@@ -1024,23 +1083,31 @@ pub(super) async fn sync_knowledge_source_inner(
     state: &AppState,
     source_id: Uuid,
 ) -> AppResult<KnowledgeSyncProjection> {
-    let active_scope = state.knowledge_store().active_resource_scope().await?;
+    let active_scope = state.services.knowledge.active_resource_scope().await?;
     let stored = state
-        .knowledge_store()
+        .services
+        .knowledge
         .scopes(active_scope.workspace_id)
         .await?
         .into_iter()
         .find(|candidate| candidate.binding.source_id == source_id)
         .ok_or_else(|| AppError::NotFound("the Project Knowledge source".into()))?;
-    let previous_artifact = state.knowledge_store().active_for_source(source_id).await?;
+    let previous_artifact = state
+        .services
+        .knowledge
+        .active_for_source(source_id)
+        .await?;
     if stored.binding.provider == KnowledgeSourceProvider::Github {
         let remote = active_remote_scope(state).await?;
-        let previous_graph_revision_id = request_knowledge_source_sync(
-            remote.account.as_str(),
-            remote.remote_workspace_id,
-            source_id,
-        )
-        .await?;
+        let previous_graph_revision_id = state
+            .services
+            .knowledge
+            .request_remote_source_sync(
+                remote.account.as_str(),
+                remote.remote_workspace_id,
+                source_id,
+            )
+            .await?;
         return Ok(KnowledgeSyncProjection {
             source_id,
             state: SourceHealthState::Syncing,
@@ -1065,7 +1132,7 @@ pub(super) async fn sync_knowledge_source_inner(
     let parent = previous_artifact
         .as_ref()
         .map(|artifact| artifact.graph_revision_id);
-    let previous_snapshot = state.knowledge_store().source_snapshot(source_id).await?;
+    let previous_snapshot = state.services.knowledge.source_snapshot(source_id).await?;
     let artifact = match stored.binding.provider {
         KnowledgeSourceProvider::LocalFolder => {
             let root = fetch_knowledge_source_root(source_id)?.ok_or_else(|| {
@@ -1095,9 +1162,10 @@ pub(super) async fn sync_knowledge_source_inner(
                 )
                 .await?;
                 validate_graph_publish(&artifact, &stored.environment)?;
-                state.knowledge_store().stage(&artifact).await?;
+                state.services.knowledge.stage(&artifact).await?;
                 state
-                    .knowledge_store()
+                    .services
+                    .knowledge
                     .save_scope(
                         &stored.project,
                         &stored.environment,
@@ -1105,7 +1173,7 @@ pub(super) async fn sync_knowledge_source_inner(
                         snapshot.environment_revision,
                     )
                     .await?;
-                state.knowledge_store().save_snapshot(&snapshot).await?;
+                state.services.knowledge.save_snapshot(&snapshot).await?;
                 artifact
             }
         }
@@ -1114,7 +1182,7 @@ pub(super) async fn sync_knowledge_source_inner(
         }
     };
     if parent != Some(artifact.graph_revision_id) {
-        state.knowledge_store().activate(&artifact).await?;
+        state.services.knowledge.activate(&artifact).await?;
     }
     Ok(KnowledgeSyncProjection {
         source_id,
@@ -1132,13 +1200,14 @@ async fn active_workspace_graphs(
     state: &AppState,
     project_environment_id: Uuid,
 ) -> AppResult<Vec<dopedb_protocol::GraphBuildArtifactV1>> {
-    let active_scope = state.knowledge_store().active_resource_scope().await?;
+    let active_scope = state.services.knowledge.active_resource_scope().await?;
     if active_scope.workspace_kind == WorkspaceKind::Team {
         sync_current_knowledge_access(state).await?;
     } else if active_scope.selected_account_id.is_some() {
         if let Err(error) = sync_current_knowledge_access(state).await {
             let has_remote_graph = state
-                .knowledge_store()
+                .services
+                .knowledge
                 .active_set(project_environment_id)
                 .await?
                 .iter()
@@ -1150,7 +1219,8 @@ async fn active_workspace_graphs(
         }
     }
     let allowed = state
-        .knowledge_store()
+        .services
+        .knowledge
         .knowledge_environment_exists(active_scope.workspace_id, project_environment_id)
         .await?;
     if !allowed {
@@ -1159,7 +1229,8 @@ async fn active_workspace_graphs(
         ));
     }
     let mut graphs = state
-        .knowledge_store()
+        .services
+        .knowledge
         .active_set(project_environment_id)
         .await?;
     if active_scope.selected_account_id.is_none() {
@@ -1183,7 +1254,8 @@ async fn active_workspace_graphs(
                     reason: "Project Knowledge requires an exact member grant".into(),
                 })?;
         if state
-            .knowledge_store()
+            .services
+            .knowledge
             .active_knowledge_grant(
                 active_scope.workspace_id,
                 account_id,
@@ -1220,34 +1292,19 @@ pub(crate) async fn search_knowledge_graph(
 }
 
 #[tauri::command]
-pub(crate) async fn find_knowledge_graph_path(
-    state: State<'_, AppState>,
-    project_environment_id: Uuid,
-    from_node_id: String,
-    to_node_id: String,
-) -> AppResult<KnowledgePathResult> {
-    let graphs = active_workspace_graphs(&state, project_environment_id).await?;
-    let graph = graphs
-        .iter()
-        .find(|graph| {
-            graph.nodes.iter().any(|node| node.id == from_node_id)
-                && graph.nodes.iter().any(|node| node.id == to_node_id)
-        })
-        .ok_or_else(|| AppError::NotFound("a Knowledge graph containing both endpoints".into()))?;
-    graph_path(graph, &from_node_id, &to_node_id)
-}
-
-#[tauri::command]
 pub(crate) async fn list_knowledge_mappings(
     state: State<'_, AppState>,
     project_environment_id: Uuid,
 ) -> AppResult<Vec<KnowledgeMappingProjection>> {
     let graphs = active_workspace_graphs(&state, project_environment_id).await?;
-    let active_scope = state.knowledge_store().active_resource_scope().await?;
+    let active_scope = state.services.knowledge.active_resource_scope().await?;
     if active_scope.workspace_kind == WorkspaceKind::Team {
         let account = selected_team_account(&active_scope)?;
-        for mapping in
-            list_remote_knowledge_mappings(account.as_str(), active_scope.workspace_id).await?
+        for mapping in state
+            .services
+            .knowledge
+            .list_remote_mappings(account.as_str(), active_scope.workspace_id)
+            .await?
         {
             if mapping.project_environment_id == project_environment_id
                 && graphs
@@ -1255,7 +1312,8 @@ pub(crate) async fn list_knowledge_mappings(
                     .any(|graph| graph.graph_revision_id == mapping.graph_revision_id)
             {
                 state
-                    .knowledge_store()
+                    .services
+                    .knowledge
                     .sync_remote_knowledge_mapping(&mapping)
                     .await?;
             }
@@ -1264,7 +1322,8 @@ pub(crate) async fn list_knowledge_mappings(
     let mut result = Vec::new();
     for graph in graphs {
         let proposals = state
-            .knowledge_store()
+            .services
+            .knowledge
             .mappings_for_revision(project_environment_id, graph.graph_revision_id)
             .await?;
         for proposal in proposals {
@@ -1301,20 +1360,24 @@ pub(crate) async fn decide_knowledge_mapping(
         KnowledgeMappingDecision::Approved => MappingProposalState::Approved,
         KnowledgeMappingDecision::Rejected => MappingProposalState::Rejected,
     };
-    let active_scope = state.knowledge_store().active_resource_scope().await?;
+    let active_scope = state.services.knowledge.active_resource_scope().await?;
     if active_scope.workspace_kind == WorkspaceKind::Team {
         let account = selected_team_account(&active_scope)?;
-        decide_remote_knowledge_mapping(
-            account.as_str(),
-            active_scope.workspace_id,
-            proposal_id,
-            expected_graph_revision_id,
-            state_value,
-        )
-        .await?;
+        state
+            .services
+            .knowledge
+            .decide_remote_mapping(
+                account.as_str(),
+                active_scope.workspace_id,
+                proposal_id,
+                expected_graph_revision_id,
+                state_value,
+            )
+            .await?;
     }
     state
-        .knowledge_store()
+        .services
+        .knowledge
         .decide_mapping(proposal_id, expected_graph_revision_id, state_value)
         .await
 }
@@ -1324,29 +1387,35 @@ pub(crate) async fn list_knowledge_environment_connections(
     state: State<'_, AppState>,
     project_environment_id: Uuid,
 ) -> AppResult<Vec<EnvironmentConnectionProjection>> {
-    let scope = state.knowledge_store().active_resource_scope().await?;
+    let scope = state.services.knowledge.active_resource_scope().await?;
     if scope.workspace_kind == WorkspaceKind::Team {
         let account = selected_team_account(&scope)?;
-        let remote = list_remote_environment_connections(
-            account.as_str(),
-            scope.workspace_id,
-            project_environment_id,
-        )
-        .await?;
+        let remote = state
+            .services
+            .knowledge
+            .list_remote_environment_connections(
+                account.as_str(),
+                scope.workspace_id,
+                project_environment_id,
+            )
+            .await?;
         let mut projections = Vec::with_capacity(remote.len());
         for binding in remote {
             let local_connection_id = state
-                .knowledge_store()
+                .services
+                .knowledge
                 .local_connection_id_for_remote(scope.workspace_id, binding.connection_id)
                 .await?;
             if let Some(local_connection_id) = local_connection_id {
                 if let Ok(connection) = state
-                    .knowledge_store()
+                    .services
+                    .knowledge
                     .pin_connection_for_read(local_connection_id)
                     .await
                 {
                     let _ = state
-                        .knowledge_store()
+                        .services
+                        .knowledge
                         .bind_environment_connection(
                             binding.id,
                             &connection,
@@ -1374,7 +1443,8 @@ pub(crate) async fn list_knowledge_environment_connections(
         return Ok(projections);
     }
     let bindings = state
-        .knowledge_store()
+        .services
+        .knowledge
         .environment_connections(scope.workspace_id, project_environment_id)
         .await?;
     Ok(bindings
@@ -1401,36 +1471,42 @@ pub(crate) async fn bind_knowledge_environment_connection(
     input: BindEnvironmentConnectionInput,
 ) -> AppResult<EnvironmentConnectionProjection> {
     let connection = state
-        .knowledge_store()
+        .services
+        .knowledge
         .pin_connection_for_read(input.connection_id)
         .await?;
     let proposed_binding_id = Uuid::new_v4();
     let binding_id = if connection.scope.workspace_kind == WorkspaceKind::Team {
         let account = selected_team_account(&connection.scope)?;
         let remote_connection_id = state
-            .knowledge_store()
+            .services
+            .knowledge
             .remote_connection_id(&connection)
             .await?
             .ok_or_else(|| AppError::Blocked {
                 reason: "only a shared workspace connection can be bound to a shared Environment"
                     .into(),
             })?;
-        bind_remote_environment_connection(
-            account.as_str(),
-            connection.scope.workspace_id,
-            input.project_environment_id,
-            proposed_binding_id,
-            remote_connection_id,
-            &input.role,
-            &input.alias,
-        )
-        .await?
-        .id
+        state
+            .services
+            .knowledge
+            .bind_remote_environment_connection(
+                account.as_str(),
+                connection.scope.workspace_id,
+                input.project_environment_id,
+                proposed_binding_id,
+                remote_connection_id,
+                &input.role,
+                &input.alias,
+            )
+            .await?
+            .id
     } else {
         proposed_binding_id
     };
     let binding = state
-        .knowledge_store()
+        .services
+        .knowledge
         .bind_environment_connection(
             binding_id,
             &connection,
@@ -1445,7 +1521,8 @@ pub(crate) async fn bind_knowledge_environment_connection(
         environment_revision: binding.environment_revision,
         connection_id: Some(binding.connection_id),
         remote_connection_id: state
-            .knowledge_store()
+            .services
+            .knowledge
             .remote_connection_id(&connection)
             .await?,
         connection_revision: binding.connection_revision,
@@ -1463,19 +1540,23 @@ pub(crate) async fn revoke_knowledge_environment_connection(
     project_environment_id: Uuid,
     binding_id: Uuid,
 ) -> AppResult<()> {
-    let scope = state.knowledge_store().active_resource_scope().await?;
+    let scope = state.services.knowledge.active_resource_scope().await?;
     if scope.workspace_kind == WorkspaceKind::Team {
         let account = selected_team_account(&scope)?;
-        revoke_remote_environment_connection(
-            account.as_str(),
-            scope.workspace_id,
-            project_environment_id,
-            binding_id,
-        )
-        .await?;
+        state
+            .services
+            .knowledge
+            .revoke_remote_environment_connection(
+                account.as_str(),
+                scope.workspace_id,
+                project_environment_id,
+                binding_id,
+            )
+            .await?;
     }
     state
-        .knowledge_store()
+        .services
+        .knowledge
         .revoke_environment_connection(scope.workspace_id, binding_id)
         .await
 }

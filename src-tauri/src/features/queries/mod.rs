@@ -13,6 +13,16 @@ use crate::kernel::TerminalAuthority;
 use crate::operations::{OperationRuntime, OperationState};
 use crate::store::Store;
 
+impl From<domain::QueryDomainError> for crate::error::AppError {
+    fn from(error: domain::QueryDomainError) -> Self {
+        match error {
+            domain::QueryDomainError::Invalid(message) => Self::Config(message),
+            domain::QueryDomainError::LimitExceeded(reason) => Self::Blocked { reason },
+            domain::QueryDomainError::Serialization(error) => Self::Serialization(error),
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) use adapters::QueryPlatformAdapter;
 #[cfg(not(test))]

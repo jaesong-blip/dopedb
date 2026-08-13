@@ -341,13 +341,15 @@ impl QueryPlatformAdapter {
             Some(result) => result,
             None => {
                 executor::read::run_read_streamed_registered(
-                    live,
-                    pin.profile.engine,
-                    &payload.sql,
-                    namespace,
-                    settings.max_rows,
-                    DESKTOP_STREAM_BATCH_ROWS,
-                    Some(&cancellation),
+                    executor::read::StreamedReadRequest {
+                        live,
+                        engine: pin.profile.engine,
+                        sql: &payload.sql,
+                        namespace,
+                        max_rows: settings.max_rows,
+                        batch_rows: DESKTOP_STREAM_BATCH_ROWS,
+                        cancellation: Some(&cancellation),
+                    },
                     consume_batch,
                 )
                 .await

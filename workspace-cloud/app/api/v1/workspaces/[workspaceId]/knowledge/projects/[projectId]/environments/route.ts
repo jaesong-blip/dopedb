@@ -12,6 +12,7 @@ import {
   KNOWLEDGE_RISK_CLASSES,
   type KnowledgeRiskClass,
 } from "@/lib/knowledge/project-store";
+import { knowledgeMutationAuthority } from "@/lib/knowledge/mutation-authority";
 import { authorizeWorkspace } from "@/lib/workspace-authorization";
 import {
   databaseErrorCode,
@@ -34,6 +35,7 @@ export async function POST(request: Request, context: RouteContext) {
   if (!authorization.ok) {
     return jsonError(authorization.error, authorization.status);
   }
+  const authority = knowledgeMutationAuthority(authorization, workspaceId, "manage");
   const parsed = await boundedJsonBody(request, 8 * 1024);
   const body = parsed.ok ? parsed.value as Record<string, unknown> : null;
   if (
@@ -60,6 +62,7 @@ export async function POST(request: Request, context: RouteContext) {
       expectedProjectRevision,
       name: environmentName,
       riskClass,
+      authority,
     });
     if (!project) {
       return jsonError(

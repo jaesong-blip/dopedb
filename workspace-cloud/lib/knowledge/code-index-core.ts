@@ -13,6 +13,62 @@ export const MAX_CODE_INDEX_FILE_BYTES = 1024 * 1024;
 export const MAX_CODE_INDEX_FILES = 20_000;
 export const MAX_CODE_INDEX_ENTITIES = 100_000;
 
+export function codeIndexManifestWindow(
+  totalFiles: number,
+  checkpointFiles: number,
+  batchSize: number,
+) {
+  if (
+    !Number.isSafeInteger(totalFiles)
+    || totalFiles < 0
+    || totalFiles > MAX_CODE_INDEX_FILES
+    || !Number.isSafeInteger(checkpointFiles)
+    || checkpointFiles < 0
+    || checkpointFiles > totalFiles
+    || !Number.isSafeInteger(batchSize)
+    || batchSize < 1
+  ) {
+    throw new Error("Invalid code-index manifest checkpoint");
+  }
+  return {
+    start: checkpointFiles,
+    end: Math.min(checkpointFiles + batchSize, totalFiles),
+    complete: checkpointFiles === totalFiles,
+  };
+}
+
+export type CodeIndexCronPhase = "manifest" | "indexing" | "activating";
+
+export const CODE_INDEX_PHASE_START_BUDGET_MS: Readonly<Record<CodeIndexCronPhase, number>> = {
+  manifest: 18_000,
+  indexing: 28_000,
+  activating: 30_000,
+};
+
+export function codeIndexPhaseHasStartBudget(
+  phase: CodeIndexCronPhase,
+  remainingMs: number,
+) {
+  return Number.isFinite(remainingMs)
+    && remainingMs >= CODE_INDEX_PHASE_START_BUDGET_MS[phase];
+}
+
+export function codeIndexQueryTimeoutMs(
+  remainingMs: number,
+  maximumTimeoutMs = 20_000,
+  cleanupReserveMs = 5_000,
+) {
+  if (
+    !Number.isFinite(remainingMs)
+    || !Number.isSafeInteger(maximumTimeoutMs)
+    || maximumTimeoutMs < 1_000
+    || !Number.isSafeInteger(cleanupReserveMs)
+    || cleanupReserveMs < 0
+  ) return null;
+  const available = Math.floor(remainingMs - cleanupReserveMs);
+  return available >= 1_000 ? Math.min(maximumTimeoutMs, available) : null;
+}
+
 const MAX_SYMBOLS_PER_FILE = 500;
 const MAX_REFERENCES_PER_FILE = 1_000;
 const MAX_ATTRIBUTE_CHARS = 4_000;
@@ -68,7 +124,7 @@ export type CodeIndexArtifactFile = {
   analysis: CodeFileAnalysis | null;
 };
 
-type ArtifactInput = {
+export type CodeIndexArtifactInput = {
   sourceId: string;
   projectId: string;
   projectEnvironmentId: string;
@@ -82,6 +138,24 @@ type ArtifactInput = {
   changedFiles: string[];
   generatedAt: string;
   files: CodeIndexArtifactFile[];
+  revisionManifest?: Array<{ path: string; blobSha: string; bytes: number }>;
+  exactSourceRevisionSha256?: string;
+  externalUniqueSymbols?: Array<{
+    name: string;
+    path: string;
+    language: string;
+    lineStart: number;
+    lineEnd: number;
+    signature: string;
+  }>;
+  globallyAmbiguousCallNames?: string[];
+};
+
+type ArtifactInput = CodeIndexArtifactInput;
+
+export type CodeIndexArtifactFragmentInput = Omit<CodeIndexArtifactInput, "files"> & {
+  files: CodeIndexArtifactFile[];
+  completeFileManifest: Array<{ path: string; blobSha: string; bytes: number }>;
 };
 
 const EXTENSION_LANGUAGE = new Map([
@@ -107,8 +181,21 @@ function hash(value: string | Buffer) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+export function codeIndexSourceRevisionSha256(
+  manifest: ReadonlyArray<{ path: string; blobSha: string; bytes: number }>,
+) {
+  return hash([...manifest]
+    .sort((left, right) => compareCodeIndexPath(left.path, right.path))
+    .map((file) => `${file.path}\0${file.blobSha}\0${file.bytes}`)
+    .join("\n"));
+}
+
+export function compareCodeIndexPath(left: string, right: string) {
+  return Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
+}
+
 function clean(value: string, maximum = MAX_ATTRIBUTE_CHARS) {
-  const normalized = value.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
+  const normalized = value.replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ").replace(/\s+/g, " ").trim();
   return normalized.slice(0, maximum).trim();
 }
 
@@ -127,7 +214,7 @@ function safeArtifactPath(value: string) {
     && value.length <= 4_096
     && !value.startsWith("/")
     && !value.includes("\\")
-    && !/[\u0000-\u001f\u007f]/.test(value)
+    && !/[\u0000-\u001f\u007f-\u009f]/.test(value)
     && value.split("/").every((segment) => segment && segment !== "." && segment !== "..");
 }
 
@@ -506,8 +593,27 @@ function uuidFromHash(value: string) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+export function codeIndexGraphRevisionId(input: {
+  sourceId: string;
+  projectEnvironmentId: string;
+  environmentRevision: number;
+  sourceRevisionSha256: string;
+  parentGraphRevisionId: string | null;
+}) {
+  if (!/^[0-9a-f]{64}$/.test(input.sourceRevisionSha256)) {
+    throw new Error("Invalid exact code-index source revision");
+  }
+  return uuidFromHash([
+    input.sourceId,
+    input.projectEnvironmentId,
+    String(input.environmentRevision),
+    input.sourceRevisionSha256,
+    input.parentGraphRevisionId ?? "root",
+  ].join("\0"));
+}
+
 export function buildCodeIndexArtifact(input: ArtifactInput): ValidGraphArtifact {
-  const files = [...input.files].sort((left, right) => left.path.localeCompare(right.path));
+  const files = [...input.files].sort((left, right) => compareCodeIndexPath(left.path, right.path));
   if (files.length > MAX_CODE_INDEX_FILES) throw new Error("Code index file limit exceeded");
   const entityCount = files.reduce((total, file) => total
     + (file.analysis?.symbols.length ?? 0)
@@ -515,23 +621,29 @@ export function buildCodeIndexArtifact(input: ArtifactInput): ValidGraphArtifact
   if (entityCount > MAX_CODE_INDEX_ENTITIES) {
     throw new Error("Code index entity limit exceeded");
   }
-  const sourceRevisionSha256 = hash(files.map((file) =>
-    `${file.path}\0${file.blobSha}\0${file.bytes}`
-  ).join("\n"));
-  const graphRevisionId = uuidFromHash([
-    input.sourceId,
-    input.projectEnvironmentId,
-    String(input.environmentRevision),
+  const revisionManifest = [...(input.revisionManifest ?? files)]
+    .sort((left, right) => compareCodeIndexPath(left.path, right.path));
+  const sourceRevisionSha256 = input.exactSourceRevisionSha256
+    ?? codeIndexSourceRevisionSha256(revisionManifest);
+  if (!/^[0-9a-f]{64}$/.test(sourceRevisionSha256)) {
+    throw new Error("Invalid exact code-index source revision");
+  }
+  const graphRevisionId = codeIndexGraphRevisionId({
+    sourceId: input.sourceId,
+    projectEnvironmentId: input.projectEnvironmentId,
+    environmentRevision: input.environmentRevision,
     sourceRevisionSha256,
-    input.parentGraphRevisionId ?? "root",
-  ].join("\0"));
+    parentGraphRevisionId: input.parentGraphRevisionId,
+  });
   const nodes = new Map<string, Record<string, unknown>>();
   const edges = new Map<string, Record<string, unknown>>();
   const evidence = new Map<string, Record<string, unknown>>();
   const fileNodeIds = new Map<string, string>();
   const symbolsByFile = new Map<string, string[]>();
   const symbolIdsByName = new Map<string, string[]>();
-  const filePaths = new Set(files.map((file) => file.path));
+  const revisionFilesByPath = new Map(revisionManifest.map((file) => [file.path, file]));
+  const filePaths = new Set(revisionFilesByPath.keys());
+  const globallyAmbiguousCallNames = new Set(input.globallyAmbiguousCallNames ?? []);
 
   const resolveImport = (fromPath: string, target: string) => {
     if (!target.startsWith(".")) return null;
@@ -596,6 +708,20 @@ export function buildCodeIndexArtifact(input: ArtifactInput): ValidGraphArtifact
     });
   };
 
+  for (const symbol of input.externalUniqueSymbols ?? []) {
+    if (!safeArtifactPath(symbol.path)) continue;
+    const symbolId = addNode("function", symbol.name, `${symbol.path}#${symbol.name}:${symbol.lineStart}`, {
+      language: symbol.language,
+      path: symbol.path,
+      lineStart: String(symbol.lineStart),
+      lineEnd: String(symbol.lineEnd),
+      signature: symbol.signature,
+    });
+    const named = symbolIdsByName.get(symbol.name) ?? [];
+    named.push(symbolId);
+    symbolIdsByName.set(symbol.name, named);
+  }
+
   for (const file of files) {
     const analysis = file.analysis;
     const lineEnd = analysis?.lineCount ?? 1;
@@ -638,13 +764,26 @@ export function buildCodeIndexArtifact(input: ArtifactInput): ValidGraphArtifact
       if (reference.relation === "calls") {
         const shortName = reference.targetName.split(/[.:]/).at(-1) ?? reference.targetName;
         const candidates = symbolIdsByName.get(shortName) ?? [];
-        to = reference.targetName === shortName && candidates.length === 1
+        to = reference.targetName === shortName
+          && !globallyAmbiguousCallNames.has(shortName)
+          && candidates.length === 1
           ? candidates[0]!
           : addNode("function", reference.targetName, `call:${reference.targetName}`);
       } else if (reference.relation === "imports") {
         const resolvedPath = resolveImport(file.path, reference.targetName);
         to = resolvedPath
-          ? fileNodeIds.get(resolvedPath)!
+          ? fileNodeIds.get(resolvedPath) ?? addNode(
+            "file",
+            resolvedPath.split("/").at(-1) ?? resolvedPath,
+            resolvedPath,
+            {
+              language: codeLanguageForPath(resolvedPath) ?? "unsupported",
+              path: resolvedPath,
+              blobSha: revisionFilesByPath.get(resolvedPath)?.blobSha ?? "0".repeat(40),
+              lineStart: "1",
+              lineEnd: "1",
+            },
+          )
           : addNode("module", reference.targetName, `module:${reference.targetName}`);
       } else {
         const prefix = reference.targetKind === "module" ? "module" : reference.targetKind;
@@ -704,6 +843,150 @@ export function buildCodeIndexArtifact(input: ArtifactInput): ValidGraphArtifact
   };
   const validated = validateGraphBuildArtifact(artifact);
   if (!validated) throw new Error("Code index artifact failed validation");
+  return validated.artifact;
+}
+
+export function buildCodeIndexArtifactFragment(
+  input: CodeIndexArtifactFragmentInput,
+): ValidGraphArtifact {
+  const complete = [...input.completeFileManifest]
+    .sort((left, right) => compareCodeIndexPath(left.path, right.path));
+  if (complete.length > MAX_CODE_INDEX_FILES) throw new Error("Code index file limit exceeded");
+  return buildCodeIndexArtifact({ ...input, revisionManifest: complete });
+}
+
+export function mergeCodeIndexArtifacts(input: {
+  sourceId: string;
+  projectId: string;
+  projectEnvironmentId: string;
+  environmentRevision: number;
+  displayName: string;
+  repositoryId: string;
+  repository: string;
+  refName: string;
+  commitSha: string;
+  parentGraphRevisionId: string | null;
+  changedFiles: string[];
+  generatedAt: string;
+  fragments: ValidGraphArtifact[];
+}): ValidGraphArtifact {
+  if (input.fragments.length < 1 || input.fragments.length > MAX_CODE_INDEX_FILES) {
+    throw new Error("Invalid code index artifact fragments");
+  }
+  const nodes = new Map<string, Record<string, unknown>>();
+  const edges = new Map<string, Record<string, unknown>>();
+  const evidence = new Map<string, Record<string, unknown>>();
+  const filePaths = new Set<string>();
+  let parsedFiles = 0;
+  let skippedFiles = 0;
+  for (const fragment of input.fragments) {
+    if (
+      fragment.binding.sourceId !== input.sourceId
+      || fragment.binding.projectId !== input.projectId
+      || fragment.binding.projectEnvironmentId !== input.projectEnvironmentId
+      || fragment.environmentRevision !== input.environmentRevision
+      || fragment.parentGraphRevisionId !== input.parentGraphRevisionId
+      || fragment.binding.revision.repository_id !== input.repositoryId
+      || fragment.binding.revision.repository !== input.repository
+      || fragment.binding.revision.ref_name !== input.refName
+      || fragment.binding.revision.commit_sha !== input.commitSha
+    ) throw new Error("Code index artifact fragment binding changed");
+    const health = fragment.health as Record<string, unknown>;
+    parsedFiles += Number(health.parsedFiles);
+    skippedFiles += Number(health.skippedFiles);
+    for (const node of fragment.nodes as Array<Record<string, unknown>>) {
+      nodes.set(String(node.id), node);
+      if (node.kind === "file") filePaths.add(String(node.qualifiedName));
+    }
+    for (const edge of fragment.edges as Array<Record<string, unknown>>) {
+      edges.set(String(edge.id), edge);
+    }
+    for (const item of fragment.evidence as Array<Record<string, unknown>>) {
+      evidence.set(String(item.id), item);
+    }
+  }
+  if (filePaths.size !== parsedFiles + skippedFiles) {
+    throw new Error("Code index artifact fragments are incomplete");
+  }
+  const template = input.fragments[0]!;
+  const sourceRevisionSha256 = template.sourceRevisionSha256;
+  if (input.fragments.some((fragment) =>
+    fragment.sourceRevisionSha256 !== sourceRevisionSha256
+    || fragment.graphRevisionId !== template.graphRevisionId
+  )) throw new Error("Code index artifact fragment revision changed");
+  const functionIdsByName = new Map<string, string[]>();
+  for (const node of nodes.values()) {
+    if (
+      node.kind !== "function"
+      || typeof node.name !== "string"
+      || (typeof node.qualifiedName === "string" && node.qualifiedName.startsWith("call:"))
+    ) continue;
+    const ids = functionIdsByName.get(node.name) ?? [];
+    ids.push(String(node.id));
+    functionIdsByName.set(node.name, ids);
+  }
+  for (const [edgeId, edge] of [...edges]) {
+    if (edge.relation !== "calls") continue;
+    const target = nodes.get(String(edge.to));
+    const targetName = typeof target?.name === "string" ? target.name : "";
+    if (
+      typeof target?.qualifiedName !== "string"
+      || target.qualifiedName !== `call:${targetName}`
+      || targetName.split(/[.:]/).at(-1) !== targetName
+    ) continue;
+    const candidates = functionIdsByName.get(targetName) ?? [];
+    if (candidates.length !== 1) continue;
+    const to = candidates[0]!;
+    const evidenceId = Array.isArray(edge.evidenceIds) ? edge.evidenceIds[0] : null;
+    const observed = typeof evidenceId === "string" ? evidence.get(evidenceId) : null;
+    if (
+      !observed
+      || typeof observed.filePath !== "string"
+      || !Number.isSafeInteger(observed.lineStart)
+      || !Number.isSafeInteger(observed.lineEnd)
+    ) continue;
+    const nextEvidenceId = hash([
+      "evidence",
+      sourceRevisionSha256,
+      observed.filePath,
+      String(observed.lineStart),
+      String(observed.lineEnd),
+      "calls",
+      String(edge.from),
+      to,
+    ].join("\0"));
+    const nextEdgeId = hash(`edge\0${String(edge.from)}\0${to}\0calls\0${nextEvidenceId}`);
+    evidence.delete(evidenceId);
+    evidence.set(nextEvidenceId, { ...observed, id: nextEvidenceId });
+    edges.delete(edgeId);
+    edges.set(nextEdgeId, { ...edge, id: nextEdgeId, to, evidenceIds: [nextEvidenceId] });
+  }
+  const referencedNodeIds = new Set<string>();
+  for (const edge of edges.values()) {
+    referencedNodeIds.add(String(edge.from));
+    referencedNodeIds.add(String(edge.to));
+  }
+  for (const [id, node] of [...nodes]) {
+    if (
+      typeof node.qualifiedName === "string"
+      && node.qualifiedName.startsWith("call:")
+      && !referencedNodeIds.has(id)
+    ) nodes.delete(id);
+  }
+  const artifact = {
+    ...template,
+    sourceRevisionSha256,
+    generatedAt: input.generatedAt,
+    changedFiles: input.changedFiles.length > 0 || input.parentGraphRevisionId !== null
+      ? [...new Set(input.changedFiles.filter(safeArtifactPath))].sort()
+      : [...filePaths].sort(),
+    health: { complete: true, parsedFiles, skippedFiles, failedFiles: 0 },
+    nodes: [...nodes.values()].sort((left, right) => String(left.id).localeCompare(String(right.id))),
+    edges: [...edges.values()].sort((left, right) => String(left.id).localeCompare(String(right.id))),
+    evidence: [...evidence.values()].sort((left, right) => String(left.id).localeCompare(String(right.id))),
+  };
+  const validated = validateGraphBuildArtifact(artifact);
+  if (!validated) throw new Error("Merged code index artifact failed validation");
   return validated.artifact;
 }
 

@@ -8,7 +8,13 @@ import {
 import { Icon } from "./Icon";
 import ToolbarMenu, { ToolbarMenuItem } from "./ToolbarMenu";
 import { Button } from "../design-system/components/Button";
-import { WorkbenchToolbar } from "../design-system/components/Workbench";
+import {
+  WorkbenchSelect,
+  WorkbenchToolbar,
+} from "../design-system/components/Workbench";
+import {
+  TextInput,
+} from "../design-system/components/FormControls";
 import { useI18n } from "../lib/i18n";
 
 export default function ErdToolbar({
@@ -52,15 +58,14 @@ export default function ErdToolbar({
   return (
     <WorkbenchToolbar label={t("schema.erdMode")}>
       <div className="scrollbar-sleek tw:flex tw:min-w-0 tw:flex-1 tw:items-center tw:gap-2 tw:overflow-x-auto tw:overflow-y-hidden tw:overscroll-x-contain tw:[&>*]:shrink-0">
-        <select
-          className="tw:w-auto tw:max-w-[180px] tw:min-w-0 tw:@max-[760px]:w-[min(100%,180px)]"
+        <WorkbenchSelect
+          label={t("schema.erdSavedLayouts")}
           value={activeLayoutId ?? ""}
-          onChange={(event) =>
+          onChange={(value) =>
             onSelectLayout(
-              event.target.value ? erdLayoutId(event.target.value) : null,
+              value ? erdLayoutId(value) : null,
             )
           }
-          aria-label={t("schema.erdSavedLayouts")}
         >
           <option value="">{t("schema.erdNewLayout")}</option>
           {layouts.map((layout) => (
@@ -68,24 +73,25 @@ export default function ErdToolbar({
               {layout.name}
             </option>
           ))}
-        </select>
-        <input
-          className="tw:w-[min(180px,24vw)] tw:min-w-0 tw:@max-[760px]:w-[min(100%,180px)]"
-          value={name}
-          onChange={(event) => onName(event.target.value)}
-          aria-label={t("schema.erdLayoutName")}
-          placeholder={t("schema.erdLayoutName")}
-        />
-        <select
-          className="tw:w-auto tw:min-w-0"
+        </WorkbenchSelect>
+        <span className="tw:w-[min(180px,24vw)] tw:min-w-0 tw:@max-[760px]:w-[min(100%,180px)]">
+          <TextInput
+            density="compact"
+            value={name}
+            onChange={(event) => onName(event.target.value)}
+            aria-label={t("schema.erdLayoutName")}
+            placeholder={t("schema.erdLayoutName")}
+          />
+        </span>
+        <WorkbenchSelect
+          label={t("schema.erdMode")}
           value={mode}
-          onChange={(event) => onMode(event.target.value as ErdLayoutMode)}
-          aria-label={t("schema.erdMode")}
+          onChange={(value) => onMode(value as ErdLayoutMode)}
         >
           <option value="physical">{t("schema.erdPhysical")}</option>
           <option value="logical">{t("schema.erdLogical")}</option>
           <option value="uml">{t("schema.erdUml")}</option>
-        </select>
+        </WorkbenchSelect>
         <Button
           data-erd-neighborhood-toggle
           disabled={busy}
@@ -137,14 +143,15 @@ export default function ErdToolbar({
             {t("schema.erdUnsaved")}
           </span>
         )}
-        <button
-          className="btn primary small"
+        <Button
+          variant="primary"
+          size="compact"
           type="button"
           disabled={busy}
           onClick={onSave}
         >
           {busy ? t("common.loading") : t("common.save")}
-        </button>
+        </Button>
         <ToolbarMenu label={t("schema.erdExport")} icon="download">
           {(["svg", "png", "pdf", "json"] as const).map((format) => (
             <ToolbarMenuItem

@@ -11,8 +11,6 @@ use portable_pty::CommandBuilder;
 use crate::error::{AppError, AppResult};
 use crate::kernel::identity::{ConnectionId, TerminalSessionId};
 
-use super::super::domain::TerminalProfile;
-
 const COMMON_ENVIRONMENT: &[&str] = &[
     "HOME",
     "USER",
@@ -49,63 +47,13 @@ pub(super) struct LaunchEnvironment<'a> {
     pub working_directory: &'a Path,
 }
 
-pub(super) fn command_for_profile(
-    profile: TerminalProfile,
-    environment: LaunchEnvironment<'_>,
-) -> AppResult<CommandBuilder> {
-    let mut command = match profile {
-        TerminalProfile::Shell => shell_command()?,
-        TerminalProfile::Codex => agent_command("codex", "Codex CLI")?,
-        TerminalProfile::Claude => agent_command("claude", "Claude Code")?,
-    };
+pub(super) fn shell_command(environment: LaunchEnvironment<'_>) -> AppResult<CommandBuilder> {
+    let mut command = user_shell_command()?;
     apply_environment(&mut command, environment)?;
     Ok(command)
 }
 
-fn agent_executable(binary: &str, display_name: &str) -> AppResult<PathBuf> {
-    crate::cli_environment::find_executable(binary).ok_or_else(|| {
-        AppError::Agent(format!(
-            "{display_name} (`{binary}`) was not found in the supported CLI locations"
-        ))
-    })
-}
-
-fn agent_command(binary: &str, display_name: &str) -> AppResult<CommandBuilder> {
-    Ok(agent_command_for_executable(agent_executable(
-        binary,
-        display_name,
-    )?))
-}
-
-#[cfg(not(windows))]
-fn agent_command_for_executable(executable: PathBuf) -> CommandBuilder {
-    CommandBuilder::new(executable)
-}
-
-#[cfg(windows)]
-fn agent_command_for_executable(executable: PathBuf) -> CommandBuilder {
-    let is_script = executable
-        .extension()
-        .and_then(OsStr::to_str)
-        .is_some_and(|extension| {
-            extension.eq_ignore_ascii_case("cmd") || extension.eq_ignore_ascii_case("bat")
-        });
-    if !is_script {
-        return CommandBuilder::new(executable);
-    }
-
-    // CreateProcessW cannot launch npm's `.cmd` shims directly. Keep the
-    // executable as a distinct argument so portable-pty applies Windows quoting.
-    let shell = std::env::var_os("ComSpec")
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| OsString::from("cmd.exe"));
-    let mut command = CommandBuilder::new(shell);
-    command.args(["/D", "/S", "/C"]);
-    command.arg(executable);
-    command
-}
-
-fn shell_command() -> AppResult<CommandBuilder> {
+fn user_shell_command() -> AppResult<CommandBuilder> {
     #[cfg(windows)]
     {
         let program = std::env::var_os("ComSpec")

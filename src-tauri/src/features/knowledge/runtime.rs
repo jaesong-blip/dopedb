@@ -17,7 +17,7 @@ use crate::connection::keychain::fetch_knowledge_source_root;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
-use super::ports::{KnowledgeScopeRepositoryPort, LocalKnowledgeSourcePort};
+use super::ports::LocalKnowledgeSourcePort;
 use super::transport::sync_knowledge_source_inner;
 
 const SOURCE_CHANGED_EVENT: &str = "knowledge-source:changed";
@@ -61,17 +61,19 @@ impl KnowledgeWatchRuntime {
     }
 
     pub(crate) async fn start_workspace(&self, app: AppHandle) -> AppResult<()> {
-        let state = app.state::<AppState>();
-        let scope = state.knowledge_store().active_resource_scope().await?;
-        let source_ids = state
-            .knowledge_store()
-            .scopes(scope.workspace_id)
-            .await?
-            .into_iter()
-            .filter(|source| source.binding.provider == KnowledgeSourceProvider::LocalFolder)
-            .map(|source| source.binding.source_id)
-            .collect::<Vec<_>>();
-        drop(state);
+        let source_ids = {
+            let state = app.state::<AppState>();
+            let scope = state.services.knowledge.active_resource_scope().await?;
+            state
+                .services
+                .knowledge
+                .scopes(scope.workspace_id)
+                .await?
+                .into_iter()
+                .filter(|source| source.binding.provider == KnowledgeSourceProvider::LocalFolder)
+                .map(|source| source.binding.source_id)
+                .collect::<Vec<_>>()
+        };
         for source_id in source_ids {
             self.start(app.clone(), source_id);
         }
@@ -80,31 +82,31 @@ impl KnowledgeWatchRuntime {
 }
 
 async fn watch_source(app: AppHandle, source_id: Uuid) -> AppResult<()> {
-    let state = app.state::<AppState>();
-    let active_scope = state.knowledge_store().active_resource_scope().await?;
-    let stored = state
-        .knowledge_store()
-        .scopes(active_scope.workspace_id)
-        .await?
-        .into_iter()
-        .find(|source| source.binding.source_id == source_id)
-        .ok_or_else(|| AppError::NotFound("the Project Knowledge source".into()))?;
-    match stored.binding.provider {
-        KnowledgeSourceProvider::Github => return Ok(()),
-        KnowledgeSourceProvider::LocalFolder => {
-            let root = fetch_knowledge_source_root(source_id)?.ok_or_else(|| {
-                AppError::NotFound("the Local Folder capability on this device".into())
-            })?;
-            state.local_knowledge_sources.restore(
-                stored.binding.clone(),
-                stored.environment.revision,
-                root,
-            )?;
-            let mut watch = state.local_knowledge_sources.watch(&stored.binding).await?;
-            drop(state);
-            drive_changes(&app, source_id, &mut watch.changes).await;
+    let mut watch = {
+        let state = app.state::<AppState>();
+        let active_scope = state.services.knowledge.active_resource_scope().await?;
+        let stored = state
+            .services
+            .knowledge
+            .scopes(active_scope.workspace_id)
+            .await?
+            .into_iter()
+            .find(|source| source.binding.source_id == source_id)
+            .ok_or_else(|| AppError::NotFound("the Project Knowledge source".into()))?;
+        if stored.binding.provider == KnowledgeSourceProvider::Github {
+            return Ok(());
         }
-    }
+        let root = fetch_knowledge_source_root(source_id)?.ok_or_else(|| {
+            AppError::NotFound("the Local Folder capability on this device".into())
+        })?;
+        state.local_knowledge_sources.restore(
+            stored.binding.clone(),
+            stored.environment.revision,
+            root,
+        )?;
+        state.local_knowledge_sources.watch(&stored.binding).await?
+    };
+    drive_changes(&app, source_id, &mut watch.changes).await;
     Ok(())
 }
 

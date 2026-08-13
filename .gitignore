@@ -3,8 +3,6 @@
 /node_modules
 /target
 /tsconfig*.tsbuildinfo
-/vite.config.d.ts
-/vite.config.js
 /site/.next
 /site/node_modules
 /workspace-cloud/.next

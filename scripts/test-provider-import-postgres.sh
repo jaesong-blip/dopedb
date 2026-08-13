@@ -49,12 +49,15 @@ if [[ -z "$admin_url" ]]; then
   "$postgres_server_bin/initdb" --auth=trust --no-locale --encoding=UTF8 \
     --pgdata="$fixture_directory/data" >/dev/null
   mkdir -p "$fixture_directory/socket"
-  for candidate in $(seq 55432 55482); do
-    if ! pg_isready --host=127.0.0.1 --port="$candidate" >/dev/null 2>&1; then
-      fixture_port="$candidate"
-      break
-    fi
-  done
+  fixture_port="$(node -e '
+    const net = require("node:net");
+    const server = net.createServer();
+    server.listen(0, "127.0.0.1", () => {
+      process.stdout.write(String(server.address().port));
+      server.close();
+    });
+    server.on("error", () => process.exit(1));
+  ')"
   if [[ -z "$fixture_port" ]]; then
     echo "no free PostgreSQL fixture port" >&2
     exit 1

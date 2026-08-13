@@ -4,10 +4,23 @@
 
 import { createHash } from "node:crypto";
 
+import { canonicalKnowledgeJson } from "./canonical-json";
+
 const MAX_NODES = 200_000;
 const MAX_EDGES = 600_000;
 const MAX_EVIDENCE = 600_000;
+const MAX_CHANGED_FILES = 100_000;
 const MAX_STRING_BYTES = 16 * 1024;
+// Keep this wire limit synchronized with
+// dopedb-protocol::MAX_KNOWLEDGE_GRAPH_ARTIFACT_BYTES. Desktop reserves the
+// remaining 8 MiB of its 128 MiB response cap for the authenticated envelope.
+export const MAX_KNOWLEDGE_GRAPH_ARTIFACT_BYTES = 120 * 1024 * 1024;
+
+export function knowledgeGraphArtifactSizeAllowed(serializedBytes: number) {
+  return Number.isSafeInteger(serializedBytes)
+    && serializedBytes >= 0
+    && serializedBytes <= MAX_KNOWLEDGE_GRAPH_ARTIFACT_BYTES;
+}
 
 type JsonObject = Record<string, unknown>;
 
@@ -25,7 +38,7 @@ function text(value: unknown, allowSlash = true): value is string {
   return typeof value === "string"
     && value.length > 0
     && Buffer.byteLength(value, "utf8") <= MAX_STRING_BYTES
-    && !/[\u0000-\u001f\u007f]/.test(value)
+    && !/[\u0000-\u001f\u007f-\u009f]/.test(value)
     && (allowSlash || !value.includes("/"));
 }
 
@@ -44,6 +57,46 @@ function uuid(value: unknown): value is string {
 
 function positiveInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function positiveU32(value: unknown): value is number {
+  return positiveInteger(value) && value <= 0xffff_ffff;
+}
+
+function safeVersion(value: unknown): value is string {
+  return text(value) && /^\d+\.\d+\.\d+$/.test(value);
+}
+
+function rfc3339(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!match) return false;
+  const [, year, month, day, hour, minute, second, offset] = match;
+  const components = [year, month, day, hour, minute, second].map(Number);
+  if (components.some((component) => !Number.isInteger(component))) return false;
+  const [numericYear, numericMonth, numericDay, numericHour, numericMinute, numericSecond] = components;
+  const leapYear = numericYear! % 4 === 0
+    && (numericYear! % 100 !== 0 || numericYear! % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const calendarValid = numericMonth! >= 1
+    && numericMonth! <= 12
+    && numericDay! >= 1
+    && numericDay! <= daysInMonth[numericMonth! - 1]!;
+  const offsetValid = offset === "Z" || (() => {
+    const [offsetHour, offsetMinute] = offset!.slice(1).split(":").map(Number);
+    return offsetHour! <= 23 && offsetMinute! <= 59;
+  })();
+  if (!calendarValid || numericHour! > 23 || numericMinute! > 59 || numericSecond! > 59
+    || !offsetValid) {
+    return false;
+  }
+  return true;
+}
+
+function safeSlug(value: unknown): value is string {
+  return typeof value === "string"
+    && Buffer.byteLength(value, "utf8") <= 255
+    && /^[A-Za-z0-9_.-]+$/.test(value);
 }
 
 function safePath(value: unknown): value is string {
@@ -78,10 +131,13 @@ function uniqueStrings(values: unknown, max: number, predicate: (value: unknown)
 function validRevision(value: unknown) {
   if (!object(value) || typeof value.kind !== "string") return false;
   if (value.kind === "github") {
+    const repository = typeof value.repository === "string"
+      ? value.repository.split("/")
+      : [];
     return exactKeys(value, ["kind", "repository_id", "repository", "ref_name", "commit_sha"])
       && text(value.repository_id)
-      && typeof value.repository === "string"
-      && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value.repository)
+      && repository.length === 2
+      && repository.every(safeSlug)
       && safeRef(value.ref_name)
       && sha1(value.commit_sha);
   }
@@ -149,13 +205,11 @@ export function validateGraphBuildArtifact(value: unknown): {
     || !validBinding(value.binding)
     || !sha256(value.sourceRevisionSha256)
     || (value.parentGraphRevisionId !== null && !uuid(value.parentGraphRevisionId))
-    || typeof value.generatedAt !== "string"
-    || !Number.isFinite(Date.parse(value.generatedAt))
+    || !rfc3339(value.generatedAt)
     || !object(value.extractor)
     || !exactKeys(value.extractor, ["id", "version", "sourceSha256"])
     || !text(value.extractor.id)
-    || typeof value.extractor.version !== "string"
-    || !/^[0-9A-Za-z][0-9A-Za-z.+_-]{0,127}$/.test(value.extractor.version)
+    || !safeVersion(value.extractor.version)
     || !sha256(value.extractor.sourceSha256)
     || !object(value.health)
     || !exactKeys(value.health, ["complete", "parsedFiles", "skippedFiles", "failedFiles"])
@@ -165,7 +219,7 @@ export function validateGraphBuildArtifact(value: unknown): {
     || !Number.isSafeInteger(value.health.skippedFiles)
     || (value.health.skippedFiles as number) < 0
     || value.health.failedFiles !== 0
-    || !uniqueStrings(value.changedFiles, MAX_NODES, safePath)
+    || !uniqueStrings(value.changedFiles, MAX_CHANGED_FILES, safePath)
     || !Array.isArray(value.nodes)
     || value.nodes.length > MAX_NODES
     || !Array.isArray(value.edges)
@@ -213,12 +267,11 @@ export function validateGraphBuildArtifact(value: unknown): {
       || evidence.sourceId !== binding.sourceId
       || evidence.sourceRevisionSha256 !== value.sourceRevisionSha256
       || !safePath(evidence.filePath)
-      || !positiveInteger(evidence.lineStart)
-      || !positiveInteger(evidence.lineEnd)
+      || !positiveU32(evidence.lineStart)
+      || !positiveU32(evidence.lineEnd)
       || evidence.lineEnd < evidence.lineStart
       || !text(evidence.extractionMethod)
-      || typeof evidence.observedAt !== "string"
-      || !Number.isFinite(Date.parse(evidence.observedAt))
+      || !rfc3339(evidence.observedAt)
     ) return null;
     evidenceIds.add(evidence.id);
   }
@@ -246,8 +299,12 @@ export function validateGraphBuildArtifact(value: unknown): {
   }
 
   const artifact = value as ValidGraphArtifact;
+  const serialized = canonicalKnowledgeJson(artifact);
+  if (!knowledgeGraphArtifactSizeAllowed(Buffer.byteLength(serialized, "utf8"))) {
+    return null;
+  }
   return {
     artifact,
-    artifactSha256: createHash("sha256").update(JSON.stringify(artifact)).digest("hex"),
+    artifactSha256: createHash("sha256").update(serialized).digest("hex"),
   };
 }

@@ -1,4 +1,4 @@
-//! Serializable Terminal Dock contracts and immutable session metadata.
+//! Serializable advanced Shell contracts and immutable session metadata.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -10,18 +10,6 @@ use crate::model::Engine;
 #[serde(rename_all = "camelCase")]
 pub enum TerminalProfile {
     Shell,
-    Codex,
-    Claude,
-}
-
-impl TerminalProfile {
-    pub(super) const fn default_name(self) -> &'static str {
-        match self {
-            Self::Shell => "Shell",
-            Self::Codex => "Codex",
-            Self::Claude => "Claude",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -89,8 +77,6 @@ pub struct TerminalCreateRequest {
     pub profile: TerminalProfile,
     #[serde(default)]
     pub size: TerminalSize,
-    #[serde(default)]
-    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -135,29 +121,11 @@ pub struct TerminalSessionSummary {
 #[serde(rename_all = "camelCase")]
 pub struct TerminalOutputChunk {
     pub session_id: TerminalSessionId,
-    pub sequence: u64,
     pub bytes: Vec<u8>,
-    pub replay: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TerminalFocusReceipt {
-    pub session: TerminalSessionSummary,
-    pub replay_from: Option<u64>,
-    pub replay_through: u64,
-    pub replay_truncated: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalStateEvent {
     pub session: TerminalSessionSummary,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TerminalExitEvent {
-    pub session_id: TerminalSessionId,
-    pub exit: TerminalExit,
 }

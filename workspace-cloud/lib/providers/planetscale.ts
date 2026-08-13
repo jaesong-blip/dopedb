@@ -2,6 +2,7 @@
 // narrowed immediately so tokens and one-time passwords never enter logs or storage.
 import "server-only";
 
+import { boundedJsonResponse } from "../bounded-json-response";
 import { env } from "../env";
 import { MAX_PROVIDER_RESULTS } from "./adapter-contract";
 import { planetScaleEngine } from "./planetscale-core";
@@ -14,6 +15,8 @@ import {
 const AUTH_ORIGIN = "https://auth.planetscale.com";
 const API_ORIGIN = "https://api.planetscale.com";
 const REQUEST_TIMEOUT_MS = 15_000;
+const MAX_OAUTH_RESPONSE_BYTES = 64 * 1_024;
+const MAX_API_RESPONSE_BYTES = 1 * 1_024 * 1_024;
 export const PLANETSCALE_LEASE_SECONDS = 15 * 60;
 
 type JsonObject = Record<string, unknown>;
@@ -102,15 +105,37 @@ function object(value: unknown): JsonObject {
   return value as JsonObject;
 }
 
-function requiredString(value: unknown, field: string): string {
-  if (typeof value !== "string" || value.length === 0) {
+function requiredString(value: unknown, field: string, maxBytes = 512): string {
+  if (
+    typeof value !== "string"
+    || value.length === 0
+    || Buffer.byteLength(value, "utf8") > maxBytes
+    || /[\u0000-\u001f\u007f]/.test(value)
+  ) {
     throw new PlanetScaleRequestError(`PlanetScale response omitted ${field}`, 502);
   }
   return value;
 }
 
+function boundedStringOr(
+  value: unknown,
+  fallback: string,
+  field: string,
+  maxBytes: number,
+) {
+  const candidate = value === undefined || value === null ? fallback : value;
+  if (
+    typeof candidate !== "string"
+    || Buffer.byteLength(candidate, "utf8") > maxBytes
+    || /[\u0000-\u001f\u007f]/.test(candidate)
+  ) {
+    throw new PlanetScaleRequestError(`PlanetScale returned invalid ${field}`, 502);
+  }
+  return candidate;
+}
+
 function parseExpiresAt(value: unknown, requestedSeconds: number): string {
-  if (typeof value !== "string") {
+  if (typeof value !== "string" || value.length > 64) {
     throw new PlanetScaleRequestError("PlanetScale omitted credential expiry", 502);
   }
   const parsed = new Date(value);
@@ -125,8 +150,11 @@ function parseExpiresAt(value: unknown, requestedSeconds: number): string {
   return parsed.toISOString();
 }
 
-async function responseJson(response: Response): Promise<unknown> {
-  const body = await response.json().catch(() => null);
+async function responseJson(
+  response: Response,
+  maxBytes = MAX_API_RESPONSE_BYTES,
+): Promise<unknown> {
+  const body = await boundedJsonResponse(response, maxBytes).catch(() => null);
   if (!response.ok) {
     // Provider bodies can contain request details. Keep only the status class.
     const status = response.status >= 500 ? 502 : response.status;
@@ -150,17 +178,25 @@ async function oauthTokenRequest(
     if (error instanceof PlanetScaleRequestError) throw error;
     throw new PlanetScaleRequestError("PlanetScale authorization is unavailable", 502);
   });
-  const body = object(await responseJson(response));
-  const expiresIn = typeof body.expires_in === "number" && body.expires_in > 0
-    ? Math.min(body.expires_in, 60 * 60 * 24 * 31)
-    : 60 * 60;
+  const body = object(await responseJson(response, MAX_OAUTH_RESPONSE_BYTES));
+  const expiresIn = body.expires_in === undefined
+    ? 60 * 60
+    : typeof body.expires_in === "number"
+      && Number.isSafeInteger(body.expires_in)
+      && body.expires_in > 0
+      && body.expires_in <= 60 * 60 * 24 * 31
+      ? body.expires_in
+      : 0;
+  if (expiresIn === 0) {
+    throw new PlanetScaleRequestError("PlanetScale returned invalid token expiry", 502);
+  }
   return {
-    accessToken: requiredString(body.access_token, "access_token"),
+    accessToken: requiredString(body.access_token, "access_token", 32 * 1_024),
     refreshToken: typeof body.refresh_token === "string" && body.refresh_token.length > 0
-      ? body.refresh_token
-      : requiredString(previousRefreshToken, "refresh_token"),
+      ? requiredString(body.refresh_token, "refresh_token", 32 * 1_024)
+      : requiredString(previousRefreshToken, "refresh_token", 32 * 1_024),
     expiresAt: new Date(Date.now() + expiresIn * 1_000).toISOString(),
-    scope: typeof body.scope === "string" ? body.scope : previousScope,
+    scope: boundedStringOr(body.scope, previousScope, "scope", 2_048),
   };
 }
 
@@ -198,14 +234,22 @@ export async function inspectPlanetScaleToken(
   }).catch(() => {
     throw new PlanetScaleRequestError("PlanetScale authorization is unavailable", 502);
   });
-  const body = object(await responseJson(response));
+  const body = object(await responseJson(response, MAX_OAUTH_RESPONSE_BYTES));
   if (body.active !== true) {
     throw new PlanetScaleRequestError("PlanetScale authorization is inactive", 401);
   }
-  const exp = typeof body.exp === "number" ? body.exp * 1_000 : Date.now() + 60 * 60 * 1_000;
+  const now = Date.now();
+  const exp = body.exp === undefined
+    ? now + 60 * 60 * 1_000
+    : typeof body.exp === "number" && Number.isSafeInteger(body.exp)
+      ? body.exp * 1_000
+      : 0;
+  if (exp < now + 30_000 || exp > now + 60 * 60 * 24 * 31 * 1_000) {
+    throw new PlanetScaleRequestError("PlanetScale returned invalid token expiry", 502);
+  }
   return {
-    subject: requiredString(body.sub, "subject"),
-    scope: typeof body.scope === "string" ? body.scope : "",
+    subject: requiredString(body.sub, "subject", 512),
+    scope: boundedStringOr(body.scope, "", "scope", 2_048),
     expiresAt: new Date(exp).toISOString(),
   };
 }
@@ -484,7 +528,7 @@ export async function issuePlanetScaleLease(
     const externalCredentialId = requiredString(body.id, "role id");
     try {
       const address = connectionParts(
-        requiredString(body.access_host_url, "access_host_url"),
+        requiredString(body.access_host_url, "access_host_url", 8 * 1_024),
         "postgresql",
       );
       return {
@@ -493,7 +537,7 @@ export async function issuePlanetScaleLease(
         ...address,
         database: typeof body.database_name === "string" ? body.database_name : address.database,
         username: requiredString(body.username, "username"),
-        password: requiredString(body.password, "password"),
+        password: requiredString(body.password, "password", 8 * 1_024),
         sslmode: "verify-full",
         expiresAt: parseExpiresAt(body.expires_at, PLANETSCALE_LEASE_SECONDS),
       };
@@ -523,7 +567,7 @@ export async function issuePlanetScaleLease(
   const externalCredentialId = requiredString(body.id, "password id");
   try {
     const address = connectionParts(
-      requiredString(body.access_host_url, "access_host_url"),
+      requiredString(body.access_host_url, "access_host_url", 8 * 1_024),
       "mysql",
     );
     return {
@@ -532,7 +576,7 @@ export async function issuePlanetScaleLease(
       ...address,
       database: resource.database,
       username: requiredString(body.username, "username"),
-      password: requiredString(body.plain_text, "plain_text"),
+      password: requiredString(body.plain_text, "plain_text", 8 * 1_024),
       sslmode: "verify-full",
       expiresAt: parseExpiresAt(body.expires_at, PLANETSCALE_LEASE_SECONDS),
     };

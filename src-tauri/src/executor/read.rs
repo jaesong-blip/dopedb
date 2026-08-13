@@ -61,23 +61,36 @@ pub(crate) struct StreamedRead {
     pub first_row_ms: Option<u64>,
 }
 
+pub(crate) struct StreamedReadRequest<'a> {
+    pub(crate) live: &'a LiveConnection,
+    pub(crate) engine: Engine,
+    pub(crate) sql: &'a str,
+    pub(crate) namespace: Option<String>,
+    pub(crate) max_rows: u64,
+    pub(crate) batch_rows: usize,
+    pub(crate) cancellation: Option<&'a cancel::CancelHandle>,
+}
+
 /// Desktop streaming read with an application-owned bounded batch size. This is
 /// deliberately separate from [`run_read_registered`], whose bounded execution
 /// contract returns a materialized `QueryResult`.
 pub(crate) async fn run_read_streamed_registered<F, Fut>(
-    live: &LiveConnection,
-    _engine: Engine,
-    sql: &str,
-    namespace: Option<String>,
-    max_rows: u64,
-    batch_rows: usize,
-    cancellation: Option<&cancel::CancelHandle>,
+    request: StreamedReadRequest<'_>,
     mut on_batch: F,
 ) -> AppResult<StreamedRead>
 where
     F: FnMut(ReadBatch) -> Fut + Send,
     Fut: Future<Output = AppResult<()>> + Send,
 {
+    let StreamedReadRequest {
+        live,
+        engine: _engine,
+        sql,
+        namespace,
+        max_rows,
+        batch_rows,
+        cancellation,
+    } = request;
     let started = Instant::now();
     // The adapter contract is an absolute producer guarantee, not a caller
     // preference: no caller can request an oversized page.

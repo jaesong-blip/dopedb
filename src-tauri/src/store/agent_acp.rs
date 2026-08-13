@@ -19,6 +19,7 @@ use super::{parse_uuid, ActiveResourceScope, Store};
 const MAX_PERSISTED_EVENTS: i64 = 512;
 const MAX_PERSISTED_BYTES: i64 = 4 * 1024 * 1024;
 const MAX_EVENT_BYTES: usize = 512 * 1024;
+const MAX_PERSISTED_SESSIONS_PER_SCOPE: i64 = 100;
 
 impl Store {
     pub(crate) async fn recover_interrupted_agent_acp_sessions(&self) -> AppResult<()> {
@@ -40,10 +41,12 @@ impl Store {
         let rows = sqlx::query(
             "SELECT * FROM agent_acp_sessions
              WHERE workspace_id = ?1 AND account_scope = ?2
-             ORDER BY updated_at DESC",
+             ORDER BY updated_at DESC
+             LIMIT ?3",
         )
         .bind(scope.workspace_id.to_string())
         .bind(scope.account_scope.storage_key())
+        .bind(MAX_PERSISTED_SESSIONS_PER_SCOPE)
         .fetch_all(&self.pool)
         .await?;
         rows.iter().map(row_to_summary).collect()
@@ -98,7 +101,11 @@ impl Store {
         scope: &ActiveResourceScope,
         summary: &AcpSessionSummary,
     ) -> AppResult<()> {
-        upsert_session(&self.pool, scope, summary).await
+        let mut transaction = self.pool.begin().await?;
+        upsert_session(&mut *transaction, scope, summary).await?;
+        prune_sessions(&mut *transaction, scope).await?;
+        transaction.commit().await?;
+        Ok(())
     }
 
     pub(crate) async fn discard_agent_acp_events_through(
@@ -205,9 +212,41 @@ impl Store {
         .bind(MAX_PERSISTED_BYTES)
         .execute(&mut *transaction)
         .await?;
+        prune_sessions(&mut *transaction, scope).await?;
         transaction.commit().await?;
         Ok(())
     }
+}
+
+async fn prune_sessions<'e, E>(executor: E, scope: &ActiveResourceScope) -> AppResult<()>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
+{
+    sqlx::query(
+        "DELETE FROM agent_acp_sessions
+         WHERE workspace_id = ?1
+           AND account_scope = ?2
+           AND lifecycle NOT IN ('starting', 'ready', 'running', 'waiting_permission')
+           AND id NOT IN (
+               SELECT id FROM agent_acp_sessions
+               WHERE workspace_id = ?1
+                 AND account_scope = ?2
+                 AND lifecycle NOT IN ('starting', 'ready', 'running', 'waiting_permission')
+               ORDER BY updated_at DESC
+               LIMIT max(0, ?3 - (
+                   SELECT COUNT(*) FROM agent_acp_sessions
+                   WHERE workspace_id = ?1
+                     AND account_scope = ?2
+                     AND lifecycle IN ('starting', 'ready', 'running', 'waiting_permission')
+               ))
+           )",
+    )
+    .bind(scope.workspace_id.to_string())
+    .bind(scope.account_scope.storage_key())
+    .bind(MAX_PERSISTED_SESSIONS_PER_SCOPE)
+    .execute(executor)
+    .await?;
+    Ok(())
 }
 
 async fn upsert_session<'e, E>(
@@ -250,7 +289,7 @@ where
     .bind(
         summary
             .environment_revision
-            .map(|value| i64::try_from(value))
+            .map(i64::try_from)
             .transpose()
             .map_err(|_| AppError::Config("the ACP Environment revision is too large".into()))?,
     )

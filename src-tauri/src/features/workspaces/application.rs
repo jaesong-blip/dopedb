@@ -17,7 +17,7 @@ use crate::kernel::identity::{AccountId, ConnectionId, WorkspaceId};
 
 use super::ports::{
     WorkspaceConfigurationPort, WorkspaceControlPlanePort, WorkspaceRepositoryPort,
-    WorkspaceRuntimePort,
+    WorkspaceRuntimePort, WorkspaceSshProfilePort,
 };
 
 pub(crate) struct WorkspaceConnectionCopyRequest {
@@ -37,7 +37,7 @@ pub(crate) struct WorkspaceConnectionUpdateRequest {
     pub(crate) profile: crate::model::ConnectionProfile,
 }
 
-pub(crate) struct WorkspaceUseCases<R, A, C, V, E>
+pub(crate) struct WorkspaceUseCases<R, A, C, V, E, S>
 where
     V: ConnectionCredentialVault + ?Sized,
 {
@@ -46,16 +46,18 @@ where
     pub(super) control_plane: C,
     pub(super) credentials: Arc<V>,
     pub(super) configuration: E,
+    pub(super) ssh_profiles: S,
     pub(super) sync_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
-impl<R, A, C, V, E> Clone for WorkspaceUseCases<R, A, C, V, E>
+impl<R, A, C, V, E, S> Clone for WorkspaceUseCases<R, A, C, V, E, S>
 where
     R: Clone,
     A: Clone,
     C: Clone,
     V: ConnectionCredentialVault + ?Sized,
     E: Clone,
+    S: Clone,
 {
     fn clone(&self) -> Self {
         Self {
@@ -64,18 +66,20 @@ where
             control_plane: self.control_plane.clone(),
             credentials: Arc::clone(&self.credentials),
             configuration: self.configuration.clone(),
+            ssh_profiles: self.ssh_profiles.clone(),
             sync_lock: Arc::clone(&self.sync_lock),
         }
     }
 }
 
-impl<R, A, C, V, E> WorkspaceUseCases<R, A, C, V, E>
+impl<R, A, C, V, E, S> WorkspaceUseCases<R, A, C, V, E, S>
 where
     R: WorkspaceRepositoryPort,
     A: WorkspaceRuntimePort,
     C: WorkspaceControlPlanePort,
     V: ConnectionCredentialVault + ?Sized,
     E: WorkspaceConfigurationPort,
+    S: WorkspaceSshProfilePort,
 {
     pub(crate) fn new(
         repository: R,
@@ -83,6 +87,7 @@ where
         control_plane: C,
         credentials: Arc<V>,
         configuration: E,
+        ssh_profiles: S,
     ) -> Self {
         Self {
             repository,
@@ -90,6 +95,7 @@ where
             control_plane,
             credentials,
             configuration,
+            ssh_profiles,
             sync_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }

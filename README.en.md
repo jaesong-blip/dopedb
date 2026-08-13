@@ -20,7 +20,8 @@ Desktop boundary. The public build is currently an alpha.
 - Secretless shared connection templates with per-member local credential binding
 - Member-specific short-lived managed access for PlanetScale, Neon, and GCP Cloud SQL
 - PostgreSQL, MySQL/MariaDB, SQLite, and MongoDB connections and schema introspection
-- Official Codex and Claude ACP sessions pinned to exact connection authority, plus an advanced Shell Terminal
+- Official Codex and Claude ACP sessions pinned to exact connection authority, with in-app approval and recovery
+- An explicit connection-pinned advanced Shell Terminal under Settings → Command line
 - Local `dopedb` CLI Broker with no listening port or separate server
 - Read-only defaults, SQL classification, immutable write proposals, and exact approval
 - Cancellation, manual transaction rollback, durable results, and hash-chained audit
@@ -91,14 +92,26 @@ and remove exact retired DopeDB MCP entries without changing unrelated client se
 
 ## Releases
 
-Only the repository owner publishes stable versions. After an owner-created `app-v*` tag points to a commit merged into `main`, approval of the `stable-release` environment lets GitHub Actions collect the Apple Silicon and Intel macOS artifacts, Windows x64 NSIS installer, and updater metadata in a draft before publishing them together. The tag and assets of each new published release are then protected by release immutability.
+Only the repository owner publishes stable versions. After checking synchronized
+version files and a clean `main`, the command below creates both the annotated
+`app-v*` tag and its matching non-prerelease draft. The workflow fails before build
+when the draft is absent or the tag is not on `main`. After reviewing that draft,
+approval of the `stable-release` environment lets GitHub Actions collect the Apple
+Silicon and Intel macOS artifacts, Windows x64 NSIS installer, and updater metadata,
+then publish them together. Published tags and assets are protected by release
+immutability.
 
 ```sh
-git tag app-v0.1.1
-git push origin app-v0.1.1
+pnpm release:stable:draft -- X.Y.Z
 ```
 
-The release workflow requires the `TAURI_SIGNING_PRIVATE_KEY` repository secret. Contributors can publish isolated, unsigned canary prereleases from their own `work/<github-login>/<topic>` branches. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the branch, pull request, and canary workflow.
+Updater, Sentry, and Apple secrets must be owned by the approval-protected
+`stable-release` environment. GitHub never reveals an existing secret value, so
+moving scope is an owner operation: recreate each name in that environment, verify a
+release, then remove the repository-level copy. Source changes and AI agents do not
+read or move those values. Contributors can publish isolated, unsigned canary
+prereleases from their own `work/<github-login>/<topic>` branches. See
+[CONTRIBUTING.md](./CONTRIBUTING.md) for the branch, pull request, and canary workflow.
 
 ## macOS Warning
 

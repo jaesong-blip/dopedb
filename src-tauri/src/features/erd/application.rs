@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
-use crate::kernel::identity::{ConnectionErdLayoutId, ConnectionId, ErdLayoutId};
+use crate::kernel::identity::{ConnectionId, ErdLayoutId};
 
 use super::domain::{
     ErdCanvasLayout, ErdLayout, ErdLayoutMode, ErdLayoutPayload, ErdVirtualRelation,
@@ -104,30 +104,6 @@ where
             SaveErdRepositoryOutcome::Conflict(layout) => (false, layout),
         };
         Ok(SaveErdLayoutOutcome { saved, layout })
-    }
-
-    pub(crate) async fn delete(
-        &self,
-        scoped_id: ConnectionErdLayoutId,
-        expected_revision: i64,
-    ) -> AppResult<()> {
-        validate_revision(expected_revision)?;
-        let guard = self.authority.authorize(scoped_id.connection_id).await?;
-        let deleted = self
-            .repository
-            .delete(
-                guard.authority(),
-                scoped_id.layout_id,
-                expected_revision,
-                self.generator.now(),
-            )
-            .await?;
-        if !deleted {
-            return Err(AppError::Blocked {
-                reason: "ERD layout changed before it could be deleted; reload it first".into(),
-            });
-        }
-        Ok(())
     }
 }
 

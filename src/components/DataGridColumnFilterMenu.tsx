@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { Button } from "../design-system/components/Button";
+import { TextInput } from "../design-system/components/FormControls";
 import {
   decodeGridValueFilter,
   encodeGridValueFilter,
@@ -100,9 +101,9 @@ export default function DataGridColumnFilterMenu({
           <div className="tw:px-1 tw:pt-1 tw:text-right tw:text-xs tw:font-semibold tw:text-muted-foreground">
             {t("grid.localFilterTitle", { col: column })}
           </div>
-          <input
+          <TextInput
+            density="compact"
             autoFocus
-            className="tw:h-control-md tw:w-full tw:text-sm"
             value={search}
             aria-label={t("grid.localFilterSearch", { col: column })}
             placeholder={t("grid.localFilterSearchPlaceholder")}

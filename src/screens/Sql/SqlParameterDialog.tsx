@@ -6,6 +6,8 @@ import {
   ModalSurface,
   ModalTitleBar,
 } from "../../design-system/components/Modal";
+import { Button } from "../../design-system/components/Button";
+import { TextInput } from "../../design-system/components/FormControls";
 import type { SqlParameter } from "../../features/query/sqlParameters";
 import { uniqueSqlParameters } from "../../features/query/sqlParameters";
 import { useI18n } from "../../lib/i18n";
@@ -76,7 +78,8 @@ export default function SqlParameterDialog({
                     {parameter.label}
                   </span>
                 </span>
-                <input
+                <TextInput
+                  density="compact"
                   autoFocus={index === 0}
                   value={values[parameter.key] ?? ""}
                   onChange={(event) =>
@@ -100,10 +103,10 @@ export default function SqlParameterDialog({
           </div>
 
           <ModalFooter>
-            <button type="button" className="btn" onClick={onCancel}>
+            <Button type="button" onClick={onCancel}>
               {t("common.cancel")}
-            </button>
-            <button type="submit" className="btn primary" disabled={!complete}>
+            </Button>
+            <Button type="submit" variant="primary" disabled={!complete}>
               {t(
                 action === "run"
                   ? "sql.parameterRun"
@@ -111,7 +114,7 @@ export default function SqlParameterDialog({
                     ? "sql.parameterExplain"
                     : "sql.parameterApply",
                 )}
-            </button>
+            </Button>
           </ModalFooter>
         </form>
       </ModalSurface>

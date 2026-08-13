@@ -2,6 +2,7 @@ export const queryFeatureModules = [
   "src-tauri/src/features/queries/mod.rs",
   "src-tauri/src/features/queries/application.rs",
   "src-tauri/src/features/queries/domain.rs",
+  "src-tauri/src/features/queries/manual_transaction.rs",
   "src-tauri/src/features/queries/ports.rs",
   "src-tauri/src/features/queries/transport.rs",
   "src-tauri/src/features/queries/adapters/mod.rs",
@@ -11,13 +12,13 @@ export const queryFeatureModules = [
   "src-tauri/src/features/queries/adapters/desktop_planning.rs",
   "src-tauri/src/features/queries/adapters/desktop_port.rs",
   "src-tauri/src/features/queries/adapters/desktop_provenance.rs",
+  "src-tauri/src/features/queries/adapters/desktop_result_store.rs",
   "src-tauri/src/features/queries/adapters/desktop_stream_lifecycle.rs",
   "src-tauri/src/features/queries/adapters/desktop_support.rs",
   "src-tauri/src/features/queries/adapters/desktop_trace.rs",
   "src-tauri/src/features/queries/adapters/desktop_stream_registry.rs",
   "src-tauri/src/features/queries/adapters/errors.rs",
   "src-tauri/src/features/queries/adapters/platform.rs",
-  "src-tauri/src/features/queries/adapters/provenance.rs",
   "src-tauri/src/features/queries/adapters/terminal_plan.rs",
   "src-tauri/src/features/queries/adapters/terminal_run.rs",
   "src-tauri/src/features/queries/adapters/terminal_support.rs",
@@ -25,11 +26,6 @@ export const queryFeatureModules = [
 
 export const queryFeatureTestModules = [
   "src-tauri/src/features/queries/domain_tests.rs",
-  "src-tauri/src/features/queries/tests.rs",
-  "src-tauri/src/features/queries/adapters/desktop_execution_tests.rs",
-  "src-tauri/src/features/queries/adapters/desktop_inspection_tests.rs",
-  "src-tauri/src/features/queries/adapters/desktop_stream_registry_tests.rs",
-  "src-tauri/src/features/queries/adapters/desktop_execution_tests/tests/streaming.rs",
 ];
 
 const queryFeatureTestLineLimit = 800;
@@ -95,7 +91,6 @@ export function collectQueryTestModuleDiagnostics(context) {
 
 export function collectRemovedQueryRuntimeDiagnostics(rustSource) {
   return [
-    "QueryService",
     "TerminalQueryAdapter",
     "classify_sql",
     "preview_sql",

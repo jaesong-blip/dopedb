@@ -8,6 +8,7 @@ import {
 
 export function proxy(request: NextRequest) {
   const locale = workspaceLocaleFromPathname(request.nextUrl.pathname);
+  const localeIndependentPath = request.nextUrl.pathname.replace(/^\/ko(?=\/|$)/, "") || "/";
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set(workspaceLocaleHeader, locale);
 
@@ -23,6 +24,11 @@ export function proxy(request: NextRequest) {
     path: "/",
     maxAge: 60 * 60 * 24 * 365,
   });
+  if (/^\/analyses\/[^/]+\/?$/.test(localeIndependentPath)) {
+    // Public publication slugs can be revoked. Explicitly forbid downstream
+    // browser and shared-cache reuse of HTML rendered before that revocation.
+    response.headers.set("cache-control", "private, no-store");
+  }
   return response;
 }
 

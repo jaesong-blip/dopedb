@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::error::{AppError, AppResult};
 use crate::kernel::identity::{ConnectionId, OperationId, QueryRunId};
 use crate::kernel::TerminalAuthority;
 use crate::model::{ConnectionProfile, QueryResult};
@@ -17,6 +16,18 @@ use crate::monitoring::HealthSnapshot;
 const MAX_QUERY_SERVICE_SNAPSHOT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_QUERY_SERVICE_ID_BYTES: usize = 512;
 const MAX_QUERY_SERVICE_LABEL_BYTES: usize = 512;
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum QueryDomainError {
+    #[error("{0}")]
+    Invalid(String),
+    #[error("{0}")]
+    LimitExceeded(String),
+    #[error(transparent)]
+    Serialization(#[from] serde_json::Error),
+}
+
+type QueryDomainResult<T> = Result<T, QueryDomainError>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -66,16 +77,16 @@ struct QueryServiceSessionEnvelope {
 
 pub(crate) fn validate_query_service_session_snapshot(
     snapshot: Value,
-) -> AppResult<QueryServiceSessionSnapshot> {
+) -> QueryDomainResult<QueryServiceSessionSnapshot> {
     let encoded = serde_json::to_vec(&snapshot)?;
     if encoded.len() > MAX_QUERY_SERVICE_SNAPSHOT_BYTES {
-        return Err(AppError::Blocked {
-            reason: "the Services result exceeded the local persistence limit".into(),
-        });
+        return Err(QueryDomainError::LimitExceeded(
+            "the Services result exceeded the local persistence limit".into(),
+        ));
     }
     let envelope: QueryServiceSessionEnvelope = serde_json::from_slice(&encoded)?;
     if !matches!(envelope.schema_version, 1 | 2) {
-        return Err(AppError::Config(
+        return Err(QueryDomainError::Invalid(
             "Services snapshot schema version is unsupported".into(),
         ));
     }
@@ -99,26 +110,26 @@ pub(crate) fn validate_query_service_session_snapshot(
         validate_bounded_label(label, value, MAX_QUERY_SERVICE_LABEL_BYTES)?;
     }
     if envelope.sql.len() > MAX_QUERY_SERVICE_SNAPSHOT_BYTES {
-        return Err(AppError::Blocked {
-            reason: "the Services SQL text exceeded the local persistence limit".into(),
-        });
+        return Err(QueryDomainError::LimitExceeded(
+            "the Services SQL text exceeded the local persistence limit".into(),
+        ));
     }
     DateTime::parse_from_rfc3339(&envelope.started_at)
-        .map_err(|_| AppError::Config("Services startedAt is invalid".into()))?;
+        .map_err(|_| QueryDomainError::Invalid("Services startedAt is invalid".into()))?;
     if envelope.updated_at <= 0 {
-        return Err(AppError::Config(
+        return Err(QueryDomainError::Invalid(
             "Services updatedAt must be a positive millisecond timestamp".into(),
         ));
     }
     let connection_id = Uuid::parse_str(&envelope.connection_id)
         .map(ConnectionId::from)
-        .map_err(|_| AppError::Config("Services connectionId is invalid".into()))?;
+        .map_err(|_| QueryDomainError::Invalid("Services connectionId is invalid".into()))?;
     let status = match envelope.status.as_str() {
         "completed" => QueryServiceSessionStatus::Completed,
         "failed" => QueryServiceSessionStatus::Failed,
         "cancelled" => QueryServiceSessionStatus::Cancelled,
         _ => {
-            return Err(AppError::Config(
+            return Err(QueryDomainError::Invalid(
                 "only terminal Services sessions can be persisted".into(),
             ))
         }
@@ -127,7 +138,7 @@ pub(crate) fn validate_query_service_session_snapshot(
         .result
         .get("kind")
         .and_then(Value::as_str)
-        .ok_or_else(|| AppError::Config("Services result kind is missing".into()))?;
+        .ok_or_else(|| QueryDomainError::Invalid("Services result kind is missing".into()))?;
     let valid_result = match status {
         QueryServiceSessionStatus::Completed => matches!(
             result_kind,
@@ -137,7 +148,7 @@ pub(crate) fn validate_query_service_session_snapshot(
         QueryServiceSessionStatus::Cancelled => result_kind == "none",
     };
     if !valid_result {
-        return Err(AppError::Config(
+        return Err(QueryDomainError::Invalid(
             "Services status and result kind are inconsistent".into(),
         ));
     }
@@ -145,7 +156,7 @@ pub(crate) fn validate_query_service_session_snapshot(
         validate_disk_backed_stream_snapshot(&envelope.result)?;
     }
     if envelope.schema_version == 1 && result_kind == "unavailable" {
-        return Err(AppError::Config(
+        return Err(QueryDomainError::Invalid(
             "legacy Services snapshots cannot declare unavailable results".into(),
         ));
     }
@@ -185,27 +196,27 @@ pub(crate) fn project_query_service_session_snapshot(mut snapshot: Value) -> (Va
     (snapshot, true)
 }
 
-fn validate_disk_backed_stream_snapshot(result: &Value) -> AppResult<()> {
+fn validate_disk_backed_stream_snapshot(result: &Value) -> QueryDomainResult<()> {
     let stream = result
         .get("stream")
         .and_then(Value::as_object)
-        .ok_or_else(|| AppError::Config("Services stream state is missing".into()))?;
+        .ok_or_else(|| QueryDomainError::Invalid("Services stream state is missing".into()))?;
     let source = stream
         .get("rowSource")
         .and_then(Value::as_object)
-        .ok_or_else(|| AppError::Config("Services result handle is missing".into()))?;
+        .ok_or_else(|| QueryDomainError::Invalid("Services result handle is missing".into()))?;
     let operation_id = source
         .get("operationId")
         .and_then(Value::as_str)
-        .ok_or_else(|| AppError::Config("Services result operation is missing".into()))?;
+        .ok_or_else(|| QueryDomainError::Invalid("Services result operation is missing".into()))?;
     Uuid::parse_str(operation_id)
-        .map_err(|_| AppError::Config("Services result operation is invalid".into()))?;
+        .map_err(|_| QueryDomainError::Invalid("Services result operation is invalid".into()))?;
     let capability = source
         .get("capability")
         .and_then(Value::as_str)
-        .ok_or_else(|| AppError::Config("Services result capability is missing".into()))?;
+        .ok_or_else(|| QueryDomainError::Invalid("Services result capability is missing".into()))?;
     if capability.len() != 64 || !capability.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(AppError::Config(
+        return Err(QueryDomainError::Invalid(
             "Services result capability is invalid".into(),
         ));
     }
@@ -218,16 +229,18 @@ fn validate_disk_backed_stream_snapshot(result: &Value) -> AppResult<()> {
         || stream.get("operationId").and_then(Value::as_str) != Some(operation_id)
         || stream.get("phase").and_then(Value::as_str) != Some("complete")
     {
-        return Err(AppError::Config(
+        return Err(QueryDomainError::Invalid(
             "Services result handle metadata is inconsistent".into(),
         ));
     }
     Ok(())
 }
 
-fn validate_bounded_label(label: &str, value: &str, max_bytes: usize) -> AppResult<()> {
+fn validate_bounded_label(label: &str, value: &str, max_bytes: usize) -> QueryDomainResult<()> {
     if value.is_empty() || value.len() > max_bytes || value.chars().any(char::is_control) {
-        return Err(AppError::Config(format!("{label} is empty or invalid")));
+        return Err(QueryDomainError::Invalid(format!(
+            "{label} is empty or invalid"
+        )));
     }
     Ok(())
 }

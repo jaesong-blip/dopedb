@@ -2,7 +2,12 @@
 // over HTTPS exactly once and is absent from all database and audit writes.
 import { and, count, eq, gt, isNull, sql } from "drizzle-orm";
 import { db } from "../../../../../../../../lib/db";
-import { isUuid, jsonError, privateJson } from "../../../../../../../../lib/http";
+import {
+  boundedJsonBody,
+  isUuid,
+  jsonError,
+  privateJson,
+} from "../../../../../../../../lib/http";
 import {
   activeProviderIntegration,
   issueManagedLease,
@@ -11,13 +16,13 @@ import {
 } from "../../../../../../../../lib/provider-integrations";
 import { vercelOidcToken } from "../../../../../../../../lib/providers/gcp-cloud-sql";
 import { ProviderRequestError } from "../../../../../../../../lib/providers/provider-types";
+import { consumeRateLimit } from "../../../../../../../../lib/rate-limit";
 import { managedLeaseStillDeliverable } from "../../../../../../../../lib/revocation-gates";
 import {
   workspaceAuditEvent,
   workspaceConnection,
   workspaceCredentialLease,
   workspaceProviderResource,
-  rateLimit,
 } from "../../../../../../../../lib/schema";
 import { authorizeWorkspaceConnection } from "../../../../../../../../lib/workspace-authorization";
 import { providerResourceSupportsWrite } from "../../../../../../../../lib/workspace-connections";
@@ -32,32 +37,20 @@ type RouteContext = {
 // the pending reservation to be retired before the platform stops the request.
 export const maxDuration = 60;
 
-async function consumeRequestBudget(key: string, limit: number) {
-  const now = Date.now();
-  const windowStart = now - 60_000;
-  const result = await db.execute<{ value: number }>(sql`
-    INSERT INTO ${rateLimit} ("id", "key", "count", "last_request")
-    VALUES (${crypto.randomUUID()}, ${key}, 1, ${now})
-    ON CONFLICT ("key") DO UPDATE SET
-      "count" = CASE
-        WHEN ${rateLimit.lastRequest} < ${windowStart} THEN 1
-        ELSE ${rateLimit.count} + 1
-      END,
-      "last_request" = ${now}
-    RETURNING "count" AS "value"
-  `);
-  return Number(result.rows[0]?.value ?? Number.POSITIVE_INFINITY) <= limit;
-}
-
 function consumeLeaseBudget(organizationId: string, userId: string) {
-  return consumeRequestBudget(`workspace-lease:${organizationId}:${userId}`, 5);
+  return consumeRateLimit({
+    namespace: "workspace-lease",
+    discriminator: `${organizationId}:${userId}`,
+    limit: 5,
+  });
 }
 
 function consumeLeaseReleaseBudget(organizationId: string, userId: string) {
-  return consumeRequestBudget(
-    `workspace-lease-release:${organizationId}:${userId}`,
-    30,
-  );
+  return consumeRateLimit({
+    namespace: "workspace-lease-release",
+    discriminator: `${organizationId}:${userId}`,
+    limit: 30,
+  });
 }
 
 function nestedDatabaseCode(error: unknown) {
@@ -85,16 +78,18 @@ export async function POST(request: Request, context: RouteContext) {
       426,
     );
   }
-  const payloadText = await request.text();
-  if (payloadText.length > 256) {
-    return jsonError("Managed access request is too large", 413);
-  }
-  if (!payloadText.trim()) {
-    return jsonError("Managed access mode must be read or write", 400);
+  const parsedBody = await boundedJsonBody(request, 256);
+  if (!parsedBody.ok) {
+    return jsonError(
+      parsedBody.reason === "too_large"
+        ? "Managed access request is too large"
+        : "Managed access mode must be read or write",
+      parsedBody.reason === "too_large" ? 413 : 400,
+    );
   }
   let requestedAccessMode: "read" | "write";
   try {
-    const payload = JSON.parse(payloadText) as { accessMode?: unknown };
+    const payload = parsedBody.value as { accessMode?: unknown };
     if (
       !payload
       || typeof payload !== "object"
@@ -334,13 +329,18 @@ export async function DELETE(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId) || !isUuid(connectionId)) {
     return jsonError("Invalid workspace or connection id", 400);
   }
-  const payloadText = await request.text();
-  if (!payloadText.trim() || payloadText.length > 256) {
-    return jsonError("Managed lease release request is invalid", 400);
+  const parsedBody = await boundedJsonBody(request, 256);
+  if (!parsedBody.ok) {
+    return jsonError(
+      parsedBody.reason === "too_large"
+        ? "Managed lease release request is too large"
+        : "Managed lease release request is invalid",
+      parsedBody.reason === "too_large" ? 413 : 400,
+    );
   }
   let leaseId: string;
   try {
-    const payload = JSON.parse(payloadText) as { leaseId?: unknown };
+    const payload = parsedBody.value as { leaseId?: unknown };
     if (!payload || typeof payload.leaseId !== "string" || !isUuid(payload.leaseId)) {
       return jsonError("Managed lease id is invalid", 400);
     }

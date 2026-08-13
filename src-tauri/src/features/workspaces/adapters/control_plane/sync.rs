@@ -67,10 +67,12 @@ pub(super) async fn workspace_pull_page(
     if !response.status().is_success() {
         return Err(oauth_error(response).await);
     }
-    let body = response
-        .json::<RemoteWorkspacePullPage>()
-        .await
-        .map_err(|error| request_error("reading workspace changes", error))?;
+    let body: RemoteWorkspacePullPage = crate::hosted_control_plane::bounded_json_response(
+        response,
+        "reading workspace changes",
+        MAX_WORKSPACE_SYNC_RESPONSE_BYTES,
+    )
+    .await?;
     if body.workspace_id != workspace_id.to_string()
         || body.previous_cursor != cursor
         || body.next_cursor < 0

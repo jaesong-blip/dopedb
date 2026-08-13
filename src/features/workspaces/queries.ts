@@ -13,18 +13,22 @@ export const workspaceQueryKeys = {
   auth: () => ["workspaceAuth"] as const,
 };
 
+export async function readWorkspaceContext() {
+  const [feature, workspaces, active] = await Promise.all([
+    workspaceFeatureState(),
+    listWorkspaces(),
+    getActiveWorkspace(),
+  ]);
+  return { feature, workspaces, active };
+}
+
+export type WorkspaceContextState = Awaited<ReturnType<typeof readWorkspaceContext>>;
+
 export function workspaceContextQuery() {
   return queryOptions({
     queryKey: workspaceQueryKeys.context(),
     staleTime: Infinity,
-    queryFn: async () => {
-      const [feature, workspaces, active] = await Promise.all([
-        workspaceFeatureState(),
-        listWorkspaces(),
-        getActiveWorkspace(),
-      ]);
-      return { feature, workspaces, active };
-    },
+    queryFn: readWorkspaceContext,
   });
 }
 

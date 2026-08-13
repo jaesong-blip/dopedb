@@ -152,14 +152,21 @@ pub(super) async fn remote_connections(
     if !response.status().is_success() {
         return Err(oauth_error(response).await);
     }
-    let connections = response
-        .json::<RemoteConnectionsResponse>()
-        .await
-        .map_err(|error| request_error("reading shared connections", error))?
-        .connections
-        .into_iter()
-        .map(remote_connection)
-        .collect::<AppResult<Vec<_>>>()?;
+    let payload: RemoteConnectionsResponse = crate::hosted_control_plane::bounded_json_response(
+        response,
+        "reading shared connections",
+        MAX_CONNECTION_LIST_RESPONSE_BYTES,
+    )
+    .await?;
+    require_response_item_count(
+        payload.connections.len(),
+        MAX_CONNECTIONS_PER_WORKSPACE,
+        "shared connections",
+    )?;
+    let mut connections = Vec::with_capacity(payload.connections.len());
+    for connection in payload.connections {
+        connections.push(remote_connection(connection)?);
+    }
     Ok(Some(connections))
 }
 
@@ -207,13 +214,13 @@ pub(super) async fn share_connection(
     if !response.status().is_success() {
         return Err(oauth_error(response).await);
     }
-    remote_connection(
-        response
-            .json::<CreatedConnectionResponse>()
-            .await
-            .map_err(|error| request_error("reading shared connection", error))?
-            .connection,
+    let payload: CreatedConnectionResponse = crate::hosted_control_plane::bounded_json_response(
+        response,
+        "reading shared connection",
+        MAX_CONNECTION_RESPONSE_BYTES,
     )
+    .await?;
+    remote_connection(payload.connection)
 }
 
 /// Replace one redacted template using the content revision returned by the last
@@ -264,13 +271,13 @@ pub(super) async fn update_connection(
     if !response.status().is_success() {
         return Err(oauth_error(response).await);
     }
-    remote_connection(
-        response
-            .json::<CreatedConnectionResponse>()
-            .await
-            .map_err(|error| request_error("reading updated shared connection", error))?
-            .connection,
+    let payload: CreatedConnectionResponse = crate::hosted_control_plane::bounded_json_response(
+        response,
+        "reading updated shared connection",
+        MAX_CONNECTION_RESPONSE_BYTES,
     )
+    .await?;
+    remote_connection(payload.connection)
 }
 
 /// Roll back a newly shared template when a later local credential/cache step fails.
@@ -336,10 +343,13 @@ pub(super) async fn authorize_connection(
     if !response.status().is_success() {
         return Err(oauth_error(response).await);
     }
-    let authority = response
-        .json::<AuthorizedConnectionResponse>()
-        .await
-        .map_err(|error| request_error("reading shared connection authorization", error))?;
+    let authority: AuthorizedConnectionResponse =
+        crate::hosted_control_plane::bounded_json_response(
+            response,
+            "reading shared connection authorization",
+            MAX_AUTH_RESPONSE_BYTES,
+        )
+        .await?;
     let expected_action = if write { "write" } else { "read" };
     let access = crate::store::parse_workspace_access(authority.access_mode)?;
     if !authority.allowed
@@ -396,11 +406,13 @@ pub(super) async fn issue_managed_connection_lease(
     if !response.status().is_success() {
         return Err(oauth_error(response).await);
     }
-    let mut lease = response
-        .json::<ManagedLeaseResponse>()
-        .await
-        .map_err(|error| request_error("reading managed database access", error))?
-        .lease;
+    let payload: ManagedLeaseResponse = crate::hosted_control_plane::bounded_json_response(
+        response,
+        "reading managed database access",
+        MAX_MANAGED_LEASE_RESPONSE_BYTES,
+    )
+    .await?;
+    let mut lease = payload.lease;
     let secret = Zeroizing::new(std::mem::take(&mut lease.password));
     let connector = lease.connector.take();
     let lease_id = Uuid::parse_str(&lease.id)

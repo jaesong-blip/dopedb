@@ -1,4 +1,4 @@
-/** Terminal Dock identities and immutable connection-pinned wire contracts. */
+/** Minimal connection-pinned Shell Terminal wire contract. */
 
 import type {
   ConnectionEngine,
@@ -12,18 +12,12 @@ export type TerminalSessionId = string & {
   readonly [terminalSessionIdBrand]: "TerminalSessionId";
 };
 
-export function terminalSessionId(value: string): TerminalSessionId {
-  return value as TerminalSessionId;
-}
-
-export type TerminalProfile = "shell" | "codex" | "claude";
 export type TerminalLifecycle =
   | "starting"
   | "running"
   | "stopping"
   | "exited"
   | "failed";
-export type TerminalDatabasePolicy = "readOnly" | "approvalRequired";
 
 export interface TerminalSize {
   cols: number;
@@ -34,9 +28,8 @@ export interface TerminalSize {
 
 export interface TerminalCreateRequest {
   connectionId: ConnectionId;
-  profile: TerminalProfile;
+  profile: "shell";
   size: TerminalSize;
-  name?: string | null;
 }
 
 export interface TerminalConnectionPin {
@@ -49,47 +42,31 @@ export interface TerminalConnectionPin {
   database: string;
   environment: string | null;
   engine: ConnectionEngine;
-  policy: TerminalDatabasePolicy;
-}
-
-export interface TerminalExit {
-  success: boolean;
-  code: number | null;
-  signal: string | null;
-  at: string;
+  policy: "readOnly" | "approvalRequired";
 }
 
 export interface TerminalSessionSummary {
   id: TerminalSessionId;
   name: string;
-  profile: TerminalProfile;
+  profile: "shell";
   lifecycle: TerminalLifecycle;
   size: TerminalSize;
   connection: TerminalConnectionPin;
   createdAt: string;
   lastActivityAt: string;
-  exit: TerminalExit | null;
+  exit: {
+    success: boolean;
+    code: number | null;
+    signal: string | null;
+    at: string;
+  } | null;
 }
 
 export interface TerminalOutputChunk {
   sessionId: TerminalSessionId;
-  sequence: number;
   bytes: number[];
-  replay: boolean;
-}
-
-export interface TerminalFocusReceipt {
-  session: TerminalSessionSummary;
-  replayFrom: number | null;
-  replayThrough: number;
-  replayTruncated: boolean;
 }
 
 export interface TerminalStateEvent {
   session: TerminalSessionSummary;
-}
-
-export interface TerminalExitEvent {
-  sessionId: TerminalSessionId;
-  exit: TerminalExit;
 }

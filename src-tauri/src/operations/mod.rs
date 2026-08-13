@@ -10,20 +10,8 @@
 mod canonicalize;
 mod context;
 mod execute;
-#[allow(
-    dead_code,
-    reason = "the durable projection includes timestamps and ledger DTOs consumed by the upcoming broker operation-status adapter"
-)]
 mod model;
-#[allow(
-    dead_code,
-    reason = "ledger read/progress APIs are already migration-tested and become production entry points in CLI-01"
-)]
 mod repository;
-#[allow(
-    dead_code,
-    reason = "runtime status/progress accessors are reserved for the upcoming broker and job adapters"
-)]
 mod runtime;
 pub mod state_machine;
 

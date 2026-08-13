@@ -56,6 +56,8 @@ export interface WorkspaceAuthState {
   authenticated: boolean;
   user: WorkspaceAuthUser | null;
   accounts: WorkspaceAuthAccount[];
+  /** Monotonic native authority generation shared by every private cache owner. */
+  authorityGeneration: number;
 }
 
 export interface WorkspaceDeviceAuthorization {
@@ -76,10 +78,4 @@ export type WorkspaceLoginPollStatus =
 export interface WorkspaceLoginPoll {
   status: WorkspaceLoginPollStatus;
   user: WorkspaceAuthUser | null;
-}
-
-export interface WorkspaceContext {
-  feature: WorkspaceFeatureState;
-  workspaces: Workspace[];
-  active: Workspace;
 }

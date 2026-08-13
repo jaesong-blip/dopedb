@@ -90,13 +90,15 @@ export const TextInput = forwardRef<
   HTMLInputElement,
   Omit<InputHTMLAttributes<HTMLInputElement>, "className"> & {
     density?: "default" | "compact";
+    monospace?: boolean;
   }
->(function TextInput({ density = "default", ...props }, ref) {
+>(function TextInput({ density = "default", monospace = false, ...props }, ref) {
   return (
     <input
       ref={ref}
       data-density={density}
-      className="tw:h-control-lg tw:w-full tw:rounded-sm tw:border tw:border-input tw:bg-background tw:px-3 tw:font-sans tw:text-ui tw:text-foreground tw:shadow-control tw:outline-none tw:data-[density=compact]:h-control-md tw:data-[density=compact]:px-2 tw:placeholder:text-muted-foreground tw:focus:border-ring tw:focus:ring-2 tw:focus:ring-ring/30 tw:disabled:cursor-default tw:disabled:opacity-50"
+      data-monospace={monospace}
+      className="tw:h-control-lg tw:w-full tw:rounded-sm tw:border tw:border-input tw:bg-background tw:px-3 tw:font-sans tw:text-ui tw:text-foreground tw:shadow-control tw:outline-none tw:data-[density=compact]:h-control-md tw:data-[density=compact]:px-2 tw:data-[monospace=true]:font-mono tw:placeholder:text-muted-foreground tw:focus:border-ring tw:focus:ring-2 tw:focus:ring-ring/30 tw:disabled:cursor-default tw:disabled:opacity-50"
       {...props}
     />
   );
@@ -160,7 +162,7 @@ export function CheckboxField({
   indeterminate?: boolean;
 } & Omit<InputHTMLAttributes<HTMLInputElement>, "className" | "type">) {
   return (
-    <label className="tw:inline-flex tw:cursor-pointer tw:items-center tw:gap-2 tw:text-ui tw:text-foreground">
+    <label className="tw:inline-flex tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-2 tw:text-ui tw:text-foreground">
       <input
         type="checkbox"
         className="tw:size-4 tw:rounded-xs tw:accent-primary tw:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:focus-visible:ring-offset-2 tw:focus-visible:ring-offset-background"
@@ -172,7 +174,9 @@ export function CheckboxField({
           indeterminate ? "mixed" : props["aria-checked"]
         }
       />
-      <span>{label}</span>
+      <span className="tw:inline-flex tw:min-w-0 tw:flex-1 tw:items-center tw:gap-2">
+        {label}
+      </span>
     </label>
   );
 }

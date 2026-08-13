@@ -42,7 +42,7 @@ import { useToolWindowLayout } from "../features/appShell/useToolWindowLayout";
 import { formatSqlDocument } from "../features/query/sqlFormatter";
 import SkillStartupGate from "../features/skills/SkillStartupGate";
 import { openAgentSetup } from "../features/skills/agentPreferences";
-import { removeSkill, skillStatus } from "../ipc/commands";
+import { removeSkill, skillStatus } from "../features/skills/tauriAdapter";
 import AgentToolsSettings from "../screens/Settings/AgentTools";
 import type {
   CatalogSnapshot,

@@ -1,7 +1,10 @@
 //! Remembered account and workspace-membership reconciliation.
 
 use super::super::super::*;
-use super::scope::{active_scope_from_row, repair_active_scope_after_membership_change};
+use super::scope::{
+    active_scope_from_row, active_team_membership_authority,
+    repair_active_scope_after_membership_change,
+};
 
 impl Store {
     // ── workspaces ─────────────────────────────────────────────────────────
@@ -144,6 +147,7 @@ impl Store {
         self.remember_workspace_account(user).await?;
         let now = Utc::now();
         let mut tx = self.pool.begin().await?;
+        let previous_team_authority = active_team_membership_authority(&mut tx).await?;
         sqlx::query(
             "UPDATE workspace_members SET status = 'archived'
              WHERE user_id = ?1",
@@ -285,7 +289,8 @@ impl Store {
         .bind(user.id.as_str())
         .execute(&mut *tx)
         .await?;
-        repair_active_scope_after_membership_change(&mut tx, now).await?;
+        repair_active_scope_after_membership_change(&mut tx, now, previous_team_authority.as_ref())
+            .await?;
         tx.commit().await?;
         Ok(())
     }

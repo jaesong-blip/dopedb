@@ -101,6 +101,7 @@ export async function POST(request: Request) {
   try {
     const scope = await ensurePersonalKnowledgeScope({
       userId: session.user.id,
+      sessionId: session.session.id,
       projects,
     });
     return privateJson(scope);

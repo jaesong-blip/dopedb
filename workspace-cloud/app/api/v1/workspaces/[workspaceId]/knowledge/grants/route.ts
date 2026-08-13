@@ -3,6 +3,10 @@ import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import { boundedJsonBody, isUuid, jsonError, mutationAllowed, privateJson } from "@/lib/http";
 import {
+  knowledgeMutationAuthority,
+  knowledgeMutationAuthoritySql,
+} from "@/lib/knowledge/mutation-authority";
+import {
   knowledgeEnvironmentHead,
   knowledgeGrant,
   knowledgeGrantGraphRevision,
@@ -127,6 +131,7 @@ export async function POST(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId)) return jsonError("Invalid workspace id", 400);
   const authorization = await authorizeWorkspace(request, workspaceId, "manage");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
+  const actorAuthority = knowledgeMutationAuthority(authorization, workspaceId, "manage");
   const parsed = await boundedJsonBody(request, 8 * 1024);
   const body = parsed.ok ? parsed.value as Record<string, unknown> : null;
   if (
@@ -146,6 +151,7 @@ export async function POST(request: Request, context: RouteContext) {
   const ttlSeconds = body.ttlSeconds;
   const scopes = await db.select({
     memberId: member.id,
+    memberUserId: member.userId,
     projectId: knowledgeProjectEnvironment.projectId,
     environmentRevision: knowledgeProjectEnvironment.revision,
     graphRevisionId: knowledgeEnvironmentHead.graphRevisionId,
@@ -178,52 +184,90 @@ export async function POST(request: Request, context: RouteContext) {
   const graphRevisionIds = scopes.map((candidate) => candidate.graphRevisionId);
   const grantId = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + ttlSeconds * 1_000);
-  const [, createdRows] = await db.batch([
-    db.update(knowledgeGrant).set({ revokedAt: new Date() }).where(and(
-      eq(knowledgeGrant.organizationId, workspaceId),
-      eq(knowledgeGrant.memberId, scope.memberId),
-      eq(knowledgeGrant.projectEnvironmentId, projectEnvironmentId),
-      isNull(knowledgeGrant.revokedAt),
-    )),
-    db.insert(knowledgeGrant).values({
-      id: grantId,
-      organizationId: workspaceId,
-      memberId: scope.memberId,
-      projectId: scope.projectId,
-      projectEnvironmentId,
-      environmentRevision: scope.environmentRevision,
-      // Kept as the compatibility anchor while the set table is authoritative.
-      graphRevisionId: graphRevisionIds[0],
-      expiresAt,
-    }).returning({
-      id: knowledgeGrant.id,
-      expiresAt: knowledgeGrant.expiresAt,
-    }),
-    db.insert(knowledgeGrantGraphRevision).values(graphRevisionIds.map(
-      (graphRevisionId) => ({
-        organizationId: workspaceId,
-        grantId,
-        graphRevisionId,
-      }),
-    )),
-    db.insert(workspaceAuditEvent).values({
-      organizationId: workspaceId,
-      actorUserId: authorization.session.user.id,
-      action: "knowledge.grant.issue",
-      resourceType: "knowledge_grant",
-      resourceId: grantId,
-      redactedSummary: {
-        memberId: scope.memberId,
-        projectEnvironmentId,
-        environmentRevision: scope.environmentRevision,
-        graphCount: graphRevisionIds.length,
-        ttlSeconds,
-      },
-      requestId: crypto.randomUUID(),
-    }),
-  ]);
-  const created = createdRows[0];
-  if (!created) throw new Error("Knowledge grant insert returned no row");
+  const authority = {
+    ...actorAuthority,
+    subject: { membershipId: scope.memberId, userId: scope.memberUserId },
+  };
+  const createdResult = await db.execute<{ id: string; expiresAt: Date }>(sql`
+    WITH actor_authority AS MATERIALIZED (
+      SELECT 1 WHERE ${knowledgeMutationAuthoritySql(authority, workspaceId)}
+    ), requested_graph AS MATERIALIZED (
+      SELECT value::uuid AS graph_revision_id
+      FROM jsonb_array_elements_text(${JSON.stringify(graphRevisionIds)}::jsonb)
+    ), eligible_environment AS MATERIALIZED (
+      SELECT environment."project_id", environment."revision"
+      FROM ${knowledgeProjectEnvironment} AS environment
+      CROSS JOIN actor_authority
+      WHERE environment."organization_id" = ${workspaceId}
+        AND environment."id" = ${projectEnvironmentId}::uuid
+        AND environment."project_id" = ${scope.projectId}::uuid
+        AND environment."revision" = ${scope.environmentRevision}
+        AND NOT EXISTS (
+          SELECT 1 FROM requested_graph requested
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM ${knowledgeEnvironmentHead} head
+            JOIN ${knowledgeGraphRevision} graph
+              ON graph."organization_id" = head."organization_id"
+             AND graph."id" = head."graph_revision_id"
+             AND graph."source_id" = head."source_id"
+            JOIN ${knowledgeSource} source
+              ON source."organization_id" = graph."organization_id"
+             AND source."id" = graph."source_id"
+             AND source."revoked_at" IS NULL
+            WHERE head."organization_id" = ${workspaceId}
+              AND head."project_environment_id" = environment."id"
+              AND head."environment_revision" = environment."revision"
+              AND head."graph_revision_id" = requested.graph_revision_id
+          )
+        )
+      FOR UPDATE OF environment
+    ), revoked AS MATERIALIZED (
+      UPDATE ${knowledgeGrant} AS previous
+      SET "revoked_at" = now()
+      FROM eligible_environment
+      WHERE previous."organization_id" = ${workspaceId}
+        AND previous."member_id" = ${scope.memberId}
+        AND previous."project_environment_id" = ${projectEnvironmentId}::uuid
+        AND previous."revoked_at" IS NULL
+      RETURNING previous."id"
+    ), issued AS MATERIALIZED (
+      INSERT INTO ${knowledgeGrant}
+        ("id", "organization_id", "member_id", "project_id",
+         "project_environment_id", "environment_revision", "graph_revision_id", "expires_at")
+      SELECT ${grantId}::uuid, ${workspaceId}, ${scope.memberId}, environment."project_id",
+        ${projectEnvironmentId}::uuid, environment."revision", ${graphRevisionIds[0]}::uuid,
+        ${expiresAt}
+      FROM eligible_environment environment
+      RETURNING "id", "expires_at"
+    ), graph_scope AS MATERIALIZED (
+      INSERT INTO ${knowledgeGrantGraphRevision}
+        ("organization_id", "grant_id", "graph_revision_id")
+      SELECT ${workspaceId}, issued."id", requested.graph_revision_id
+      FROM issued CROSS JOIN requested_graph requested
+      RETURNING "grant_id"
+    ), audited AS (
+      INSERT INTO ${workspaceAuditEvent}
+        ("organization_id", "actor_user_id", "action", "resource_type",
+         "resource_id", "redacted_summary", "request_id")
+      SELECT ${workspaceId}, ${authorization.session.user.id}, 'knowledge.grant.issue',
+        'knowledge_grant', issued."id"::text,
+        jsonb_build_object(
+          'memberId', ${scope.memberId},
+          'projectEnvironmentId', ${projectEnvironmentId},
+          'environmentRevision', ${scope.environmentRevision},
+          'graphCount', ${graphRevisionIds.length},
+          'ttlSeconds', ${ttlSeconds}
+        ), ${crypto.randomUUID()}::uuid
+      FROM issued
+      WHERE (SELECT count(*) FROM graph_scope) = ${graphRevisionIds.length}
+      RETURNING "id"
+    )
+    SELECT issued."id"::text AS "id", issued."expires_at" AS "expiresAt"
+    FROM issued, audited
+  `);
+  const created = createdResult.rows[0];
+  if (!created) return jsonError("Knowledge grant authority or graph changed", 409);
   const grant = { ...created, graphRevisionIds };
   return privateJson({ grant }, { status: 201 });
 }
@@ -234,6 +278,7 @@ export async function DELETE(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId)) return jsonError("Invalid workspace id", 400);
   const authorization = await authorizeWorkspace(request, workspaceId, "manage");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
+  const authority = knowledgeMutationAuthority(authorization, workspaceId, "manage");
   const parsed = await boundedJsonBody(request, 4 * 1024);
   const body = parsed.ok ? parsed.value as Record<string, unknown> : null;
   if (!body || typeof body.grantId !== "string" || !isUuid(body.grantId)) {
@@ -245,12 +290,15 @@ export async function DELETE(request: Request, context: RouteContext) {
     memberId: string;
     projectEnvironmentId: string;
   }>(sql`
-    WITH revoked AS MATERIALIZED (
+    WITH actor_authority AS MATERIALIZED (
+      SELECT 1 WHERE ${knowledgeMutationAuthoritySql(authority, workspaceId)}
+    ), revoked AS MATERIALIZED (
       UPDATE ${knowledgeGrant} AS issued_grant
       SET "revoked_at" = ${new Date()}
       WHERE issued_grant."organization_id" = ${workspaceId}
         AND issued_grant."id" = ${grantId}::uuid
         AND issued_grant."revoked_at" IS NULL
+        AND EXISTS (SELECT 1 FROM actor_authority)
       RETURNING issued_grant."id"::text AS "id",
         issued_grant."member_id" AS "memberId",
         issued_grant."project_environment_id"::text AS "projectEnvironmentId"

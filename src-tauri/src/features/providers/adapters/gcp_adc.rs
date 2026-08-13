@@ -282,6 +282,61 @@ pub(super) fn command_spec(executable: PathBuf, source: AdcSource) -> AppResult<
     })
 }
 
+/// Runs one read-only, machine-readable gcloud command against the private ADC
+/// snapshot. Provider HTTP traffic therefore remains owned by the official CLI
+/// process; Desktop receives only bounded JSON stdout.
+pub(super) async fn run_gcloud_json(argv: &[String]) -> AppResult<Value> {
+    #[cfg(windows)]
+    {
+        let _ = argv;
+        Err(blocked("GCP ADC verification is unavailable"))
+    }
+    #[cfg(not(windows))]
+    {
+        if argv.is_empty()
+            || argv.len() > 32
+            || argv.iter().any(|argument| {
+                argument.is_empty()
+                    || argument.len() > 4096
+                    || argument.chars().any(|character| character.is_control())
+            })
+        {
+            return Err(blocked("GCP CLI request is invalid"));
+        }
+        let source = adc_source()?;
+        let document = read_adc_document(&source.path)?;
+        validate_adc(&document)?;
+        let subject_token = external_subject_token_guard(&document)?;
+        let mut snapshot =
+            GcloudSnapshot::materialize(&source.path, &document, subject_token.as_ref())?;
+        let spec = command_spec(
+            find_gcloud()?,
+            AdcSource {
+                path: snapshot.adc_path().to_path_buf(),
+                config_directory: snapshot.config_directory().to_path_buf(),
+            },
+        )?;
+        let mut token_child = spawn_gcloud(&spec)?;
+        let token = read_token_output(&mut token_child).await?;
+        let token_path = snapshot.materialize_access_token(&token)?;
+        drop(token);
+        let mut command_argv = Vec::with_capacity(argv.len() + 1);
+        command_argv.push(format!(
+            "--access-token-file={}",
+            token_path.to_string_lossy()
+        ));
+        command_argv.extend_from_slice(argv);
+        let mut child = spawn_gcloud_json(&spec, &command_argv)?;
+        let output = read_json_output(&mut child).await;
+        let cleanup = snapshot.cleanup();
+        match (output, cleanup) {
+            (Ok(value), Ok(())) => Ok(value),
+            (Ok(_), Err(error)) | (Err(_), Err(error)) => Err(error),
+            (Err(error), Ok(())) => Err(error),
+        }
+    }
+}
+
 pub(super) fn audited_gcloud_from_root(root: &Path) -> AppResult<PathBuf> {
     let root = root
         .canonicalize()
@@ -325,6 +380,12 @@ fn find_gcloud() -> AppResult<PathBuf> {
 
 #[cfg(not(windows))]
 fn find_gcloud() -> AppResult<PathBuf> {
+    if let Some(home) = crate::app_paths::optional_home_dir() {
+        let root = home.join("google-cloud-sdk");
+        if let Ok(executable) = audited_gcloud_from_root(&root) {
+            return Ok(executable);
+        }
+    }
     for root in audited_gcloud_roots() {
         if let Ok(executable) = audited_gcloud_from_root(Path::new(root)) {
             return Ok(executable);
@@ -365,6 +426,24 @@ fn spawn_gcloud(spec: &GcloudCommandSpec) -> AppResult<Child> {
     command
         .spawn()
         .map_err(|_| blocked("GCP ADC verification is unavailable"))
+}
+
+#[cfg(not(windows))]
+fn spawn_gcloud_json(spec: &GcloudCommandSpec, argv: &[String]) -> AppResult<Child> {
+    let mut command = Command::new(&spec.executable);
+    command
+        .args(argv)
+        .env_clear()
+        .envs(spec.env.iter().map(|(key, value)| (key, value)))
+        .kill_on_drop(true)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    #[cfg(unix)]
+    command.process_group(0);
+    command
+        .spawn()
+        .map_err(|_| blocked("GCP CLI request is unavailable"))
 }
 
 async fn terminate_and_reject(
@@ -432,6 +511,75 @@ pub(super) async fn read_token_output(child: &mut Child) -> AppResult<Zeroizing<
             blocked("GCP ADC verification timed out"),
         )
         .await),
+    }
+}
+
+#[cfg(not(windows))]
+async fn read_json_output(child: &mut Child) -> AppResult<Value> {
+    let termination = ChildTermination::capture(child);
+    let Some(mut stdout) = child.stdout.take() else {
+        return Err(terminate_and_reject(
+            child,
+            termination,
+            blocked("GCP CLI response was rejected"),
+        )
+        .await);
+    };
+    let result = timeout(GCLOUD_TIMEOUT, async {
+        let mut output = Zeroizing::new(Vec::with_capacity(4096));
+        let mut chunk = [0_u8; 4096];
+        loop {
+            let read = match stdout.read(&mut chunk).await {
+                Ok(read) => read,
+                Err(_) => {
+                    return Err(terminate_and_reject(
+                        child,
+                        termination,
+                        blocked("GCP CLI response was rejected"),
+                    )
+                    .await);
+                }
+            };
+            if read == 0 {
+                break;
+            }
+            if output.len().saturating_add(read) > MAX_TOKEN_BYTES {
+                return Err(terminate_and_reject(
+                    child,
+                    termination,
+                    blocked("GCP CLI response was rejected"),
+                )
+                .await);
+            }
+            output.extend_from_slice(&chunk[..read]);
+        }
+        let value: Value = match serde_json::from_slice(&output) {
+            Ok(value) if !output.contains(&0) => value,
+            _ => {
+                return Err(terminate_and_reject(
+                    child,
+                    termination,
+                    blocked("GCP CLI response was rejected"),
+                )
+                .await);
+            }
+        };
+        let success = finish_child_before_snapshot_cleanup(child, termination).await?;
+        if !success {
+            return Err(blocked("GCP CLI response was rejected"));
+        }
+        Ok(value)
+    })
+    .await;
+    match result {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(error)) => Err(error),
+        Err(_) => {
+            Err(
+                terminate_and_reject(child, termination, blocked("GCP CLI request timed out"))
+                    .await,
+            )
+        }
     }
 }
 

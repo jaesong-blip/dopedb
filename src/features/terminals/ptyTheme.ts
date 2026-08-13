@@ -8,7 +8,6 @@ function token(
 ): string | undefined {
   return style.getPropertyValue(property).trim() || undefined;
 }
-
 export function resolvePtyTheme(
   style: Pick<CSSStyleDeclaration, "getPropertyValue">,
 ): ITheme {

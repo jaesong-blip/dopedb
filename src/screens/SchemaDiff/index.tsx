@@ -9,6 +9,7 @@ import type { ConnectionProfile } from "../../features/connections/domain";
 import EngineMark from "../../components/EngineMark";
 import { EnvironmentBadge } from "../../design-system/components/EnvironmentBadge";
 import { Button } from "../../design-system/components/Button";
+import { TextInput } from "../../design-system/components/FormControls";
 import {
   IdeTab,
   IdeTabStrip,
@@ -355,8 +356,8 @@ export default function SchemaDiff({
               </div>
               <label className="tw:ml-auto tw:flex tw:w-[min(320px,42%)] tw:items-center tw:gap-2 tw:text-muted-foreground">
                 <Icon name="search" />
-                <input
-                  className="tw:w-full"
+                <TextInput
+                  density="compact"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder={t("schemaDiff.searchPlaceholder")}

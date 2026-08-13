@@ -57,11 +57,20 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
         AND to_regclass('workspace_control.knowledge_project_environment') IS NOT NULL
         AND to_regclass('workspace_control.workspace_analysis_article') IS NOT NULL
         AND to_regclass('workspace_control.workspace_analysis_article_revision') IS NOT NULL
+        AND to_regclass('workspace_control.workspace_analysis_article_run') IS NOT NULL
+        AND to_regclass('workspace_control.workspace_analysis_result_fragment') IS NOT NULL
         AND EXISTS (
           SELECT 1 FROM information_schema.columns
           WHERE table_schema = 'workspace_control'
             AND table_name = 'workspace_provider_integration'
             AND column_name = 'local_verification_target'
+        )
+        AND EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'workspace_control'
+            AND table_name = 'workspace_analysis_runner'
+            AND column_name = 'runner_capability_generation'
+            AND is_nullable = 'YES'
         )
         AND EXISTS (
           SELECT 1 FROM information_schema.columns
@@ -142,7 +151,51 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
       },
     });
     vi.doMock("./db", () => ({ db: harnessDb, neonSql }));
+    let authoritativeFixture: Record<string, unknown> | null = null;
+    let authoritativeBearer = "";
+    let authoritativeCookie = "";
+    const getSession = vi.fn(async ({ headers }: { headers: Headers }) => (
+      authoritativeFixture
+      && (
+        headers.get("authorization") === authoritativeBearer
+        || headers.get("cookie") === authoritativeCookie
+      )
+        ? authoritativeFixture
+        : null
+    ));
+    vi.doMock("./auth", () => ({ auth: { api: { getSession } } }));
     const serverLog = await import("./workspace-server-log");
+    const { boundedJsonBody, privateJsonStream } = await import("./http");
+    const streamedFixture = {
+      nested: [{ value: "한글🙂".repeat(20_000), omitted: undefined }, Number.NaN],
+      date: new Date("2026-08-14T00:00:00.000Z"),
+    };
+    const streamedResponse = privateJsonStream(streamedFixture);
+    expect(await streamedResponse.text()).toBe(JSON.stringify(streamedFixture));
+    expect(streamedResponse.headers.get("cache-control")).toBe("private, no-store");
+    const boundedFixture = JSON.stringify({ label: "한글🙂" });
+    const boundedBytes = new TextEncoder().encode(boundedFixture).byteLength;
+    await expect(boundedJsonBody(new Request("https://dopedb.invalid", {
+      method: "POST",
+      body: boundedFixture,
+    }), boundedBytes)).resolves.toEqual({
+      ok: true,
+      value: { label: "한글🙂" },
+    });
+    await expect(boundedJsonBody(new Request("https://dopedb.invalid", {
+      method: "POST",
+      body: boundedFixture,
+    }), boundedBytes - 1)).resolves.toEqual({
+      ok: false,
+      reason: "too_large",
+    });
+    await expect(boundedJsonBody(new Request("https://dopedb.invalid", {
+      method: "POST",
+      body: new Uint8Array([0xff]),
+    }), 1)).resolves.toEqual({
+      ok: false,
+      reason: "invalid",
+    });
     const logSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
       serverLog.logProviderConnectionFailure({
@@ -257,17 +310,20 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
     parsedPlaintext.fill(0);
     syntheticPlaintext.fill(0);
     syntheticWrapped.fill(0);
-    const [{ importProviderReceipt }, projectStore] = await Promise.all([
+    const [{ importProviderReceipt }, projectStore, { revocationGateLockKey }] = await Promise.all([
       import("./provider-import-store"),
       import("./knowledge/project-store"),
+      import("./revocation-gates"),
     ]);
 
     const suffix = randomUUID();
     const organizationId = `harness-org-${suffix}`;
     const otherOrganizationId = `harness-other-${suffix}`;
-    const userId = `harness-user-${suffix}`;
-    const memberId = `harness-member-${suffix}`;
-    const sessionId = `harness-session-${suffix}`;
+      const userId = `harness-user-${suffix}`;
+      const memberId = `harness-member-${suffix}`;
+      const sessionId = `harness-session-${suffix}`;
+      const removableUserId = `harness-removable-user-${suffix}`;
+      const removableMemberId = `harness-removable-member-${suffix}`;
     const integrationId = randomUUID();
     const resourceId = randomUUID();
     const receiptId = randomUUID();
@@ -281,6 +337,11 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
       userId,
       membershipId: memberId,
       role: "admin" as const,
+    };
+    const knowledgeAuthority = {
+      ...authority,
+      organizationId,
+      capability: "manage" as const,
     };
     const insertReceipt = async (id: string, generation = 1) => {
       await sql`
@@ -304,12 +365,15 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
           INSERT INTO "workspace_control"."user"
             ("id", "name", "email", "email_verified")
           VALUES (${userId}, 'Harness', ${`harness-${suffix}@invalid.test`}, TRUE),
+                 (${removableUserId}, 'Removable Harness',
+                  ${`harness-removable-${suffix}@invalid.test`}, TRUE),
                  (${kmsUserId}, 'KMS Harness', ${`harness-kms-${suffix}@invalid.test`}, TRUE)
         `;
         await tx`
           INSERT INTO "workspace_control"."member"
             ("id", "organization_id", "user_id", "role")
           VALUES (${memberId}, ${organizationId}, ${userId}, 'admin'),
+                 (${removableMemberId}, ${organizationId}, ${removableUserId}, 'viewer'),
                  (${kmsMemberId}, ${kmsOrganizationId}, ${kmsUserId}, 'owner')
         `;
         await tx`
@@ -319,6 +383,12 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
                   ${`harness-token-${suffix}`}, ${userId}),
                  (${kmsSessionId}, now() + interval '10 minutes',
                   ${`harness-kms-token-${suffix}`}, ${kmsUserId})
+        `;
+        await tx`
+          INSERT INTO "workspace_control"."workspace_profile"
+            ("organization_id", "encryption_key_ref")
+          VALUES (${organizationId}, ${`pending://${organizationId}`}),
+                 (${otherOrganizationId}, ${`pending://${otherOrganizationId}`})
         `;
         await tx`
           INSERT INTO "workspace_control"."workspace_profile"
@@ -355,6 +425,91 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
           )
         `;
       });
+
+      // Authorization and browser cookies are mutually exclusive authority
+      // sources. A syntactically valid but unverifiable Bearer value must not
+      // fall through to an otherwise valid browser session, including on the
+      // route that issues the clear runner capability.
+      const sessionToken = `harness-token-${suffix}`;
+      authoritativeBearer = `Bearer ${sessionToken}`;
+      authoritativeCookie = `better-auth.session_token=harness-cookie-${suffix}`;
+      authoritativeFixture = {
+        session: { id: sessionId, token: sessionToken, userId },
+        user: { id: userId },
+      };
+      const { authoritativeSession, authoritativeSessionHeaders } = await import(
+        "./authoritative-session"
+      );
+      const cookieOnlyRequest = new Request("https://dopedb.invalid", {
+        headers: { cookie: authoritativeCookie },
+      });
+      expect(await authoritativeSession(cookieOnlyRequest)).toMatchObject({
+        user: { id: userId },
+      });
+      const invalidBearerWithCookie = new Request("https://dopedb.invalid", {
+        headers: {
+          authorization: "Bearer invalid-native-session",
+          cookie: authoritativeCookie,
+        },
+      });
+      const isolatedHeaders = authoritativeSessionHeaders(invalidBearerWithCookie);
+      expect(isolatedHeaders.get("authorization")).toBe("Bearer invalid-native-session");
+      expect(isolatedHeaders.get("cookie")).toBeNull();
+      await expect(authoritativeSession(invalidBearerWithCookie)).resolves.toBeNull();
+      await expect(authoritativeSession(new Request("https://dopedb.invalid", {
+        headers: { authorization: authoritativeBearer, cookie: "ambient=ignored" },
+      }))).resolves.toMatchObject({ user: { id: userId } });
+
+      const previousAuthOrigin = process.env.BETTER_AUTH_URL;
+      process.env.BETTER_AUTH_URL = "https://dopedb.invalid";
+      try {
+        const rejectedWorkspaceId = randomUUID();
+        const [runnerRoute, leaseRoute] = await Promise.all([
+          import("../app/api/v1/workspaces/[workspaceId]/analyses/runners/route"),
+          import("../app/api/v1/workspaces/[workspaceId]/analyses/leases/route"),
+        ]);
+        const rejectedRegistration = await runnerRoute.POST(new Request(
+          `https://dopedb.invalid/api/v1/workspaces/${rejectedWorkspaceId}/analyses/runners`,
+          {
+            method: "POST",
+            headers: {
+              authorization: "Bearer invalid-native-session",
+              cookie: authoritativeCookie,
+              "content-type": "application/json",
+              "x-dopedb-analysis-runner-capability-version": "1",
+            },
+            body: JSON.stringify({
+              deviceId: randomUUID(),
+              displayName: "Cookie fallback attempt",
+              backgroundAllowed: false,
+            }),
+          },
+        ), { params: Promise.resolve({ workspaceId: rejectedWorkspaceId }) });
+        expect(rejectedRegistration.status).toBe(401);
+        expect(await rejectedRegistration.text()).not.toContain("runnerCapability");
+
+        const rejectedClaim = await leaseRoute.POST(new Request(
+          `https://dopedb.invalid/api/v1/workspaces/${rejectedWorkspaceId}/analyses/leases`,
+          {
+            method: "POST",
+            headers: {
+              authorization: "Bearer invalid-native-session",
+              cookie: authoritativeCookie,
+              "content-type": "application/json",
+              "x-dopedb-analysis-runner-capability": "a".repeat(64),
+            },
+            body: JSON.stringify({
+              runnerId: randomUUID(),
+              deviceId: randomUUID(),
+              background: false,
+            }),
+          },
+        ), { params: Promise.resolve({ workspaceId: rejectedWorkspaceId }) });
+        expect(rejectedClaim.status).toBe(401);
+      } finally {
+        if (previousAuthOrigin === undefined) delete process.env.BETTER_AUTH_URL;
+        else process.env.BETTER_AUTH_URL = previousAuthOrigin;
+      }
       const projectName = `Harness Project ${suffix}`;
       const createdProject = await projectStore.insertKnowledgeProject({
         organizationId,
@@ -363,6 +518,7 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
           { name: "Prod", riskClass: "production" },
           { name: "Dev", riskClass: "development" },
         ],
+        authority: knowledgeAuthority,
       });
       expect(createdProject).toMatchObject({
         name: projectName,
@@ -377,6 +533,7 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
         organizationId,
         name: projectName,
         environments: [{ name: "Main", riskClass: "custom" }],
+        authority: knowledgeAuthority,
       })).resolves.toBeNull();
       const appendedProject = await projectStore.appendKnowledgeEnvironment({
         organizationId,
@@ -384,6 +541,7 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
         expectedProjectRevision: 1,
         name: "Stage",
         riskClass: "staging",
+        authority: knowledgeAuthority,
       });
       expect(appendedProject).toMatchObject({
         id: createdProject.id,
@@ -400,6 +558,7 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
         expectedProjectRevision: 1,
         name: "Test",
         riskClass: "test",
+        authority: knowledgeAuthority,
       })).resolves.toBeNull();
       await expect(projectStore.appendKnowledgeEnvironment({
         organizationId,
@@ -407,7 +566,121 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
         expectedProjectRevision: 2,
         name: "Prod",
         riskClass: "production",
+        authority: knowledgeAuthority,
       })).resolves.toBeNull();
+      await expect(projectStore.insertKnowledgeProject({
+        organizationId,
+        name: `Invalid subject ${suffix}`,
+        environments: [{ name: "Main", riskClass: "custom" }],
+        authority: {
+          ...knowledgeAuthority,
+          subject: { membershipId: memberId, userId: `not-${userId}` },
+        },
+      })).resolves.toBeNull();
+
+      const memberGateKey = revocationGateLockKey({
+        kind: "member",
+        organizationId,
+        memberId,
+        userId,
+      });
+      let releaseMemberRevocation!: () => void;
+      let memberRevocationReady!: () => void;
+      const memberRevocationRelease = new Promise<void>((resolve) => {
+        releaseMemberRevocation = resolve;
+      });
+      const memberRevocationStarted = new Promise<void>((resolve) => {
+        memberRevocationReady = resolve;
+      });
+      const memberRevocation = sql.begin(async (tx) => {
+        await tx`SELECT pg_advisory_xact_lock(hashtextextended(${memberGateKey}, 0))`;
+        await tx`
+          UPDATE "workspace_control"."member"
+          SET "revocation_pending_at" = now()
+          WHERE "id" = ${memberId} AND "organization_id" = ${organizationId}
+        `;
+        memberRevocationReady();
+        await memberRevocationRelease;
+      });
+      await memberRevocationStarted;
+      const revokedMemberWrite = projectStore.insertKnowledgeProject({
+        organizationId,
+        name: `Revoked race ${suffix}`,
+        environments: [{ name: "Main", riskClass: "custom" }],
+        authority: knowledgeAuthority,
+      });
+      releaseMemberRevocation();
+      await memberRevocation;
+      await expect(revokedMemberWrite).resolves.toBeNull();
+      await sql`
+        UPDATE "workspace_control"."member"
+        SET "revocation_pending_at" = NULL
+        WHERE "id" = ${memberId} AND "organization_id" = ${organizationId}
+      `;
+
+      const deletionRaceReceiptId = randomUUID();
+      await sql`
+        INSERT INTO "workspace_control"."workspace_deletion_receipt"
+          ("id", "organization_id", "requested_by_user_id", "requested_at", "purge_after")
+        VALUES (${deletionRaceReceiptId}::uuid, ${organizationId}, ${userId}, now(),
+                now() + interval '7 days')
+      `;
+      let releaseDeletionPending!: () => void;
+      let deletionPendingReady!: () => void;
+      const deletionPendingRelease = new Promise<void>((resolve) => {
+        releaseDeletionPending = resolve;
+      });
+      const deletionPendingStarted = new Promise<void>((resolve) => {
+        deletionPendingReady = resolve;
+      });
+      const deletionPending = sql.begin(async (tx) => {
+        await tx`
+          UPDATE "workspace_control"."workspace_profile"
+          SET "lifecycle_state" = 'deletion_pending',
+              "deletion_receipt_id" = ${deletionRaceReceiptId}::uuid,
+              "deletion_requested_at" = now(),
+              "purge_after" = now() + interval '7 days'
+          WHERE "organization_id" = ${organizationId}
+        `;
+        await tx`
+          UPDATE "workspace_control"."member" member
+          SET "revocation_pending_at" = profile."deletion_requested_at"
+          FROM "workspace_control"."workspace_profile" profile
+          WHERE member."id" = ${memberId}
+            AND member."organization_id" = ${organizationId}
+            AND profile."organization_id" = member."organization_id"
+        `;
+        deletionPendingReady();
+        await deletionPendingRelease;
+      });
+      await deletionPendingStarted;
+      const deletingWorkspaceWrite = projectStore.insertKnowledgeProject({
+        organizationId,
+        name: `Deletion race ${suffix}`,
+        environments: [{ name: "Main", riskClass: "custom" }],
+        authority: knowledgeAuthority,
+      });
+      releaseDeletionPending();
+      await deletionPending;
+      await expect(deletingWorkspaceWrite).resolves.toBeNull();
+      await sql.begin(async (tx) => {
+        await tx`
+          UPDATE "workspace_control"."workspace_profile"
+          SET "lifecycle_state" = 'active', "deletion_receipt_id" = NULL,
+              "deletion_requested_at" = NULL, "purge_after" = NULL
+          WHERE "organization_id" = ${organizationId}
+        `;
+        await tx`
+          UPDATE "workspace_control"."member"
+          SET "revocation_pending_at" = NULL
+          WHERE "id" = ${memberId} AND "organization_id" = ${organizationId}
+        `;
+        await tx`
+          UPDATE "workspace_control"."workspace_deletion_receipt"
+          SET "status" = 'cancelled', "cancelled_at" = now()
+          WHERE "id" = ${deletionRaceReceiptId}::uuid
+        `;
+      });
       await insertReceipt(receiptId);
 
       const input = {
@@ -508,7 +781,7 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
             connectionRole: "primary",
             sql: "SELECT count(*) AS active_rows FROM users WHERE active = TRUE",
             parameterIds: [],
-            maxRows: 1,
+            maxRows: 5,
             maxBytes: 16_384,
             cacheTtlSeconds: 0,
             columns: [{
@@ -542,6 +815,16 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
               comparisonColumn: null,
               sparklineColumn: null,
               sampleCountColumn: null,
+            },
+          }, {
+            id: "active_rows_detail",
+            kind: "table",
+            title: "Active rows detail",
+            sourceNodeId: "active_rows",
+            width: 8,
+            config: {
+              columns: ["active_rows"],
+              pageSize: 10,
             },
           }],
           claims: [],
@@ -633,6 +916,1010 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
             AS "plainResultColumns"
       `;
       expect(articleDurability[0]).toEqual({ revisions: 3, plainResultColumns: 0 });
+
+      // Exercise the staged Analysis result transaction against real PostgreSQL:
+      // one exact runner may stage each immutable fragment once, atomically
+      // complete it, replay that completion, and never expose a partial retained
+      // manifest. Cancellation and share-off changes must close staging in SQL,
+      // not merely in the route's earlier read-only checks.
+      const [runStore, runnerStore, runContract, versioning, runnerCapabilityContract] =
+        await Promise.all([
+          import("./workspace-analysis-run-store"),
+          import("./workspace-analysis-runner-store"),
+          import("./workspace-analysis-runs"),
+          import("./workspace-versioning"),
+          import("./workspace-analysis-runner-capability"),
+        ]);
+      expect(runnerCapabilityContract.parseAnalysisRunnerCapabilityVersion(new Request(
+        "https://dopedb.invalid",
+      ))).toBeNull();
+      expect(runnerCapabilityContract.parseAnalysisRunnerCapabilityVersion(new Request(
+        "https://dopedb.invalid",
+        { headers: { "x-dopedb-analysis-runner-capability-version": "2" } },
+      ))).toBeNull();
+      expect(runnerCapabilityContract.parseAnalysisRunnerCapabilityVersion(new Request(
+        "https://dopedb.invalid",
+        { headers: { "x-dopedb-analysis-runner-capability-version": "1" } },
+      ))).toBe(1);
+      expect(() => runnerCapabilityContract.hashAnalysisRunnerCapability(
+        ` ${"a".repeat(64)}`,
+      )).toThrow("Invalid Analysis runner capability");
+      expect(runnerCapabilityContract.parseAnalysisRunnerCapability(new Request(
+        "https://dopedb.invalid",
+        { headers: { "x-dopedb-analysis-runner-capability": "A".repeat(64) } },
+      ))).toBeNull();
+      const registeredDeviceId = `analysis-capability-${suffix}`;
+      await expect(runnerStore.registerAnalysisRunner({
+        organizationId,
+        registration: {
+          deviceId: registeredDeviceId,
+          displayName: "Old Desktop runner",
+          backgroundAllowed: false,
+        },
+        runnerCapability: null,
+        capabilityVersion: null,
+        authority,
+      })).resolves.toMatchObject({ status: "unsupported" });
+      await expect(runnerStore.registerAnalysisRunner({
+        organizationId,
+        registration: {
+          deviceId: registeredDeviceId,
+          displayName: "Unsupported Desktop runner",
+          backgroundAllowed: false,
+        },
+        runnerCapability: "f".repeat(64),
+        capabilityVersion: 2,
+        authority,
+      })).resolves.toMatchObject({ status: "unsupported" });
+      const unboundRegistrationCount = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS "count"
+        FROM "workspace_control"."workspace_analysis_runner"
+        WHERE "organization_id" = ${organizationId}
+          AND "device_id" = ${registeredDeviceId}
+      `;
+      expect(unboundRegistrationCount[0]?.count).toBe(0);
+      const registeredRunner = await runnerStore.registerAnalysisRunner({
+        organizationId,
+        registration: {
+          deviceId: registeredDeviceId,
+          displayName: "Capability harness runner",
+          backgroundAllowed: false,
+        },
+        runnerCapability: null,
+        capabilityVersion: 1,
+        authority,
+      });
+      expect(registeredRunner).toMatchObject({
+        status: "created",
+        deviceId: registeredDeviceId,
+        runnerCapabilityGeneration: 1,
+      });
+      expect(registeredRunner?.status === "created"
+        ? registeredRunner.runnerCapability : null).toMatch(/^[0-9a-f]{64}$/);
+      await expect(runnerStore.registerAnalysisRunner({
+        organizationId,
+        registration: {
+          deviceId: registeredDeviceId,
+          displayName: "Mismatched heartbeat",
+          backgroundAllowed: true,
+        },
+        runnerCapability: "f".repeat(64),
+        capabilityVersion: 1,
+        authority,
+      })).resolves.toMatchObject({ status: "invalid" });
+      await expect(runnerStore.registerAnalysisRunner({
+        organizationId,
+        registration: {
+          deviceId: registeredDeviceId,
+          displayName: "Unproved heartbeat",
+          backgroundAllowed: false,
+        },
+        runnerCapability: null,
+        capabilityVersion: 1,
+        authority,
+      })).resolves.toMatchObject({ status: "missing" });
+      const verifiedRunner = registeredRunner?.status === "created"
+        ? await runnerStore.registerAnalysisRunner({
+          organizationId,
+          registration: {
+            deviceId: registeredDeviceId,
+            displayName: "Verified heartbeat",
+            backgroundAllowed: false,
+          },
+          runnerCapability: registeredRunner.runnerCapability,
+          capabilityVersion: 1,
+          authority,
+        })
+        : null;
+      expect(verifiedRunner).toMatchObject({ status: "verified", runnerCapability: null });
+      const verifiedHeartbeatState = await sql<{
+        displayName: string;
+        backgroundAllowed: boolean;
+        audits: number;
+      }[]>`
+        SELECT runner."display_name" AS "displayName",
+          runner."background_allowed" AS "backgroundAllowed",
+          (SELECT count(*)::int FROM "workspace_control"."workspace_audit_event" audit
+           WHERE audit."organization_id" = ${organizationId}
+             AND audit."action" = 'analysis_runner.register'
+             AND audit."resource_id" = runner."id"::text) AS "audits"
+        FROM "workspace_control"."workspace_analysis_runner" runner
+        WHERE runner."organization_id" = ${organizationId}
+          AND runner."device_id" = ${registeredDeviceId}
+      `;
+      expect(verifiedHeartbeatState[0]).toEqual({
+        displayName: "Verified heartbeat",
+        backgroundAllowed: false,
+        audits: 2,
+      });
+      await expect(runnerStore.registerAnalysisRunner({
+        organizationId,
+        registration: {
+          deviceId: registeredDeviceId,
+          displayName: "Old Desktop conflict",
+          backgroundAllowed: false,
+        },
+        runnerCapability: registeredRunner?.status === "created"
+          ? registeredRunner.runnerCapability : null,
+        capabilityVersion: null,
+        authority,
+      })).resolves.toMatchObject({ status: "unsupported" });
+      await sql`
+        UPDATE "workspace_control"."workspace_analysis_runner"
+        SET "revoked_at" = now()
+        WHERE "organization_id" = ${organizationId}
+          AND "device_id" = ${registeredDeviceId}
+      `;
+      await expect(runnerStore.registerAnalysisRunner({
+        organizationId,
+        registration: {
+          deviceId: registeredDeviceId,
+          displayName: "Forbidden same-row bootstrap",
+          backgroundAllowed: false,
+        },
+        runnerCapability: null,
+        capabilityVersion: 1,
+        authority,
+      })).resolves.toMatchObject({ status: "replacement_required" });
+      const replacementRunner = await runnerStore.registerAnalysisRunner({
+        organizationId,
+        registration: {
+          deviceId: `${registeredDeviceId}-replacement`,
+          displayName: "Fresh replacement runner",
+          backgroundAllowed: false,
+        },
+        runnerCapability: null,
+        capabilityVersion: 1,
+        authority,
+      });
+      expect(replacementRunner).toMatchObject({ status: "created", runnerCapabilityGeneration: 1 });
+      const analysisRunnerId = randomUUID();
+      const analysisRunnerCapability = "7".repeat(64);
+      const invalidAnalysisRunnerCapability = "8".repeat(64);
+      const analysisRunnerCapabilityHash = runnerCapabilityContract
+        .hashAnalysisRunnerCapability(analysisRunnerCapability);
+      const analysisDataKeyId = randomUUID();
+      await sql.begin(async (tx) => {
+        await tx`
+          INSERT INTO "workspace_control"."workspace_analysis_runner"
+            ("id", "organization_id", "member_id", "device_id", "display_name",
+             "runner_capability_hash", "runner_capability_generation")
+          VALUES (${analysisRunnerId}::uuid, ${organizationId}, ${memberId},
+                  ${`analysis-harness-${suffix}`}, 'Analysis harness runner',
+                  ${analysisRunnerCapabilityHash}, 1)
+        `;
+        await tx`
+          INSERT INTO "workspace_control"."workspace_data_key"
+            ("id", "organization_id", "version", "key_reference", "kms_key_version",
+             "wrapped_key", "created_by_user_id")
+          VALUES (${analysisDataKeyId}::uuid, ${organizationId}, 1,
+                  'dopedb-workspace-data-key',
+                  'projects/dopedb-harness/locations/global/keyRings/workspace/cryptoKeys/analysis/cryptoKeyVersions/1',
+                  ${Buffer.alloc(32, 17).toString("base64")}, ${userId})
+        `;
+      });
+      const createAnalysisRun = async (revision: number) => {
+        const id = randomUUID();
+        const run = await runStore.commitAnalysisRunCreate({
+          organizationId,
+          articleId,
+          run: {
+            id,
+            articleRevision: revision,
+            runnerId: analysisRunnerId,
+            trigger: "manual",
+            parameterValues: {},
+          },
+          parameterHash: versioning.canonicalHash({}),
+          definitionHash: versioning.canonicalHash(revisedArticle.definition),
+          runnerCapabilityHash: analysisRunnerCapabilityHash,
+          authority,
+        });
+        expect(run).toMatchObject({ id, state: "running", runnerId: analysisRunnerId });
+        return id;
+      };
+      await expect(runStore.commitAnalysisRunCreate({
+        organizationId,
+        articleId,
+        run: {
+          id: randomUUID(),
+          articleRevision: 3,
+          runnerId: analysisRunnerId,
+          trigger: "manual",
+          parameterValues: {},
+        },
+        parameterHash: versioning.canonicalHash({}),
+        definitionHash: versioning.canonicalHash(revisedArticle.definition),
+        runnerCapabilityHash: runnerCapabilityContract
+          .hashAnalysisRunnerCapability(invalidAnalysisRunnerCapability),
+        authority,
+      })).resolves.toBeNull();
+      const stagedFragment = (
+        ordinal: number,
+        blockId = "active_rows_metric",
+      ) => ({
+        blockId,
+        ordinal,
+        dataKeyId: analysisDataKeyId,
+        keyReference: "dopedb-workspace-data-key",
+        keyVersion: "v1",
+        ciphertext: Buffer.from(`sealed-analysis-${blockId}-${ordinal}`).toString("base64"),
+        payloadHash: versioning.canonicalHash({ blockId, ordinal }),
+        rowCount: 1,
+        plaintextBytes: 128 + ordinal,
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+      const stageFragment = (runId: string, fragment: ReturnType<typeof stagedFragment>) => (
+        runStore.stageAnalysisRunFragment({
+          organizationId,
+          articleId,
+          runId,
+          runnerId: analysisRunnerId,
+          runnerCapabilityHash: analysisRunnerCapabilityHash,
+          fragment,
+          authority,
+        })
+      );
+      const analysisRunId = await createAnalysisRun(3);
+      const invalidAnalysisRunnerCapabilityHash = runnerCapabilityContract
+        .hashAnalysisRunnerCapability(invalidAnalysisRunnerCapability);
+      expect(await runStore.canStageAnalysisRunFragment({
+        organizationId,
+        articleId,
+        runId: analysisRunId,
+        runnerId: analysisRunnerId,
+        runnerCapabilityHash: invalidAnalysisRunnerCapabilityHash,
+        authority,
+      })).toBe(false);
+      expect(await runStore.canStageAnalysisRunFragment({
+        organizationId,
+        articleId,
+        runId: analysisRunId,
+        runnerId: analysisRunnerId,
+        runnerCapabilityHash: analysisRunnerCapabilityHash,
+        authority,
+      })).toBe(true);
+      const firstFragment = stagedFragment(0);
+      const secondFragment = stagedFragment(1);
+      const detailFragment = stagedFragment(0, "active_rows_detail");
+      await expect(runStore.stageAnalysisRunFragment({
+        organizationId,
+        articleId,
+        runId: analysisRunId,
+        runnerId: analysisRunnerId,
+        runnerCapabilityHash: invalidAnalysisRunnerCapabilityHash,
+        fragment: firstFragment,
+        authority,
+      })).resolves.toBeNull();
+      await expect(stageFragment(analysisRunId, firstFragment)).resolves.toMatchObject({
+        blockId: firstFragment.blockId,
+        ordinal: 0,
+        payloadHash: firstFragment.payloadHash,
+      });
+      await expect(stageFragment(analysisRunId, secondFragment)).resolves.toMatchObject({
+        blockId: secondFragment.blockId,
+        ordinal: 1,
+        payloadHash: secondFragment.payloadHash,
+      });
+      await expect(stageFragment(analysisRunId, detailFragment)).resolves.toMatchObject({
+        blockId: detailFragment.blockId,
+        ordinal: 0,
+        payloadHash: detailFragment.payloadHash,
+      });
+      // A retry is a read of the same immutable row, not another staged audit.
+      await expect(stageFragment(analysisRunId, firstFragment)).resolves.toMatchObject({
+        payloadHash: firstFragment.payloadHash,
+      });
+      const stagedAudits = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS "count"
+        FROM "workspace_control"."workspace_audit_event"
+        WHERE "organization_id" = ${organizationId}
+          AND "action" = 'analysis_article.result_fragment_staged'
+          AND "resource_id" = ${analysisRunId}
+      `;
+      expect(stagedAudits[0]?.count).toBe(3);
+      const queryReceipt = {
+        queryNodeId: "active_rows",
+        connectionId: left.connection.id,
+        connectionRevision: left.connection.contentRevision,
+        queryRunId: randomUUID(),
+        queryHash: versioning.canonicalHash({
+          sql: revisedArticle.definition.queries[0]!.sql,
+          parameterValues: {},
+        }),
+        schemaFingerprint: versioning.canonicalHash(
+          revisedArticle.definition.queries[0]!.columns,
+        ),
+        state: "succeeded" as const,
+        rowCount: 2,
+        byteCount: 257,
+        durationMs: 9,
+      };
+      const fragmentManifest = [firstFragment, secondFragment, detailFragment].map((fragment) => ({
+        blockId: fragment.blockId,
+        ordinal: fragment.ordinal,
+        payloadHash: fragment.payloadHash,
+      }));
+      const missingBlockManifest = fragmentManifest.filter(
+        (fragment) => fragment.blockId !== "active_rows_detail",
+      );
+      const gapManifest = fragmentManifest.map((fragment) => fragment.ordinal === 1
+        ? { ...fragment, ordinal: 2 }
+        : fragment);
+      const duplicateManifest = [...fragmentManifest, fragmentManifest[0]!];
+      const unknownBlockManifest = [
+        { ...fragmentManifest[0]!, blockId: "unknown_block" },
+        ...fragmentManifest,
+      ];
+      const inlineFragment = (blockId: string, ordinal: number) => ({
+        version: 1 as const,
+        blockId,
+        ordinal,
+        columns: revisedArticle.definition.queries[0]!.columns,
+        rows: [[2]],
+        truncated: false,
+      });
+      expect(runContract.parseAnalysisRunCompletion({
+        state: "succeeded",
+        queryReceipts: [queryReceipt],
+        fragmentManifest,
+        error: null,
+      }, revisedArticle.definition).fragmentManifest).toHaveLength(3);
+      expect(runContract.parseAnalysisRunCompletion({
+        state: "succeeded",
+        queryReceipts: [queryReceipt],
+        fragments: [
+          inlineFragment("active_rows_metric", 0),
+          inlineFragment("active_rows_metric", 1),
+          inlineFragment("active_rows_detail", 0),
+        ],
+        error: null,
+      }, revisedArticle.definition).inlineFragments).toHaveLength(3);
+      for (const invalidManifest of [
+        missingBlockManifest,
+        gapManifest,
+        duplicateManifest,
+        unknownBlockManifest,
+      ]) {
+        expect(() => runContract.parseAnalysisRunCompletion({
+          state: "succeeded",
+          queryReceipts: [queryReceipt],
+          fragmentManifest: invalidManifest,
+          error: null,
+        }, revisedArticle.definition)).toThrow();
+      }
+      for (const invalidInlineFragments of [
+        [
+          inlineFragment("active_rows_metric", 0),
+          inlineFragment("active_rows_metric", 1),
+        ],
+        [
+          inlineFragment("active_rows_metric", 0),
+          inlineFragment("active_rows_metric", 2),
+          inlineFragment("active_rows_detail", 0),
+        ],
+      ]) {
+        expect(() => runContract.parseAnalysisRunCompletion({
+          state: "succeeded",
+          queryReceipts: [queryReceipt],
+          fragments: invalidInlineFragments,
+          error: null,
+        }, revisedArticle.definition)).toThrow();
+      }
+      const completion = {
+        state: "succeeded" as const,
+        queryReceipts: [queryReceipt],
+        fragmentManifest,
+        inlineFragments: [],
+        error: null,
+      };
+      const sqlBoundaryCases = [
+        missingBlockManifest,
+        gapManifest,
+        unknownBlockManifest,
+        duplicateManifest,
+      ];
+      for (const invalidManifest of sqlBoundaryCases) {
+        const invalidRunId = await createAnalysisRun(3);
+        for (const fragment of [firstFragment, secondFragment, detailFragment]) {
+          await stageFragment(invalidRunId, fragment);
+        }
+        const invalidReceipt = { ...queryReceipt, queryRunId: randomUUID() };
+        await expect(runStore.commitAnalysisRunCompletion({
+          organizationId,
+          articleId,
+          runId: invalidRunId,
+          runnerId: analysisRunnerId,
+          runnerCapabilityHash: analysisRunnerCapabilityHash,
+          completion: {
+            ...completion,
+            queryReceipts: [invalidReceipt],
+            fragmentManifest: invalidManifest,
+          },
+          fragmentManifest: invalidManifest,
+          authority,
+        })).resolves.toBeNull();
+        const invalidRun = await sql<{ state: string }[]>`
+          SELECT "state"
+          FROM "workspace_control"."workspace_analysis_article_run"
+          WHERE "organization_id" = ${organizationId}
+            AND "id" = ${invalidRunId}::uuid
+        `;
+        expect(invalidRun[0]?.state).toBe("running");
+      }
+      const completedRun = await runStore.commitAnalysisRunCompletion({
+        organizationId,
+        articleId,
+        runId: analysisRunId,
+        runnerId: analysisRunnerId,
+        runnerCapabilityHash: analysisRunnerCapabilityHash,
+        completion,
+        fragmentManifest,
+        authority,
+      });
+      expect(completedRun).toMatchObject({
+        id: analysisRunId,
+        articleRevision: 3,
+        state: "succeeded",
+        rowCount: 2,
+        byteCount: 385,
+        resultHash: runContract.analysisRunResultHash([queryReceipt], fragmentManifest),
+      });
+      // A response-loss retry recovers the exact durable terminal run without
+      // duplicating receipts or terminal audit events.
+      await expect(runStore.commitAnalysisRunCompletion({
+        organizationId,
+        articleId,
+        runId: analysisRunId,
+        runnerId: analysisRunnerId,
+        runnerCapabilityHash: analysisRunnerCapabilityHash,
+        completion,
+        fragmentManifest,
+        authority,
+      })).resolves.toMatchObject({ id: analysisRunId, state: "succeeded" });
+      await expect(runStore.commitAnalysisRunCompletion({
+        organizationId,
+        articleId,
+        runId: analysisRunId,
+        runnerId: analysisRunnerId,
+        runnerCapabilityHash: invalidAnalysisRunnerCapabilityHash,
+        completion,
+        fragmentManifest,
+        authority,
+      })).resolves.toBeNull();
+      const completionDurability = await sql<{
+        receipts: number;
+        completionAudits: number;
+      }[]>`
+        SELECT
+          (SELECT count(*)::int
+           FROM "workspace_control"."workspace_analysis_article_query_receipt"
+           WHERE "organization_id" = ${organizationId}
+             AND "run_id" = ${analysisRunId}::uuid) AS "receipts",
+          (SELECT count(*)::int
+           FROM "workspace_control"."workspace_audit_event"
+           WHERE "organization_id" = ${organizationId}
+             AND "action" = 'analysis_article.run_complete'
+             AND "resource_id" = ${analysisRunId}) AS "completionAudits"
+      `;
+      expect(completionDurability[0]).toEqual({ receipts: 1, completionAudits: 1 });
+      // Retention can remove one row before another cleanup batch. The committed
+      // manifest hash must then fail closed instead of treating the remainder as
+      // a smaller valid result.
+      await sql`
+        DELETE FROM "workspace_control"."workspace_analysis_result_fragment"
+        WHERE "organization_id" = ${organizationId}
+          AND "run_id" = ${analysisRunId}::uuid
+          AND "ordinal" = 1
+      `;
+      const retainedFragments = await sql<{
+        blockId: string;
+        ordinal: number;
+        payloadHash: string;
+        plaintextBytes: number;
+      }[]>`
+        SELECT "block_id" AS "blockId", "ordinal", "payload_hash" AS "payloadHash",
+          "plaintext_bytes" AS "plaintextBytes"
+        FROM "workspace_control"."workspace_analysis_result_fragment"
+        WHERE "organization_id" = ${organizationId}
+          AND "run_id" = ${analysisRunId}::uuid
+          AND "expires_at" > now()
+      `;
+      expect(runContract.analysisRunEvidenceIsComplete({
+        resultHash: String(completedRun?.resultHash ?? ""),
+        rowCount: 2,
+        byteCount: 385,
+        receipts: [queryReceipt],
+        fragments: retainedFragments,
+      })).toBe(false);
+
+      const cancelledRunId = await createAnalysisRun(3);
+      await expect(stageFragment(cancelledRunId, stagedFragment(0))).resolves.not.toBeNull();
+      await expect(runStore.requestAnalysisRunCancellation({
+        organizationId,
+        articleId,
+        runId: cancelledRunId,
+        authority,
+      })).resolves.toMatchObject({ id: cancelledRunId });
+      expect(await runStore.canStageAnalysisRunFragment({
+        organizationId,
+        articleId,
+        runId: cancelledRunId,
+        runnerId: analysisRunnerId,
+        runnerCapabilityHash: analysisRunnerCapabilityHash,
+        authority,
+      })).toBe(false);
+      await expect(stageFragment(cancelledRunId, stagedFragment(1))).resolves.toBeNull();
+      const cancelledReceiptProbe = {
+        ...queryReceipt,
+        queryRunId: randomUUID(),
+        state: "cancelled" as const,
+        rowCount: 0,
+        byteCount: 0,
+      };
+      await expect(runStore.commitAnalysisRunCompletion({
+        organizationId,
+        articleId,
+        runId: cancelledRunId,
+        runnerId: analysisRunnerId,
+        runnerCapabilityHash: analysisRunnerCapabilityHash,
+        completion: {
+          state: "cancelled",
+          queryReceipts: [cancelledReceiptProbe],
+          fragmentManifest: [],
+          inlineFragments: [],
+          error: { kind: "cancelled", message: "Cancelled by harness" },
+        },
+        fragmentManifest: [],
+        authority,
+      })).resolves.toMatchObject({ id: cancelledRunId, state: "cancelled" });
+      const cancelledFragments = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS "count"
+        FROM "workspace_control"."workspace_analysis_result_fragment"
+        WHERE "organization_id" = ${organizationId}
+          AND "run_id" = ${cancelledRunId}::uuid
+      `;
+      expect(cancelledFragments[0]?.count).toBe(0);
+      const cancelledReceipts = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS "count"
+        FROM "workspace_control"."workspace_analysis_article_query_receipt"
+        WHERE "organization_id" = ${organizationId}
+          AND "run_id" = ${cancelledRunId}::uuid
+      `;
+      expect(cancelledReceipts[0]?.count).toBe(0);
+
+      const returnedDraft = await commitAnalysisArticleMutation({
+        organizationId,
+        article: revisedArticle,
+        expectedRevision: 3,
+        state: "draft",
+        ownerMemberId: memberId,
+        authority,
+        operation: "return_draft",
+      });
+      expect(returnedDraft).toMatchObject({ revision: 4, state: "draft" });
+      const privateArticleInput = articleContract.parseSharedAnalysisArticleCreate({
+        ...revisedArticle,
+        definition: {
+          ...revisedArticle.definition,
+          refresh: {
+            ...revisedArticle.definition.refresh,
+            shareReviewedResults: false,
+          },
+        },
+      });
+      const privateDraft = await commitAnalysisArticleMutation({
+        organizationId,
+        article: privateArticleInput,
+        expectedRevision: 4,
+        state: "draft",
+        ownerMemberId: memberId,
+        authority,
+        operation: "update",
+      });
+      expect(privateDraft).toMatchObject({ revision: 5, state: "draft" });
+      const privateReview = await commitAnalysisArticleMutation({
+        organizationId,
+        article: privateArticleInput,
+        expectedRevision: 5,
+        state: "review",
+        ownerMemberId: memberId,
+        authority,
+        operation: "submit_review",
+      });
+      expect(privateReview).toMatchObject({ revision: 6, state: "review" });
+      const privateRunId = await createAnalysisRun(6);
+      expect(await runStore.canStageAnalysisRunFragment({
+        organizationId,
+        articleId,
+        runId: privateRunId,
+        runnerId: analysisRunnerId,
+        runnerCapabilityHash: analysisRunnerCapabilityHash,
+        authority,
+      })).toBe(false);
+      await expect(stageFragment(privateRunId, stagedFragment(0))).resolves.toBeNull();
+      await sql`
+        UPDATE "workspace_control"."workspace_analysis_runner"
+        SET "runner_capability_hash" = ${invalidAnalysisRunnerCapabilityHash},
+            "runner_capability_generation" = 2
+        WHERE "organization_id" = ${organizationId}
+          AND "id" = ${analysisRunnerId}::uuid
+      `;
+      expect(await runStore.canStageAnalysisRunFragment({
+        organizationId,
+        articleId,
+        runId: privateRunId,
+        runnerId: analysisRunnerId,
+        runnerCapabilityHash: invalidAnalysisRunnerCapabilityHash,
+        authority,
+      })).toBe(false);
+      await sql`
+        INSERT INTO "workspace_control"."workspace_analysis_result_fragment"
+          ("organization_id", "run_id", "block_id", "ordinal", "data_key_id",
+           "key_reference", "key_version", "ciphertext", "payload_hash", "row_count",
+           "plaintext_bytes", "expires_at")
+        VALUES (${organizationId}, ${privateRunId}::uuid, 'active_rows_metric', 0,
+          ${analysisDataKeyId}::uuid, 'dopedb-workspace-data-key', 'v1',
+          ${Buffer.from("revocation-fragment").toString("base64")},
+          ${versioning.canonicalHash({ privateRunId })}, 1, 64, now() + interval '1 minute')
+      `;
+      const revokedRunner = await runnerStore.revokeAnalysisRunner({
+        organizationId,
+        runnerId: analysisRunnerId,
+        authority,
+      });
+      expect(revokedRunner).toMatchObject({ id: analysisRunnerId });
+      const revokedRunState = await sql<{ state: string; fragments: number }[]>`
+        SELECT run."state",
+          (SELECT count(*)::int
+           FROM "workspace_control"."workspace_analysis_result_fragment" fragment
+           WHERE fragment."organization_id" = run."organization_id"
+             AND fragment."run_id" = run."id") AS "fragments"
+        FROM "workspace_control"."workspace_analysis_article_run" run
+        WHERE run."organization_id" = ${organizationId}
+          AND run."id" = ${privateRunId}::uuid
+      `;
+      expect(revokedRunState[0]).toEqual({ state: "stale", fragments: 0 });
+
+      const removableRunnerId = randomUUID();
+      const removableRunId = randomUUID();
+      const removableHistoricalRunId = randomUUID();
+      const removableLeaseId = randomUUID();
+      const removableClaimId = randomUUID();
+      const removableSignalId = randomUUID();
+      const removablePublicationId = randomUUID();
+      const removableSignalDefinition = {
+        condition: { kind: "threshold_above", value: 1 },
+        baselineWindowSeconds: null,
+        minimumSampleCount: 1,
+        cooldownSeconds: 60,
+        rearmAfterNormalCount: 1,
+        severity: "warning",
+        recipientMemberIds: [removableMemberId],
+        channels: ["workspace_web"],
+        productionConfirmed: true,
+      };
+      const removableSignalPayload = {
+        id: removableSignalId,
+        articleRevision: 3,
+        blockId: "active_rows_metric",
+        definition: removableSignalDefinition,
+        enabled: true,
+        deleted: false,
+      };
+      await sql.begin(async (tx) => {
+        await tx`
+          UPDATE "workspace_control"."member"
+          SET "revocation_pending_at" = now(),
+              "revocation_claimed_at" = now(),
+              "revocation_claim_id" = ${removableClaimId}::uuid
+          WHERE "id" = ${removableMemberId}
+            AND "organization_id" = ${organizationId}
+        `;
+        await tx`
+          INSERT INTO "workspace_control"."workspace_analysis_runner"
+            ("id", "organization_id", "member_id", "device_id", "display_name",
+             "runner_capability_hash", "runner_capability_generation", "background_allowed")
+          VALUES (${removableRunnerId}::uuid, ${organizationId}, ${removableMemberId},
+                  ${`removable-runner-${suffix}`}, 'Removable member runner',
+                  ${analysisRunnerCapabilityHash}, 1, TRUE)
+        `;
+        await tx`
+          INSERT INTO "workspace_control"."workspace_analysis_refresh_lease"
+            ("id", "organization_id", "article_id", "article_revision", "runner_id",
+             "runner_capability_generation", "idempotency_key", "parameter_hash",
+             "lease_capability_hash", "scheduled_at", "expires_at")
+          VALUES (${removableLeaseId}::uuid, ${organizationId}, ${articleId}::uuid, 3,
+                  ${removableRunnerId}::uuid, 1, ${`member-removal-${suffix}`},
+                  ${versioning.canonicalHash({})}, ${"e".repeat(64)}, now(),
+                  now() + interval '2 minutes')
+        `;
+        await tx`
+          INSERT INTO "workspace_control"."workspace_analysis_article_run"
+            ("id", "organization_id", "article_id", "article_revision", "runner_id",
+             "runner_capability_generation", "lease_id", "requested_by_member_id", "trigger",
+             "state", "parameter_values", "parameter_hash", "definition_hash", "started_at",
+             "finished_at")
+          VALUES (${removableRunId}::uuid, ${organizationId}, ${articleId}::uuid, 3,
+                  ${removableRunnerId}::uuid, 1, ${removableLeaseId}::uuid,
+                  ${removableMemberId}, 'schedule', 'running', '{}'::jsonb,
+                  ${versioning.canonicalHash({})},
+                  ${versioning.canonicalHash(revisedArticle.definition)}, now(), NULL),
+                 (${removableHistoricalRunId}::uuid, ${organizationId}, ${articleId}::uuid, 3,
+                  ${removableRunnerId}::uuid, 1, NULL, ${removableMemberId}, 'manual',
+                  'succeeded', '{}'::jsonb, ${versioning.canonicalHash({})},
+                  ${versioning.canonicalHash(revisedArticle.definition)}, now(), now())
+        `;
+        await tx`
+          INSERT INTO "workspace_control"."workspace_analysis_article_query_receipt"
+            ("organization_id", "run_id", "query_node_id", "connection_id",
+             "connection_revision", "query_run_id", "query_hash", "schema_fingerprint",
+             "state", "row_count", "byte_count", "duration_ms")
+          VALUES (${organizationId}, ${removableRunId}::uuid, 'active_rows',
+                  ${left.connection.id}::uuid, ${left.connection.contentRevision},
+                  ${randomUUID()}::uuid, ${"a".repeat(64)}, ${"b".repeat(64)},
+                  'succeeded', 1, 64, 1),
+                 (${organizationId}, ${removableHistoricalRunId}::uuid, 'active_rows',
+                  ${left.connection.id}::uuid, ${left.connection.contentRevision},
+                  ${randomUUID()}::uuid, ${"c".repeat(64)}, ${"d".repeat(64)},
+                  'succeeded', 1, 64, 1)
+        `;
+        await tx`
+          INSERT INTO "workspace_control"."workspace_analysis_result_fragment"
+            ("organization_id", "run_id", "block_id", "ordinal", "data_key_id",
+             "key_reference", "key_version", "ciphertext", "payload_hash", "row_count",
+             "plaintext_bytes", "expires_at")
+          VALUES (${organizationId}, ${removableRunId}::uuid, 'active_rows_metric', 0,
+                  ${analysisDataKeyId}::uuid, 'dopedb-workspace-data-key', 'v1',
+                  ${Buffer.from("active-removal-fragment").toString("base64")},
+                  ${versioning.canonicalHash({ removableRunId })}, 1, 64,
+                  now() + interval '1 minute'),
+                 (${organizationId}, ${removableHistoricalRunId}::uuid,
+                  'active_rows_metric', 0, ${analysisDataKeyId}::uuid,
+                  'dopedb-workspace-data-key', 'v1',
+                  ${Buffer.from("historical-removal-evidence").toString("base64")},
+                  ${versioning.canonicalHash({ removableHistoricalRunId })}, 1, 64,
+                  now() + interval '1 minute')
+        `;
+        await tx`
+          INSERT INTO "workspace_control"."workspace_analysis_publication"
+            ("id", "organization_id", "article_id", "article_revision", "source_run_id",
+             "slug", "visibility", "title", "snapshot", "snapshot_hash",
+             "approved_by_member_id")
+          VALUES (${removablePublicationId}::uuid, ${organizationId}, ${articleId}::uuid, 3,
+                  ${removableHistoricalRunId}::uuid, ${`harness-publication-${suffix}`},
+                  'unlisted', 'Historical member attribution',
+                  ${JSON.stringify({ version: 1, title: "Historical member attribution" })}::jsonb,
+                  ${versioning.canonicalHash({ version: 1, title: "Historical member attribution" })},
+                  ${removableMemberId})
+        `;
+        await tx`
+          INSERT INTO "workspace_control"."workspace_analysis_signal"
+            ("id", "organization_id", "article_id", "article_revision", "block_id",
+             "definition", "owner_member_id", "enabled", "revision")
+          VALUES (${removableSignalId}::uuid, ${organizationId}, ${articleId}::uuid, 3,
+                  'active_rows_metric', ${JSON.stringify(removableSignalDefinition)}::jsonb,
+                  ${removableMemberId}, TRUE, 1)
+        `;
+        await tx`
+          INSERT INTO "workspace_control"."workspace_analysis_signal_revision"
+            ("organization_id", "signal_id", "revision", "base_revision", "operation",
+             "payload", "payload_hash", "created_by_member_id")
+          VALUES (${organizationId}, ${removableSignalId}::uuid, 1, NULL, 'create',
+                  ${JSON.stringify(removableSignalPayload)}::jsonb,
+                  ${versioning.canonicalHash(removableSignalPayload)}, ${removableMemberId})
+        `;
+        await tx`
+          UPDATE "workspace_control"."workspace_analysis_article"
+          SET "definition" = jsonb_set(
+                jsonb_set("definition", '{refresh,mode}', '"scheduled"'::jsonb),
+                '{refresh,runnerId}', to_jsonb(${removableRunnerId}::text)
+              ),
+              "next_refresh_at" = now()
+          WHERE "organization_id" = ${organizationId}
+            AND "id" = ${articleId}::uuid
+        `;
+      });
+      // Model a signal created after an earlier HTTP preflight. The atomic
+      // removal transaction must independently re-check active recipients and
+      // leave both the member and every runner resource untouched.
+      const signalBlockedRemoval = await runnerStore.removeMemberAfterAnalysisRunnerCleanup({
+        organizationId,
+        target: {
+          memberId: removableMemberId,
+          userId: removableUserId,
+          role: "viewer",
+          claimId: removableClaimId,
+        },
+        externalLeaseRevocation: { revoked: 0, deferred: 0 },
+        authority,
+      });
+      expect(signalBlockedRemoval).toBeNull();
+      const signalBlockedState = await sql<{ memberPresent: boolean; runnerActive: boolean }[]>`
+        SELECT
+          EXISTS (SELECT 1 FROM "workspace_control"."member"
+                  WHERE "id" = ${removableMemberId}
+                    AND "organization_id" = ${organizationId}) AS "memberPresent",
+          EXISTS (SELECT 1 FROM "workspace_control"."workspace_analysis_runner"
+                  WHERE "id" = ${removableRunnerId}::uuid
+                    AND "revoked_at" IS NULL) AS "runnerActive"
+      `;
+      expect(signalBlockedState[0]).toEqual({ memberPresent: true, runnerActive: true });
+      await sql`
+        UPDATE "workspace_control"."workspace_analysis_signal"
+        SET "enabled" = FALSE, "updated_at" = now()
+        WHERE "organization_id" = ${organizationId}
+          AND "id" = ${removableSignalId}::uuid
+      `;
+      const removedMember = await runnerStore.removeMemberAfterAnalysisRunnerCleanup({
+        organizationId,
+        target: {
+          memberId: removableMemberId,
+          userId: removableUserId,
+          role: "viewer",
+          claimId: removableClaimId,
+        },
+        externalLeaseRevocation: { revoked: 0, deferred: 0 },
+        authority,
+      });
+      expect(removedMember).toMatchObject({
+        id: removableMemberId,
+        runnerCount: 1,
+        activeRunCount: 1,
+        discardedFragmentCount: 1,
+        activeLeaseCount: 1,
+      });
+      const memberRemovalState = await sql<{
+        memberPresent: boolean;
+        runnerMemberId: string | null;
+        runnerRevoked: boolean;
+        activeState: string;
+        activeFragments: number;
+        activeReceipts: number;
+        activeRequester: string | null;
+        historicalState: string;
+        historicalFragments: number;
+        historicalReceipts: number;
+        historicalRequester: string | null;
+        leaseRevoked: boolean;
+        nextRefreshAt: Date | null;
+        auditRunnerCount: number;
+        auditRunCount: number;
+        auditFragmentCount: number;
+        auditReceiptCount: number;
+        auditLeaseCount: number;
+        publicationApprover: string | null;
+        publicationPreserved: boolean;
+        signalOwner: string | null;
+        signalRevisionCreator: string | null;
+        signalRevisionPreserved: boolean;
+        historicalSignalDefinitionPreserved: boolean;
+      }[]>`
+        SELECT
+          EXISTS (SELECT 1 FROM "workspace_control"."member"
+                  WHERE "id" = ${removableMemberId}) AS "memberPresent",
+          runner."member_id" AS "runnerMemberId", runner."revoked_at" IS NOT NULL AS "runnerRevoked",
+          active_run."state" AS "activeState",
+          (SELECT count(*)::int FROM "workspace_control"."workspace_analysis_result_fragment" fragment
+           WHERE fragment."organization_id" = ${organizationId}
+             AND fragment."run_id" = ${removableRunId}::uuid) AS "activeFragments",
+          (SELECT count(*)::int FROM "workspace_control"."workspace_analysis_article_query_receipt" receipt
+           WHERE receipt."organization_id" = ${organizationId}
+             AND receipt."run_id" = ${removableRunId}::uuid) AS "activeReceipts",
+          active_run."requested_by_member_id" AS "activeRequester",
+          historical_run."state" AS "historicalState",
+          (SELECT count(*)::int FROM "workspace_control"."workspace_analysis_result_fragment" fragment
+           WHERE fragment."organization_id" = ${organizationId}
+             AND fragment."run_id" = ${removableHistoricalRunId}::uuid) AS "historicalFragments",
+          (SELECT count(*)::int FROM "workspace_control"."workspace_analysis_article_query_receipt" receipt
+           WHERE receipt."organization_id" = ${organizationId}
+             AND receipt."run_id" = ${removableHistoricalRunId}::uuid) AS "historicalReceipts",
+          historical_run."requested_by_member_id" AS "historicalRequester",
+          lease."revoked_at" IS NOT NULL AS "leaseRevoked",
+          article."next_refresh_at" AS "nextRefreshAt",
+          (audit."redacted_summary"->>'analysisRunnerCount')::int AS "auditRunnerCount",
+          (audit."redacted_summary"->>'analysisActiveRunCount')::int AS "auditRunCount",
+          (audit."redacted_summary"->>'analysisDiscardedFragmentCount')::int
+            AS "auditFragmentCount",
+          (audit."redacted_summary"->>'analysisDiscardedReceiptCount')::int
+            AS "auditReceiptCount",
+          (audit."redacted_summary"->>'analysisActiveLeaseCount')::int AS "auditLeaseCount",
+          (SELECT publication."approved_by_member_id"
+           FROM "workspace_control"."workspace_analysis_publication" publication
+           WHERE publication."organization_id" = ${organizationId}
+             AND publication."id" = ${removablePublicationId}::uuid) AS "publicationApprover",
+          EXISTS (
+            SELECT 1 FROM "workspace_control"."workspace_analysis_publication" publication
+            WHERE publication."organization_id" = ${organizationId}
+              AND publication."id" = ${removablePublicationId}::uuid
+              AND publication."snapshot_hash" =
+                ${versioning.canonicalHash({ version: 1, title: "Historical member attribution" })}
+          ) AS "publicationPreserved",
+          (SELECT signal."owner_member_id"
+           FROM "workspace_control"."workspace_analysis_signal" signal
+           WHERE signal."organization_id" = ${organizationId}
+             AND signal."id" = ${removableSignalId}::uuid) AS "signalOwner",
+          (SELECT revision."created_by_member_id"
+           FROM "workspace_control"."workspace_analysis_signal_revision" revision
+           WHERE revision."organization_id" = ${organizationId}
+             AND revision."signal_id" = ${removableSignalId}::uuid
+             AND revision."revision" = 1) AS "signalRevisionCreator",
+          EXISTS (
+            SELECT 1 FROM "workspace_control"."workspace_analysis_signal_revision" revision
+            WHERE revision."organization_id" = ${organizationId}
+              AND revision."signal_id" = ${removableSignalId}::uuid
+              AND revision."revision" = 1
+              AND revision."payload_hash" = ${versioning.canonicalHash(removableSignalPayload)}
+          ) AS "signalRevisionPreserved",
+          EXISTS (
+            SELECT 1 FROM "workspace_control"."workspace_analysis_signal" signal
+            WHERE signal."organization_id" = ${organizationId}
+              AND signal."id" = ${removableSignalId}::uuid
+              AND signal."enabled" = FALSE
+              AND signal."definition" = ${JSON.stringify(removableSignalDefinition)}::jsonb
+          ) AS "historicalSignalDefinitionPreserved"
+        FROM "workspace_control"."workspace_analysis_runner" runner
+        JOIN "workspace_control"."workspace_analysis_article_run" active_run
+          ON active_run."id" = ${removableRunId}::uuid
+        JOIN "workspace_control"."workspace_analysis_article_run" historical_run
+          ON historical_run."id" = ${removableHistoricalRunId}::uuid
+        JOIN "workspace_control"."workspace_analysis_refresh_lease" lease
+          ON lease."id" = ${removableLeaseId}::uuid
+        JOIN "workspace_control"."workspace_analysis_article" article
+          ON article."id" = ${articleId}::uuid
+         AND article."organization_id" = ${organizationId}
+        JOIN "workspace_control"."workspace_audit_event" audit
+          ON audit."organization_id" = ${organizationId}
+         AND audit."action" = 'member.remove'
+         AND audit."resource_id" = ${removableMemberId}
+        WHERE runner."id" = ${removableRunnerId}::uuid
+      `;
+      expect(memberRemovalState[0]).toEqual({
+        memberPresent: false,
+        runnerMemberId: null,
+        runnerRevoked: true,
+        activeState: "stale",
+        activeFragments: 0,
+        activeReceipts: 0,
+        activeRequester: null,
+        historicalState: "succeeded",
+        historicalFragments: 1,
+        historicalReceipts: 1,
+        historicalRequester: null,
+        leaseRevoked: true,
+        nextRefreshAt: null,
+        auditRunnerCount: 1,
+        auditRunCount: 1,
+        auditFragmentCount: 1,
+        auditReceiptCount: 1,
+        auditLeaseCount: 1,
+        publicationApprover: null,
+        publicationPreserved: true,
+        signalOwner: null,
+        signalRevisionCreator: null,
+        signalRevisionPreserved: true,
+        historicalSignalDefinitionPreserved: true,
+      });
 
       const syncJournal = await sql<{
         head: number;
@@ -1662,7 +2949,8 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
         WHERE "id" IN (${organizationId}, ${otherOrganizationId}, ${kmsOrganizationId})
       `.catch(() => undefined);
       await sql`
-        DELETE FROM "workspace_control"."user" WHERE "id" IN (${userId}, ${kmsUserId})
+        DELETE FROM "workspace_control"."user"
+        WHERE "id" IN (${userId}, ${removableUserId}, ${kmsUserId})
       `.catch(() => undefined);
       await sql.end({ timeout: 5 });
       vi.doUnmock("./db");

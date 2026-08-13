@@ -55,6 +55,10 @@ impl BrokerClient {
         })
     }
 
+    #[allow(
+        dead_code,
+        reason = "the shared client module is compiled independently into the app-only bridge"
+    )]
     pub(crate) fn runtime_id(&self) -> Uuid {
         self.discovery.runtime_id()
     }
@@ -154,7 +158,15 @@ pub(crate) enum ClientError {
     InvalidArguments,
     RuntimeUnavailable,
     AuthenticationUnavailable,
+    #[allow(
+        dead_code,
+        reason = "the shared client module is compiled independently into the app-only bridge"
+    )]
     ConnectionNotFound,
+    #[allow(
+        dead_code,
+        reason = "the shared client module is compiled independently into the app-only bridge"
+    )]
     AmbiguousConnection(Vec<Uuid>),
     ProtocolMismatch,
     InvalidResponse,

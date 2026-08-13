@@ -1,74 +1,39 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { getSafetySettings } from "../safetySettings/tauriAdapter";
 import { errMessage, type SafetySettings } from "../../ipc/types";
-
-const SAFETY_LOAD_TIMEOUT_MS = 5_000;
-
-async function loadSafetyBounded(id: string) {
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
-  const timeout = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(
-      () => reject(new Error("Safety settings request timed out")),
-      SAFETY_LOAD_TIMEOUT_MS,
-    );
-  });
-  try {
-    return await Promise.race([getSafetySettings(id), timeout]);
-  } finally {
-    if (timeoutId !== null) clearTimeout(timeoutId);
-  }
-}
+import { safetyQueryKeys, safetySettingsQuery } from "../safetySettings/queries";
 
 export function useSafetySettings(connectionId: string | null) {
-  const [safety, setSafety] = useState<SafetySettings | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const requestGeneration = useRef(0);
-
-  const load = useCallback((id: string, clearCurrent: boolean) => {
-    const generation = ++requestGeneration.current;
-    if (clearCurrent) setSafety(null);
-    setError(null);
-    loadSafetyBounded(id)
-      .then((settings) => {
-        if (requestGeneration.current === generation) setSafety(settings);
-      })
-      .catch((loadError) => {
-        if (requestGeneration.current === generation) {
-          setError(errMessage(loadError));
-        }
-      });
-  }, []);
-
-  useEffect(() => {
-    if (connectionId) {
-      load(connectionId, true);
-      return;
-    }
-    requestGeneration.current += 1;
-    setSafety(null);
-    setError(null);
-  }, [connectionId, load]);
+  const queryClient = useQueryClient();
+  const query = useQuery(safetySettingsQuery(connectionId));
 
   return {
-    safety,
-    error,
+    safety: query.data ?? null,
+    error: query.error ? errMessage(query.error) : null,
     refresh: useCallback(() => {
-      if (connectionId) load(connectionId, false);
-    }, [connectionId, load]),
+      if (connectionId) {
+        void queryClient.invalidateQueries({
+          queryKey: safetyQueryKeys.detail(connectionId),
+          exact: true,
+          refetchType: "active",
+        });
+      }
+    }, [connectionId, queryClient]),
     accept: useCallback(
       (id: string, settings: SafetySettings) => {
         if (connectionId !== id) return;
-        requestGeneration.current += 1;
-        setSafety(settings);
-        setError(null);
+        queryClient.setQueryData(safetyQueryKeys.detail(id), settings);
       },
-      [connectionId],
+      [connectionId, queryClient],
     ),
     clear: useCallback(() => {
-      requestGeneration.current += 1;
-      setSafety(null);
-      setError(null);
-    }, []),
+      if (connectionId) {
+        queryClient.removeQueries({
+          queryKey: safetyQueryKeys.detail(connectionId),
+          exact: true,
+        });
+      }
+    }, [connectionId, queryClient]),
   };
 }

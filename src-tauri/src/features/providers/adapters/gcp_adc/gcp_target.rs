@@ -1,12 +1,9 @@
 //! Exact Cloud SQL target proof for a local GCP WIF receipt.
 
-use std::time::Duration;
 use std::{net::IpAddr, str::FromStr};
 
-use reqwest::{redirect::Policy, Client, Response, Url};
 use serde_json::Value;
 use x509_parser::{parse_x509_certificate, pem::Pem};
-use zeroize::Zeroizing;
 
 use crate::connection::GcpCloudSqlNetworkMode;
 use crate::error::{AppError, AppResult};
@@ -17,10 +14,8 @@ use super::super::super::domain::{
     ProviderVerificationTarget, RedactedProviderPrincipal,
 };
 
-const MAX_RESPONSE_BYTES: usize = 64 * 1024;
-
 /// Redacted Cloud SQL network material returned to the provider-local resolver.
-/// The OAuth token used to fetch it remains in the ADC adapter call frame.
+/// Provider traffic is executed by the official gcloud binary.
 pub(crate) struct GcpConnectSettings {
     pub(crate) host: String,
     pub(crate) port: u16,
@@ -37,7 +32,6 @@ fn blocked() -> AppError {
 
 pub(super) async fn verify_cloud_sql_target(
     binding: &ProviderBindingScope,
-    token: &Zeroizing<Vec<u8>>,
 ) -> AppResult<ProviderVerification> {
     let Some(ProviderVerificationTarget::GcpCloudSql(target)) = &binding.verification_target else {
         return Err(blocked());
@@ -45,27 +39,8 @@ pub(super) async fn verify_cloud_sql_target(
     if binding.provider != super::super::super::domain::LocalProvider::GcpCloudSql {
         return Err(blocked());
     }
-    let url = cloud_sql_url(target)?;
-    let client = Client::builder()
-        .redirect(Policy::none())
-        .timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|_| blocked())?;
-    let response = client
-        .get(url)
-        .bearer_auth(std::str::from_utf8(token).map_err(|_| blocked())?)
-        .send()
-        .await
-        .map_err(|_| blocked())?;
-    if !response.status().is_success()
-        || response
-            .content_length()
-            .is_some_and(|size| size as usize > MAX_RESPONSE_BYTES)
-    {
-        return Err(blocked());
-    }
-    let body = read_bounded_response(response).await?;
-    validate_cloud_sql_response(target, &body)?;
+    let value = describe_instance(&target.project_id, &target.instance_id).await?;
+    validate_cloud_sql_value(target, &value)?;
     Ok(ProviderVerification::Verified(RedactedProviderPrincipal {
         display: "GCP Cloud SQL local credential".into(),
     }))
@@ -80,7 +55,6 @@ pub(crate) async fn resolve_connect_settings(
     database: &str,
     engine: Engine,
     network_mode: GcpCloudSqlNetworkMode,
-    token: &Zeroizing<Vec<u8>>,
 ) -> AppResult<GcpConnectSettings> {
     if !valid_project_id(project)
         || !valid_identifier(instance, 99)
@@ -93,99 +67,32 @@ pub(crate) async fn resolve_connect_settings(
         project_id: project.to_owned(),
         instance_id: instance.to_owned(),
     };
-    // `connectSettings` omits the project/instance identity on some API
-    // versions, so prove the exact target with the same ephemeral ADC token
-    // before accepting its network metadata.
-    let proof_url = cloud_sql_url(&target)?;
-    let url = connect_settings_url(&target)?;
-    let client = Client::builder()
-        .redirect(Policy::none())
-        .timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|_| blocked())?;
-    let proof = client
-        .get(proof_url)
-        .bearer_auth(std::str::from_utf8(token).map_err(|_| blocked())?)
-        .send()
-        .await
-        .map_err(|_| blocked())?;
-    if !proof.status().is_success()
-        || proof
-            .content_length()
-            .is_some_and(|size| size as usize > MAX_RESPONSE_BYTES)
-    {
-        return Err(blocked());
-    }
-    let proof_body = read_bounded_response(proof).await?;
-    validate_cloud_sql_response(&target, &proof_body)?;
-    let instance_connection_name = instance_connection_name(&target, &proof_body)?;
-    let response = client
-        .get(url)
-        .bearer_auth(std::str::from_utf8(token).map_err(|_| blocked())?)
-        .send()
-        .await
-        .map_err(|_| blocked())?;
-    if !response.status().is_success()
-        || response
-            .content_length()
-            .is_some_and(|size| size as usize > MAX_RESPONSE_BYTES)
-    {
-        return Err(blocked());
-    }
-    parse_connect_settings(
-        engine,
-        network_mode,
-        &read_bounded_response(response).await?,
-        instance_connection_name,
-    )
+    let value = describe_instance(project, instance).await?;
+    validate_cloud_sql_value(&target, &value)?;
+    let instance_connection_name = instance_connection_name_value(&target, &value)?;
+    parse_connect_settings_value(engine, network_mode, &value, instance_connection_name)
 }
 
-pub(crate) fn cloud_sql_url(target: &GcpCloudSqlVerificationTarget) -> AppResult<Url> {
-    if !valid_project_id(&target.project_id) || !valid_identifier(&target.instance_id, 99) {
+async fn describe_instance(project: &str, instance: &str) -> AppResult<Value> {
+    if !valid_project_id(project) || !valid_identifier(instance, 99) {
         return Err(blocked());
     }
-    Url::parse(&format!(
-        "https://sqladmin.googleapis.com/v1/projects/{}/instances/{}",
-        target.project_id, target.instance_id
-    ))
-    .map_err(|_| blocked())
+    super::run_gcloud_json(&[
+        "--quiet".into(),
+        "sql".into(),
+        "instances".into(),
+        "describe".into(),
+        instance.into(),
+        format!("--project={project}"),
+        "--format=json(name,project,state,databaseVersion,connectionName,ipAddresses,serverCaCert.cert,settings.ipConfiguration.pscConfig.pscEnabled,dnsName)".into(),
+    ])
+    .await
 }
 
-fn connect_settings_url(target: &GcpCloudSqlVerificationTarget) -> AppResult<Url> {
-    if !valid_project_id(&target.project_id) || !valid_identifier(&target.instance_id, 99) {
-        return Err(blocked());
-    }
-    Url::parse(&format!(
-        "https://sqladmin.googleapis.com/v1/projects/{}/instances/{}/connectSettings",
-        target.project_id, target.instance_id
-    ))
-    .map_err(|_| blocked())
-}
-
-async fn read_bounded_response(mut response: Response) -> AppResult<Vec<u8>> {
-    let mut body = Vec::with_capacity(4096);
-    while let Some(chunk) = response.chunk().await.map_err(|_| blocked())? {
-        append_bounded(&mut body, &chunk)?;
-    }
-    Ok(body)
-}
-
-pub(crate) fn append_bounded(body: &mut Vec<u8>, chunk: &[u8]) -> AppResult<()> {
-    if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
-        return Err(blocked());
-    }
-    body.extend_from_slice(chunk);
-    Ok(())
-}
-
-pub(crate) fn validate_cloud_sql_response(
+fn validate_cloud_sql_value(
     target: &GcpCloudSqlVerificationTarget,
-    body: &[u8],
+    value: &Value,
 ) -> AppResult<()> {
-    if body.len() > MAX_RESPONSE_BYTES || body.contains(&0) {
-        return Err(blocked());
-    }
-    let value: Value = serde_json::from_slice(body).map_err(|_| blocked())?;
     let object = value.as_object().ok_or_else(blocked)?;
     if object.get("project").and_then(Value::as_str) != Some(target.project_id.as_str())
         || object.get("name").and_then(Value::as_str) != Some(target.instance_id.as_str())
@@ -197,16 +104,12 @@ pub(crate) fn validate_cloud_sql_response(
     Ok(())
 }
 
-pub(super) fn parse_connect_settings(
+fn parse_connect_settings_value(
     engine: Engine,
     network_mode: GcpCloudSqlNetworkMode,
-    body: &[u8],
+    value: &Value,
     instance_connection_name: String,
 ) -> AppResult<GcpConnectSettings> {
-    if body.len() > MAX_RESPONSE_BYTES || body.contains(&0) {
-        return Err(blocked());
-    }
-    let value: Value = serde_json::from_slice(body).map_err(|_| blocked())?;
     let object = value.as_object().ok_or_else(blocked)?;
     if object.len() > 16
         || !matches_engine(
@@ -232,7 +135,16 @@ pub(super) fn parse_connect_settings(
             exact_ip_address(object, "PRIVATE", AddressClass::Private)?
         }
         GcpCloudSqlNetworkMode::PrivateServiceConnect => {
-            if object.get("pscEnabled").and_then(Value::as_bool) != Some(true) {
+            let psc_enabled = object
+                .get("settings")
+                .and_then(Value::as_object)
+                .and_then(|settings| settings.get("ipConfiguration"))
+                .and_then(Value::as_object)
+                .and_then(|configuration| configuration.get("pscConfig"))
+                .and_then(Value::as_object)
+                .and_then(|psc| psc.get("pscEnabled"))
+                .and_then(Value::as_bool);
+            if psc_enabled != Some(true) {
                 return Err(blocked());
             }
             normalize_psc_dns_name(
@@ -261,11 +173,10 @@ pub(super) fn parse_connect_settings(
     })
 }
 
-fn instance_connection_name(
+fn instance_connection_name_value(
     target: &GcpCloudSqlVerificationTarget,
-    body: &[u8],
+    value: &Value,
 ) -> AppResult<String> {
-    let value: Value = serde_json::from_slice(body).map_err(|_| blocked())?;
     let connection_name = value
         .as_object()
         .and_then(|object| object.get("connectionName"))
@@ -462,7 +373,7 @@ fn valid_database_name(value: &str) -> bool {
 
 pub(crate) fn validate_impersonation_url(value: &Value) -> AppResult<()> {
     let value = value.as_str().ok_or_else(blocked)?;
-    let url = Url::parse(value).map_err(|_| blocked())?;
+    let url = reqwest::Url::parse(value).map_err(|_| blocked())?;
     if url.scheme() != "https"
         || url.host_str() != Some("iamcredentials.googleapis.com")
         || url.port().is_some_and(|port| port != 443)

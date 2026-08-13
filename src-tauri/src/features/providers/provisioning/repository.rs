@@ -6,7 +6,8 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::kernel::identity::WorkspaceId;
-use crate::store::{ActiveResourceScope, Store};
+use crate::model::SafetySettings;
+use crate::store::{ActiveResourceScope, PinnedConnection, Store};
 
 use super::domain::ProvisioningReceipt;
 
@@ -40,14 +41,49 @@ EXISTS (
 )
 "#;
 
+/// Narrow local persistence adapter for provisioning orchestration.
+///
+/// Keeping these authority-sensitive reads behind the feature adapter prevents
+/// the application layer and provider drivers from acquiring arbitrary access
+/// to the process-wide SQLite store.
 #[derive(Clone)]
-pub(super) struct ProvisioningReceiptRepository {
+pub(crate) struct ProvisioningRepository {
     store: Store,
 }
 
-impl ProvisioningReceiptRepository {
-    pub(super) fn new(store: Store) -> Self {
+impl ProvisioningRepository {
+    pub(crate) fn new(store: Store) -> Self {
         Self { store }
+    }
+
+    pub(super) async fn active_scope(&self) -> AppResult<ActiveResourceScope> {
+        self.store.active_resource_scope().await
+    }
+
+    pub(super) async fn pinned_connection(
+        &self,
+        connection_id: Uuid,
+    ) -> AppResult<PinnedConnection> {
+        self.store.pin_connection_for_view(connection_id).await
+    }
+
+    pub(super) async fn safety(&self, connection_id: Uuid) -> AppResult<SafetySettings> {
+        self.store.get_safety(connection_id).await
+    }
+
+    fn store(&self) -> &Store {
+        &self.store
+    }
+}
+
+#[derive(Clone)]
+pub(super) struct ProvisioningReceiptRepository {
+    repository: ProvisioningRepository,
+}
+
+impl ProvisioningReceiptRepository {
+    pub(super) fn new(repository: ProvisioningRepository) -> Self {
+        Self { repository }
     }
 
     pub(super) async fn create(
@@ -97,7 +133,7 @@ impl ProvisioningReceiptRepository {
             .bind(scope.generation.to_string())
             .bind(receipt.account_scope())
             .bind(receipt.account_scope())
-            .execute(self.store.pool())
+            .execute(self.repository.store().pool())
             .await?;
         if result.rows_affected() == 1 {
             return Ok(receipt.clone());
@@ -140,7 +176,7 @@ impl ProvisioningReceiptRepository {
             .bind(scope.generation.to_string())
             .bind(scope.account_scope.storage_key())
             .bind(scope.account_scope.storage_key())
-            .fetch_optional(self.store.pool())
+            .fetch_optional(self.repository.store().pool())
             .await?
             .ok_or_else(|| blocked("provider provisioning receipt is unavailable"))?;
         decode_row(&row)
@@ -164,7 +200,7 @@ impl ProvisioningReceiptRepository {
             .bind(scope.generation.to_string())
             .bind(scope.account_scope.storage_key())
             .bind(scope.account_scope.storage_key())
-            .fetch_optional(self.store.pool())
+            .fetch_optional(self.repository.store().pool())
             .await?
             .ok_or_else(|| blocked("provider provisioning receipt is unavailable"))?;
         decode_row(&row)
@@ -190,7 +226,7 @@ impl ProvisioningReceiptRepository {
             .bind(scope.generation.to_string())
             .bind(scope.account_scope.storage_key())
             .bind(scope.account_scope.storage_key())
-            .fetch_all(self.store.pool())
+            .fetch_all(self.repository.store().pool())
             .await?;
         rows.iter().map(decode_row).collect()
     }
@@ -236,7 +272,7 @@ impl ProvisioningReceiptRepository {
             .bind(scope.generation.to_string())
             .bind(receipt.account_scope())
             .bind(receipt.account_scope())
-            .execute(self.store.pool())
+            .execute(self.repository.store().pool())
             .await?;
         if result.rows_affected() == 1 {
             Ok(())
@@ -267,7 +303,7 @@ impl ProvisioningReceiptRepository {
             .bind(scope.generation.to_string())
             .bind(scope.account_scope.storage_key())
             .bind(scope.account_scope.storage_key())
-            .fetch_optional(self.store.pool())
+            .fetch_optional(self.repository.store().pool())
             .await?
             .as_ref()
             .map(decode_row)
@@ -379,7 +415,7 @@ pub(crate) async fn assert_repository_fences() {
         now,
     )
     .expect("create provisioning receipt");
-    let repository = ProvisioningReceiptRepository::new(store.clone());
+    let repository = ProvisioningReceiptRepository::new(ProvisioningRepository::new(store.clone()));
     let created = repository
         .create(&scope, &receipt)
         .await

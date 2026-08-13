@@ -349,7 +349,6 @@ pub(super) async fn connect_authorized(
             ProviderLocalSecret::ProfileSecret => {
                 Zeroizing::new(super::super::fetch_profile_secret(profile)?)
             }
-            ProviderLocalSecret::Ephemeral(secret) => secret,
         };
         if secret.is_empty() {
             return Err(AppError::Network(

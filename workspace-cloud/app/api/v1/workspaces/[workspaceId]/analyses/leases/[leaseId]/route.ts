@@ -9,6 +9,12 @@ import {
   workspaceAnalysisRunner,
 } from "../../../../../../../../lib/schema";
 import { authorizeWorkspace } from "../../../../../../../../lib/workspace-authorization";
+import {
+  analysisRunnerCapabilityHeader,
+  hashAnalysisRunnerCapability,
+  isAnalysisDesktopBearerRequest,
+  parseAnalysisRunnerCapability,
+} from "../../../../../../../../lib/workspace-analysis-runner-capability";
 import { hashAnalysisLeaseCapability } from "../../../../../../../../lib/workspace-analysis-runner-store";
 
 type RouteContext = { params: Promise<{ workspaceId: string; leaseId: string }> };
@@ -19,10 +25,18 @@ function capability(request: Request) {
 }
 
 export async function GET(request: Request, context: RouteContext) {
+  if (!isAnalysisDesktopBearerRequest(request)) {
+    return jsonError("Analysis refresh lease checks require a Desktop bearer session", 401);
+  }
   const { workspaceId, leaseId } = await context.params;
   if (!isUuid(workspaceId) || !isUuid(leaseId)) return jsonError("Invalid Analysis lease scope", 400);
   const token = capability(request);
-  if (!token) return jsonError("Invalid Analysis lease capability", 401);
+  if (!token) return jsonError("Invalid Analysis lease capability", 403);
+  const runnerCapability = parseAnalysisRunnerCapability(request);
+  if (!runnerCapability) return jsonError(
+    "Invalid Analysis runner capability",
+    request.headers.has(analysisRunnerCapabilityHeader) ? 403 : 428,
+  );
   const authorization = await authorizeWorkspace(request, workspaceId, "view");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
   const row = await db.select({ id: workspaceAnalysisRefreshLease.id })
@@ -33,6 +47,14 @@ export async function GET(request: Request, context: RouteContext) {
         eq(workspaceAnalysisRunner.organizationId, workspaceAnalysisRefreshLease.organizationId),
         eq(workspaceAnalysisRunner.id, workspaceAnalysisRefreshLease.runnerId),
         eq(workspaceAnalysisRunner.memberId, authorization.membership.id),
+        eq(
+          workspaceAnalysisRunner.runnerCapabilityHash,
+          hashAnalysisRunnerCapability(runnerCapability),
+        ),
+        eq(
+          workspaceAnalysisRunner.runnerCapabilityGeneration,
+          workspaceAnalysisRefreshLease.runnerCapabilityGeneration,
+        ),
         isNull(workspaceAnalysisRunner.revokedAt),
       ),
     )
@@ -49,10 +71,18 @@ export async function GET(request: Request, context: RouteContext) {
 
 export async function DELETE(request: Request, context: RouteContext) {
   if (!mutationAllowed(request, env.appOrigin())) return jsonError("Invalid request origin", 403);
+  if (!isAnalysisDesktopBearerRequest(request)) {
+    return jsonError("Analysis refresh lease release requires a Desktop bearer session", 401);
+  }
   const { workspaceId, leaseId } = await context.params;
   if (!isUuid(workspaceId) || !isUuid(leaseId)) return jsonError("Invalid Analysis lease scope", 400);
   const token = capability(request);
-  if (!token) return jsonError("Invalid Analysis lease capability", 401);
+  if (!token) return jsonError("Invalid Analysis lease capability", 403);
+  const runnerCapability = parseAnalysisRunnerCapability(request);
+  if (!runnerCapability) return jsonError(
+    "Invalid Analysis runner capability",
+    request.headers.has(analysisRunnerCapabilityHeader) ? 403 : 428,
+  );
   const authorization = await authorizeWorkspace(request, workspaceId, "view");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
   const [owned] = await db.select({ runnerId: workspaceAnalysisRunner.id })
@@ -60,6 +90,14 @@ export async function DELETE(request: Request, context: RouteContext) {
     .innerJoin(workspaceAnalysisRunner, and(
       eq(workspaceAnalysisRunner.organizationId, workspaceAnalysisRefreshLease.organizationId),
       eq(workspaceAnalysisRunner.id, workspaceAnalysisRefreshLease.runnerId),
+      eq(
+        workspaceAnalysisRunner.runnerCapabilityGeneration,
+        workspaceAnalysisRefreshLease.runnerCapabilityGeneration,
+      ),
+      eq(
+        workspaceAnalysisRunner.runnerCapabilityHash,
+        hashAnalysisRunnerCapability(runnerCapability),
+      ),
     ))
     .where(and(
       eq(workspaceAnalysisRefreshLease.organizationId, workspaceId),

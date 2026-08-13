@@ -425,7 +425,7 @@ export type AnalysisSignalCreate = {
 
 export type AnalysisSignal = AnalysisSignalCreate & {
   articleId: string;
-  ownerMemberId: string;
+  ownerMemberId: string | null;
   revision: number;
   lastEvaluatedRunId: string | null;
   lastObservedState: "unknown" | "normal" | "firing" | "recovered" | "no_data" | "error" | "stale";
@@ -516,18 +516,4 @@ export function articleFreshness(
   return now - updatedAt <= article.definition.refresh.maxStalenessSeconds * 1_000
     ? "fresh"
     : "stale";
-}
-
-export function articleMutationInput(
-  article: AnalysisArticleRecord,
-): SharedAnalysisArticleCreate {
-  return {
-    id: article.id,
-    projectEnvironmentId: article.projectEnvironmentId,
-    environmentRevision: article.environmentRevision,
-    sourceKnowledgeGrantId: article.sourceKnowledgeGrantId,
-    graphRevisionIds: [...article.graphRevisionIds],
-    connections: article.connections.map((connection) => ({ ...connection })),
-    definition: structuredClone(article.definition),
-  };
 }

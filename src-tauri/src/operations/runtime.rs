@@ -43,10 +43,6 @@ impl ClaimedOperation {
     pub(crate) fn grant(&self) -> &ExecutionGrant {
         &self.grant
     }
-
-    pub(crate) fn into_record(self) -> OperationRecord {
-        self.record
-    }
 }
 
 /// Opaque capability held by the desktop composition root, never by CLI/Agent
@@ -276,7 +272,6 @@ impl OperationRuntime {
         self.repository
             .append_progress(operation_id, self.runtime_id, details)
             .await
-            .map(|_| ())
     }
 
     pub(crate) async fn succeed(
@@ -335,14 +330,6 @@ impl OperationRuntime {
         self.repository
             .transition(operation_id, self.runtime_id, target, details)
             .await
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn approvals(
-        &self,
-        operation_id: Uuid,
-    ) -> AppResult<Vec<super::model::OperationApprovalRecord>> {
-        self.repository.approvals(operation_id).await
     }
 
     #[cfg(test)]

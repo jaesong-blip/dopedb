@@ -21,10 +21,7 @@ pub(crate) async fn automation_runner_settings(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> AppResult<AutomationRunnerSettings> {
-    let background_allowed = state
-        .knowledge_store()
-        .automation_runner_background_allowed()
-        .await?;
+    let background_allowed = state.services.analysis_article.background_allowed().await?;
     let launch_at_login = app
         .autolaunch()
         .is_enabled()
@@ -41,13 +38,11 @@ pub(crate) async fn set_automation_runner_background_allowed(
     state: State<'_, AppState>,
     allowed: bool,
 ) -> AppResult<AutomationRunnerSettings> {
-    let previous = state
-        .knowledge_store()
-        .automation_runner_background_allowed()
-        .await?;
+    let previous = state.services.analysis_article.background_allowed().await?;
     state
-        .knowledge_store()
-        .set_automation_runner_background_allowed(allowed)
+        .services
+        .analysis_article
+        .set_background_allowed(allowed)
         .await?;
     let registration = if allowed {
         app.autolaunch()
@@ -60,8 +55,9 @@ pub(crate) async fn set_automation_runner_background_allowed(
     };
     if let Err(error) = registration {
         state
-            .knowledge_store()
-            .set_automation_runner_background_allowed(previous)
+            .services
+            .analysis_article
+            .set_background_allowed(previous)
             .await?;
         return Err(error);
     }

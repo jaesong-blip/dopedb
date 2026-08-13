@@ -23,11 +23,15 @@ use tokio::process::Command;
 use tokio_util::sync::CancellationToken;
 use zeroize::Zeroizing;
 
+#[cfg(test)]
 use crate::error::AppResult;
+#[cfg(test)]
 use crate::operations::canonical_hash;
 
 use super::super::domain::LocalProvider;
-use super::{ProvisioningExecutionPermit, ProvisioningReadAuthority};
+#[cfg(test)]
+use super::ProvisioningExecutionPermit;
+use super::ProvisioningReadAuthority;
 use process_tree::ProvisioningProcessTree;
 
 const MAX_EXECUTABLE_BYTES: u64 = 512 * 1024 * 1024;
@@ -201,6 +205,7 @@ impl ProvisioningCliCommand {
         Ok(self)
     }
 
+    #[cfg(test)]
     pub(crate) fn redacted_plan(&self) -> Value {
         serde_json::json!({
             "provider": self.provider,
@@ -218,10 +223,12 @@ impl ProvisioningCliCommand {
     /// Hash the complete local execution specification. The UI renders only the
     /// redacted projection, while the approved plan pins argv, environment paths,
     /// executable identity, output schema, and timeout together.
+    #[cfg(test)]
     pub(crate) fn execution_sha256(&self) -> AppResult<String> {
         canonical_hash(&serde_json::to_value(self)?)
     }
 
+    #[cfg(test)]
     pub(super) async fn run(
         &self,
         permit: &ProvisioningExecutionPermit,

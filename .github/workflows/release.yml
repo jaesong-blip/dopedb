@@ -19,7 +19,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
@@ -36,12 +36,46 @@ jobs:
           tag_version="${GITHUB_REF_NAME#app-v}"
           node scripts/release/verify-release-version.mjs "$tag_version"
 
+          tag_object_type="$(git cat-file -t "$GITHUB_REF" 2>/dev/null || true)"
+          if [[ "$tag_object_type" != "tag" ]]; then
+            echo "Stable releases require an annotated app-vX.Y.Z tag." >&2
+            exit 1
+          fi
+
           git fetch origin main
           tag_commit="$(git rev-list -n 1 "$GITHUB_REF")"
           if ! git merge-base --is-ancestor "$tag_commit" origin/main; then
             echo "Stable releases must point to a commit already merged into main." >&2
             exit 1
           fi
+
+      - name: Verify owner-created draft before protected approval
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_state=""
+          for attempt in {1..10}; do
+            if release_state="$(gh release view "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json tagName,isDraft,isPrerelease,author \
+              --jq '[.tagName, .isDraft, .isPrerelease, .author.login] | @tsv' 2>/dev/null)"; then
+              break
+            fi
+            if [[ "$attempt" -lt 10 ]]; then
+              # The owner command pushes the annotated tag immediately before it
+              # creates the draft. Absorb only that bounded event-delivery race.
+              sleep 3
+            fi
+          done
+          if [[ -z "$release_state" ]]; then
+            echo "Create and review the owner draft before approving stable-release." >&2
+            echo "Run: pnpm release:stable:draft -- ${GITHUB_REF_NAME#app-v}" >&2
+            exit 1
+          fi
+          expected_state="${GITHUB_REF_NAME}"$'\ttrue\tfalse\tjson-choi'
+          test "$release_state" = "$expected_state"
 
       - name: Resolve macOS distribution mode
         id: macos_distribution
@@ -125,7 +159,9 @@ jobs:
             sentry_sourcemaps: "0"
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
 
       - name: Verify owner-created draft release
         shell: bash
@@ -134,41 +170,47 @@ jobs:
         run: |
           set -euo pipefail
 
+          tag_object_type="$(git cat-file -t "$GITHUB_REF" 2>/dev/null || true)"
+          if [[ "$tag_object_type" != "tag" ]]; then
+            echo "Stable builds require an annotated app-vX.Y.Z tag." >&2
+            exit 1
+          fi
+
           if ! release_state="$(gh release view "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
-            --json tagName,isDraft,isPrerelease \
-            --jq '[.tagName, .isDraft, .isPrerelease] | @tsv' 2>/dev/null)"; then
+            --json tagName,isDraft,isPrerelease,author \
+            --jq '[.tagName, .isDraft, .isPrerelease, .author.login] | @tsv' 2>/dev/null)"; then
             echo "Stable builds require an owner-created draft release before environment approval." >&2
             echo "Run: pnpm release:stable:draft -- ${GITHUB_REF_NAME#app-v}" >&2
             exit 1
           fi
 
-          expected_state="${GITHUB_REF_NAME}"$'\ttrue\tfalse'
+          expected_state="${GITHUB_REF_NAME}"$'\ttrue\tfalse\tjson-choi'
           if [[ "$release_state" != "$expected_state" ]]; then
             echo "Stable release must be the matching non-prerelease draft: $GITHUB_REF_NAME" >&2
             exit 1
           fi
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           version: 11.17.0
           run_install: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
           targets: ${{ matrix.rust-targets }}
 
       - name: Rust cache
-        uses: swatinem/rust-cache@v2
+        uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           # 태그 ref에서 저장한 캐시는 다음 태그가 읽을 수 없으므로 release-cache
           # 워크플로우가 main에 적립한 같은 shared-key 캐시만 읽는다. shared-key가
@@ -257,7 +299,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Build and upload Tauri release
-        uses: tauri-apps/tauri-action@v1
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -318,10 +360,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
 
@@ -376,7 +418,7 @@ jobs:
             --clobber
 
       - name: Install isolated Rust updater verifier
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
 
       - name: Finalize public updater URLs
         env:

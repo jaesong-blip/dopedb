@@ -73,6 +73,7 @@ export function queryDocument(
   kind: QueryDocument["kind"],
   draft?: string | null,
   database = "",
+  untitledTitle = "Untitled query",
 ): QueryDocument {
   sequence += 1;
   const suffix = `${Date.now().toString(36)}-${sequence.toString(36)}`;
@@ -82,7 +83,7 @@ export function queryDocument(
         connectionId,
         kind,
         draft: draft ?? "SELECT 1;",
-        title: "Untitled query",
+        title: untitledTitle,
         selectedDatabase: database,
         selectedSchema: null,
         resolveMode: DEFAULT_SQL_RESOLVE_MODE,

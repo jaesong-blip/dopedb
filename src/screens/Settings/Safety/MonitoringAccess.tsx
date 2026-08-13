@@ -4,11 +4,13 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  approveOperation,
   proposePostgresMonitoring,
-  rejectOperation,
   setPostgresMonitoring,
-} from "../../../ipc/commands";
+} from "../../../features/monitoring/tauriAdapter";
+import {
+  approveOperation,
+  rejectOperation,
+} from "../../../features/operations/tauriAdapter";
 import type { MonitoringOperationProposal } from "../../../ipc/types";
 import { errMessage } from "../../../ipc/types";
 import ConfirmButton from "../../../components/ConfirmButton";
@@ -16,6 +18,7 @@ import { Icon } from "../../../components/Icon";
 import Skeleton from "../../../components/Skeleton";
 import { useToast } from "../../../components/Toast";
 import { Button } from "../../../design-system/components/Button";
+import { TextInput } from "../../../design-system/components/FormControls";
 import { StatusBadge } from "../../../design-system/components/Status";
 import { monitoringStatusQuery, qk } from "../../../lib/queries";
 import { useI18n } from "../../../lib/i18n";
@@ -224,14 +227,16 @@ export default function MonitoringAccess({ connectionId }: { connectionId: strin
                 {t("approval.confirmationPrompt")}{" "}
                 <code>{proposal.confirmationPhrase}</code>
               </span>
-              <input
-                className="tw:w-full tw:max-w-[320px] tw:font-mono"
-                value={confirmation}
-                onChange={(event) => setConfirmation(event.target.value)}
-                placeholder={proposal.confirmationPhrase}
-                autoComplete="off"
-                spellCheck={false}
-              />
+              <span className="tw:w-full tw:max-w-[320px]">
+                <TextInput
+                  monospace
+                  value={confirmation}
+                  onChange={(event) => setConfirmation(event.target.value)}
+                  placeholder={proposal.confirmationPhrase}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </span>
             </label>
           )}
           <div className="ds-action-row ds-control-row">

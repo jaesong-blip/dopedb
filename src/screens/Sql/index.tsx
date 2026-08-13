@@ -7,10 +7,8 @@ import type { SqlLanguage } from "sql-formatter";
 import { useQuery } from "@tanstack/react-query";
 import {
   approveOperation,
-  proposeScript,
   rejectOperation,
-  runScript,
-} from "../../ipc/commands";
+} from "../../features/operations/tauriAdapter";
 import type {
   AppErrorDetails,
   ExecOutcome,
@@ -22,7 +20,9 @@ import { errDetails, errMessage } from "../../ipc/types";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import {
   inspectSql,
+  proposeScript,
   proposeSql,
+  runScript,
   runSql as runSqlOperation,
   runSqlReadStream,
   runSqlStream,
@@ -81,6 +81,7 @@ import {
   WorkbenchToolbar,
 } from "../../design-system/components/Workbench";
 import { StatusBadge } from "../../design-system/components/Status";
+import { TextInput } from "../../design-system/components/FormControls";
 import { useI18n } from "../../lib/i18n";
 import { useEventCallback } from "../../lib/useEventCallback";
 import {
@@ -1189,24 +1190,27 @@ export default function Sql({
                 <code>{pendingScriptApproval.proposal.payloadHash}</code>
               </div>
               {pendingScriptApproval.proposal.confirmationPhrase && (
-                <label className="tw:grid tw:gap-2 tw:text-sm tw:[&_input]:w-[min(100%,320px)] tw:[&_input]:font-mono">
+                <label className="tw:grid tw:gap-2 tw:text-sm">
                   <span>
                     {t("approval.confirmationPrompt")}{" "}
                     <code>
                       {pendingScriptApproval.proposal.confirmationPhrase}
                     </code>
                   </span>
-                  <input
-                    value={scriptConfirmation}
-                    onChange={(event) =>
-                      setScriptConfirmation(event.target.value)
-                    }
-                    placeholder={
-                      pendingScriptApproval.proposal.confirmationPhrase
-                    }
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
+                  <span className="tw:w-[min(100%,320px)]">
+                    <TextInput
+                      monospace
+                      value={scriptConfirmation}
+                      onChange={(event) =>
+                        setScriptConfirmation(event.target.value)
+                      }
+                      placeholder={
+                        pendingScriptApproval.proposal.confirmationPhrase
+                      }
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                  </span>
                 </label>
               )}
               <div className="ds-action-row ds-control-row">

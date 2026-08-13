@@ -158,12 +158,16 @@ export const deviceCode = workspaceControl.table(
   (table) => [index("device_code_user_idx").on(table.userId)],
 );
 
-export const rateLimit = workspaceControl.table("rate_limit", {
-  id: text("id").default(sql`gen_random_uuid()::text`).primaryKey(),
-  key: text("key").notNull().unique(),
-  count: integer("count").notNull(),
-  lastRequest: bigint("last_request", { mode: "number" }).notNull(),
-});
+export const rateLimit = workspaceControl.table(
+  "rate_limit",
+  {
+    id: text("id").default(sql`gen_random_uuid()::text`).primaryKey(),
+    key: text("key").notNull().unique(),
+    count: integer("count").notNull(),
+    lastRequest: bigint("last_request", { mode: "number" }).notNull(),
+  },
+  (table) => [index("rate_limit_last_request_idx").on(table.lastRequest)],
+);
 
 // Deletion receipts intentionally outlive the organization row. They contain no
 // workspace name, member list, provider identity, or payload; only the opaque id,
@@ -1959,9 +1963,11 @@ export const workspaceAnalysisRunner = workspaceControl.table(
     organizationId: text("organization_id").notNull().references(() => organization.id, {
       onDelete: "cascade",
     }),
-    memberId: text("member_id").notNull(),
+    memberId: text("member_id"),
     deviceId: text("device_id").notNull(),
     displayName: text("display_name").notNull(),
+    runnerCapabilityHash: text("runner_capability_hash"),
+    runnerCapabilityGeneration: bigint("runner_capability_generation", { mode: "number" }),
     backgroundAllowed: boolean("background_allowed").notNull().default(false),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -1972,7 +1978,7 @@ export const workspaceAnalysisRunner = workspaceControl.table(
     uniqueIndex("workspace_analysis_runner_org_device_idx").on(
       table.organizationId,
       table.deviceId,
-    ),
+    ).where(sql`${table.revokedAt} IS NULL`),
     index("workspace_analysis_runner_member_idx").on(
       table.organizationId,
       table.memberId,
@@ -1982,11 +1988,27 @@ export const workspaceAnalysisRunner = workspaceControl.table(
       columns: [table.organizationId, table.memberId],
       foreignColumns: [member.organizationId, member.id],
       name: "workspace_analysis_runner_org_member_fk",
-    }).onDelete("cascade"),
+    }).onDelete("set null"),
     check(
       "workspace_analysis_runner_text",
       sql`char_length(${table.deviceId}) BETWEEN 1 AND 256
         AND char_length(${table.displayName}) BETWEEN 1 AND 256`,
+    ),
+    check(
+      "workspace_analysis_runner_member",
+      sql`${table.memberId} IS NOT NULL OR ${table.revokedAt} IS NOT NULL`,
+    ),
+    check(
+      "workspace_analysis_runner_capability",
+      sql`(
+          ${table.runnerCapabilityHash} ~ '^[0-9a-f]{64}$'
+          AND ${table.runnerCapabilityGeneration} >= 1
+          AND ${table.runnerCapabilityGeneration} <= 9007199254740991
+        ) OR (
+          ${table.runnerCapabilityHash} IS NULL
+          AND ${table.runnerCapabilityGeneration} IS NULL
+          AND ${table.revokedAt} IS NOT NULL
+        )`,
     ),
   ],
 );
@@ -2195,6 +2217,7 @@ export const workspaceAnalysisRefreshLease = workspaceControl.table(
     articleId: uuid("article_id").notNull(),
     articleRevision: bigint("article_revision", { mode: "number" }).notNull(),
     runnerId: uuid("runner_id").notNull(),
+    runnerCapabilityGeneration: bigint("runner_capability_generation", { mode: "number" }),
     idempotencyKey: text("idempotency_key").notNull(),
     parameterHash: text("parameter_hash").notNull(),
     leaseCapabilityHash: text("lease_capability_hash").notNull(),
@@ -2241,6 +2264,13 @@ export const workspaceAnalysisRefreshLease = workspaceControl.table(
       "workspace_analysis_refresh_lease_time",
       sql`${table.articleRevision} >= 1 AND ${table.expiresAt} > ${table.scheduledAt}`,
     ),
+    check(
+      "workspace_analysis_refresh_lease_runner_capability",
+      sql`(${table.runnerCapabilityGeneration} >= 1
+          AND ${table.runnerCapabilityGeneration} <= 9007199254740991)
+        OR (${table.runnerCapabilityGeneration} IS NULL
+          AND (${table.completedAt} IS NOT NULL OR ${table.revokedAt} IS NOT NULL))`,
+    ),
   ],
 );
 
@@ -2254,6 +2284,7 @@ export const workspaceAnalysisArticleRun = workspaceControl.table(
     articleId: uuid("article_id").notNull(),
     articleRevision: bigint("article_revision", { mode: "number" }).notNull(),
     runnerId: uuid("runner_id").notNull(),
+    runnerCapabilityGeneration: bigint("runner_capability_generation", { mode: "number" }),
     leaseId: uuid("lease_id"),
     requestedByMemberId: text("requested_by_member_id"),
     trigger: text("trigger").notNull(),
@@ -2303,12 +2334,12 @@ export const workspaceAnalysisArticleRun = workspaceControl.table(
       columns: [table.organizationId, table.requestedByMemberId],
       foreignColumns: [member.organizationId, member.id],
       name: "workspace_analysis_article_run_org_requester_fk",
-    }).onDelete("restrict"),
+    }).onDelete("set null"),
     foreignKey({
       columns: [table.organizationId, table.cancelRequestedByMemberId],
       foreignColumns: [member.organizationId, member.id],
       name: "workspace_analysis_article_run_org_cancel_requester_fk",
-    }).onDelete("restrict"),
+    }).onDelete("set null"),
     check(
       "workspace_analysis_article_run_state",
       sql`${table.state} IN ('queued', 'running', 'succeeded', 'failed', 'cancelled', 'stale')`,
@@ -2348,8 +2379,14 @@ export const workspaceAnalysisArticleRun = workspaceControl.table(
     check(
       "workspace_analysis_article_run_cancel",
       sql`(${table.cancelRequestedAt} IS NULL AND ${table.cancelRequestedByMemberId} IS NULL)
-        OR (${table.cancelRequestedAt} IS NOT NULL
-          AND ${table.cancelRequestedByMemberId} IS NOT NULL)`,
+        OR ${table.cancelRequestedAt} IS NOT NULL`,
+    ),
+    check(
+      "workspace_analysis_article_run_runner_capability",
+      sql`(${table.runnerCapabilityGeneration} >= 1
+          AND ${table.runnerCapabilityGeneration} <= 9007199254740991)
+        OR (${table.runnerCapabilityGeneration} IS NULL
+          AND ${table.state} IN ('succeeded', 'failed', 'cancelled', 'stale'))`,
     ),
   ],
 );
@@ -2493,7 +2530,7 @@ export const workspaceAnalysisPublication = workspaceControl.table(
     description: text("description").notNull().default(""),
     snapshot: jsonb("snapshot").notNull(),
     snapshotHash: text("snapshot_hash").notNull(),
-    approvedByMemberId: text("approved_by_member_id").notNull(),
+    approvedByMemberId: text("approved_by_member_id"),
     publishedAt: timestamp("published_at", { withTimezone: true }).notNull().defaultNow(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
   },
@@ -2531,7 +2568,7 @@ export const workspaceAnalysisPublication = workspaceControl.table(
       columns: [table.organizationId, table.approvedByMemberId],
       foreignColumns: [member.organizationId, member.id],
       name: "workspace_analysis_publication_org_approver_fk",
-    }).onDelete("restrict"),
+    }).onDelete("set null"),
     check(
       "workspace_analysis_publication_slug",
       sql`${table.slug} ~ '^[a-z0-9][a-z0-9-]{7,127}$'`,
@@ -2565,7 +2602,7 @@ export const workspaceAnalysisSignal = workspaceControl.table(
     articleRevision: bigint("article_revision", { mode: "number" }).notNull(),
     blockId: text("block_id").notNull(),
     definition: jsonb("definition").notNull(),
-    ownerMemberId: text("owner_member_id").notNull(),
+    ownerMemberId: text("owner_member_id"),
     enabled: boolean("enabled").notNull().default(false),
     revision: bigint("revision", { mode: "number" }).notNull().default(1),
     lastEvaluatedRunId: uuid("last_evaluated_run_id"),
@@ -2594,7 +2631,7 @@ export const workspaceAnalysisSignal = workspaceControl.table(
       columns: [table.organizationId, table.ownerMemberId],
       foreignColumns: [member.organizationId, member.id],
       name: "workspace_analysis_signal_org_owner_fk",
-    }).onDelete("restrict"),
+    }).onDelete("set null"),
     foreignKey({
       columns: [table.organizationId, table.lastEvaluatedRunId],
       foreignColumns: [workspaceAnalysisArticleRun.organizationId, workspaceAnalysisArticleRun.id],
@@ -2632,7 +2669,7 @@ export const workspaceAnalysisSignalRevision = workspaceControl.table(
     operation: text("operation").notNull(),
     payload: jsonb("payload").notNull(),
     payloadHash: text("payload_hash").notNull(),
-    createdByMemberId: text("created_by_member_id").notNull(),
+    createdByMemberId: text("created_by_member_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -2650,7 +2687,7 @@ export const workspaceAnalysisSignalRevision = workspaceControl.table(
       columns: [table.organizationId, table.createdByMemberId],
       foreignColumns: [member.organizationId, member.id],
       name: "workspace_analysis_signal_revision_org_member_fk",
-    }).onDelete("restrict"),
+    }).onDelete("set null"),
     check(
       "workspace_analysis_signal_revision_number",
       sql`${table.revision} >= 1 AND ${table.revision} <= 9007199254740991`,
@@ -2752,6 +2789,9 @@ export const workspaceAnalysisSignalNotification = workspaceControl.table(
     channel: text("channel").notNull(),
     state: text("state").notNull().default("pending"),
     deliveryAttempt: integer("delivery_attempt").notNull().default(0),
+    claimId: uuid("claim_id"),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     readAt: timestamp("read_at", { withTimezone: true }),
     errorKind: text("error_kind"),
@@ -2769,6 +2809,12 @@ export const workspaceAnalysisSignalNotification = workspaceControl.table(
       table.recipientMemberId,
       table.readAt,
       table.createdAt,
+    ),
+    index("workspace_analysis_signal_notification_due_idx").on(
+      table.channel,
+      table.state,
+      table.nextAttemptAt,
+      table.claimedAt,
     ),
     foreignKey({
       columns: [table.organizationId, table.receiptId],
@@ -2794,6 +2840,19 @@ export const workspaceAnalysisSignalNotification = workspaceControl.table(
     check(
       "workspace_analysis_signal_notification_attempt",
       sql`${table.deliveryAttempt} BETWEEN 0 AND 20`,
+    ),
+    check(
+      "workspace_analysis_signal_notification_claim",
+      sql`(${table.claimId} IS NULL AND ${table.claimedAt} IS NULL)
+        OR (${table.claimId} IS NOT NULL AND ${table.claimedAt} IS NOT NULL)`,
+    ),
+    check(
+      "workspace_analysis_signal_notification_terminal",
+      sql`(${table.state} = 'pending' AND ${table.deliveredAt} IS NULL)
+        OR (${table.state} = 'delivered' AND ${table.deliveredAt} IS NOT NULL
+          AND ${table.claimId} IS NULL AND ${table.claimedAt} IS NULL)
+        OR (${table.state} = 'failed' AND ${table.deliveredAt} IS NULL
+          AND ${table.claimId} IS NULL AND ${table.claimedAt} IS NULL)`,
     ),
   ],
 );
@@ -2939,6 +2998,11 @@ export const knowledgeSourceSyncJob = workspaceControl.table(
     attempt: integer("attempt").notNull().default(0),
     totalFiles: integer("total_files").notNull().default(0),
     processedFiles: integer("processed_files").notNull().default(0),
+    manifest: jsonb("manifest"),
+    sourceRevisionSha256: text("source_revision_sha256"),
+    activationGraphRevisionId: uuid("activation_graph_revision_id"),
+    activationParentGraphRevisionId: uuid("activation_parent_graph_revision_id"),
+    activationGeneratedAt: timestamp("activation_generated_at", { withTimezone: true }),
     availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
     leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
@@ -2950,6 +3014,11 @@ export const knowledgeSourceSyncJob = workspaceControl.table(
   },
   (table) => [
     uniqueIndex("knowledge_source_sync_job_org_id_idx").on(table.organizationId, table.id),
+    uniqueIndex("knowledge_source_sync_job_org_id_source_idx").on(
+      table.organizationId,
+      table.id,
+      table.sourceId,
+    ),
     uniqueIndex("knowledge_source_sync_job_revision_idx").on(
       table.sourceId,
       table.desiredCommitSha,
@@ -2994,6 +3063,23 @@ export const knowledgeSourceSyncJob = workspaceControl.table(
       sql`${table.totalFiles} >= 0
         AND ${table.processedFiles} >= 0
         AND ${table.processedFiles} <= ${table.totalFiles}`,
+    ),
+    check(
+      "knowledge_source_sync_job_manifest",
+      sql`${table.manifest} IS NULL OR jsonb_typeof(${table.manifest}) = 'array'`,
+    ),
+    check(
+      "knowledge_source_sync_job_source_revision",
+      sql`${table.sourceRevisionSha256} IS NULL
+        OR ${table.sourceRevisionSha256} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "knowledge_source_sync_job_activation_identity",
+      sql`(${table.activationGraphRevisionId} IS NOT NULL
+          AND ${table.activationGeneratedAt} IS NOT NULL)
+        OR (${table.activationGraphRevisionId} IS NULL
+          AND ${table.activationParentGraphRevisionId} IS NULL
+          AND ${table.activationGeneratedAt} IS NULL)`,
     ),
     check(
       "knowledge_source_sync_job_claim_shape",
@@ -3049,6 +3135,15 @@ export const knowledgeCodeIndexFile = workspaceControl.table(
       foreignColumns: [knowledgeSource.organizationId, knowledgeSource.id],
       name: "knowledge_code_index_file_org_source_fk",
     }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.jobId, table.sourceId],
+      foreignColumns: [
+        knowledgeSourceSyncJob.organizationId,
+        knowledgeSourceSyncJob.id,
+        knowledgeSourceSyncJob.sourceId,
+      ],
+      name: "knowledge_code_index_file_exact_job_fk",
+    }).onDelete("cascade"),
     check(
       "knowledge_code_index_file_commit",
       sql`${table.commitSha} ~ '^[0-9a-f]{40}$' AND ${table.blobSha} ~ '^[0-9a-f]{40}$'`,
@@ -3070,6 +3165,137 @@ export const knowledgeCodeIndexFile = workspaceControl.table(
       "knowledge_code_index_file_analysis",
       sql`(${table.state} = 'ready' AND jsonb_typeof(${table.analysis}) = 'object')
         OR (${table.state} <> 'ready' AND ${table.analysis} IS NULL)`,
+    ),
+  ],
+);
+
+export const knowledgeCodeIndexActivationFragment = workspaceControl.table(
+  "knowledge_code_index_activation_fragment",
+  {
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    jobId: uuid("job_id").notNull().references(() => knowledgeSourceSyncJob.id, {
+      onDelete: "cascade",
+    }),
+    sourceId: uuid("source_id").notNull().references(() => knowledgeSource.id, {
+      onDelete: "cascade",
+    }),
+    batchIndex: integer("batch_index").notNull(),
+    startPath: text("start_path").notNull(),
+    endPath: text("end_path").notNull(),
+    fileCount: integer("file_count").notNull(),
+    parsedFiles: integer("parsed_files").notNull(),
+    skippedFiles: integer("skipped_files").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.jobId, table.batchIndex] }),
+    index("knowledge_code_index_activation_fragment_job_idx").on(
+      table.organizationId,
+      table.jobId,
+      table.batchIndex,
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.jobId],
+      foreignColumns: [knowledgeSourceSyncJob.organizationId, knowledgeSourceSyncJob.id],
+      name: "knowledge_code_index_activation_fragment_org_job_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.sourceId],
+      foreignColumns: [knowledgeSource.organizationId, knowledgeSource.id],
+      name: "knowledge_code_index_activation_fragment_org_source_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.jobId, table.sourceId],
+      foreignColumns: [
+        knowledgeSourceSyncJob.organizationId,
+        knowledgeSourceSyncJob.id,
+        knowledgeSourceSyncJob.sourceId,
+      ],
+      name: "knowledge_code_index_activation_fragment_exact_job_fk",
+    }).onDelete("cascade"),
+    check(
+      "knowledge_code_index_activation_fragment_batch",
+      sql`${table.batchIndex} >= 0
+        AND ${table.fileCount} BETWEEN 1 AND 64
+        AND ${table.parsedFiles} >= 0
+        AND ${table.skippedFiles} >= 0
+        AND ${table.parsedFiles} + ${table.skippedFiles} = ${table.fileCount}`,
+    ),
+    check(
+      "knowledge_code_index_activation_fragment_paths",
+      sql`char_length(${table.startPath}) BETWEEN 1 AND 4096
+        AND char_length(${table.endPath}) BETWEEN 1 AND 4096`,
+    ),
+  ],
+);
+
+export const knowledgeCodeIndexActivationEntity = workspaceControl.table(
+  "knowledge_code_index_activation_entity",
+  {
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    jobId: uuid("job_id").notNull().references(() => knowledgeSourceSyncJob.id, {
+      onDelete: "cascade",
+    }),
+    sourceId: uuid("source_id").notNull().references(() => knowledgeSource.id, {
+      onDelete: "cascade",
+    }),
+    entityKind: text("entity_kind").notNull(),
+    entityId: text("entity_id").notNull(),
+    batchIndex: integer("batch_index").notNull(),
+    primaryDefinition: boolean("primary_definition").notNull().default(false),
+    payload: jsonb("payload").notNull(),
+    canonicalPayload: text("canonical_payload").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.jobId, table.entityKind, table.entityId] }),
+    index("knowledge_code_index_activation_entity_job_idx").on(
+      table.organizationId,
+      table.jobId,
+      table.entityKind,
+      table.entityId,
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.jobId],
+      foreignColumns: [knowledgeSourceSyncJob.organizationId, knowledgeSourceSyncJob.id],
+      name: "knowledge_code_index_activation_entity_org_job_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.sourceId],
+      foreignColumns: [knowledgeSource.organizationId, knowledgeSource.id],
+      name: "knowledge_code_index_activation_entity_org_source_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.jobId, table.sourceId],
+      foreignColumns: [
+        knowledgeSourceSyncJob.organizationId,
+        knowledgeSourceSyncJob.id,
+        knowledgeSourceSyncJob.sourceId,
+      ],
+      name: "knowledge_code_index_activation_entity_exact_job_fk",
+    }).onDelete("cascade"),
+    check(
+      "knowledge_code_index_activation_entity_kind",
+      sql`${table.entityKind} IN ('node', 'edge', 'evidence')`,
+    ),
+    check(
+      "knowledge_code_index_activation_entity_identity",
+      sql`${table.entityId} ~ '^[0-9a-f]{64}$'
+        AND ${table.batchIndex} >= 0
+        AND jsonb_typeof(${table.payload}) = 'object'
+        AND ${table.payload} ->> 'id' = ${table.entityId}
+        AND octet_length(${table.canonicalPayload}) BETWEEN 2 AND 2097152
+        AND ${table.canonicalPayload}::jsonb = ${table.payload}
+        AND left(${table.canonicalPayload}, 1) = '{'
+        AND right(${table.canonicalPayload}, 1) = '}'`,
+    ),
+    check(
+      "knowledge_code_index_activation_entity_primary",
+      sql`NOT ${table.primaryDefinition} OR ${table.entityKind} = 'node'`,
     ),
   ],
 );
