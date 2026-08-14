@@ -1,15 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "if [ \"$VERCEL_ENV\" = \"production\" ]; then pnpm db:migrate:production; fi && pnpm build",
-  "regions": ["iad1"],
-  "crons": [
-    {
-      "path": "/api/internal/cron/credential-leases",
-      "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/internal/cron/knowledge",
-      "schedule": "* * * * *"
-    }
-  ]
+  "regions": ["iad1"]
 }

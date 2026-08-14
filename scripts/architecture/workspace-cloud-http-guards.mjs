@@ -35,6 +35,8 @@ const neonOperationsApplicationDirectory =
 const productAnalyticsRoute =
   "workspace-cloud/app/api/v1/product-analytics/events/route.ts";
 const productAnalyticsService = "workspace-cloud/lib/product-analytics.ts";
+const workspaceSchedulerService = "workspace-cloud/lib/workspace-background-scheduler.ts";
+const workspaceSchedulerWorker = "workspace-scheduler-cloudflare/src/index.ts";
 
 function workspaceCloudRuntimeModuleSpecifiers(source) {
   return staticRuntimeModuleSpecifiers(source, { includeDynamic: true });
@@ -256,6 +258,83 @@ export function collectWorkspaceCloudHttpDiagnostics({ lineCount, read, relative
     || environmentSource.includes("us.i.posthog.com")
   ) {
     diagnostics.push("workspace-cloud/lib/env.ts: product analytics must use only the dedicated Cloudflare Worker");
+  }
+
+  const schedulerServiceSource = read(workspaceSchedulerService);
+  const schedulerWorkerSource = read(workspaceSchedulerWorker);
+  const vercelConfiguration = read("workspace-cloud/vercel.json");
+  if (/"crons"\s*:/.test(vercelConfiguration)) {
+    diagnostics.push("workspace-cloud/vercel.json: PostgreSQL background work must not regain an independent Vercel cron");
+  }
+  for (const token of [
+    "env.workspaceBackgroundSchedulerEnabled()",
+    "env.workspaceBackgroundSchedulerUrl()",
+    "env.workspaceBackgroundSchedulerToken()",
+    '"x-dopedb-background-scheduler-contract": CONTRACT_VERSION',
+    '"x-dopedb-background-token": token',
+    "boundedJsonResponse(response, MAX_KICK_RESPONSE_BYTES)",
+    'redirect: "error"',
+    "AbortSignal.timeout(KICK_TIMEOUT_MS)",
+    "nextKnowledgeBackgroundRunAt",
+    "nextMaintenanceBackgroundRunAt",
+    "idleReconciliationAt = Math.ceil(",
+  ]) {
+    if (!schedulerServiceSource.includes(token)) {
+      diagnostics.push(`${workspaceSchedulerService}: background scheduler boundary is missing ${token}`);
+    }
+  }
+  for (const token of [
+    'knowledge: "/api/internal/cron/knowledge"',
+    'maintenance: "/api/internal/cron/credential-leases"',
+    "MAX_KICK_BODY_BYTES = 1_024",
+    "MAX_UPSTREAM_BODY_BYTES = 16 * 1_024",
+    "new AbortController()",
+    "setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS)",
+    "validCapability(env.WORKSPACE_CRON_SECRET)",
+    "validCapability(env.KICK_TOKEN)",
+    'redirect: "manual"',
+    "redirectDiagnostic(upstream, expectedUrl)",
+    "due_at_ms = min(workspace_background_task_v1.due_at_ms, excluded.due_at_ms)",
+    "generation = workspace_background_task_v1.generation + 1",
+    "WHERE task = ? AND generation = ? AND lease_token = ?",
+    'hostname !== "app.dopedb.dev"',
+    'upstream.headers.get("x-dopedb-background-scheduler-contract")',
+  ]) {
+    if (!schedulerWorkerSource.includes(token)) {
+      diagnostics.push(`${workspaceSchedulerWorker}: scheduler Worker boundary is missing ${token}`);
+    }
+  }
+  if (/\b(?:workspaceId|organizationId|sourceId|memberId)\b/.test(schedulerWorkerSource)) {
+    diagnostics.push(`${workspaceSchedulerWorker}: scheduler D1 must not receive tenant or resource identities`);
+  }
+  if (
+    !environmentSource.includes("WORKSPACE_SCHEDULER_WORKER_HOST")
+    || !environmentSource.includes('url.pathname !== "/v1/kick"')
+  ) {
+    diagnostics.push("workspace-cloud/lib/env.ts: background scheduler must use only the dedicated Cloudflare Worker");
+  }
+  for (const route of [
+    "workspace-cloud/app/api/internal/cron/knowledge/route.ts",
+    "workspace-cloud/app/api/internal/cron/credential-leases/route.ts",
+  ]) {
+    const source = read(route);
+    for (const token of [
+      "cronRequestAuthorized(request)",
+      "workspaceSchedulerRequest(request)",
+      "workspaceSchedulerReceipt(nextRunAt)",
+      "workspaceSchedulerResponseHeaders()",
+    ]) {
+      if (!source.includes(token)) {
+        diagnostics.push(`${route}: scheduler receipt route is missing ${token}`);
+      }
+    }
+  }
+  if (!read("workspace-cloud/app/api/internal/cron/knowledge/route.ts").includes(
+    "processCodeIndexQueue({ maxSteps: 10, deadlineMs: 40_000 })",
+  )) {
+    diagnostics.push(
+      "workspace-cloud Knowledge scheduler must consume multiple bounded checkpoints per wake-up",
+    );
   }
 
   const routeImportCounts = { db: 0, drizzle: 0, schema: 0 };

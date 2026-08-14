@@ -34,6 +34,7 @@ import {
 } from "../../../../../../../../../../lib/workspace-analysis-articles";
 import { parseAnalysisSignalReceipt } from "../../../../../../../../../../lib/workspace-analysis-signals";
 import { hasWorkspaceCapability } from "../../../../../../../../../../lib/workspace-permissions";
+import { kickWorkspaceBackgroundTask } from "../../../../../../../../../../lib/workspace-background-scheduler";
 import { canonicalHash } from "../../../../../../../../../../lib/workspace-versioning";
 
 type RouteContext = {
@@ -189,10 +190,14 @@ export async function POST(request: Request, context: RouteContext) {
       authority: authority(authorization),
     });
     if (!stored) return jsonError("Analysis signal evidence no longer has exact authority", 409);
+    const notificationCount = Number(stored.notificationCount);
+    if (notificationCount > 0) {
+      await kickWorkspaceBackgroundTask({ task: "maintenance" });
+    }
     return privateJson({
       receipt: {
         ...stored,
-        notificationCount: Number(stored.notificationCount),
+        notificationCount,
         evaluatedAt: stored.evaluatedAt instanceof Date
           ? stored.evaluatedAt.toISOString() : stored.evaluatedAt,
         createdAt: stored.createdAt instanceof Date

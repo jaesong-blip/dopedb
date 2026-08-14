@@ -1,6 +1,6 @@
 // Durable Project Knowledge queue. GitHub delivery ids remain the audit cursor;
 // sync jobs are coalesced by source + immutable commit and advanced by bounded
-// Vercel cron invocations without any member desktop being online.
+// scheduler-triggered invocations without any member desktop being online.
 import "server-only";
 
 import { sql } from "drizzle-orm";

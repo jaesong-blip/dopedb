@@ -3,6 +3,7 @@
 import "server-only";
 
 const PRODUCT_ANALYTICS_WORKER_HOST = /^dopedb-product-analytics\.[a-z0-9-]+\.workers\.dev$/;
+const WORKSPACE_SCHEDULER_WORKER_HOST = /^dopedb-workspace-scheduler\.[a-z0-9-]+\.workers\.dev$/;
 
 function required(name: string): string {
   const value = process.env[name]?.trim();
@@ -95,6 +96,45 @@ function productAnalyticsCloudflareUrl(): string | null {
   return url.toString();
 }
 
+function workspaceBackgroundSchedulerEnabled(): boolean {
+  const value = optional("WORKSPACE_BACKGROUND_SCHEDULER_ENABLED");
+  if (value === null || value === "0") return false;
+  if (value === "1") return true;
+  throw new Error("WORKSPACE_BACKGROUND_SCHEDULER_ENABLED must be 0 or 1");
+}
+
+function workspaceBackgroundSchedulerToken(): string | null {
+  const value = optional("WORKSPACE_BACKGROUND_SCHEDULER_TOKEN");
+  if (!value) return null;
+  if (!/^[0-9a-f]{64}$/.test(value)) {
+    throw new Error("WORKSPACE_BACKGROUND_SCHEDULER_TOKEN is invalid");
+  }
+  return value;
+}
+
+function workspaceBackgroundSchedulerUrl(): string | null {
+  const value = optional("WORKSPACE_BACKGROUND_SCHEDULER_URL");
+  if (!value) return null;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("WORKSPACE_BACKGROUND_SCHEDULER_URL is invalid");
+  }
+  if (
+    url.protocol !== "https:"
+    || !WORKSPACE_SCHEDULER_WORKER_HOST.test(url.hostname)
+    || url.username
+    || url.password
+    || url.pathname !== "/v1/kick"
+    || url.search
+    || url.hash
+  ) {
+    throw new Error("WORKSPACE_BACKGROUND_SCHEDULER_URL must be the approved scheduler Worker endpoint");
+  }
+  return url.toString();
+}
+
 export const env = {
   appOrigin,
   authSecret,
@@ -114,6 +154,9 @@ export const env = {
   productAnalyticsRelayEnabled,
   resendApiKey: () => optional("RESEND_API_KEY"),
   workspaceInvitationFrom: () => optional("WORKSPACE_INVITATION_FROM"),
+  workspaceBackgroundSchedulerEnabled,
+  workspaceBackgroundSchedulerToken,
+  workspaceBackgroundSchedulerUrl,
   workspaceSignalFrom: () => optional("WORKSPACE_SIGNAL_FROM")
     || optional("WORKSPACE_INVITATION_FROM"),
   workspaceKmsKeyName: () => required("WORKSPACE_KMS_KEY_NAME"),

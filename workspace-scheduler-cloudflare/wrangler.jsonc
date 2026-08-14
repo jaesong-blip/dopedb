@@ -1,0 +1,38 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dopedb-workspace-scheduler",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-14",
+  "account_id": "4813425b30d5f9a6b2393c412817867d",
+  "workers_dev": true,
+  "preview_urls": false,
+  "secrets": {
+    "required": ["KICK_TOKEN", "WORKSPACE_CRON_SECRET"]
+  },
+  "vars": {
+    "WORKSPACE_ORIGIN": "https://app.dopedb.dev"
+  },
+  "d1_databases": [
+    {
+      "binding": "SCHEDULER_DB",
+      "database_name": "dopedb-workspace-scheduler",
+      "database_id": "ee4a2153-7fcd-459f-bd1e-848a9f259e93",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true,
+      "head_sampling_rate": 1
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.01
+    }
+  }
+}

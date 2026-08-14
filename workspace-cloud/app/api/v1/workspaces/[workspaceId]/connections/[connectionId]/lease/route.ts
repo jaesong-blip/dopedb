@@ -32,6 +32,7 @@ import {
 import { authorizeWorkspaceConnection } from "../../../../../../../../lib/workspace-authorization";
 import { providerResourceSupportsWrite } from "../../../../../../../../lib/workspace-connections";
 import { hasWorkspaceCapability } from "../../../../../../../../lib/workspace-permissions";
+import { kickWorkspaceBackgroundTask } from "../../../../../../../../lib/workspace-background-scheduler";
 import { logManagedDatabaseAccessFailure } from "../../../../../../../../lib/workspace-server-log";
 
 type RouteContext = {
@@ -278,6 +279,10 @@ export async function POST(request: Request, context: RouteContext) {
       });
       return jsonError("Workspace database authority changed. Retry with current access.", 409);
     }
+    await kickWorkspaceBackgroundTask({
+      task: "maintenance",
+      notBefore: new Date(lease.expiresAt),
+    });
     return privateJson(managedLeaseResponse({
       lease: {
         id: lease.leaseId,

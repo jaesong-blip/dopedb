@@ -18,9 +18,12 @@ exact Better Auth URL, and a random 32-byte base64url `WORKSPACE_CREDENTIAL_KEY`
 PlanetScale managed access additionally requires `PLANETSCALE_CLIENT_ID` and
 `PLANETSCALE_CLIENT_SECRET`; Neon and GCP Cloud SQL do not add application
 environment secrets. Set a separate random `CRON_SECRET` for the authenticated
-credential-cleanup and Project Knowledge routes. The committed one-minute schedules require Vercel Pro or
-Enterprise; do not deploy Neon managed access with a daily-only Hobby cron. Register
-this PlanetScale callback:
+credential-cleanup and Project Knowledge routes. Background work is coordinated by
+the separate `workspace-scheduler-cloudflare/` Worker: D1 holds only the two next-run
+timestamps, while durable jobs, leases, authority, and audit state remain in
+PostgreSQL. Event producers move a task earlier and an hourly receipt repairs a missed
+kick. Do not add an independent Vercel cron: polling PostgreSQL every minute prevents
+Neon from suspending even when there is no work. Register this PlanetScale callback:
 
 ```text
 http://localhost:3000/api/v1/providers/planet-scale/callback
@@ -76,7 +79,7 @@ code against an older control-plane schema.
 Migration `0051_orange_sway` adds the Signal email claim, due-at, and retry indexes
 without rewriting existing notification payloads. Existing pending rows become due at
 migration time; delivered/failed rows remain terminal. It also indexes stale rate-limit
-rows. The one-minute maintenance job deletes at most 1,000 expired rows per tick, so
+rows. Each due maintenance invocation deletes at most 1,000 expired rows, so
 retention never adds an unbounded delete to the public request path. The schema
 checks require claim id/timestamp pairs and prevent a delivered row from being retried.
 
@@ -100,23 +103,24 @@ https://app.dopedb.dev/api/v1/knowledge/github/webhook
 ```
 
 The Vercel control plane verifies the raw-body signature, records the delivery id,
-and coalesces work by source and immutable commit. The one-minute authenticated
-Vercel cron advances a durable job in bounded manifest, file-index, and activation
-steps. Each invocation downloads only a small batch with a one-hour installation
+coalesces work by source and immutable commit, and sends one authenticated wake-up to
+the Cloudflare scheduler. When due, the scheduler advances the durable job in bounded
+manifest, file-index, and activation steps. Each invocation downloads only a small batch with a one-hour installation
 token held in memory, extracts deterministic symbols, imports, calls, routes, events,
 and SQL table references, then stores bounded normalized fragments in PostgreSQL.
 Blob bytes are discarded after extraction; stored nodes retain declarations, paths,
 line ranges, and provenance rather than source bodies. Unchanged Git blobs reuse their
-previous fragment. No repository checkout, model call, container, or separate worker
-deployment is required.
+previous fragment. No repository checkout, model call, or container is required; the
+generic scheduler stores no repository data and only wakes this bounded control-plane
+route.
 
 Activation assembles those fragments into the existing `GraphBuildArtifactV1`
 contract and atomically advances the Environment head. A failed, expired, or stale
 lease never replaces the last-good index. Existing Agent grants remain pinned to
 their exact graph revision; a new head is used only by a subsequent grant/session
-boundary. The same cron also checks least-recently-reconciled refs in small batches,
-so a missed GitHub webhook is repaired without asking a workspace member to configure
-anything.
+boundary. The same bounded route checks least-recently-reconciled refs in small
+batches. Its one-hour idle receipt is the missed-webhook fallback, so recovery does not
+require a workspace member or a continuously awake PostgreSQL compute.
 
 Local Folder remains strictly device-local because the cloud cannot observe an
 offline path. Desktop indexes and watches it locally; the hosted source inventory and
@@ -183,8 +187,8 @@ project key remains separate. Revoke an unused key in Neon.
 Role passwords are sent to PostgreSQL only as client-generated SCRAM-SHA-256
 verifiers. The desktop uses the direct Neon endpoint, limits the two leased pools to
 four combined connections, and closes them 30 seconds before expiry. The authenticated
-Vercel cron independently commits `NOLOGIN`, terminates remaining sessions, and removes
-expired roles. Vercel cron scheduling is not an exact timer, so the documentation does
+Cloudflare-scheduled route independently commits `NOLOGIN`, terminates remaining sessions, and removes
+expired roles. Background scheduling is not an exact timer, so the documentation does
 not treat password `VALID UNTIL` alone as a hard session-expiry boundary.
 
 ## GCP Cloud SQL managed access
@@ -475,8 +479,9 @@ than at project scope.
   for identity resolution that also supports organization and project-scoped keys.
 - [PostgreSQL CREATE ROLE](https://www.postgresql.org/docs/current/sql-createrole.html)
   for SCRAM verifiers and the password-only semantics of `VALID UNTIL`.
-- [Vercel Cron security](https://vercel.com/docs/cron-jobs/manage-cron-jobs) for
-  `CRON_SECRET` Bearer authentication and scheduling limitations.
+- [Cloudflare Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/)
+  and [D1](https://developers.cloudflare.com/d1/) for the payload-free due-time
+  coordinator; `CRON_SECRET` remains the Bearer boundary on Vercel.
 - [Vercel OIDC for GCP](https://vercel.com/docs/oidc/gcp) and
   [Vercel OIDC claims](https://vercel.com/docs/oidc/reference) for the exact
   production-project trust condition, and

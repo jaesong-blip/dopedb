@@ -9,6 +9,7 @@ import {
   knowledgeGithubInstallation,
   knowledgeSource,
 } from "@/lib/schema";
+import { kickWorkspaceBackgroundTask } from "@/lib/workspace-background-scheduler";
 
 const MAX_WEBHOOK_BYTES = 2 * 1024 * 1024;
 const MAX_CHANGED_FILES = 10_000;
@@ -93,6 +94,7 @@ async function requeueSources(
   organizationId: string,
   sources: Array<{ id: string; commitSha: string | null }>,
 ) {
+  let queued = false;
   for (const source of sources) {
     if (!source.commitSha) continue;
     await reconcileGithubKnowledgeCommit({
@@ -100,7 +102,9 @@ async function requeueSources(
       sourceId: source.id,
       observedCommitSha: source.commitSha,
     });
+    queued = true;
   }
+  return queued;
 }
 
 export async function POST(request: Request) {
@@ -133,6 +137,7 @@ export async function POST(request: Request) {
     installationId,
   ));
   if (installations.length === 0) return new Response(null, { status: 202 });
+  let shouldKick = false;
 
   if (event === "push") {
     const repositoryPayload = payload.repository;
@@ -165,7 +170,7 @@ export async function POST(request: Request) {
           ),
         ));
       for (const source of sources) {
-        await recordGithubKnowledgePush({
+        const recorded = await recordGithubKnowledgePush({
           organizationId: installation.organizationId,
           sourceId: source.id,
           deliveryId,
@@ -173,6 +178,7 @@ export async function POST(request: Request) {
           afterCommitSha: after,
           changedFiles: files,
         });
+        shouldKick = Boolean(recorded?.jobId) || shouldKick;
       }
     }
   } else if (event === "installation") {
@@ -218,7 +224,8 @@ export async function POST(request: Request) {
             id: knowledgeSource.id,
             commitSha: knowledgeSource.commitSha,
           });
-          await requeueSources(installation.organizationId, sources);
+          const queued = await requeueSources(installation.organizationId, sources);
+          shouldKick = queued || shouldKick;
         }
       }
     }
@@ -247,7 +254,8 @@ export async function POST(request: Request) {
           commitSha: knowledgeSource.commitSha,
         });
         if (action === "added") {
-          await requeueSources(installation.organizationId, sources);
+          const queued = await requeueSources(installation.organizationId, sources);
+          shouldKick = queued || shouldKick;
         }
       }
     }
@@ -276,11 +284,13 @@ export async function POST(request: Request) {
             commitSha: knowledgeSource.commitSha,
           });
           if (available) {
-            await requeueSources(installation.organizationId, sources);
+            const queued = await requeueSources(installation.organizationId, sources);
+            shouldKick = queued || shouldKick;
           }
         }
       }
     }
   }
+  if (shouldKick) await kickWorkspaceBackgroundTask({ task: "knowledge" });
   return new Response(null, { status: 202 });
 }
