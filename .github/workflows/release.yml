@@ -17,6 +17,8 @@ jobs:
       macos_distribution_mode: ${{ steps.macos_distribution.outputs.mode }}
       release_body: ${{ steps.release_notes.outputs.body }}
     permissions:
+      # Draft releases are invisible to this read-only token. The protected
+      # publish job verifies the exact owner draft before install or build.
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -48,34 +50,6 @@ jobs:
             echo "Stable releases must point to a commit already merged into main." >&2
             exit 1
           fi
-
-      - name: Verify owner-created draft before protected approval
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          release_state=""
-          for attempt in {1..10}; do
-            if release_state="$(gh release view "$GITHUB_REF_NAME" \
-              --repo "$GITHUB_REPOSITORY" \
-              --json tagName,isDraft,isPrerelease,author \
-              --jq '[.tagName, .isDraft, .isPrerelease, .author.login] | @tsv' 2>/dev/null)"; then
-              break
-            fi
-            if [[ "$attempt" -lt 10 ]]; then
-              # The owner command pushes the annotated tag immediately before it
-              # creates the draft. Absorb only that bounded event-delivery race.
-              sleep 3
-            fi
-          done
-          if [[ -z "$release_state" ]]; then
-            echo "Create and review the owner draft before approving stable-release." >&2
-            echo "Run: pnpm release:stable:draft -- ${GITHUB_REF_NAME#app-v}" >&2
-            exit 1
-          fi
-          expected_state="${GITHUB_REF_NAME}"$'\ttrue\tfalse\tjson-choi'
-          test "$release_state" = "$expected_state"
 
       - name: Resolve macOS distribution mode
         id: macos_distribution
