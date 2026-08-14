@@ -32,6 +32,7 @@ use super::ports::{
     AppendKnowledgeEnvironmentRequest, CreateKnowledgeEnvironmentRequest,
     CreateKnowledgeProjectRequest, LocalKnowledgeSourcePort, RemoteGithubRepository,
     RemoteKnowledgeEnvironment, RemoteKnowledgeProject, RemoteKnowledgeSource,
+    RemoteKnowledgeSyncProgress,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -130,6 +131,17 @@ pub(crate) fn serialize_knowledge_source_revision_for_test(
 ) -> serde_json::Value {
     serde_json::to_value(KnowledgeSourceRevisionProjection::from(revision))
         .expect("revision projection should serialize")
+}
+
+#[cfg(test)]
+pub(crate) fn round_trip_knowledge_sync_progress_for_test(
+    value: serde_json::Value,
+) -> Option<serde_json::Value> {
+    let progress: RemoteKnowledgeSyncProgress = serde_json::from_value(value).ok()?;
+    progress
+        .validate()
+        .then(|| serde_json::to_value(progress).ok())
+        .flatten()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -873,6 +885,28 @@ pub(crate) async fn list_knowledge_sources(
         projections.push(project_source(&state, source, remote).await?);
     }
     Ok(projections)
+}
+
+#[tauri::command]
+pub(crate) async fn list_knowledge_source_sync_progress(
+    state: State<'_, AppState>,
+) -> AppResult<Vec<RemoteKnowledgeSyncProgress>> {
+    let scope = state.services.knowledge.active_resource_scope().await?;
+    if scope.workspace_kind != WorkspaceKind::Team {
+        return Ok(Vec::new());
+    }
+    let account = selected_team_account(&scope)?;
+    let progress = state
+        .services
+        .knowledge
+        .list_remote_source_sync_progress(account.as_str(), scope.workspace_id)
+        .await?;
+    if state.services.knowledge.active_resource_scope().await? != scope {
+        return Err(AppError::Blocked {
+            reason: "Knowledge sync progress crossed a workspace authority transition".into(),
+        });
+    }
+    Ok(progress)
 }
 
 #[tauri::command]

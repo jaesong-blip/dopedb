@@ -35,7 +35,7 @@
     },
     "src/features/workbench/state.test.ts": {
       "tests": 4,
-      "protects": "Workbench document identity, save ownership, SQL resolve context, and mutually exclusive AppShell route transitions"
+      "protects": "Workbench document identity, save ownership, SQL resolve context, mutually exclusive AppShell route transitions, and durable Knowledge sync progress projection"
     },
     "src/features/workspaces/authPolicy.test.ts": {
       "tests": 3,

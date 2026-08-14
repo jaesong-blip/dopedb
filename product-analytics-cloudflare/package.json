@@ -1,0 +1,20 @@
+{
+  "name": "dopedb-product-analytics-cloudflare",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@11.17.0",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts",
+    "deploy": "CLOUDFLARE_ACCOUNT_ID=4813425b30d5f9a6b2393c412817867d wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply dopedb-product-analytics --local",
+    "db:migrate:remote": "CLOUDFLARE_ACCOUNT_ID=4813425b30d5f9a6b2393c412817867d wrangler d1 migrations apply dopedb-product-analytics --remote"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.1",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10",
+    "wrangler": "4.122.0"
+  }
+}

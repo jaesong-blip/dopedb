@@ -15,7 +15,7 @@ use crate::features::knowledge::ports::{
     AppendKnowledgeEnvironmentRequest, CreateKnowledgeProjectRequest, CreateKnowledgeSourceRequest,
     CreatedKnowledgeSource, HostedKnowledgeAuthorityPort, RemoteEnvironmentConnectionBinding,
     RemoteGithubRepository, RemoteKnowledgeGrant, RemoteKnowledgeProject, RemoteKnowledgeSource,
-    RemotePersonalKnowledgeScope,
+    RemoteKnowledgeSyncProgress, RemotePersonalKnowledgeScope,
 };
 use crate::hosted_control_plane::{
     bounded_json_response, client, origin, request_error, response_error as oauth_error,
@@ -76,6 +76,12 @@ struct QueuedKnowledgeSourceResponse {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RemoteKnowledgeSourcesResponse {
     sources: Vec<RemoteKnowledgeSource>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RemoteKnowledgeSyncProgressResponse {
+    progress: Vec<RemoteKnowledgeSyncProgress>,
 }
 
 #[derive(Serialize)]
@@ -919,6 +925,37 @@ async fn list_remote_knowledge_sources(
     Ok(sources)
 }
 
+async fn list_remote_knowledge_source_sync_progress(
+    user_id: &str,
+    workspace_id: Uuid,
+) -> AppResult<Vec<RemoteKnowledgeSyncProgress>> {
+    let token = bearer(user_id)?;
+    let response = client()?
+        .get(format!(
+            "{}/api/v1/workspaces/{workspace_id}/knowledge/source-sync-progress",
+            origin()?
+        ))
+        .bearer_auth(token.as_str())
+        .send()
+        .await
+        .map_err(|error| request_error("loading workspace Knowledge sync progress", error))?;
+    if !response.status().is_success() {
+        return Err(oauth_error(response).await);
+    }
+    let progress = knowledge_response::<RemoteKnowledgeSyncProgressResponse>(
+        response,
+        "reading workspace Knowledge sync progress",
+    )
+    .await?
+    .progress;
+    if progress.len() > 512 || progress.iter().any(|item| !item.validate()) {
+        return Err(AppError::Network(
+            "Project Knowledge returned invalid sync progress".into(),
+        ));
+    }
+    Ok(progress)
+}
+
 async fn request_knowledge_source_sync(
     user_id: &str,
     workspace_id: Uuid,
@@ -1154,6 +1191,14 @@ impl HostedKnowledgeAuthorityPort for HostedKnowledgeAuthority {
         workspace_id: Uuid,
     ) -> impl std::future::Future<Output = AppResult<Vec<RemoteKnowledgeSource>>> + Send {
         list_remote_knowledge_sources(account_id, workspace_id)
+    }
+
+    fn list_source_sync_progress(
+        &self,
+        account_id: &str,
+        workspace_id: Uuid,
+    ) -> impl std::future::Future<Output = AppResult<Vec<RemoteKnowledgeSyncProgress>>> + Send {
+        list_remote_knowledge_source_sync_progress(account_id, workspace_id)
     }
 
     fn request_source_sync(

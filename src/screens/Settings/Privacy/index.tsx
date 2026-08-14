@@ -51,6 +51,12 @@ export default function PrivacySettings() {
             {t("productAnalytics.description")}
           </p>
           <p className="tw:m-0 tw:pl-6 tw:text-xs tw:leading-body tw:text-muted-foreground">
+            {t("productAnalytics.identityDescription")}
+          </p>
+          <p className="tw:m-0 tw:pl-6 tw:text-xs tw:leading-body tw:text-muted-foreground">
+            {t("productAnalytics.retentionDescription")}
+          </p>
+          <p className="tw:m-0 tw:pl-6 tw:text-xs tw:leading-body tw:text-muted-foreground">
             {t("productAnalytics.revokeBody")}
           </p>
           <div className="tw:flex tw:justify-start tw:pl-4">

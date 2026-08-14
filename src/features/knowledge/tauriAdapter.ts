@@ -7,6 +7,7 @@ import type {
   GithubKnowledgeSourceInput,
   KnowledgeProject,
   KnowledgeSource,
+  KnowledgeSourceSyncProgress,
   KnowledgeSyncResult,
   KnowledgeSourceChanged,
   KnowledgeSearchResult,
@@ -93,6 +94,12 @@ export function connectKnowledgeLocalFolder(
 
 export function listKnowledgeSources(): Promise<KnowledgeSource[]> {
   return invoke("list_knowledge_sources");
+}
+
+export function listKnowledgeSourceSyncProgress(): Promise<
+  KnowledgeSourceSyncProgress[]
+> {
+  return invoke("list_knowledge_source_sync_progress");
 }
 
 export function revokeKnowledgeSource(sourceId: string): Promise<void> {

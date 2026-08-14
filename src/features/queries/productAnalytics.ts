@@ -5,17 +5,26 @@ import { useEffect, useRef, useState } from "react";
 
 import type { ScriptOutcome } from "../../ipc/types";
 import type { CatalogScope } from "../../lib/queries";
-import { captureProductEvent } from "../productAnalytics/client";
+import {
+  captureProductEvent,
+  captureProductEventOncePerSession,
+} from "../productAnalytics/client";
 import type {
   ProductAnalyticsWorkspaceContextInput,
   ProductEventPropertiesByName,
 } from "../productAnalytics/domain";
 import {
+  productAnalyticsAccessMode,
+  productAnalyticsConnectionEngine,
   productAnalyticsDurationBucket,
   productAnalyticsRowCountBucket,
   productAnalyticsStatementClass,
   productAnalyticsWorkspaceContext,
 } from "../productAnalytics/outcomes";
+import type {
+  ConnectionEngine,
+  WorkspaceCredentialMode,
+} from "../connections/domain";
 import type { SqlStreamPhase } from "./domain";
 
 type QueryProperties =
@@ -29,6 +38,7 @@ export type QueryExecutionAnalyticsAttempt = {
   statementClass: QueryProperties["statementClass"];
   previousStreamRunId: number;
   approvalRequired: boolean;
+  sharedAccess: ProductEventPropertiesByName["shared_connection_access_ready"] | null;
   armed: boolean;
   completed: boolean;
 };
@@ -40,6 +50,8 @@ export type ScriptProductAnalyticsSummary = {
 
 type QueryExecutionAnalyticsState = {
   scope: CatalogScope;
+  connectionEngine: ConnectionEngine;
+  credentialMode: WorkspaceCredentialMode;
   approvalPending: boolean;
   approvalRejected: boolean;
   cancelled: boolean;
@@ -108,6 +120,17 @@ function recordOutcome(
       approvalRequired: attempt.approvalRequired,
     },
   });
+  if (
+    outcome === "success" &&
+    attempt.context.workspaceKind === "team" &&
+    attempt.sharedAccess
+  ) {
+    void captureProductEventOncePerSession({
+      name: "shared_connection_access_ready",
+      context: attempt.context,
+      properties: attempt.sharedAccess,
+    });
+  }
 }
 
 export function useQueryExecutionAnalytics({
@@ -125,6 +148,8 @@ export function useQueryExecutionAnalytics({
   streamOutcome,
   streamRowCount,
   streamDurationMs,
+  connectionEngine,
+  credentialMode,
 }: QueryExecutionAnalyticsState) {
   const attemptRef = useRef<QueryExecutionAnalyticsAttempt | null>(null);
   const [terminalRevision, setTerminalRevision] = useState(0);
@@ -190,29 +215,12 @@ export function useQueryExecutionAnalytics({
     terminalRevision,
   ]);
 
-  useEffect(
-    () => () => {
-      const attempt = attemptRef.current;
-      if (!attempt || attempt.completed) return;
-      recordOutcome(
-        attempt,
-        "cancelled",
-        null,
-        Math.max(0, Date.now() - attempt.startedAtMs),
-      );
-    },
-    [],
-  );
-
   function begin(sql: string, previousStreamRunId: number) {
     const previous = attemptRef.current;
     if (previous && !previous.completed) {
-      recordOutcome(
-        previous,
-        "cancelled",
-        null,
-        Math.max(0, Date.now() - previous.startedAtMs),
-      );
+      // Replacing or unmounting a UI owner is not a database terminal receipt.
+      // Stop observing rather than misclassifying a write that may still commit.
+      previous.completed = true;
     }
     const context = productAnalyticsWorkspaceContext(scope);
     const attempt: QueryExecutionAnalyticsAttempt | null = context
@@ -223,6 +231,12 @@ export function useQueryExecutionAnalytics({
           statementClass: productAnalyticsStatementClass(sql),
           previousStreamRunId,
           approvalRequired: false,
+          sharedAccess: context.workspaceKind === "team"
+            ? {
+                accessMode: productAnalyticsAccessMode(credentialMode),
+                engine: productAnalyticsConnectionEngine(connectionEngine),
+              }
+            : null,
           armed: false,
           completed: false,
         }

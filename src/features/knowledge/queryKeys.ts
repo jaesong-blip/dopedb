@@ -18,6 +18,8 @@ export const knowledgeQueryKeys = {
     scopeKey === undefined
       ? ([KNOWLEDGE_WORKSPACE_QUERY_ROOTS[0], "sources"] as const)
       : ([KNOWLEDGE_WORKSPACE_QUERY_ROOTS[0], "sources", scopeKey] as const),
+  sourceSyncProgress: (scopeKey: string) =>
+    [KNOWLEDGE_WORKSPACE_QUERY_ROOTS[0], "source-sync-progress", scopeKey] as const,
   githubRepositories: (scopeKey: string) =>
     [
       KNOWLEDGE_WORKSPACE_QUERY_ROOTS[0],

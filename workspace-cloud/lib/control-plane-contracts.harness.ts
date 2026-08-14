@@ -3,7 +3,7 @@
 
 import { readFileSync } from "node:fs";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   CONTROL_PLANE_CONTRACTS_SCHEMA_VERSION,
@@ -13,7 +13,12 @@ import {
   parseWorkspaceSyncPage,
 } from "./control-plane-contracts";
 import {
+  acceptsProductAnalyticsContract,
   parseProductAnalyticsEnvelope,
+  productAnalyticsEnvelopeBudgetPlan,
+  productAnalyticsIngressBudgetPlan,
+  relayProductAnalytics,
+  type ProductAnalyticsEnvelope,
   type ProductEventName,
 } from "./product-analytics";
 import { parseSharedAnalysisArticleCreate } from "./workspace-analysis-articles";
@@ -60,6 +65,11 @@ const fixture = JSON.parse(readFileSync(
   "utf8",
 )) as Fixture;
 
+const productAnalyticsGolden = JSON.parse(readFileSync(
+  new URL("../../tests/fixtures/product-analytics-v1.json", import.meta.url),
+  "utf8",
+)) as ProductAnalyticsEnvelope;
+
 function applySemanticMutations(base: unknown, rejection: SemanticRejection) {
   const candidate: unknown = structuredClone(base);
   for (const mutation of rejection.mutations) {
@@ -89,46 +99,32 @@ function applySemanticMutations(base: unknown, rejection: SemanticRejection) {
 const analyticsNow = Date.parse("2026-08-14T00:00:00Z");
 const analyticsActorKey = "a".repeat(64);
 const analyticsWorkspaceKey = "b".repeat(64);
-const analyticsEventProperties: Record<ProductEventName, Record<string, unknown>> = {
-  desktop_installation_ready: {},
-  workspace_authentication_completed: { outcome: "success" },
-  workspace_scope_ready: { syncState: "ok" },
-  knowledge_environment_created: { creationKind: "project_default" },
-  connection_verification_completed: {
-    outcome: "success",
-    engine: "postgres",
-    credentialMode: "local",
-    ssh: false,
-  },
-  environment_connection_bound: { accessMode: "local", engine: "postgres" },
-  query_execution_completed: {
-    outcome: "success",
-    statementClass: "select",
-    rowCountBucket: "zero",
-    durationBucket: "under_100ms",
-    approvalRequired: false,
-  },
-  knowledge_source_sync_completed: {
-    outcome: "success",
-    sourceKind: "github",
-    syncReason: "webhook",
-  },
-  agent_session_initialization_completed: { outcome: "success", provider: "codex" },
-  agent_turn_completed: {
-    outcome: "success",
-    provider: "codex",
-    durationBucket: "1s_10s",
-  },
-  analysis_article_proposal_completed: { outcome: "success" },
-  analysis_article_run_completed: {
-    outcome: "success",
-    trigger: "agent_test",
-    durationBucket: "10s_60s",
-  },
-  analysis_article_state_transitioned: { fromState: "draft", toState: "review" },
-  workspace_member_joined: { role: "editor" },
-  shared_connection_access_ready: { accessMode: "managed", engine: "postgres" },
-};
+const analyticsEventProperties = Object.fromEntries(
+  productAnalyticsGolden.events.map((event) => [event.name, event.properties]),
+) as Record<ProductEventName, Record<string, unknown>>;
+const analyticsPropertyKeys = {
+  desktop_installation_ready: [],
+  workspace_authentication_completed: ["outcome"],
+  workspace_scope_ready: [],
+  knowledge_environment_created: ["creationKind"],
+  connection_verification_completed: ["outcome", "engine", "credentialMode", "ssh"],
+  environment_connection_bound: ["accessMode", "engine"],
+  query_execution_completed: [
+    "outcome",
+    "statementClass",
+    "rowCountBucket",
+    "durationBucket",
+    "approvalRequired",
+  ],
+  knowledge_source_sync_completed: ["outcome", "sourceKind", "syncReason"],
+  agent_session_initialization_completed: ["outcome", "provider"],
+  agent_turn_completed: ["outcome", "provider", "durationBucket"],
+  analysis_article_proposal_completed: [],
+  analysis_article_run_completed: ["outcome", "trigger", "durationBucket"],
+  analysis_article_state_transitioned: ["fromState", "toState"],
+  workspace_membership_ready: ["role"],
+  shared_connection_access_ready: ["accessMode", "engine"],
+} as const satisfies Record<ProductEventName, readonly string[]>;
 
 function analyticsEnvelope(
   name: ProductEventName,
@@ -153,7 +149,7 @@ function analyticsEnvelope(
 }
 
 describe("Desktop control-plane contracts", () => {
-  it("decodes the same strict sync, lease, and Analysis Article goldens as Rust", () => {
+  it("decodes the same strict sync, lease, and Analysis Article goldens as Rust", async () => {
     expect(fixture.schemaVersion).toBe(CONTROL_PLANE_CONTRACTS_SCHEMA_VERSION);
     for (const page of [
       fixture.workspaceSync.bootstrap,
@@ -225,6 +221,42 @@ describe("Desktop control-plane contracts", () => {
       unexpected: true,
     })).toThrow();
 
+    expect(Object.keys(productAnalyticsGolden).sort()).toEqual([
+      "appVersion",
+      "events",
+      "installationId",
+      "locale",
+      "platform",
+      "schemaVersion",
+      "sessionId",
+    ]);
+    expect(parseProductAnalyticsEnvelope(productAnalyticsGolden, analyticsNow))
+      .toEqual(productAnalyticsGolden);
+    expect(productAnalyticsGolden.events.map((event) => event.name)).toEqual(
+      Object.keys(analyticsPropertyKeys),
+    );
+    for (const event of productAnalyticsGolden.events) {
+      expect(Object.keys(event.properties).sort(), event.name).toEqual(
+        [...analyticsPropertyKeys[event.name]].sort(),
+      );
+      const identityKeys = event.name === "desktop_installation_ready"
+        ? []
+        : event.name === "workspace_authentication_completed"
+          ? ["actorKey"]
+          : event.workspaceKind === "personal"
+            ? ["workspaceKey", "workspaceKind"]
+            : ["actorKey", "workspaceKey", "workspaceKind"];
+      expect(Object.keys(event).sort(), event.name).toEqual([
+        "eventId",
+        "name",
+        "occurredAt",
+        "properties",
+        ...identityKeys,
+      ].sort());
+    }
+    expect(productAnalyticsGolden.events[2]?.workspaceKind).toBe("personal");
+    expect(productAnalyticsGolden.events.at(-2)?.workspaceKind).toBe("team");
+
     expect(parseProductAnalyticsEnvelope(
       analyticsEnvelope("desktop_installation_ready", {}),
       analyticsNow,
@@ -294,7 +326,7 @@ describe("Desktop control-plane contracts", () => {
       workspaceKey: analyticsWorkspaceKey,
       workspaceKind: "personal",
     }), analyticsNow)).toBeNull();
-    expect(parseProductAnalyticsEnvelope(analyticsEnvelope("workspace_member_joined", {
+    expect(parseProductAnalyticsEnvelope(analyticsEnvelope("workspace_membership_ready", {
       workspaceKey: analyticsWorkspaceKey,
       workspaceKind: "personal",
     }), analyticsNow)).toBeNull();
@@ -307,5 +339,140 @@ describe("Desktop control-plane contracts", () => {
       },
       { fromState: "review", toState: "review" },
     ), analyticsNow)).toBeNull();
+
+    expect(acceptsProductAnalyticsContract(new Headers({
+      "x-dopedb-product-analytics-contract": "1",
+    }))).toBe(true);
+    for (const value of [undefined, "01", "2", "1, 1"]) {
+      const headers = new Headers();
+      if (value !== undefined) headers.set("x-dopedb-product-analytics-contract", value);
+      expect(acceptsProductAnalyticsContract(headers), value).toBe(false);
+    }
+
+    const firstInstallation = "018f1f7e-7b44-7cc1-8d4e-4f31b7315fe8";
+    const secondInstallation = "018f1f7e-7b44-7cc1-8d4e-4f31b7315fea";
+    const sourceHeaders = new Headers({ "x-forwarded-for": "203.0.113.7, 10.0.0.1" });
+    const firstIngressPlan = productAnalyticsIngressBudgetPlan(sourceHeaders);
+    const rotatedIngressPlan = productAnalyticsIngressBudgetPlan(sourceHeaders);
+    const otherSourceIngressPlan = productAnalyticsIngressBudgetPlan(
+      new Headers({ "x-forwarded-for": "198.51.100.9" }),
+    );
+    const firstEnvelopePlan = productAnalyticsEnvelopeBudgetPlan(firstInstallation, 1);
+    const rotatedEnvelopePlan = productAnalyticsEnvelopeBudgetPlan(secondInstallation, 1);
+    expect(firstIngressPlan.map(({ namespace, limit, windowMs }) => ({
+      namespace,
+      limit,
+      windowMs,
+    }))).toEqual([
+      { namespace: "product-analytics-global-requests", limit: 400, windowMs: 60_000 },
+      { namespace: "product-analytics-ip", limit: 60, windowMs: 60_000 },
+    ]);
+    expect(firstEnvelopePlan.map(({ namespace, limit, windowMs }) => ({
+      namespace,
+      limit,
+      windowMs,
+    }))).toEqual([
+      { namespace: "product-analytics-global-events", limit: 16, windowMs: 60_000 },
+      { namespace: "product-analytics-installation", limit: 60, windowMs: 60_000 },
+    ]);
+    expect([...firstIngressPlan, ...firstEnvelopePlan].every(
+      ({ discriminator }) => /^[0-9a-f]{64}$/.test(discriminator),
+    )).toBe(true);
+    expect(firstIngressPlan[0].discriminator).toBe(rotatedIngressPlan[0].discriminator);
+    expect(firstIngressPlan[1].discriminator).toBe(rotatedIngressPlan[1].discriminator);
+    expect(firstIngressPlan[1].discriminator)
+      .not.toBe(otherSourceIngressPlan[1].discriminator);
+    expect(firstEnvelopePlan[0].discriminator).toBe(rotatedEnvelopePlan[0].discriminator);
+    expect(firstEnvelopePlan[1].discriminator)
+      .not.toBe(rotatedEnvelopePlan[1].discriminator);
+    expect(productAnalyticsEnvelopeBudgetPlan(firstInstallation, 16)[0].cost)
+      .toBe(16);
+    expect(JSON.stringify(firstIngressPlan)).not.toContain("203.0.113.7");
+    expect(JSON.stringify(firstEnvelopePlan)).not.toContain(firstInstallation);
+
+    const relayEnvelope = parseProductAnalyticsEnvelope(productAnalyticsGolden, analyticsNow);
+    expect(relayEnvelope).not.toBeNull();
+    const previousToken = process.env.PRODUCT_ANALYTICS_CLOUDFLARE_TOKEN;
+    const previousUrl = process.env.PRODUCT_ANALYTICS_CLOUDFLARE_URL;
+    const previousRelayEnabled = process.env.PRODUCT_ANALYTICS_RELAY_ENABLED;
+    process.env.PRODUCT_ANALYTICS_RELAY_ENABLED = "1";
+    process.env.PRODUCT_ANALYTICS_CLOUDFLARE_TOKEN = "a".repeat(64);
+    process.env.PRODUCT_ANALYTICS_CLOUDFLARE_URL =
+      "https://dopedb-product-analytics.test.workers.dev/v1/events";
+    let relayTarget = "";
+    let relayBody: unknown;
+    let relayHeaders = new Headers();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      relayTarget = String(input);
+      relayHeaders = new Headers(init?.headers);
+      if (typeof init?.body !== "string") throw new Error("Expected a JSON relay body");
+      relayBody = JSON.parse(init.body) as unknown;
+      return new Response(null, { status: 202 });
+    });
+    try {
+      expect(await relayProductAnalytics(relayEnvelope!)).toBe("accepted");
+      expect(relayTarget).toBe(
+        "https://dopedb-product-analytics.test.workers.dev/v1/events",
+      );
+      expect(relayHeaders.get("authorization")).toBe(`Bearer ${"a".repeat(64)}`);
+      expect(relayHeaders.get("x-dopedb-product-analytics-contract")).toBe("1");
+      expect(relayBody).toEqual(relayEnvelope);
+      expect(JSON.stringify(relayBody)).not.toContain("consentGeneration");
+
+      const analyticsModule = await import("./product-analytics");
+      const ingressBudget = vi.spyOn(
+        analyticsModule,
+        "consumeProductAnalyticsIngressBudget",
+      ).mockResolvedValue(true);
+      const envelopeBudget = vi.spyOn(
+        analyticsModule,
+        "consumeProductAnalyticsEnvelopeBudget",
+      ).mockResolvedValue(true);
+      try {
+        fetchMock.mockResolvedValue(new Response(null, { status: 400 }));
+        const currentEnvelope = structuredClone(productAnalyticsGolden);
+        const occurredAt = new Date().toISOString();
+        for (const event of currentEnvelope.events) event.occurredAt = occurredAt;
+        const { POST } = await import(
+          "../app/api/v1/product-analytics/events/route"
+        );
+        process.env.PRODUCT_ANALYTICS_RELAY_ENABLED = "0";
+        const disabled = await POST(new Request(
+          "https://workspace.dopedb.dev/api/v1/product-analytics/events",
+          { method: "POST", body: "{}" },
+        ));
+        expect(disabled.status).toBe(503);
+        expect(ingressBudget).not.toHaveBeenCalled();
+        process.env.PRODUCT_ANALYTICS_RELAY_ENABLED = "1";
+        const response = await POST(new Request(
+          "https://workspace.dopedb.dev/api/v1/product-analytics/events",
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-dopedb-product-analytics-contract": "1",
+            },
+            body: JSON.stringify(currentEnvelope),
+          },
+        ));
+        expect(response.status).toBe(422);
+        expect(await response.json()).toEqual({
+          accepted: false,
+          error: "Product analytics relay rejected the batch",
+          retryable: false,
+        });
+      } finally {
+        ingressBudget.mockRestore();
+        envelopeBudget.mockRestore();
+      }
+    } finally {
+      fetchMock.mockRestore();
+      if (previousToken === undefined) delete process.env.PRODUCT_ANALYTICS_CLOUDFLARE_TOKEN;
+      else process.env.PRODUCT_ANALYTICS_CLOUDFLARE_TOKEN = previousToken;
+      if (previousUrl === undefined) delete process.env.PRODUCT_ANALYTICS_CLOUDFLARE_URL;
+      else process.env.PRODUCT_ANALYTICS_CLOUDFLARE_URL = previousUrl;
+      if (previousRelayEnabled === undefined) delete process.env.PRODUCT_ANALYTICS_RELAY_ENABLED;
+      else process.env.PRODUCT_ANALYTICS_RELAY_ENABLED = previousRelayEnabled;
+    }
   });
 });

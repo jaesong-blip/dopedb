@@ -37,12 +37,26 @@ copy-link fallback. Signal email can use a separate verified
 `WORKSPACE_SIGNAL_FROM`; when absent it deliberately reuses the invitation sender.
 Failed Signal delivery is claimed durably and retried with bounded backoff. Ambiguous
 email attempts retry within 23 hours, inside Resend's 24-hour idempotency-key lifetime.
-The anonymous first-party product-outcome endpoint is disabled until both
-`PRODUCT_ANALYTICS_POSTHOG_KEY` and `PRODUCT_ANALYTICS_POSTHOG_HOST` are set. The host
-must be exactly `https://eu.i.posthog.com`; the server
-relays bounded, schema-v1 outcome enums without a PostHog SDK or the caller's IP.
-Missing or invalid relay configuration returns a private, retryable HTTP 503 rather
-than acknowledging and dropping events.
+The anonymous first-party product-outcome endpoint is disabled unless
+`PRODUCT_ANALYTICS_RELAY_ENABLED=1` and both
+`PRODUCT_ANALYTICS_CLOUDFLARE_URL` and `PRODUCT_ANALYTICS_CLOUDFLARE_TOKEN` are set.
+The URL must be the dedicated `dopedb-product-analytics.*.workers.dev/v1/events`
+endpoint; the server relays bounded, schema-v1 outcome enums without an analytics
+vendor SDK or the caller's IP. The Cloudflare Worker stores them in a dedicated
+EU-jurisdiction D1 database, not the workspace database. The anonymous endpoint requires the exact
+`x-dopedb-product-analytics-contract: 1` compatibility header; that version marker is
+not authentication. Independent one-minute budgets apply to the one-way source-IP
+hash (60 requests), one-way installation UUID hash (60 requests), a 400-request global
+circuit, and a 16-event global circuit sized for D1's free write and storage
+envelope. The Worker repeats the 16-event global circuit with an exact D1 counter,
+so a leaked server relay capability cannot bypass the storage ceiling. Global gates run before caller-controlled
+keys, bounding worst-case new limiter rows below the 1,000-row/minute cleanup rate;
+rotating a UUID cannot reset the source budget and neither raw value enters the table.
+A successful batch returns HTTP 202.
+HTTP 429 and transient HTTP 503 responses set `Retry-After: 60` and return
+`retryable: true` with `retryAfterMs: 60000`; contract, validation, and permanent relay
+rejections return `retryable: false`. Missing or invalid relay configuration therefore
+fails closed instead of acknowledging and dropping events.
 Configure this Google redirect URI:
 
 ```text

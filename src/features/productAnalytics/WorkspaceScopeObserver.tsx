@@ -1,6 +1,8 @@
 import { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import { useCatalogScope } from "../../lib/queries";
+import { workspaceAuthStateQuery } from "../workspaces/queries";
 import {
   captureProductEventOncePerSession,
   useProductAnalyticsSnapshot,
@@ -21,6 +23,7 @@ export function ProductAnalyticsWorkspaceScopeObserver() {
     workspaceId,
     workspaceKind,
   } = useCatalogScope();
+  const auth = useQuery(workspaceAuthStateQuery());
   const analytics = useProductAnalyticsSnapshot();
 
   useEffect(() => {
@@ -41,12 +44,28 @@ export function ProductAnalyticsWorkspaceScopeObserver() {
     if (!context) return;
     void captureProductEventOncePerSession({
       name: "workspace_scope_ready",
-      properties: { syncState: "ok" },
+      properties: {},
       context,
     });
+    if (context.workspaceKind === "team") {
+      const role = auth.data?.accounts
+        .find((account) => account.user.id === context.actorId)
+        ?.memberships.find((membership) => (
+          membership.workspaceId === context.workspaceId
+        ))
+        ?.role;
+      if (role) {
+        void captureProductEventOncePerSession({
+          name: "workspace_membership_ready",
+          properties: { role },
+          context,
+        });
+      }
+    }
   }, [
     analytics.availability,
     analytics.consent,
+    auth.data,
     accountScope,
     error,
     key,

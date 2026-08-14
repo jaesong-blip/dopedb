@@ -23,7 +23,7 @@ use super::ports::{
     AppendKnowledgeEnvironmentRequest, CreateKnowledgeProjectRequest, CreateKnowledgeSourceRequest,
     HostedKnowledgeAuthorityPort, KnowledgeRepositoryPort, RemoteEnvironmentConnectionBinding,
     RemoteGithubRepository, RemoteKnowledgeProject, RemoteKnowledgeSource,
-    RemotePersonalKnowledgeScope,
+    RemoteKnowledgeSyncProgress, RemotePersonalKnowledgeScope,
 };
 use super::KnowledgeAccessReconciliation;
 
@@ -541,6 +541,16 @@ where
         workspace_id: Uuid,
     ) -> AppResult<Vec<RemoteKnowledgeSource>> {
         self.authority.list_sources(account_id, workspace_id).await
+    }
+
+    pub(crate) async fn list_remote_source_sync_progress(
+        &self,
+        account_id: &str,
+        workspace_id: Uuid,
+    ) -> AppResult<Vec<RemoteKnowledgeSyncProgress>> {
+        self.authority
+            .list_source_sync_progress(account_id, workspace_id)
+            .await
     }
 
     pub(crate) async fn request_remote_source_sync(

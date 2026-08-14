@@ -76,6 +76,22 @@ export type KnowledgeSource = {
   localCapabilityAvailable: boolean;
 };
 
+export type KnowledgeSourceSyncProgress = {
+  sourceId: string;
+  projectEnvironmentId: string;
+  displayName: string;
+  projectName: string;
+  environmentName: string;
+  phase: "manifest" | "indexing" | "activating";
+  state: "queued" | "claimed";
+  totalFiles: number;
+  completedFiles: number;
+  attempt: number;
+  startedAt: string;
+  updatedAt: string;
+  retryAt: string | null;
+};
+
 export type CreateKnowledgeProjectInput = {
   name: string;
   environments: Array<{ name: string; riskClass: KnowledgeEnvironment["riskClass"] }>;

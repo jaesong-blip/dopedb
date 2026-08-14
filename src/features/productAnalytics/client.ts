@@ -20,15 +20,14 @@ import {
 import {
   ProductAnalyticsLocalStore,
   productAnalyticsInstallationReadyInput,
+  productAnalyticsRetryDelay,
+  productAnalyticsRetryIsBlocked,
 } from "./storage";
 import {
   productAnalyticsStatus,
   setProductAnalyticsConsent,
   submitProductAnalyticsBatch,
 } from "./tauriAdapter";
-
-const RETRY_BASE_MS = 1_000;
-const RETRY_MAX_MS = 60_000;
 
 type Listener = () => void;
 
@@ -67,7 +66,10 @@ async function sha256Hex(value: string) {
     .join("");
 }
 
-function identityHashInput(kind: "actor" | "workspace", id: string) {
+function identityHashInput(
+  kind: "actor-installation" | "actor-workspace" | "workspace",
+  id: string,
+) {
   return `dopedb-product-analytics:${kind}:v1:${id.toLowerCase()}`;
 }
 
@@ -80,7 +82,10 @@ async function hashedContext(
     if (input.properties.outcome !== "success" || !input.context) return {};
     return {
       actorKey: await sha256Hex(
-        identityHashInput("actor", input.context.actorId),
+        identityHashInput(
+          "actor-installation",
+          `${installationId}:${input.context.actorId}`,
+        ),
       ),
     };
   }
@@ -97,7 +102,10 @@ async function hashedContext(
   }
   return {
     actorKey: await sha256Hex(
-      identityHashInput("actor", input.context.actorId),
+      identityHashInput(
+        "actor-workspace",
+        `${input.context.workspaceId}:${input.context.actorId}`,
+      ),
     ),
     workspaceKey: await sha256Hex(
       identityHashInput("workspace", input.context.workspaceId),
@@ -122,9 +130,12 @@ const pendingSessionCaptures = new Map<string, Promise<boolean>>();
 let availability: ProductAnalyticsSnapshot["availability"] = "checking";
 let appVersion: string | null = null;
 let sessionId = newSessionId();
+let consentGeneration: number | null = null;
+let consentEpoch = 0;
 let sending = false;
 let retryAttempt = 0;
 let retryTimer: number | null = null;
+let retryNotBefore = 0;
 let initialized = false;
 let initializePromise: Promise<void> | null = null;
 let snapshot: ProductAnalyticsSnapshot = {
@@ -156,6 +167,18 @@ function publish() {
 
 localStore.subscribe(publish);
 
+function applyConsentState(
+  consent: ProductAnalyticsSnapshot["consent"],
+  generation: number,
+) {
+  const changed = consentGeneration !== generation ||
+    localStore.getSnapshot().consent !== consent;
+  const applied = localStore.applyConsent(consent, generation);
+  consentGeneration = generation;
+  if (changed) consentEpoch += 1;
+  return applied;
+}
+
 function subscribe(listener: Listener) {
   listeners.add(listener);
   return () => listeners.delete(listener);
@@ -169,9 +192,10 @@ function clearRetry() {
   if (retryTimer !== null) window.clearTimeout(retryTimer);
   retryTimer = null;
   retryAttempt = 0;
+  retryNotBefore = 0;
 }
 
-function scheduleRetry() {
+function armRetryTimer() {
   if (
     retryTimer !== null ||
     snapshot.consent !== "granted" ||
@@ -180,15 +204,41 @@ function scheduleRetry() {
   ) {
     return;
   }
-  const delay = Math.min(
-    RETRY_BASE_MS * 2 ** Math.min(retryAttempt, 10),
-    RETRY_MAX_MS,
-  );
-  retryAttempt += 1;
+  const delay = Math.max(0, retryNotBefore - Date.now());
   retryTimer = window.setTimeout(() => {
     retryTimer = null;
-    void flushProductAnalytics();
+    if (productAnalyticsRetryIsBlocked(Date.now(), retryNotBefore)) {
+      armRetryTimer();
+    }
+    else void flushProductAnalytics();
   }, delay);
+}
+
+function scheduleRetry(retryAfterMs?: number) {
+  if (
+    snapshot.consent !== "granted" ||
+    availability !== "available" ||
+    snapshot.queueSize === 0
+  ) {
+    return;
+  }
+  const delay = productAnalyticsRetryDelay(
+    retryAfterMs,
+    retryAttempt,
+    Math.random(),
+  );
+  // Local exponential backoff uses symmetric jitter. A server Retry-After is
+  // a minimum, so its jitter is positive-only and can never wake early.
+  retryAttempt += 1;
+  const nextNotBefore = Date.now() + delay;
+  if (nextNotBefore > retryNotBefore) {
+    retryNotBefore = nextNotBefore;
+    if (retryTimer !== null) {
+      window.clearTimeout(retryTimer);
+      retryTimer = null;
+    }
+  }
+  armRetryTimer();
 }
 
 function attachLifecycleListeners() {
@@ -212,9 +262,30 @@ export function initializeProductAnalytics() {
     }
     try {
       const status = await productAnalyticsStatus();
-      localStore.applyConsent(status.consent);
+      availability = status.enabled ? "available" : "unavailable";
+      if (localStore.revocationPending()) {
+        // A previous renderer may have lost the IPC response after the user
+        // revoked consent. Never trust a stale native `granted` value while
+        // the durable local tombstone exists; retry the idempotent denial.
+        applyConsentState("denied", status.generation);
+        publish();
+        let recovered = false;
+        try {
+          const denied = await setProductAnalyticsConsent("denied");
+          availability = denied.enabled ? "available" : "unavailable";
+          applyConsentState("denied", denied.generation);
+          if (denied.consent === "denied") {
+            recovered = localStore.completeRevocation();
+          }
+        } catch {
+          // Fail closed. The tombstone is intentionally retained for retry.
+        }
+        publish();
+        if (!recovered) return;
+      } else {
+        applyConsentState(status.consent, status.generation);
+      }
       if (status.enabled !== true) {
-        availability = "unavailable";
         publish();
         return;
       }
@@ -263,18 +334,33 @@ async function captureDesktopInstallationReady() {
     false,
     false,
   );
-  if (!captured) return false;
-  // Persist the local exactly-once marker before any delivery can start. If the
-  // write fails, the deterministic queued event remains for a later retry.
-  return localStore.markInstallationReadyRecorded(installation.id);
+  // The marker means relay acceptance, not merely local enqueue. Until the
+  // relay acknowledges this deterministic event ID, every reload may safely
+  // restore the same pending funnel anchor.
+  return captured;
 }
 
 export async function grantProductAnalyticsConsent() {
   if (availability !== "available") return false;
   try {
+    if (localStore.revocationPending()) {
+      const denied = await setProductAnalyticsConsent("denied");
+      applyConsentState("denied", denied.generation);
+      if (
+        denied.consent !== "denied" ||
+        !localStore.completeRevocation()
+      ) {
+        publish();
+        return false;
+      }
+    }
     const status = await setProductAnalyticsConsent("granted");
     if (status.consent !== "granted") return false;
-    localStore.applyConsent(status.consent);
+    if (!applyConsentState(status.consent, status.generation)) {
+      publish();
+      return false;
+    }
+    sessionId ??= newSessionId();
     availability = status.enabled ? "available" : "unavailable";
     publish();
     if (status.enabled) {
@@ -294,23 +380,24 @@ export async function denyProductAnalyticsConsent() {
   // A later opt-in starts a fresh analytics session as well as a fresh
   // installation. Never let the prior process-session key bridge consent eras.
   sessionId = newSessionId();
+  consentEpoch += 1;
   // Revocation is fail-closed locally before IPC so an unavailable native host
   // cannot leave queued data or this process's installation identity behind.
-  localStore.applyConsent("denied");
+  localStore.beginRevocation();
   try {
     const status = await setProductAnalyticsConsent("denied");
     availability = status.enabled ? "available" : "unavailable";
+    applyConsentState("denied", status.generation);
     if (status.consent !== "denied") {
-      localStore.applyConsent("pending");
       publish();
       return false;
     }
+    const tombstoneCleared = localStore.completeRevocation();
     publish();
-    return true;
+    return tombstoneCleared;
   } catch {
-    // Keep collection disabled but surface the choice as unresolved so the
-    // onboarding prompt can report the native persistence failure.
-    localStore.applyConsent("pending");
+    // Keep collection denied for this process and retain the durable tombstone
+    // so the next launch cannot silently resume a stale native grant.
     return false;
   }
 }
@@ -325,10 +412,13 @@ async function captureProductEventInternal(
     availability !== "available" ||
     appVersion === null ||
     sessionId === null ||
+    consentGeneration === null ||
     !isProductAnalyticsEventInput(input)
   ) {
     return false;
   }
+  const captureEpoch = consentEpoch;
+  const captureSessionId = sessionId;
   let installation;
   try {
     installation = localStore.ensureInstallation(() => crypto.randomUUID());
@@ -344,7 +434,7 @@ async function captureProductEventInternal(
     context = await hashedContext(input, installation.id);
     if (oncePerSession) {
       sessionCaptureKey = await sha256Hex(
-        `dopedb-product-analytics:session-event:v1:${sessionId}:${input.name}:${context.actorKey ?? ""}:${context.workspaceKey ?? ""}:${JSON.stringify(input.properties)}`,
+        `dopedb-product-analytics:session-event:v1:${captureSessionId}:${input.name}:${context.actorKey ?? ""}:${context.workspaceKey ?? ""}:${JSON.stringify(input.properties)}`,
       );
     }
   } catch {
@@ -361,7 +451,7 @@ async function captureProductEventInternal(
     try {
       if (input.dedupeId) {
         eventId = await sha256Hex(
-          `dopedb-product-analytics:event:v1:${input.name}:${input.dedupeId.toLowerCase()}`,
+          `dopedb-product-analytics:event:v1:${installation.id}:${input.name}:${input.dedupeId.toLowerCase()}`,
         );
       } else if (sessionCaptureKey !== null) {
         eventId = sessionCaptureKey;
@@ -369,7 +459,7 @@ async function captureProductEventInternal(
         const nonce = crypto.randomUUID().toLowerCase();
         if (!isProductAnalyticsUuid(nonce)) return false;
         eventId = await sha256Hex(
-          `dopedb-product-analytics:event:v1:${installation.id}:${sessionId}:${occurredAt}:${input.name}:${nonce}`,
+          `dopedb-product-analytics:event:v1:${installation.id}:${captureSessionId}:${occurredAt}:${input.name}:${nonce}`,
         );
       }
     } catch {
@@ -379,7 +469,10 @@ async function captureProductEventInternal(
       snapshot.consent !== "granted" ||
       availability !== "available" ||
       appVersion === null ||
-      sessionId === null
+      sessionId !== captureSessionId ||
+      consentEpoch !== captureEpoch ||
+      consentGeneration !== installation.generation ||
+      localStore.installation()?.id !== installation.id
     ) {
       return false;
     }
@@ -391,7 +484,9 @@ async function captureProductEventInternal(
       ...context,
     } as ProductAnalyticsEvent;
     const queued: QueuedProductAnalyticsEvent = {
-      sessionId,
+      installationId: installation.id,
+      consentGeneration: installation.generation,
+      sessionId: captureSessionId,
       appVersion,
       platform: currentPlatform(),
       locale: currentLocale(),
@@ -426,6 +521,10 @@ export function captureProductEventOncePerSession(
 }
 
 export async function flushProductAnalytics() {
+  if (productAnalyticsRetryIsBlocked(Date.now(), retryNotBefore)) {
+    armRetryTimer();
+    return;
+  }
   if (
     sending ||
     snapshot.consent !== "granted" ||
@@ -435,6 +534,8 @@ export async function flushProductAnalytics() {
     return;
   }
   sending = true;
+  const flushEpoch = consentEpoch;
+  let restartAfterStaleFence = false;
   publish();
   try {
     let installation = localStore.installation();
@@ -444,13 +545,20 @@ export async function flushProductAnalytics() {
     }
     if (!installation.readyRecorded) {
       const installationReady = await captureDesktopInstallationReady();
+      if (consentEpoch !== flushEpoch) {
+        restartAfterStaleFence = true;
+        return;
+      }
       installation = localStore.installation();
-      if (!installationReady || !installation?.readyRecorded) {
+      if (!installationReady || !installation) {
         scheduleRetry();
         return;
       }
     }
-    while (snapshot.consent === "granted") {
+    while (
+      snapshot.consent === "granted" &&
+      consentEpoch === flushEpoch
+    ) {
       const items = localStore.peekBatch();
       const first = items[0];
       if (!first) {
@@ -460,27 +568,67 @@ export async function flushProductAnalytics() {
       const receipt = await submitProductAnalyticsBatch({
         schemaVersion: 1,
         installationId: installation.id,
+        consentGeneration: installation.generation,
         sessionId: first.sessionId,
         appVersion: first.appVersion,
         platform: first.platform,
         locale: first.locale,
         events: items.map((item) => item.event),
       });
-      if (receipt.accepted !== true) {
-        const status = await productAnalyticsStatus();
-        localStore.applyConsent(status.consent);
-        availability = status.enabled ? "available" : "unavailable";
-        publish();
-        if (!status.enabled || status.consent !== "granted") break;
-        throw new Error("analytics batch rejected");
+      if (
+        consentEpoch !== flushEpoch ||
+        localStore.installation()?.id !== installation.id
+      ) {
+        restartAfterStaleFence = true;
+        return;
       }
-      localStore.removeEvents(items.map((item) => item.event.eventId));
+      if (receipt.accepted !== true) {
+        if (receipt.retryable) {
+          scheduleRetry(receipt.retryAfterMs);
+          break;
+        }
+        // A permanent contract/vendor rejection must not block every newer
+        // outcome for seven days. Drop only this already-invalid closed batch;
+        // contract tests and the operator dashboard own the resulting alert.
+        const removed = localStore.removeEvents(
+          items.map((item) => item.event.eventId),
+        );
+        if (!removed) {
+          scheduleRetry();
+          break;
+        }
+        retryAttempt = 0;
+        retryNotBefore = 0;
+        continue;
+      }
+      if (items.some((item) => (
+        item.event.name === "desktop_installation_ready"
+      ))) {
+        localStore.markInstallationReadyRecorded(installation.id);
+      }
+      const removed = localStore.removeEvents(
+        items.map((item) => item.event.eventId),
+      );
+      if (!removed) {
+        scheduleRetry();
+        break;
+      }
       retryAttempt = 0;
+      retryNotBefore = 0;
     }
   } catch {
     scheduleRetry();
   } finally {
     sending = false;
     publish();
+    if (
+      restartAfterStaleFence &&
+      snapshot.consent === "granted" &&
+      availability === "available" &&
+      snapshot.queueSize > 0 &&
+      isOnline()
+    ) {
+      queueMicrotask(() => void flushProductAnalytics());
+    }
   }
 }

@@ -1,6 +1,7 @@
 import { Icon, type IconName } from "../../components/Icon";
 import ToolbarMenu from "../../components/ToolbarMenu";
 import { Button } from "../../design-system/components/Button";
+import { ProgressBar } from "../../design-system/components/Progress";
 import { StatusDot, type StatusTone } from "../../design-system/components/Status";
 import { useI18n, type I18nKey } from "../../lib/i18n";
 import type { BackgroundTask, BackgroundTaskStatus } from "./domain";
@@ -15,9 +16,19 @@ const STATUS_KEYS: Record<BackgroundTaskStatus, I18nKey> = {
   waitingPermission: "ide.backgroundTask.status.waitingPermission",
 };
 
+const KNOWLEDGE_PHASE_KEYS: Record<
+  Extract<BackgroundTask, { kind: "knowledge" }>["phase"],
+  I18nKey
+> = {
+  activating: "knowledge.syncPhaseActivating",
+  indexing: "knowledge.syncPhaseIndexing",
+  manifest: "knowledge.syncPhaseManifest",
+};
+
 function taskIcon(task: BackgroundTask): IconName {
   if (task.kind === "agent") return "user";
   if (task.kind === "query") return "terminal";
+  if (task.kind === "knowledge") return "branch";
   return task.operation === "import" ? "download" : "upload";
 }
 
@@ -39,12 +50,14 @@ export default function BackgroundTasksMenu({
   onCancel,
   onOpenAgent,
   onOpenQuery,
+  onOpenKnowledge,
 }: {
   tasks: BackgroundTask[];
   cancellingKeys: ReadonlySet<string>;
   onCancel: (task: BackgroundTask) => Promise<void>;
   onOpenAgent: (connectionId: string) => void;
   onOpenQuery: (sessionId: string) => void;
+  onOpenKnowledge: (projectEnvironmentId: string) => void;
 }) {
   const { t } = useI18n();
   const label = t("ide.backgroundProcesses", { count: tasks.length });
@@ -88,7 +101,36 @@ export default function BackgroundTasksMenu({
       <div role="presentation" className="tw:grid">
         {tasks.map((task) => {
           const cancelling = cancellingKeys.has(task.key);
-          const canOpen = task.kind === "agent" || task.kind === "query";
+          const canOpen =
+            task.kind === "agent" ||
+            task.kind === "query" ||
+            task.kind === "knowledge";
+          const context = task.kind === "knowledge"
+            ? `${task.projectName} / ${task.environmentName} · ${t(
+                KNOWLEDGE_PHASE_KEYS[task.phase],
+              )} · ${
+                task.totalFiles > 0
+                  ? t("knowledge.syncProgressFiles", {
+                      completed: task.completedFiles.toLocaleString(),
+                      total: task.totalFiles.toLocaleString(),
+                      remaining: task.remainingFiles.toLocaleString(),
+                    })
+                  : t("knowledge.syncProgressPreparing")
+              }${
+                task.retryAt
+                  ? ` · ${t("knowledge.syncRetryAt", {
+                      attempt: task.attempt.toLocaleString(),
+                      time: new Date(task.retryAt).toLocaleTimeString(),
+                    })}`
+                  : ""
+              }`
+            : `${task.connectionName} · ${t(STATUS_KEYS[task.status])}${
+                task.rowsProcessed !== null
+                  ? ` · ${t("ide.backgroundTask.rows", {
+                      count: task.rowsProcessed.toLocaleString(),
+                    })}`
+                  : ""
+              }`;
           return (
             <div
               key={task.key}
@@ -107,33 +149,18 @@ export default function BackgroundTasksMenu({
                   </strong>
                   <span className="tw:flex tw:min-w-0 tw:items-center tw:gap-1.5 tw:text-xs tw:text-muted-foreground">
                     <StatusDot tone={taskTone(task.status)} />
-                    <span className="tw:truncate">
-                      {task.connectionName} · {t(STATUS_KEYS[task.status])}
-                      {task.rowsProcessed !== null
-                        ? ` · ${t("ide.backgroundTask.rows", {
-                            count: task.rowsProcessed.toLocaleString(),
-                          })}`
-                        : ""}
-                    </span>
+                    <span className="tw:truncate">{context}</span>
                   </span>
                 </span>
               </div>
               {task.progress !== null ? (
-                <div
-                  className="tw:h-0.5 tw:overflow-hidden tw:bg-border-subtle"
-                  role="progressbar"
-                  aria-label={t("ide.backgroundTask.progress", {
+                <ProgressBar
+                  density="compact"
+                  value={task.progress}
+                  label={t("ide.backgroundTask.progress", {
                     count: task.progress.toFixed(0),
                   })}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={Math.round(task.progress)}
-                >
-                  <span
-                    className="tw:block tw:h-full tw:w-full tw:origin-left tw:bg-primary tw:transition-transform tw:duration-150 tw:motion-reduce:transition-none"
-                    style={{ transform: `scaleX(${task.progress / 100})` }}
-                  />
-                </div>
+                />
               ) : null}
               {canOpen || task.cancellable ? (
                 <div
@@ -156,6 +183,18 @@ export default function BackgroundTasksMenu({
                       size="xs"
                       variant="ghost"
                       onClick={() => onOpenAgent(task.connectionId)}
+                    >
+                      <Icon name="externalLink" />
+                      {t("ide.backgroundTask.open")}
+                    </Button>
+                  ) : task.kind === "knowledge" ? (
+                    <Button
+                      role="menuitem"
+                      size="xs"
+                      variant="ghost"
+                      onClick={() =>
+                        onOpenKnowledge(task.projectEnvironmentId)
+                      }
                     >
                       <Icon name="externalLink" />
                       {t("ide.backgroundTask.open")}

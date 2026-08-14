@@ -46,6 +46,12 @@ export function ProductAnalyticsConsentPrompt() {
       <p className="tw:m-0 tw:text-xs tw:leading-body tw:text-muted-foreground">
         {t("productAnalytics.description")}
       </p>
+      <p className="tw:m-0 tw:text-xs tw:leading-body tw:text-muted-foreground">
+        {t("productAnalytics.identityDescription")}
+      </p>
+      <p className="tw:m-0 tw:text-xs tw:leading-body tw:text-muted-foreground">
+        {t("productAnalytics.retentionDescription")}
+      </p>
       <div className="tw:grid tw:grid-cols-2 tw:gap-2">
         <Button
           size="compact"

@@ -2,6 +2,7 @@
 
 use std::future::Future;
 
+use chrono::{DateTime, Utc};
 use dopedb_protocol::{
     GraphBuildArtifactV1, GraphRevisionDiffV1, KnowledgeSourceBindingV1, SourceRevisionIdentity,
 };
@@ -64,6 +65,45 @@ pub(crate) struct RemoteKnowledgeSource {
     pub(crate) sync_revision: u64,
     pub(crate) last_failure_code: Option<String>,
     pub(crate) graph_revision_id: Option<Uuid>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct RemoteKnowledgeSyncProgress {
+    pub(crate) source_id: Uuid,
+    pub(crate) project_environment_id: Uuid,
+    pub(crate) display_name: String,
+    pub(crate) project_name: String,
+    pub(crate) environment_name: String,
+    pub(crate) phase: String,
+    pub(crate) state: String,
+    pub(crate) total_files: u32,
+    pub(crate) completed_files: u32,
+    pub(crate) attempt: u32,
+    pub(crate) started_at: DateTime<Utc>,
+    pub(crate) updated_at: DateTime<Utc>,
+    pub(crate) retry_at: Option<DateTime<Utc>>,
+}
+
+impl RemoteKnowledgeSyncProgress {
+    pub(crate) fn validate(&self) -> bool {
+        let safe_name = |value: &str| {
+            !value.trim().is_empty() && value.len() <= 512 && !value.chars().any(char::is_control)
+        };
+        matches!(self.phase.as_str(), "manifest" | "indexing" | "activating")
+            && matches!(self.state.as_str(), "queued" | "claimed")
+            && safe_name(&self.display_name)
+            && safe_name(&self.project_name)
+            && safe_name(&self.environment_name)
+            && self.total_files <= 20_000
+            && self.completed_files <= self.total_files
+            && self.attempt <= 20
+            && self.updated_at >= self.started_at
+            && self.updated_at <= Utc::now() + chrono::Duration::minutes(5)
+            && self.retry_at.as_ref().is_none_or(|retry_at| {
+                self.state == "queued" && self.attempt > 0 && *retry_at >= self.started_at
+            })
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -490,6 +530,11 @@ pub(crate) trait HostedKnowledgeAuthorityPort: Clone + Send + Sync + 'static {
         account_id: &str,
         workspace_id: Uuid,
     ) -> impl Future<Output = AppResult<Vec<RemoteKnowledgeSource>>> + Send;
+    fn list_source_sync_progress(
+        &self,
+        account_id: &str,
+        workspace_id: Uuid,
+    ) -> impl Future<Output = AppResult<Vec<RemoteKnowledgeSyncProgress>>> + Send;
     fn request_source_sync(
         &self,
         account_id: &str,

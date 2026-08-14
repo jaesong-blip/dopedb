@@ -22,7 +22,6 @@ import {
 import {
   beginAnalysisArticleStateTransitionOutcome,
   beginManualAnalysisRunOutcome,
-  captureAnalysisArticleProposal,
 } from "./productAnalytics";
 import { analysisQueryKeys } from "./queryKeys";
 import {
@@ -86,8 +85,6 @@ export function useAnalysisArticlesController({
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const catalogScope = useCatalogScope();
-  const analyticsScopeRef = useRef(catalogScope);
-  analyticsScopeRef.current = catalogScope;
   const detailTabs = useMemo(
     () =>
       [
@@ -269,12 +266,6 @@ export function useAnalysisArticlesController({
     let unlisten: (() => void) | undefined;
     void onAnalysisArticleChanged((change) => {
       if (disposed) return;
-      if (change.action === "proposed") {
-        captureAnalysisArticleProposal(
-          analyticsScopeRef.current,
-          change.articleId,
-        );
-      }
       void queryClient.invalidateQueries({ queryKey: articleKey });
       void queryClient.invalidateQueries({
         queryKey: analysisQueryKeys.revisions(scopeKey, change.articleId),

@@ -171,12 +171,45 @@ jobs:
       - name: Build marketing site
         run: pnpm --dir site build
 
+  analytics_cloudflare:
+    name: analytics-cloudflare
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 11.17.0
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: product-analytics-cloudflare/pnpm-lock.yaml
+
+      - name: Install analytics Worker dependencies
+        run: pnpm --dir product-analytics-cloudflare install --frozen-lockfile
+
+      - name: Audit analytics Worker production dependencies
+        run: pnpm --dir product-analytics-cloudflare audit --prod --audit-level high
+
+      - name: Verify analytics Worker and public contract
+        run: |
+          pnpm --dir product-analytics-cloudflare build
+          pnpm --dir product-analytics-cloudflare test
+          pnpm --dir product-analytics-cloudflare exec wrangler deploy --dry-run
+
   build:
     needs:
       - frontend_smoke
       - rust_smoke
       - provider_migration
       - site_build
+      - analytics_cloudflare
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -187,11 +220,13 @@ jobs:
           RUST_RESULT: ${{ needs.rust_smoke.result }}
           PROVIDER_MIGRATION_RESULT: ${{ needs.provider_migration.result }}
           SITE_BUILD_RESULT: ${{ needs.site_build.result }}
+          ANALYTICS_CLOUDFLARE_RESULT: ${{ needs.analytics_cloudflare.result }}
         run: |
           test "$FRONTEND_RESULT" = success
           test "$RUST_RESULT" = success
           test "$PROVIDER_MIGRATION_RESULT" = success
           test "$SITE_BUILD_RESULT" = success
+          test "$ANALYTICS_CLOUDFLARE_RESULT" = success
 
   windows-check:
     runs-on: windows-latest

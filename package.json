@@ -1,7 +1,7 @@
 {
   "name": "dopedb",
   "private": true,
-  "version": "0.3.51",
+  "version": "0.3.52",
   "type": "module",
   "packageManager": "pnpm@11.17.0",
   "scripts": {
@@ -38,6 +38,9 @@
     "workspace:migrate": "bash scripts/migrate-workspace-service.sh",
     "workspace:cloud:dev": "pnpm --dir workspace-cloud dev",
     "workspace:cloud:build": "pnpm --dir workspace-cloud build",
+    "analytics:cloudflare:build": "pnpm --dir product-analytics-cloudflare build",
+    "analytics:cloudflare:test": "pnpm --dir product-analytics-cloudflare test",
+    "analytics:cloudflare:deploy": "pnpm --dir product-analytics-cloudflare deploy",
     "repo:identity": "bash scripts/configure-repository-identity.sh",
     "gh:owner": "bash scripts/with-gh-owner.sh",
     "gh:restore": "bash scripts/with-gh-owner.sh --restore",

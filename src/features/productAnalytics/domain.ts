@@ -36,7 +36,9 @@ export type ProductEventPropertiesByName = {
   workspace_authentication_completed: {
     outcome: "success" | "denied" | "expired" | "failed";
   };
-  workspace_scope_ready: { syncState: "ok" | "deferred" };
+  workspace_scope_ready: {
+    readonly [key: string]: never;
+  };
   knowledge_environment_created: {
     creationKind: "project_default" | "additional";
   };
@@ -73,7 +75,7 @@ export type ProductEventPropertiesByName = {
   knowledge_source_sync_completed: {
     outcome: "success" | "failed";
     sourceKind: "github" | "local_folder";
-    syncReason: "initial" | "manual" | "webhook" | "scheduled";
+    syncReason: "initial" | "manual";
   };
   agent_session_initialization_completed: {
     outcome: "success" | "failed";
@@ -85,18 +87,18 @@ export type ProductEventPropertiesByName = {
     durationBucket: ProductAnalyticsDurationBucket;
   };
   analysis_article_proposal_completed: {
-    outcome: "success" | "failed";
+    readonly [key: string]: never;
   };
   analysis_article_run_completed: {
     outcome: "success" | "failed" | "cancelled" | "stale";
-    trigger: "manual" | "scheduled" | "agent_test";
+    trigger: "manual";
     durationBucket: ProductAnalyticsDurationBucket;
   };
   analysis_article_state_transitioned: {
     fromState: "draft" | "review" | "live" | "archived";
     toState: "draft" | "review" | "live" | "archived";
   };
-  workspace_member_joined: {
+  workspace_membership_ready: {
     role: "viewer" | "analyst" | "editor" | "admin" | "owner";
   };
   shared_connection_access_ready: {
@@ -174,6 +176,7 @@ export type ProductAnalyticsEvent = {
 export type ProductAnalyticsBatch = {
   schemaVersion: 1;
   installationId: string;
+  consentGeneration: number;
   sessionId: string;
   appVersion: string;
   platform: ProductAnalyticsPlatform;
@@ -184,10 +187,17 @@ export type ProductAnalyticsBatch = {
 export type ProductAnalyticsStatus = {
   enabled: boolean;
   consent: ProductAnalyticsConsent;
+  generation: number;
 };
-export type ProductAnalyticsSubmitReceipt = { accepted: boolean };
+export type ProductAnalyticsSubmitReceipt = {
+  accepted: boolean;
+  retryable: boolean;
+  retryAfterMs?: number;
+};
 
 export type QueuedProductAnalyticsEvent = {
+  installationId: string;
+  consentGeneration: number;
   sessionId: string;
   appVersion: string;
   platform: ProductAnalyticsPlatform;
@@ -203,7 +213,7 @@ export type ProductAnalyticsSnapshot = {
 };
 
 export const PRODUCT_ANALYTICS_MAX_QUEUE = 100;
-export const PRODUCT_ANALYTICS_MAX_BATCH = 20;
+export const PRODUCT_ANALYTICS_MAX_BATCH = 16;
 export const PRODUCT_ANALYTICS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1_000;
 
 const EVENT_NAMES = new Set<ProductEventName>([
@@ -220,7 +230,7 @@ const EVENT_NAMES = new Set<ProductEventName>([
   "analysis_article_proposal_completed",
   "analysis_article_run_completed",
   "analysis_article_state_transitioned",
-  "workspace_member_joined",
+  "workspace_membership_ready",
   "shared_connection_access_ready",
 ]);
 const ENGINES = new Set<ProductAnalyticsEngine>([
@@ -312,10 +322,7 @@ function validProperties(name: ProductEventName, value: unknown): boolean {
         ["success", "denied", "expired", "failed"],
       );
     case "workspace_scope_ready":
-      return fields(value, ["syncState"]) && enumField(
-        value.syncState,
-        ["ok", "deferred"],
-      );
+      return fields(value, []);
     case "knowledge_environment_created":
       return fields(value, ["creationKind"]) && enumField(
         value.creationKind,
@@ -354,7 +361,7 @@ function validProperties(name: ProductEventName, value: unknown): boolean {
       return fields(value, ["outcome", "sourceKind", "syncReason"]) &&
         enumField(value.outcome, ["success", "failed"]) &&
         enumField(value.sourceKind, ["github", "local_folder"]) &&
-        enumField(value.syncReason, ["initial", "manual", "webhook", "scheduled"]);
+        enumField(value.syncReason, ["initial", "manual"]);
     case "agent_session_initialization_completed":
       return fields(value, ["outcome", "provider"]) &&
         enumField(value.outcome, ["success", "failed"]) &&
@@ -365,21 +372,18 @@ function validProperties(name: ProductEventName, value: unknown): boolean {
         enumField(value.provider, ["claude", "codex"]) &&
         oneOf(value.durationBucket, DURATIONS);
     case "analysis_article_proposal_completed":
-      return fields(value, ["outcome"]) && enumField(
-        value.outcome,
-        ["success", "failed"],
-      );
+      return fields(value, []);
     case "analysis_article_run_completed":
       return fields(value, ["outcome", "trigger", "durationBucket"]) &&
         enumField(value.outcome, ["success", "failed", "cancelled", "stale"]) &&
-        enumField(value.trigger, ["manual", "scheduled", "agent_test"]) &&
+        value.trigger === "manual" &&
         oneOf(value.durationBucket, DURATIONS);
     case "analysis_article_state_transitioned":
       return fields(value, ["fromState", "toState"]) &&
         enumField(value.fromState, ["draft", "review", "live", "archived"]) &&
         enumField(value.toState, ["draft", "review", "live", "archived"]) &&
         value.fromState !== value.toState;
-    case "workspace_member_joined":
+    case "workspace_membership_ready":
       return fields(value, ["role"]) && enumField(
         value.role,
         ["viewer", "analyst", "editor", "admin", "owner"],
@@ -427,7 +431,19 @@ export function isQueuedProductAnalyticsEvent(
   value: unknown,
 ): value is QueuedProductAnalyticsEvent {
   return object(value) &&
-    exact(value, ["sessionId", "appVersion", "platform", "locale", "event"]) &&
+    exact(value, [
+      "installationId",
+      "consentGeneration",
+      "sessionId",
+      "appVersion",
+      "platform",
+      "locale",
+      "event",
+    ]) &&
+    typeof value.installationId === "string" && UUID.test(value.installationId) &&
+    typeof value.consentGeneration === "number" &&
+    Number.isInteger(value.consentGeneration) &&
+    value.consentGeneration >= 0 && value.consentGeneration <= 0xffff_ffff &&
     typeof value.sessionId === "string" && UUID.test(value.sessionId) &&
     typeof value.appVersion === "string" && value.appVersion.length <= 128 &&
     SEMVER.test(value.appVersion) &&

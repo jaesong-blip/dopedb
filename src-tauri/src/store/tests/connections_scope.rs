@@ -8,7 +8,9 @@ use crate::features::knowledge::test_support::{
 use crate::kernel::access::WorkspaceKind;
 
 fn assert_knowledge_source_revision_ipc_uses_camel_case_fields() {
-    use crate::features::knowledge::transport::serialize_knowledge_source_revision_for_test;
+    use crate::features::knowledge::transport::{
+        round_trip_knowledge_sync_progress_for_test, serialize_knowledge_source_revision_for_test,
+    };
     use dopedb_protocol::SourceRevisionIdentity;
 
     let cases = [
@@ -65,6 +67,32 @@ fn assert_knowledge_source_revision_ipc_uses_camel_case_fields() {
             expected,
         );
     }
+
+    let progress = serde_json::json!({
+        "sourceId": "550e8400-e29b-41d4-a716-446655440000",
+        "projectEnvironmentId": "550e8400-e29b-41d4-a716-446655440001",
+        "displayName": "owner/repository",
+        "projectName": "Project",
+        "environmentName": "Production",
+        "phase": "indexing",
+        "state": "claimed",
+        "totalFiles": 1200,
+        "completedFiles": 480,
+        "attempt": 0,
+        "startedAt": "2026-08-14T06:00:00Z",
+        "updatedAt": "2026-08-14T06:05:00Z",
+        "retryAt": null,
+    });
+    assert_eq!(
+        round_trip_knowledge_sync_progress_for_test(progress.clone()),
+        Some(progress.clone()),
+    );
+    let mut oversized = progress.clone();
+    oversized["completedFiles"] = serde_json::json!(1201);
+    assert_eq!(round_trip_knowledge_sync_progress_for_test(oversized), None,);
+    let mut widened = progress;
+    widened["repository"] = serde_json::json!("must/not/leak");
+    assert_eq!(round_trip_knowledge_sync_progress_for_test(widened), None);
 }
 
 async fn assert_legacy_sql_document_database_scope_migrates() {

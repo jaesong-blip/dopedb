@@ -95,7 +95,6 @@ interface Run {
   outcome: ExecOutcome;
   at: string;
 }
-
 interface QueryErrorInfo extends AppErrorDetails {
   sql: string;
   at: string;
@@ -298,6 +297,8 @@ export function useSqlWorkbenchController({
     : null;
   const queryAnalytics = useQueryExecutionAnalytics({
     scope: catalogScope,
+    connectionEngine: connection.engine,
+    credentialMode: connection.credentialMode,
     approvalPending: Boolean(pendingApproval || pendingScriptApproval),
     approvalRejected,
     cancelled,

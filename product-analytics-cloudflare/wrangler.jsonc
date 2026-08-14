@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dopedb-product-analytics",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-14",
+  "account_id": "4813425b30d5f9a6b2393c412817867d",
+  "workers_dev": true,
+  "preview_urls": false,
+  "secrets": {
+    "required": ["INGEST_TOKEN"]
+  },
+  "d1_databases": [
+    {
+      "binding": "ANALYTICS_DB",
+      "database_name": "dopedb-product-analytics",
+      "database_id": "cbbd811f-3522-4aed-b04a-613f707fd3f2",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": {
+    "crons": ["17 3 * * *"]
+  }
+}

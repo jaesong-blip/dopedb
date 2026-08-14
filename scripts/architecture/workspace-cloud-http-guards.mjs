@@ -191,35 +191,71 @@ export function collectWorkspaceCloudHttpDiagnostics({ lineCount, read, relative
   for (const token of [
     "const MAX_BODY_BYTES = 32 * 1_024",
     "boundedJsonBody(request, MAX_BODY_BYTES)",
+    "env.productAnalyticsRelayEnabled()",
+    "acceptsProductAnalyticsContract(request.headers)",
     "parseProductAnalyticsEnvelope(parsed.value)",
-    "consumeProductAnalyticsBudget(request.headers, envelope.installationId)",
-    "privateJson({ accepted: true }, { status: 202 })",
+    "consumeProductAnalyticsIngressBudget(request.headers)",
+    "consumeProductAnalyticsEnvelopeBudget(\n      envelope.installationId,\n      envelope.events.length,\n    )",
+    "{ accepted: true, retryable: false }",
+    "retryAfterMs: RETRY_AFTER_MS",
+    'headers: { "retry-after": String(RETRY_AFTER_SECONDS) }',
   ]) {
     if (!analyticsRouteSource.includes(token)) {
       diagnostics.push(`${productAnalyticsRoute}: product analytics boundary is missing ${token}`);
     }
   }
+  if (
+    analyticsRouteSource.indexOf("env.productAnalyticsRelayEnabled()") >
+      analyticsRouteSource.indexOf("consumeProductAnalyticsIngressBudget(request.headers)")
+  ) {
+    diagnostics.push(
+      `${productAnalyticsRoute}: dormant product analytics must fail before allocating rate-limit state`,
+    );
+  }
+  if (
+    analyticsRouteSource.indexOf("consumeProductAnalyticsIngressBudget(request.headers)") >
+      analyticsRouteSource.indexOf("boundedJsonBody(request, MAX_BODY_BYTES)")
+  ) {
+    diagnostics.push(
+      `${productAnalyticsRoute}: product analytics ingress budget must run before the body is read`,
+    );
+  }
   for (const token of [
     "PRODUCT_EVENT_PROPERTIES",
-    "$process_person_profile: false",
-    "$insert_id: event.eventId",
-    "distinct_id: envelope.installationId",
+    'namespace: "product-analytics-ip"',
+    'namespace: "product-analytics-installation"',
+    'namespace: "product-analytics-global-requests"',
+    'namespace: "product-analytics-global-events"',
+    "productAnalyticsIngressBudgetPlan(headers)",
+    "productAnalyticsEnvelopeBudgetPlan(installationId, eventCount)",
+    "for (const budget of budgets)",
+    "if (!await consumeRateLimit(budget)) return false",
+    "env.productAnalyticsCloudflareToken()",
+    "env.productAnalyticsCloudflareUrl()",
+    "authorization: `Bearer ${token}`",
+    "body: JSON.stringify(envelope)",
     "redirect: \"error\"",
-    "AbortSignal.timeout(POSTHOG_TIMEOUT_MS)",
+    "AbortSignal.timeout(CLOUDFLARE_TIMEOUT_MS)",
   ]) {
     if (!analyticsServiceSource.includes(token)) {
       diagnostics.push(`${productAnalyticsService}: product analytics relay is missing ${token}`);
     }
   }
+  if (analyticsServiceSource.includes("${clientKey}\\u0000${installationId}")) {
+    diagnostics.push(
+      `${productAnalyticsService}: IP and installation budgets must not share one rotatable key`,
+    );
+  }
   if (/\b(?:posthog-js|posthog-node|@posthog)\b/.test(read("workspace-cloud/package.json"))) {
-    diagnostics.push("workspace-cloud/package.json: product analytics must not add a PostHog SDK");
+    diagnostics.push("workspace-cloud/package.json: product analytics must not add a vendor SDK");
   }
   const environmentSource = read("workspace-cloud/lib/env.ts");
   if (
-    !environmentSource.includes('"https://eu.i.posthog.com"')
-    || environmentSource.includes('"https://us.i.posthog.com"')
+    !environmentSource.includes("PRODUCT_ANALYTICS_WORKER_HOST")
+    || environmentSource.includes("eu.i.posthog.com")
+    || environmentSource.includes("us.i.posthog.com")
   ) {
-    diagnostics.push("workspace-cloud/lib/env.ts: product analytics ingestion must remain EU-only");
+    diagnostics.push("workspace-cloud/lib/env.ts: product analytics must use only the dedicated Cloudflare Worker");
   }
 
   const routeImportCounts = { db: 0, drizzle: 0, schema: 0 };

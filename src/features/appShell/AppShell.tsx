@@ -105,6 +105,7 @@ function Shell() {
     connections: connections.items,
     queryServiceStore: queryServices.store,
     workspaceScopeKey: catalogScope.key,
+    knowledgeSyncEnabled: catalogScope.workspaceKind === "team",
   });
   const manualTransactions = useWorkspaceManualTransactions(connections.items);
   const {

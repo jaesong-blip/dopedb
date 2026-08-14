@@ -11,6 +11,7 @@ import {
   SelectInput,
   TextInput,
 } from "../../design-system/components/FormControls";
+import { ProgressBar } from "../../design-system/components/Progress";
 import {
   InlineNotice,
   LoadingLabel,
@@ -43,6 +44,11 @@ import {
   knowledgeRevisionLabel,
 } from "../../features/knowledge/presentation";
 import { knowledgeQueryKeys } from "../../features/knowledge/queryKeys";
+import {
+  knowledgeSyncOverallPercent,
+  knowledgeSyncProgressQuery,
+  knowledgeSyncRemainingFiles,
+} from "../../features/knowledge/syncProgress";
 import {
   beginKnowledgeGithubInstall,
   bindKnowledgeEnvironmentConnection,
@@ -86,6 +92,12 @@ const sourceHealthKey = {
   syncing: "knowledge.sourceHealthSyncing",
   stale: "knowledge.sourceHealthStale",
   failed: "knowledge.sourceHealthFailed",
+} as const;
+
+const syncPhaseKey = {
+  activating: "knowledge.syncPhaseActivating",
+  indexing: "knowledge.syncPhaseIndexing",
+  manifest: "knowledge.syncPhaseManifest",
 } as const;
 
 type PendingKnowledgeSyncAnalytics = {
@@ -162,7 +174,18 @@ export default function Knowledge({
     enabled: personalAuthResolved,
   });
   const sourceRows = sources.data;
-  const refetchSources = sources.refetch;
+  const sourceSyncProgress = useQuery(
+    knowledgeSyncProgressQuery(catalogScope.key, sharedWorkspace),
+  );
+  const sourceSyncProgressById = useMemo(
+    () => new Map(
+      (sourceSyncProgress.data ?? []).map((progress) => [
+        progress.sourceId,
+        progress,
+      ]),
+    ),
+    [sourceSyncProgress.data],
+  );
   const repositories = useQuery({
     queryKey: repositoryKey,
     queryFn: listKnowledgeGithubRepositories,
@@ -344,6 +367,9 @@ export default function Knowledge({
         void queryClient.invalidateQueries({
           queryKey: knowledgeQueryKeys.agentEnvironments(),
         });
+        void queryClient.invalidateQueries({
+          queryKey: knowledgeQueryKeys.sourceSyncProgress(catalogScope.key),
+        });
       } else if (change.state === "failed") {
         finishKnowledgeSyncOutcome(
           pendingSourceSyncAnalytics.current,
@@ -359,21 +385,7 @@ export default function Knowledge({
       disposed = true;
       unlisten?.();
     };
-  }, [queryClient]);
-
-  useEffect(() => {
-    const waitingForCloudIndex = sourceRows?.some(
-      (source) => source.provider === "github" && source.health === "syncing",
-    ) || [...sourceActivity.values()].some(
-      (activity) => activity.state === "syncing"
-        && activity.previousGraphRevisionId !== undefined,
-    );
-    if (!waitingForCloudIndex) return;
-    const timer = window.setInterval(() => {
-      void refetchSources();
-    }, 10_000);
-    return () => window.clearInterval(timer);
-  }, [refetchSources, sourceActivity, sourceRows]);
+  }, [catalogScope.key, queryClient]);
 
   useEffect(() => {
     if (!sources.data) return;
@@ -436,6 +448,9 @@ export default function Knowledge({
   const refreshInventory = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: sourceKey }),
+      queryClient.invalidateQueries({
+        queryKey: knowledgeQueryKeys.sourceSyncProgress(catalogScope.key),
+      }),
       queryClient.invalidateQueries({ queryKey: repositoryKey }),
       queryClient.invalidateQueries({
         queryKey: knowledgeQueryKeys.agentEnvironments(),
@@ -548,6 +563,9 @@ export default function Knowledge({
       setActionError(null);
       await queryClient.invalidateQueries({ queryKey: sourceKey });
       await queryClient.invalidateQueries({
+        queryKey: knowledgeQueryKeys.sourceSyncProgress(catalogScope.key),
+      });
+      await queryClient.invalidateQueries({
         queryKey: knowledgeQueryKeys.agentEnvironments(),
       });
     },
@@ -595,6 +613,9 @@ export default function Knowledge({
       });
       setActionError(null);
       await queryClient.invalidateQueries({ queryKey: sourceKey });
+      await queryClient.invalidateQueries({
+        queryKey: knowledgeQueryKeys.sourceSyncProgress(catalogScope.key),
+      });
       await queryClient.invalidateQueries({
         queryKey: knowledgeQueryKeys.agentEnvironments(),
       });
@@ -1066,8 +1087,14 @@ export default function Knowledge({
           <div className="tw:grid tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle">
             {selectedEnvironmentSources.map((source) => {
               const activity = sourceActivity.get(source.sourceId);
-              const visibleHealth = activity?.state ?? source.health;
+              const progress = sourceSyncProgressById.get(source.sourceId);
+              const visibleHealth = progress
+                ? "syncing"
+                : activity?.state ?? source.health;
               const tone: StatusTone = visibleHealth === "ready" ? "success" : visibleHealth === "failed" ? "danger" : "warning";
+              const overallProgress = progress
+                ? knowledgeSyncOverallPercent(progress)
+                : null;
               return (
                 <article key={source.sourceId} className="tw:grid tw:min-w-0 tw:grid-cols-[minmax(0,1fr)_auto] tw:items-center tw:gap-3 tw:border-b tw:border-border-subtle tw:px-3 tw:py-3 tw:last:border-b-0 tw:@max-[560px]:grid-cols-1">
                   <div className="tw:grid tw:min-w-0 tw:gap-1">
@@ -1082,6 +1109,41 @@ export default function Knowledge({
                       dirty: t("knowledge.revisionDirty"),
                       snapshot: t("knowledge.revisionSnapshot"),
                     })}</span>
+                    {progress ? (
+                      <div className="tw:grid tw:gap-1.5 tw:pt-1">
+                        <span className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-x-2 tw:gap-y-0.5 tw:text-xs tw:text-muted-foreground">
+                          <span>{t(syncPhaseKey[progress.phase])}</span>
+                          <span>
+                            {progress.totalFiles > 0
+                              ? t("knowledge.syncProgressFiles", {
+                                  completed: progress.completedFiles.toLocaleString(),
+                                  total: progress.totalFiles.toLocaleString(),
+                                  remaining: knowledgeSyncRemainingFiles(progress).toLocaleString(),
+                                })
+                              : t("knowledge.syncProgressPreparing")}
+                          </span>
+                          <span>
+                            {progress.retryAt
+                              ? t("knowledge.syncRetryAt", {
+                                  attempt: progress.attempt.toLocaleString(),
+                                  time: new Date(progress.retryAt).toLocaleTimeString(),
+                                })
+                              : t("knowledge.syncUpdatedAt", {
+                                  time: new Date(progress.updatedAt).toLocaleTimeString(),
+                                })}
+                          </span>
+                        </span>
+                        <ProgressBar
+                          density="compact"
+                          value={overallProgress}
+                          label={overallProgress === null
+                            ? t("knowledge.syncProgressPreparing")
+                            : t("knowledge.syncProgressPercent", {
+                                count: overallProgress.toFixed(0),
+                              })}
+                        />
+                      </div>
+                    ) : null}
                     {source.provider === "local_folder" && !source.localCapabilityAvailable ? (
                       <span className="tw:text-xs tw:text-warning">{t("knowledge.restoreLocalFolder")}</span>
                     ) : null}
@@ -1094,8 +1156,8 @@ export default function Knowledge({
                     ) : null}
                   </div>
                   <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2 tw:@max-[560px]:justify-start">
-                    <Button size="compact" disabled={sync.isPending || activity?.state === "syncing"} onClick={() => sync.mutate(source.sourceId)}>
-                      <Icon name="refresh" />{(sync.isPending && sync.variables === source.sourceId) || activity?.state === "syncing" ? t("knowledge.syncing") : activity?.state === "failed" ? t("knowledge.retry") : t("knowledge.sync")}
+                    <Button size="compact" disabled={sync.isPending || activity?.state === "syncing" || Boolean(progress)} onClick={() => sync.mutate(source.sourceId)}>
+                      <Icon name="refresh" />{(sync.isPending && sync.variables === source.sourceId) || activity?.state === "syncing" || progress ? t("knowledge.syncing") : activity?.state === "failed" ? t("knowledge.retry") : t("knowledge.sync")}
                     </Button>
                     <ConfirmButton size="compact" variant="dangerGhost" disabled={revoke.isPending || sync.isPending} onConfirm={() => revoke.mutate(source.sourceId)}>{t("knowledge.remove")}</ConfirmButton>
                   </div>

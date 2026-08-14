@@ -22,17 +22,22 @@ export async function consumeRateLimit(input: {
   namespace: string;
   discriminator: string;
   limit: number;
+  cost?: number;
   windowMs?: number;
   retentionMs?: number;
 }) {
   const now = Date.now();
   const windowMs = input.windowMs ?? 60_000;
   const retentionMs = input.retentionMs ?? DEFAULT_RETENTION_MS;
+  const cost = input.cost ?? 1;
   if (
     !/^[a-z][a-z0-9-]{1,63}$/.test(input.namespace)
     || !input.discriminator
     || !Number.isSafeInteger(input.limit)
     || input.limit < 1
+    || !Number.isSafeInteger(cost)
+    || cost < 1
+    || cost > input.limit
     || !Number.isSafeInteger(windowMs)
     || windowMs < 1_000
     || !Number.isSafeInteger(retentionMs)
@@ -48,9 +53,9 @@ export async function consumeRateLimit(input: {
   const key = `${input.namespace}:${input.discriminator}:${windowStartedAt}`;
   const result = await db.execute<{ value: number }>(sql`
     INSERT INTO ${rateLimit} ("id", "key", "count", "last_request")
-    VALUES (${crypto.randomUUID()}, ${key}, 1, ${now})
+    VALUES (${crypto.randomUUID()}, ${key}, ${cost}, ${now})
     ON CONFLICT ("key") DO UPDATE SET
-      "count" = ${rateLimit.count} + 1,
+      "count" = ${rateLimit.count} + ${cost},
       "last_request" = ${now}
     RETURNING "count" AS "value"
   `);

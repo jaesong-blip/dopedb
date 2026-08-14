@@ -20,14 +20,17 @@ impl SqliteProductAnalyticsConsent {
 
 impl ProductAnalyticsConsentPort for SqliteProductAnalyticsConsent {
     async fn state(&self) -> AppResult<ProductAnalyticsConsentState> {
-        let consent = sqlx::query_scalar("SELECT value FROM app_settings WHERE key = ?1")
-            .bind(CONSENT_KEY)
-            .fetch_optional(self.store.pool())
-            .await?;
-        let generation = sqlx::query_scalar("SELECT value FROM app_settings WHERE key = ?1")
-            .bind(GENERATION_KEY)
-            .fetch_optional(self.store.pool())
-            .await?;
+        let (consent, generation) = sqlx::query_as(
+            "SELECT
+               MAX(CASE WHEN key = ?1 THEN value END),
+               MAX(CASE WHEN key = ?2 THEN value END)
+             FROM app_settings
+             WHERE key IN (?1, ?2)",
+        )
+        .bind(CONSENT_KEY)
+        .bind(GENERATION_KEY)
+        .fetch_one(self.store.pool())
+        .await?;
         stored_state(consent, generation)
     }
 
@@ -36,14 +39,17 @@ impl ProductAnalyticsConsentPort for SqliteProductAnalyticsConsent {
         consent: ProductAnalyticsConsent,
     ) -> AppResult<ProductAnalyticsConsentState> {
         let mut transaction = self.store.pool().begin().await?;
-        let stored_consent = sqlx::query_scalar("SELECT value FROM app_settings WHERE key = ?1")
-            .bind(CONSENT_KEY)
-            .fetch_optional(&mut *transaction)
-            .await?;
-        let stored_generation = sqlx::query_scalar("SELECT value FROM app_settings WHERE key = ?1")
-            .bind(GENERATION_KEY)
-            .fetch_optional(&mut *transaction)
-            .await?;
+        let (stored_consent, stored_generation) = sqlx::query_as(
+            "SELECT
+               MAX(CASE WHEN key = ?1 THEN value END),
+               MAX(CASE WHEN key = ?2 THEN value END)
+             FROM app_settings
+             WHERE key IN (?1, ?2)",
+        )
+        .bind(CONSENT_KEY)
+        .bind(GENERATION_KEY)
+        .fetch_one(&mut *transaction)
+        .await?;
         let current = stored_state(stored_consent, stored_generation)?;
         if current.consent == consent {
             transaction.commit().await?;

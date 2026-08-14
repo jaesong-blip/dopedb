@@ -1,6 +1,7 @@
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import capability from "../../../src-tauri/capabilities/default.json";
+import productAnalyticsGoldenSource from "../../../tests/fixtures/product-analytics-v1.json";
 import { knowledgeQueryKeys } from "../knowledge/queryKeys";
 import {
   cancelWorkspaceResourceQueries,
@@ -27,10 +28,14 @@ import type { WorkspaceContextState } from "./queries";
 import {
   ProductAnalyticsLocalStore,
   productAnalyticsInstallationReadyInput,
+  productAnalyticsRetryDelay,
+  productAnalyticsRetryIsBlocked,
   type ProductAnalyticsStorage,
 } from "../productAnalytics/storage";
 import {
+  isProductAnalyticsEvent,
   isProductAnalyticsEventInput,
+  type ProductEventName,
   type QueuedProductAnalyticsEvent,
 } from "../productAnalytics/domain";
 import {
@@ -42,6 +47,54 @@ import {
   productAnalyticsStatementClass,
   productAnalyticsWorkspaceContext,
 } from "../productAnalytics/outcomes";
+
+type ProductAnalyticsGolden = Readonly<{
+  schemaVersion: number;
+  installationId: string;
+  sessionId: string;
+  appVersion: string;
+  platform: string;
+  locale: string;
+  events: readonly Readonly<{
+    eventId: string;
+    name: ProductEventName;
+    occurredAt: string;
+    actorKey?: string;
+    workspaceKey?: string;
+    workspaceKind?: string;
+    properties: Readonly<Record<string, unknown>>;
+  }>[];
+}>;
+
+const productAnalyticsGolden = productAnalyticsGoldenSource as ProductAnalyticsGolden;
+
+const analyticsPropertyKeys = {
+  desktop_installation_ready: [],
+  workspace_authentication_completed: ["outcome"],
+  workspace_scope_ready: [],
+  knowledge_environment_created: ["creationKind"],
+  connection_verification_completed: ["outcome", "engine", "credentialMode", "ssh"],
+  environment_connection_bound: ["accessMode", "engine"],
+  query_execution_completed: [
+    "outcome",
+    "statementClass",
+    "rowCountBucket",
+    "durationBucket",
+    "approvalRequired",
+  ],
+  knowledge_source_sync_completed: ["outcome", "sourceKind", "syncReason"],
+  agent_session_initialization_completed: ["outcome", "provider"],
+  agent_turn_completed: ["outcome", "provider", "durationBucket"],
+  analysis_article_proposal_completed: [],
+  analysis_article_run_completed: ["outcome", "trigger", "durationBucket"],
+  analysis_article_state_transitioned: ["fromState", "toState"],
+  workspace_membership_ready: ["role"],
+  shared_connection_access_ready: ["accessMode", "engine"],
+} as const satisfies Record<ProductEventName, readonly string[]>;
+
+function sortedKeys(value: Readonly<Record<string, unknown>>) {
+  return Object.keys(value).sort();
+}
 
 function authState(
   userId: string,
@@ -118,6 +171,44 @@ describe("workspace auth lifecycle", () => {
     expect(allowedUrls).toContain("https://dopedb.dev/privacy");
     expect(allowedUrls).not.toContain("https://github.com/*");
 
+    expect(sortedKeys(productAnalyticsGolden)).toEqual([
+      "appVersion",
+      "events",
+      "installationId",
+      "locale",
+      "platform",
+      "schemaVersion",
+      "sessionId",
+    ]);
+    expect(productAnalyticsGolden.events.map((event) => event.name)).toEqual(
+      Object.keys(analyticsPropertyKeys),
+    );
+    for (const event of productAnalyticsGolden.events) {
+      expect(isProductAnalyticsEvent(event), event.name).toBe(true);
+      expect(sortedKeys(event.properties), event.name).toEqual(
+        [...analyticsPropertyKeys[event.name]].sort(),
+      );
+      const identityKeys = event.name === "desktop_installation_ready"
+        ? []
+        : event.name === "workspace_authentication_completed"
+          ? ["actorKey"]
+          : event.workspaceKind === "personal"
+            ? ["workspaceKey", "workspaceKind"]
+            : ["actorKey", "workspaceKey", "workspaceKind"];
+      expect(sortedKeys(event), event.name).toEqual([
+        "eventId",
+        "name",
+        "occurredAt",
+        "properties",
+        ...identityKeys,
+      ].sort());
+    }
+    expect(productAnalyticsGolden.events[2]?.workspaceKind).toBe("personal");
+    expect(
+      productAnalyticsGolden.events[productAnalyticsGolden.events.length - 2]
+        ?.workspaceKind,
+    ).toBe("team");
+
     const analyticsMemory = new Map<string, string>();
     const analyticsStorage: ProductAnalyticsStorage = {
       getItem: (key) => analyticsMemory.get(key) ?? null,
@@ -132,7 +223,10 @@ describe("workspace auth lifecycle", () => {
     const analyticsEvent = (
       sessionId: string,
       eventId: string,
+      consentGeneration = 0,
     ): QueuedProductAnalyticsEvent => ({
+      installationId: "10000000-0000-4000-8000-000000000003",
+      consentGeneration,
       sessionId,
       appVersion: "0.3.49",
       platform: "macos",
@@ -157,7 +251,7 @@ describe("workspace auth lifecycle", () => {
     expect(analyticsStore.ensureInstallation(allocateInstallation)).toBeNull();
     expect(installationAllocations).toBe(0);
     expect(analyticsMemory.size).toBe(0);
-    analyticsStore.applyConsent("granted");
+    analyticsStore.applyConsent("granted", 1);
     const installation = analyticsStore.ensureInstallation(allocateInstallation);
     expect(installation?.id).toBe("10000000-0000-4000-8000-000000000003");
     if (!installation) throw new Error("analytics installation was not created");
@@ -184,9 +278,10 @@ describe("workspace auth lifecycle", () => {
       analyticsStorage,
       analyticsNow,
     );
-    migratedAnalyticsStore.applyConsent("granted");
+    migratedAnalyticsStore.applyConsent("granted", 0);
     expect(migratedAnalyticsStore.installation()).toEqual({
-      ...installation,
+      id: installation.id,
+      generation: 0,
       readyRecorded: false,
     });
     expect(migratedAnalyticsStore.enqueue(analyticsEvent(
@@ -209,7 +304,7 @@ describe("workspace auth lifecycle", () => {
       analyticsStorage,
       analyticsNow,
     );
-    relaunchedAnalyticsStore.applyConsent("granted");
+    relaunchedAnalyticsStore.applyConsent("granted", 0);
     expect(relaunchedAnalyticsStore.installation()?.readyRecorded).toBe(true);
     expect(relaunchedAnalyticsStore.enqueue(analyticsEvent(
       "10000000-0000-4000-8000-000000000001",
@@ -228,13 +323,147 @@ describe("workspace auth lifecycle", () => {
     expect(
       relaunchedAnalyticsStore.peekBatch().map((item) => item.event.eventId),
     ).toEqual(["a".repeat(64)]);
-    relaunchedAnalyticsStore.applyConsent("denied");
+    relaunchedAnalyticsStore.applyConsent("denied", 1);
     expect(relaunchedAnalyticsStore.getSnapshot()).toEqual({
       consent: "denied",
       queueSize: 0,
     });
     expect(relaunchedAnalyticsStore.installation()).toBeNull();
     expect(analyticsMemory.size).toBe(0);
+
+    const acceptedButUnpersisted = new Map<string, string>();
+    let failAcceptedRemoval = false;
+    const acceptedButUnpersistedStore = new ProductAnalyticsLocalStore({
+      getItem: (key) => acceptedButUnpersisted.get(key) ?? null,
+      setItem: (key, value) => acceptedButUnpersisted.set(key, value),
+      removeItem: (key) => {
+        if (failAcceptedRemoval) throw new Error("storage unavailable");
+        acceptedButUnpersisted.delete(key);
+      },
+    }, analyticsNow);
+    acceptedButUnpersistedStore.applyConsent("granted", 1);
+    acceptedButUnpersistedStore.ensureInstallation(allocateInstallation);
+    expect(acceptedButUnpersistedStore.enqueue(analyticsEvent(
+      "10000000-0000-4000-8000-000000000001",
+      "a".repeat(64),
+      1,
+    ))).toBe(true);
+    failAcceptedRemoval = true;
+    expect(acceptedButUnpersistedStore.removeEvents(["a".repeat(64)])).toBe(false);
+    expect(acceptedButUnpersistedStore.getSnapshot().queueSize).toBe(0);
+    expect(acceptedButUnpersisted.size).toBeGreaterThan(0);
+    failAcceptedRemoval = false;
+    const expiredAnalyticsStore = new ProductAnalyticsLocalStore({
+      getItem: (key) => acceptedButUnpersisted.get(key) ?? null,
+      setItem: (key, value) => acceptedButUnpersisted.set(key, value),
+      removeItem: (key) => acceptedButUnpersisted.delete(key),
+    }, () => Date.parse("2026-08-21T00:00:00Z"));
+    expiredAnalyticsStore.applyConsent("granted", 1);
+    expect(expiredAnalyticsStore.getSnapshot().queueSize).toBe(0);
+    expect([...acceptedButUnpersisted.values()].some(
+      (value) => value.includes('"eventId"'),
+    )).toBe(false);
+
+    const revocationMemory = new Map<string, string>();
+    let failPrivateRemoval = false;
+    const revocationStorage: ProductAnalyticsStorage = {
+      getItem: (key) => revocationMemory.get(key) ?? null,
+      setItem: (key, value) => revocationMemory.set(key, value),
+      removeItem: (key) => {
+        if (failPrivateRemoval) throw new Error("storage unavailable");
+        revocationMemory.delete(key);
+      },
+    };
+    const revocationStore = new ProductAnalyticsLocalStore(
+      revocationStorage,
+      analyticsNow,
+    );
+    revocationStore.applyConsent("granted", 1);
+    const preRevocation = revocationStore.ensureInstallation(
+      () => "10000000-0000-4000-8000-000000000004",
+    );
+    expect(preRevocation?.generation).toBe(1);
+    failPrivateRemoval = true;
+    expect(revocationStore.beginRevocation()).toBe(false);
+    expect(revocationStore.revocationPending()).toBe(true);
+    const restartedDuringRevocation = new ProductAnalyticsLocalStore(
+      revocationStorage,
+      analyticsNow,
+    );
+    expect(restartedDuringRevocation.applyConsent("granted", 1)).toBe(false);
+    expect(restartedDuringRevocation.installation()).toBeNull();
+    failPrivateRemoval = false;
+    restartedDuringRevocation.applyConsent("denied", 2);
+    expect(restartedDuringRevocation.completeRevocation()).toBe(true);
+    expect(restartedDuringRevocation.applyConsent("granted", 3)).toBe(true);
+    const postRevocation = restartedDuringRevocation.ensureInstallation(
+      () => "10000000-0000-4000-8000-000000000005",
+    );
+    expect(postRevocation).toMatchObject({
+      id: "10000000-0000-4000-8000-000000000005",
+      generation: 3,
+    });
+    expect(postRevocation?.id).not.toBe(preRevocation?.id);
+    expect(productAnalyticsRetryDelay(60_000, 0, 0)).toBe(60_000);
+    expect(productAnalyticsRetryDelay(60_000, 0, 1)).toBe(72_000);
+    expect(productAnalyticsRetryDelay(0, 0, 0)).toBe(1_000);
+    expect(productAnalyticsRetryIsBlocked(5_000, 60_000)).toBe(true);
+    expect(productAnalyticsRetryIsBlocked(60_000, 60_000)).toBe(false);
+
+    const pressureMemory = new Map<string, string>();
+    const pressureStore = new ProductAnalyticsLocalStore({
+      getItem: (key) => pressureMemory.get(key) ?? null,
+      setItem: (key, value) => pressureMemory.set(key, value),
+      removeItem: (key) => pressureMemory.delete(key),
+    }, analyticsNow);
+    pressureStore.applyConsent("granted", 1);
+    pressureStore.ensureInstallation(
+      () => "10000000-0000-4000-8000-000000000003",
+    );
+    const pressureInstallation = analyticsEvent(
+      "10000000-0000-4000-8000-000000000001",
+      "d".repeat(64),
+      1,
+    );
+    const pressureScope: QueuedProductAnalyticsEvent = {
+      ...pressureInstallation,
+      event: {
+        eventId: "e".repeat(64),
+        name: "workspace_scope_ready",
+        occurredAt: "2026-08-13T00:00:00Z",
+        workspaceKey: "f".repeat(64),
+        workspaceKind: "personal",
+        properties: {},
+      },
+    };
+    expect(pressureStore.enqueue(pressureInstallation)).toBe(true);
+    expect(pressureStore.enqueue(pressureScope)).toBe(true);
+    for (let index = 0; index < 120; index += 1) {
+      expect(pressureStore.enqueue({
+        ...pressureInstallation,
+        event: {
+          eventId: (index + 16).toString(16).padStart(64, "0"),
+          name: "query_execution_completed",
+          occurredAt: "2026-08-13T00:00:00Z",
+          workspaceKey: "f".repeat(64),
+          workspaceKind: "personal",
+          properties: {
+            outcome: "success",
+            statementClass: "select",
+            rowCountBucket: "zero",
+            durationBucket: "under_100ms",
+            approvalRequired: false,
+          },
+        },
+      })).toBe(true);
+    }
+    expect(pressureStore.getSnapshot().queueSize).toBe(100);
+    expect(pressureStore.peekBatch().map((item) => item.event.name)).toEqual(
+      expect.arrayContaining([
+        "desktop_installation_ready",
+        "workspace_scope_ready",
+      ]),
+    );
 
     const analyticsWorkspaceId = "20000000-0000-4000-8000-000000000001";
     const analyticsActorId = "20000000-0000-4000-8000-000000000002";

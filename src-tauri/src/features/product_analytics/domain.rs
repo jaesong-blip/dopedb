@@ -4,7 +4,7 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::{Uuid, Variant};
 
-const MAX_BATCH_EVENTS: usize = 20;
+const MAX_BATCH_EVENTS: usize = 16;
 const MAX_EVENT_AGE: Duration = Duration::days(7);
 const MAX_FUTURE_SKEW: Duration = Duration::minutes(5);
 
@@ -37,11 +37,20 @@ pub(crate) struct ProductAnalyticsConsentState {
 pub(crate) struct ProductAnalyticsBatchV1 {
     schema_version: u8,
     installation_id: Uuid,
+    #[serde(skip_serializing)]
+    consent_generation: u32,
     session_id: Uuid,
     app_version: String,
     platform: AnalyticsPlatform,
     locale: AnalyticsLocale,
     events: Vec<ProductAnalyticsEventV1>,
+}
+
+impl ProductAnalyticsBatchV1 {
+    pub(super) const fn authorized_by(&self, state: ProductAnalyticsConsentState) -> bool {
+        matches!(state.consent, ProductAnalyticsConsent::Granted)
+            && state.generation == self.consent_generation
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -98,7 +107,7 @@ enum ProductAnalyticsPayloadV1 {
     AnalysisArticleProposalCompleted(AnalysisArticleProposalCompletedProperties),
     AnalysisArticleRunCompleted(AnalysisArticleRunCompletedProperties),
     AnalysisArticleStateTransitioned(AnalysisArticleStateTransitionedProperties),
-    WorkspaceMemberJoined(WorkspaceMemberJoinedProperties),
+    WorkspaceMembershipReady(WorkspaceMembershipReadyProperties),
     SharedConnectionAccessReady(SharedConnectionAccessReadyProperties),
 }
 
@@ -123,16 +132,7 @@ enum AuthenticationOutcome {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct WorkspaceScopeReadyProperties {
-    sync_state: WorkspaceSyncState,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum WorkspaceSyncState {
-    Ok,
-    Deferred,
-}
+struct WorkspaceScopeReadyProperties {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -198,9 +198,7 @@ struct AgentTurnCompletedProperties {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct AnalysisArticleProposalCompletedProperties {
-    outcome: BinaryOutcome,
-}
+struct AnalysisArticleProposalCompletedProperties {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -219,7 +217,7 @@ struct AnalysisArticleStateTransitionedProperties {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct WorkspaceMemberJoinedProperties {
+struct WorkspaceMembershipReadyProperties {
     role: WorkspaceRole,
 }
 
@@ -342,8 +340,6 @@ enum KnowledgeSourceKind {
 enum KnowledgeSyncReason {
     Initial,
     Manual,
-    Webhook,
-    Scheduled,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -357,8 +353,6 @@ enum AgentProvider {
 #[serde(rename_all = "snake_case")]
 enum AnalysisRunTrigger {
     Manual,
-    Scheduled,
-    AgentTest,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -473,7 +467,7 @@ impl ProductAnalyticsEventV1 {
         }
         if matches!(
             self.payload,
-            ProductAnalyticsPayloadV1::WorkspaceMemberJoined(_)
+            ProductAnalyticsPayloadV1::WorkspaceMembershipReady(_)
         ) && self.workspace_kind != Some(WorkspaceKind::Team)
         {
             return Err("member analytics require a team workspace");
@@ -503,9 +497,132 @@ fn is_hash(value: &str) -> bool {
 
 #[cfg(test)]
 pub(crate) fn assert_product_analytics_contract() {
+    fn sorted_json_keys(value: &serde_json::Value) -> Vec<String> {
+        let mut keys = value
+            .as_object()
+            .expect("analytics fixture value is an object")
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        keys.sort();
+        keys
+    }
+
+    fn sorted_keys(values: &[&str]) -> Vec<String> {
+        let mut keys = values
+            .iter()
+            .map(|value| (*value).to_owned())
+            .collect::<Vec<_>>();
+        keys.sort();
+        keys
+    }
+
     let now = Utc::now();
+    let mut golden: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../tests/fixtures/product-analytics-v1.json"
+    ))
+    .expect("shared product analytics golden parses");
+    assert_eq!(
+        sorted_json_keys(&golden),
+        sorted_keys(&[
+            "schemaVersion",
+            "installationId",
+            "sessionId",
+            "appVersion",
+            "platform",
+            "locale",
+            "events",
+        ])
+    );
+    assert!(golden.get("consentGeneration").is_none());
+    let expected_names = [
+        "desktop_installation_ready",
+        "workspace_authentication_completed",
+        "workspace_scope_ready",
+        "knowledge_environment_created",
+        "connection_verification_completed",
+        "environment_connection_bound",
+        "query_execution_completed",
+        "knowledge_source_sync_completed",
+        "agent_session_initialization_completed",
+        "agent_turn_completed",
+        "analysis_article_proposal_completed",
+        "analysis_article_run_completed",
+        "analysis_article_state_transitioned",
+        "workspace_membership_ready",
+        "shared_connection_access_ready",
+    ];
+    let golden_events = golden["events"]
+        .as_array_mut()
+        .expect("shared product analytics events are an array");
+    assert_eq!(golden_events.len(), expected_names.len());
+    for (event, expected_name) in golden_events.iter_mut().zip(expected_names) {
+        let name = event["name"]
+            .as_str()
+            .expect("shared product analytics event has a name");
+        assert_eq!(name, expected_name);
+        let property_keys: &[&str] = match name {
+            "desktop_installation_ready"
+            | "workspace_scope_ready"
+            | "analysis_article_proposal_completed" => &[],
+            "workspace_authentication_completed" => &["outcome"],
+            "knowledge_environment_created" => &["creationKind"],
+            "connection_verification_completed" => &["outcome", "engine", "credentialMode", "ssh"],
+            "environment_connection_bound" | "shared_connection_access_ready" => {
+                &["accessMode", "engine"]
+            }
+            "query_execution_completed" => &[
+                "outcome",
+                "statementClass",
+                "rowCountBucket",
+                "durationBucket",
+                "approvalRequired",
+            ],
+            "knowledge_source_sync_completed" => &["outcome", "sourceKind", "syncReason"],
+            "agent_session_initialization_completed" => &["outcome", "provider"],
+            "agent_turn_completed" => &["outcome", "provider", "durationBucket"],
+            "analysis_article_run_completed" => &["outcome", "trigger", "durationBucket"],
+            "analysis_article_state_transitioned" => &["fromState", "toState"],
+            "workspace_membership_ready" => &["role"],
+            _ => panic!("unexpected product analytics golden event {name}"),
+        };
+        assert_eq!(
+            sorted_json_keys(&event["properties"]),
+            sorted_keys(property_keys),
+            "{name} property keys drifted"
+        );
+        let identity_keys: &[&str] = match name {
+            "desktop_installation_ready" => &[],
+            "workspace_authentication_completed" => &["actorKey"],
+            _ if event["workspaceKind"] == "personal" => &["workspaceKey", "workspaceKind"],
+            _ => &["actorKey", "workspaceKey", "workspaceKind"],
+        };
+        let mut event_keys = vec!["eventId", "name", "occurredAt", "properties"];
+        event_keys.extend(identity_keys);
+        assert_eq!(
+            sorted_json_keys(event),
+            sorted_keys(&event_keys),
+            "{name} identity keys drifted"
+        );
+        event["occurredAt"] = serde_json::to_value(now).expect("current timestamp serializes");
+    }
+    assert_eq!(golden["events"][2]["workspaceKind"], "personal");
+    assert_eq!(golden["events"][13]["workspaceKind"], "team");
+    let expected_public_wire = golden.clone();
+    golden["consentGeneration"] = serde_json::json!(1);
+    let golden_batch: ProductAnalyticsBatchV1 =
+        serde_json::from_value(golden).expect("shared analytics golden decodes in native");
+    golden_batch
+        .validate(now)
+        .expect("shared analytics golden validates in native");
+    assert_eq!(
+        serde_json::to_value(golden_batch).expect("shared analytics golden serializes"),
+        expected_public_wire
+    );
+
     let fixture = serde_json::json!({
         "schemaVersion": 1,
+        "consentGeneration": 1,
         "installationId": Uuid::new_v4(),
         "sessionId": Uuid::new_v4(),
         "appVersion": "0.3.49",
@@ -531,15 +648,29 @@ pub(crate) fn assert_product_analytics_contract() {
     batch
         .validate(now)
         .expect("closed analytics fixture validates");
+    assert!(batch.authorized_by(ProductAnalyticsConsentState {
+        consent: ProductAnalyticsConsent::Granted,
+        generation: 1,
+    }));
+    assert!(!batch.authorized_by(ProductAnalyticsConsentState {
+        consent: ProductAnalyticsConsent::Granted,
+        generation: 2,
+    }));
+    assert!(!batch.authorized_by(ProductAnalyticsConsentState {
+        consent: ProductAnalyticsConsent::Denied,
+        generation: 1,
+    }));
     let wire_names = serde_json::to_value(&batch).expect("analytics batch serializes");
     assert_eq!(
         wire_names["events"][0]["properties"]["durationBucket"],
         "under_100ms"
     );
+    assert!(wire_names.get("consentGeneration").is_none());
     assert!(wire_names["events"][0].get("actorKey").is_none());
 
     let installation: ProductAnalyticsBatchV1 = serde_json::from_value(serde_json::json!({
         "schemaVersion": 1,
+        "consentGeneration": 1,
         "installationId": Uuid::new_v4(),
         "sessionId": Uuid::new_v4(),
         "appVersion": "0.3.49",
@@ -586,6 +717,7 @@ pub(crate) fn assert_product_analytics_contract() {
 
     let raw_identity = serde_json::json!({
         "schemaVersion": 1,
+        "consentGeneration": 1,
         "installationId": Uuid::new_v4(),
         "sessionId": Uuid::new_v4(),
         "appVersion": "0.3.49",
@@ -598,7 +730,7 @@ pub(crate) fn assert_product_analytics_contract() {
             "workspaceKey": "b".repeat(64),
             "workspaceKind": "team",
             "name": "workspace_scope_ready",
-            "properties": { "syncState": "ok" }
+            "properties": {}
         }]
     });
     let raw_identity: ProductAnalyticsBatchV1 = serde_json::from_value(raw_identity)
@@ -607,6 +739,7 @@ pub(crate) fn assert_product_analytics_contract() {
 
     let personal_actor = serde_json::json!({
         "schemaVersion": 1,
+        "consentGeneration": 1,
         "installationId": Uuid::new_v4(),
         "sessionId": Uuid::new_v4(),
         "appVersion": "0.3.49",
@@ -619,7 +752,7 @@ pub(crate) fn assert_product_analytics_contract() {
             "workspaceKey": "b".repeat(64),
             "workspaceKind": "personal",
             "name": "workspace_scope_ready",
-            "properties": { "syncState": "ok" }
+            "properties": {}
         }]
     });
     let personal_actor: ProductAnalyticsBatchV1 = serde_json::from_value(personal_actor)

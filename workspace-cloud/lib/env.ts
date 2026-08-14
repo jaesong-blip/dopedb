@@ -2,9 +2,7 @@
 // without production secrets; request handlers fail closed when configuration is absent.
 import "server-only";
 
-const PRODUCT_ANALYTICS_POSTHOG_HOSTS = new Set([
-  "https://eu.i.posthog.com",
-]);
+const PRODUCT_ANALYTICS_WORKER_HOST = /^dopedb-product-analytics\.[a-z0-9-]+\.workers\.dev$/;
 
 function required(name: string): string {
   const value = process.env[name]?.trim();
@@ -58,35 +56,43 @@ function githubKnowledgePrivateKey(): string | null {
   return key;
 }
 
-function productAnalyticsPosthogKey(): string | null {
-  const value = optional("PRODUCT_ANALYTICS_POSTHOG_KEY");
+function productAnalyticsCloudflareToken(): string | null {
+  const value = optional("PRODUCT_ANALYTICS_CLOUDFLARE_TOKEN");
   if (!value) return null;
-  if (!/^[A-Za-z0-9_-]{8,256}$/.test(value)) {
-    throw new Error("PRODUCT_ANALYTICS_POSTHOG_KEY is invalid");
+  if (!/^[0-9a-f]{64}$/.test(value)) {
+    throw new Error("PRODUCT_ANALYTICS_CLOUDFLARE_TOKEN is invalid");
   }
   return value;
 }
 
-function productAnalyticsPosthogHost(): string | null {
-  const value = optional("PRODUCT_ANALYTICS_POSTHOG_HOST");
+function productAnalyticsRelayEnabled(): boolean {
+  const value = optional("PRODUCT_ANALYTICS_RELAY_ENABLED");
+  if (value === null || value === "0") return false;
+  if (value === "1") return true;
+  throw new Error("PRODUCT_ANALYTICS_RELAY_ENABLED must be 0 or 1");
+}
+
+function productAnalyticsCloudflareUrl(): string | null {
+  const value = optional("PRODUCT_ANALYTICS_CLOUDFLARE_URL");
   if (!value) return null;
   let url: URL;
   try {
     url = new URL(value);
   } catch {
-    throw new Error("PRODUCT_ANALYTICS_POSTHOG_HOST is invalid");
+    throw new Error("PRODUCT_ANALYTICS_CLOUDFLARE_URL is invalid");
   }
   if (
-    !PRODUCT_ANALYTICS_POSTHOG_HOSTS.has(url.origin)
+    url.protocol !== "https:"
+    || !PRODUCT_ANALYTICS_WORKER_HOST.test(url.hostname)
     || url.username
     || url.password
-    || url.pathname !== "/"
+    || url.pathname !== "/v1/events"
     || url.search
     || url.hash
   ) {
-    throw new Error("PRODUCT_ANALYTICS_POSTHOG_HOST must be the approved EU PostHog origin");
+    throw new Error("PRODUCT_ANALYTICS_CLOUDFLARE_URL must be the approved analytics Worker endpoint");
   }
-  return url.origin;
+  return url.toString();
 }
 
 export const env = {
@@ -103,8 +109,9 @@ export const env = {
   githubKnowledgeWebhookSecret: () => optional("GITHUB_KNOWLEDGE_WEBHOOK_SECRET"),
   planetScaleClientId: () => optional("PLANETSCALE_CLIENT_ID"),
   planetScaleClientSecret: () => optional("PLANETSCALE_CLIENT_SECRET"),
-  productAnalyticsPosthogHost,
-  productAnalyticsPosthogKey,
+  productAnalyticsCloudflareToken,
+  productAnalyticsCloudflareUrl,
+  productAnalyticsRelayEnabled,
   resendApiKey: () => optional("RESEND_API_KEY"),
   workspaceInvitationFrom: () => optional("WORKSPACE_INVITATION_FROM"),
   workspaceSignalFrom: () => optional("WORKSPACE_SIGNAL_FROM")

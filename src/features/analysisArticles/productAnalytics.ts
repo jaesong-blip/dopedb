@@ -20,20 +20,6 @@ function newAnalyticsAttemptId() {
   }
 }
 
-export function captureAnalysisArticleProposal(
-  scope: CatalogScope,
-  articleId: string,
-) {
-  const context = productAnalyticsWorkspaceContext(scope);
-  if (!context) return;
-  void captureProductEvent({
-    name: "analysis_article_proposal_completed",
-    properties: { outcome: "success" },
-    context,
-    dedupeId: articleId,
-  });
-}
-
 export function beginAnalysisArticleStateTransitionOutcome(
   scope: CatalogScope,
   fromState: AnalysisArticleState,

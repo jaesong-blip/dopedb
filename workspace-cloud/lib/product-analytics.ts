@@ -1,4 +1,4 @@
-//! Strict, payload-free product outcome validation and the optional PostHog relay.
+//! Strict product-outcome validation and the optional Cloudflare analytics sink.
 //! This boundary accepts only the reviewed v1 enums and never persists raw analytics.
 import "server-only";
 
@@ -11,7 +11,9 @@ const EVENT_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 const EVENT_FUTURE_SKEW_MS = 5 * 60 * 1_000;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_REQUESTS = 60;
-const POSTHOG_TIMEOUT_MS = 5_000;
+const GLOBAL_RATE_LIMIT_REQUESTS = 400;
+const GLOBAL_RATE_LIMIT_EVENTS = 16;
+const CLOUDFLARE_TIMEOUT_MS = 5_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HEX_64 = /^[0-9a-f]{64}$/;
 const RFC3339 = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|([+-])(\d{2}):(\d{2}))$/;
@@ -47,7 +49,6 @@ const PRODUCT_EVENT_PROPERTIES = {
     outcome: enumRule("success", "denied", "expired", "failed"),
   },
   workspace_scope_ready: {
-    syncState: enumRule("ok", "deferred"),
   },
   knowledge_environment_created: {
     creationKind: enumRule("project_default", "additional"),
@@ -80,7 +81,7 @@ const PRODUCT_EVENT_PROPERTIES = {
   knowledge_source_sync_completed: {
     outcome: enumRule("success", "failed"),
     sourceKind: enumRule("github", "local_folder"),
-    syncReason: enumRule("initial", "manual", "webhook", "scheduled"),
+    syncReason: enumRule("initial", "manual"),
   },
   agent_session_initialization_completed: {
     outcome: enumRule("success", "failed"),
@@ -92,18 +93,17 @@ const PRODUCT_EVENT_PROPERTIES = {
     durationBucket: durationBucketRule,
   },
   analysis_article_proposal_completed: {
-    outcome: enumRule("success", "failed"),
   },
   analysis_article_run_completed: {
     outcome: enumRule("success", "failed", "cancelled", "stale"),
-    trigger: enumRule("manual", "scheduled", "agent_test"),
+    trigger: enumRule("manual"),
     durationBucket: durationBucketRule,
   },
   analysis_article_state_transitioned: {
     fromState: articleStateRule,
     toState: articleStateRule,
   },
-  workspace_member_joined: {
+  workspace_membership_ready: {
     role: enumRule("viewer", "analyst", "editor", "admin", "owner"),
   },
   shared_connection_access_ready: {
@@ -140,6 +140,16 @@ export type ProductAnalyticsRelayResult =
   | "not_configured"
   | "retryable_failure"
   | "rejected";
+
+export const PRODUCT_ANALYTICS_CONTRACT_VERSION = "1";
+
+type ProductAnalyticsBudget = Readonly<{
+  namespace: string;
+  discriminator: string;
+  limit: number;
+  windowMs: number;
+  cost?: number;
+}>;
 
 function record(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -239,7 +249,7 @@ function validEventIdentity(
     && hasWorkspaceKind
     && (value.workspaceKind !== "personal" || !hasActor)
     && (value.workspaceKind !== "team" || hasActor)
-    && (name !== "workspace_member_joined" || value.workspaceKind === "team");
+    && (name !== "workspace_membership_ready" || value.workspaceKind === "team");
 }
 
 function parseEvent(value: unknown, nowMs: number): ProductAnalyticsEvent | null {
@@ -315,7 +325,7 @@ export function parseProductAnalyticsEnvelope(
     || !isEnum(value.locale, ["ko", "en"] as const)
     || !Array.isArray(value.events)
     || value.events.length < 1
-    || value.events.length > 20
+    || value.events.length > 16
   ) return null;
   const events: ProductAnalyticsEvent[] = [];
   const eventIds = new Set<string>();
@@ -338,62 +348,114 @@ export function parseProductAnalyticsEnvelope(
   };
 }
 
-export async function consumeProductAnalyticsBudget(
+export function acceptsProductAnalyticsContract(headers: Pick<Headers, "get">) {
+  return headers.get("x-dopedb-product-analytics-contract")
+    === PRODUCT_ANALYTICS_CONTRACT_VERSION;
+}
+
+/**
+ * Ingress budgets execute before any body read. The IP budget cannot be reset
+ * by rotating caller-controlled installation UUIDs, and malformed envelopes
+ * still consume both a global and source budget.
+ */
+export function productAnalyticsIngressBudgetPlan(
   headers: Pick<Headers, "get">,
-  installationId: string,
-) {
-  const clientKey = forwardedClientKey(headers);
-  const discriminator = createHash("sha256")
-    .update(`${clientKey}\u0000${installationId}`)
+): readonly ProductAnalyticsBudget[] {
+  const ipHash = forwardedClientKey(headers);
+  const globalRequestHash = createHash("sha256")
+    .update("product-analytics-global-requests")
     .digest("hex");
-  return await consumeRateLimit({
-    namespace: "product-analytics",
-    discriminator,
-    limit: RATE_LIMIT_REQUESTS,
-    windowMs: RATE_LIMIT_WINDOW_MS,
-  });
+  return [
+    {
+      namespace: "product-analytics-global-requests",
+      discriminator: globalRequestHash,
+      limit: GLOBAL_RATE_LIMIT_REQUESTS,
+      windowMs: RATE_LIMIT_WINDOW_MS,
+    },
+    {
+      namespace: "product-analytics-ip",
+      discriminator: ipHash,
+      limit: RATE_LIMIT_REQUESTS,
+      windowMs: RATE_LIMIT_WINDOW_MS,
+    },
+  ];
+}
+
+/**
+ * Only a valid envelope may allocate an installation bucket or consume the
+ * event-volume circuit. Identifiers enter rate-limit storage only as hashes.
+ */
+export function productAnalyticsEnvelopeBudgetPlan(
+  installationId: string,
+  eventCount: number,
+): readonly ProductAnalyticsBudget[] {
+  const installationHash = createHash("sha256").update(installationId).digest("hex");
+  const globalEventHash = createHash("sha256")
+    .update("product-analytics-global-events")
+    .digest("hex");
+  return [
+    {
+      namespace: "product-analytics-global-events",
+      discriminator: globalEventHash,
+      limit: GLOBAL_RATE_LIMIT_EVENTS,
+      windowMs: RATE_LIMIT_WINDOW_MS,
+      cost: eventCount,
+    },
+    {
+      namespace: "product-analytics-installation",
+      discriminator: installationHash,
+      limit: RATE_LIMIT_REQUESTS,
+      windowMs: RATE_LIMIT_WINDOW_MS,
+    },
+  ];
+}
+
+async function consumeBudgets(budgets: readonly ProductAnalyticsBudget[]) {
+  for (const budget of budgets) {
+    if (!await consumeRateLimit(budget)) return false;
+  }
+  return true;
+}
+
+export function consumeProductAnalyticsIngressBudget(
+  headers: Pick<Headers, "get">,
+): Promise<boolean> {
+  return consumeBudgets(productAnalyticsIngressBudgetPlan(headers));
+}
+
+export function consumeProductAnalyticsEnvelopeBudget(
+  installationId: string,
+  eventCount: number,
+): Promise<boolean> {
+  return consumeBudgets(productAnalyticsEnvelopeBudgetPlan(installationId, eventCount));
 }
 
 export async function relayProductAnalytics(
   envelope: ProductAnalyticsEnvelope,
 ): Promise<ProductAnalyticsRelayResult> {
-  let apiKey: string | null;
-  let host: string | null;
+  let token: string | null;
+  let url: string | null;
   try {
-    apiKey = env.productAnalyticsPosthogKey();
-    host = env.productAnalyticsPosthogHost();
+    token = env.productAnalyticsCloudflareToken();
+    url = env.productAnalyticsCloudflareUrl();
   } catch {
     return "not_configured";
   }
-  if (!apiKey || !host) return "not_configured";
-  const batch = envelope.events.map((event) => ({
-    event: event.name,
-    timestamp: event.occurredAt,
-    properties: {
-      distinct_id: envelope.installationId,
-      $process_person_profile: false,
-      $insert_id: event.eventId,
-      schemaVersion: envelope.schemaVersion,
-      sessionId: envelope.sessionId,
-      appVersion: envelope.appVersion,
-      platform: envelope.platform,
-      locale: envelope.locale,
-      ...(event.actorKey ? { actorKey: event.actorKey } : {}),
-      ...(event.workspaceKey ? { workspaceKey: event.workspaceKey } : {}),
-      ...(event.workspaceKind ? { workspaceKind: event.workspaceKind } : {}),
-      ...event.properties,
-    },
-  }));
+  if (!token || !url) return "not_configured";
   try {
-    const response = await fetch(`${host}/batch/`, {
+    const response = await fetch(url, {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ api_key: apiKey, batch }),
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+        "x-dopedb-product-analytics-contract": PRODUCT_ANALYTICS_CONTRACT_VERSION,
+      },
+      body: JSON.stringify(envelope),
       cache: "no-store",
       redirect: "error",
-      signal: AbortSignal.timeout(POSTHOG_TIMEOUT_MS),
+      signal: AbortSignal.timeout(CLOUDFLARE_TIMEOUT_MS),
     });
-    const accepted = response.ok;
+    const accepted = response.status === 202;
     const status = response.status;
     await response.body?.cancel().catch(() => undefined);
     if (accepted) return "accepted";

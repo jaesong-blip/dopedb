@@ -443,6 +443,12 @@ function ShellLayoutContent({ model, commands }: Props) {
           if (!servicesVisible) commands.services.toggle();
         }}
         onOpenAgentTask={commands.agent.openTask}
+        onOpenKnowledgeTask={(projectEnvironmentId) =>
+          commands.explorer.openProjectEnvironment(
+            projectEnvironmentId,
+            "sources",
+          )
+        }
         onOpenManualTransaction={commands.status.openManualTransaction}
         onCommitManualTransaction={commands.status.commitManualTransaction}
         onRollbackManualTransaction={commands.status.rollbackManualTransaction}

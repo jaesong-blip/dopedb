@@ -200,6 +200,7 @@ pub fn run() {
             features::knowledge::transport::connect_knowledge_github_source,
             features::knowledge::transport::connect_knowledge_local_folder,
             features::knowledge::transport::list_knowledge_sources,
+            features::knowledge::transport::list_knowledge_source_sync_progress,
             features::knowledge::transport::revoke_knowledge_source,
             features::knowledge::transport::sync_knowledge_source,
             features::knowledge::transport::search_knowledge_graph,
