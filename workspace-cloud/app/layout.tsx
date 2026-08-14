@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, Manrope, Newsreader } from "next/font/google";
+import { IBM_Plex_Mono, Manrope } from "next/font/google";
 import { WorkspaceLocaleProvider } from "./components/WorkspaceLocale";
 import { getWorkspaceLocale } from "../lib/workspace-locale-server";
 import "./globals.css";
@@ -9,13 +9,6 @@ const bodyFont = Manrope({
   subsets: ["latin"],
   variable: "--font-workspace-body-loaded",
   weight: ["400", "500", "600", "700"],
-});
-
-const displayFont = Newsreader({
-  display: "swap",
-  subsets: ["latin"],
-  variable: "--font-workspace-display-loaded",
-  weight: ["400", "500"],
 });
 
 const monoFont = IBM_Plex_Mono({
@@ -54,10 +47,7 @@ export default async function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   const locale = await getWorkspaceLocale();
   return (
-    <html
-      className={`${bodyFont.variable} ${displayFont.variable} ${monoFont.variable}`}
-      lang={locale}
-    >
+    <html className={`${bodyFont.variable} ${monoFont.variable}`} lang={locale}>
       <body className="tw:min-h-[100dvh] tw:bg-background tw:text-foreground">
         <a
           className="tw:fixed tw:top-3 tw:left-3 tw:z-50 tw:-translate-y-24 tw:rounded-control tw:bg-signal tw:px-4 tw:py-2.5 tw:text-xs tw:font-semibold tw:text-chrome tw:focus:translate-y-0"

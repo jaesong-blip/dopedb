@@ -118,8 +118,8 @@
     var(--font-workspace-body-loaded), "Apple SD Gothic Neo", "Noto Sans KR",
     ui-sans-serif, system-ui, sans-serif;
   --font-workspace-display:
-    var(--font-workspace-display-loaded), "Apple SD Gothic Neo", "Noto Sans KR",
-    ui-sans-serif, system-ui, sans-serif;
+    Newsreader, "Iowan Old Style", "Palatino Linotype", "Apple SD Gothic Neo",
+    "Noto Serif KR", ui-serif, Georgia, serif;
   --font-workspace-mono:
     var(--font-workspace-mono-loaded), "SFMono-Regular", Consolas, monospace;
 }
