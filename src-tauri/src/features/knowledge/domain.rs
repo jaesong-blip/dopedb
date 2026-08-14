@@ -49,6 +49,19 @@ pub(crate) enum EnvironmentRiskClass {
     Custom,
 }
 
+/// Exact Project Environment option available to a connection-pinned Agent.
+/// Knowledge owns this projection; Agent transports may expose it but do not
+/// redefine or persist Knowledge authority.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct KnowledgeEnvironmentSummary {
+    pub(crate) id: Uuid,
+    pub(crate) project_name: String,
+    pub(crate) name: String,
+    pub(crate) risk_class: EnvironmentRiskClass,
+    pub(crate) graph_revision_count: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StoredKnowledgeScope {
     pub(crate) project: Project,

@@ -1,8 +1,9 @@
 //! Store repository integration and migration characterization tests.
 
-pub(super) use super::super::{migrations, CacheWriteOutcome, CatalogCachePolicy, Store};
+pub(super) use super::super::{migrations, CacheWriteOutcome, Store};
 pub(super) use crate::error::AppError;
 pub(super) use crate::features::workspaces::{WorkspaceAuthUser, WorkspaceRole};
+pub(super) use crate::kernel::access::CatalogCachePolicy;
 pub(super) use crate::kernel::identity::AccountId;
 pub(super) use crate::model::{ConnectionProfile, Engine, HistoryEntry, Provider, QueryKind};
 pub(super) use chrono::{TimeZone, Utc};

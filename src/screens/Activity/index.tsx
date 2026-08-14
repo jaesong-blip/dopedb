@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-query";
 import {
   useEffect,
+  useEffectEvent,
   useMemo,
   useState,
   type SyntheticEvent,
@@ -207,10 +208,14 @@ export default function Activity({
   const [auditCursors, setAuditCursors] = useState<(AuditCursor | null)[]>([null]);
   const [selectedAuditId, setSelectedAuditId] = useState<string | null>(null);
 
-  useEffect(() => {
+  const consumeInitialAuditIntent = useEffectEvent(() => {
     if (initialAuditOpen) onInitialAuditOpenConsumed?.();
-    // Initial navigation intent is consumed once on mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
+
+  useEffect(() => {
+    consumeInitialAuditIntent();
+    // Initial navigation intent is consumed once on mount. The Effect Event reads
+    // the committed initial props without making later callback identities reactive.
   }, []);
 
   useEffect(() => {
@@ -245,6 +250,15 @@ export default function Activity({
     ...auditPageQuery(connection.id, auditCursor, auditWanted),
     placeholderData: keepPreviousData,
   });
+  const auditData = audit.data;
+  const auditError = audit.error;
+  const auditIsFetching = audit.isFetching;
+  const auditIsPending = audit.isPending;
+  const refetchAudit = audit.refetch;
+  const verdictData = verdictResult.data;
+  const verdictError = verdictResult.error;
+  const verdictIsFetching = verdictResult.isFetching;
+  const refetchVerdict = verdictResult.refetch;
 
   function refresh() {
     setHistoryCursors([null]);
@@ -272,9 +286,9 @@ export default function Activity({
 
   const page = history.data;
   const rows = page?.items ?? [];
-  const auditPage = audit.data;
+  const auditPage = auditData;
   const auditEntries = auditPage?.items ?? [];
-  const verdict = verdictResult.data ?? null;
+  const verdict = verdictData ?? null;
   const chainBroken = verdict !== null && !verdict.ok;
   const firstAuditPageMatchesVerdict =
     auditCursor !== null
@@ -283,7 +297,7 @@ export default function Activity({
     || (auditEntries.length === 0
       ? verdict.entryCount === 0
       : verdict.tailHash === auditEntries[0]?.hash);
-  const integrityError = verdictResult.error ? errMessage(verdictResult.error) : null;
+  const integrityError = verdictError ? errMessage(verdictError) : null;
   const tamperedEntry = verdict?.firstBadId
     ? auditEntries.find((entry) => entry.id === verdict.firstBadId) ?? null
     : null;
@@ -302,21 +316,21 @@ export default function Activity({
     : verdict && firstAuditPageMatchesVerdict
       ? "check"
       : "info";
-  const busy = history.isFetching || verdictResult.isFetching || audit.isFetching;
+  const busy = history.isFetching || verdictIsFetching || auditIsFetching;
   const hasFilters = Boolean(debouncedText || statusFilter || originFilter);
 
   useEffect(() => {
-    if (!auditOpen || firstAuditPageMatchesVerdict || audit.isFetching || verdictResult.isFetching) {
+    if (!auditOpen || firstAuditPageMatchesVerdict || auditIsFetching || verdictIsFetching) {
       return;
     }
-    void Promise.all([audit.refetch(), verdictResult.refetch()]);
+    void Promise.all([refetchAudit(), refetchVerdict()]);
   }, [
     auditOpen,
-    audit.isFetching,
-    audit.refetch,
+    auditIsFetching,
     firstAuditPageMatchesVerdict,
-    verdictResult.isFetching,
-    verdictResult.refetch,
+    refetchAudit,
+    refetchVerdict,
+    verdictIsFetching,
   ]);
 
   return (
@@ -363,13 +377,13 @@ export default function Activity({
                 {t("activity.auditRecordsDescription")}
               </p>
             </div>
-            {audit.error && (
+            {auditError && (
               <div className="tw:text-ui tw:text-danger">
-                {t("activity.auditLoadError", { error: errMessage(audit.error) })}
+                {t("activity.auditLoadError", { error: errMessage(auditError) })}
               </div>
             )}
-            {audit.isPending && <Skeleton lines={4} />}
-            {!audit.isPending && !audit.error && auditEntries.length === 0 && (
+            {auditIsPending && <Skeleton lines={4} />}
+            {!auditIsPending && !auditError && auditEntries.length === 0 && (
               <div className="tw:text-ui tw:leading-relaxed tw:text-muted-foreground">
                 {t("activity.auditEmpty")}
               </div>
@@ -393,7 +407,7 @@ export default function Activity({
                 <Button
                   type="button"
                   size="compact"
-                  disabled={auditCursors.length <= 1 || audit.isFetching}
+                  disabled={auditCursors.length <= 1 || auditIsFetching}
                   onClick={() => {
                     setSelectedAuditId(null);
                     setAuditCursors((current) => current.slice(0, -1));
@@ -404,7 +418,7 @@ export default function Activity({
                 <Button
                   type="button"
                   size="compact"
-                  disabled={!auditPage?.nextCursor || audit.isFetching}
+                  disabled={!auditPage?.nextCursor || auditIsFetching}
                   onClick={() => {
                     if (!auditPage?.nextCursor) return;
                     setSelectedAuditId(null);

@@ -53,6 +53,8 @@ export default function LocalHistoryToolWindow({
     [documents],
   );
   const activeSqlDocument = sqlDocuments.find((document) => document.id === activeDocumentId);
+  const activeSqlDocumentId = activeSqlDocument?.id ?? null;
+  const activeConnectionId = connection?.id ?? null;
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(
     activeSqlDocument?.id ?? sqlDocuments[0]?.id ?? null,
   );
@@ -72,8 +74,8 @@ export default function LocalHistoryToolWindow({
     ?? null;
 
   useEffect(() => {
-    if (activeSqlDocument) setSelectedDocumentId(activeSqlDocument.id);
-  }, [activeSqlDocument?.id]);
+    if (activeSqlDocumentId !== null) setSelectedDocumentId(activeSqlDocumentId);
+  }, [activeSqlDocumentId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setRevisionSearch(filter.trim()), 250);
@@ -91,7 +93,7 @@ export default function LocalHistoryToolWindow({
 
   useEffect(() => {
     let stale = false;
-    if (!connection || !selectedDocument?.persistedId) {
+    if (activeConnectionId === null || !selectedDocument?.persistedId) {
       setRevisionPage(null);
       setLoading(false);
       setError(null);
@@ -101,7 +103,7 @@ export default function LocalHistoryToolWindow({
     setError(null);
     void tauriSqlDocumentGateway
       .listRevisionPage({
-        connectionId: connectionId(connection.id),
+        connectionId: connectionId(activeConnectionId),
         id: sqlDocumentId(selectedDocument.persistedId),
         cursor: revisionCursor,
         search: revisionSearch || null,
@@ -125,7 +127,7 @@ export default function LocalHistoryToolWindow({
       stale = true;
     };
   }, [
-    connection?.id,
+    activeConnectionId,
     revisionCursor,
     revisionSearch,
     selectedDocument?.persistedId,
@@ -134,7 +136,7 @@ export default function LocalHistoryToolWindow({
 
   useEffect(() => {
     let stale = false;
-    if (!connection || !selectedDocument?.persistedId || selectedRevision === null) {
+    if (activeConnectionId === null || !selectedDocument?.persistedId || selectedRevision === null) {
       setActiveRevision(null);
       setDetailLoading(false);
       return;
@@ -143,7 +145,7 @@ export default function LocalHistoryToolWindow({
     setDetailLoading(true);
     void tauriSqlDocumentGateway
       .getRevision(
-        connectionId(connection.id),
+        connectionId(activeConnectionId),
         sqlDocumentId(selectedDocument.persistedId),
         selectedRevision,
       )
@@ -159,7 +161,7 @@ export default function LocalHistoryToolWindow({
     return () => {
       stale = true;
     };
-  }, [connection?.id, selectedDocument?.persistedId, selectedRevision]);
+  }, [activeConnectionId, selectedDocument?.persistedId, selectedRevision]);
 
   const normalizedFilter = filter.trim().toLocaleLowerCase();
   const filteredDocuments = sqlDocuments.filter((document) =>

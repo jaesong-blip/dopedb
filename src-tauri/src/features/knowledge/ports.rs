@@ -9,13 +9,12 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::AppResult;
-use crate::features::agents::domain::AgentKnowledgeEnvironment;
-use crate::store::{ActiveResourceScope, PinnedConnection};
+use crate::kernel::access::{ActiveResourceScope, PinnedConnection};
 
 use super::domain::{
-    EnvironmentConnectionBinding, EnvironmentRiskClass, KnowledgeGrant, KnowledgeMappingProposal,
-    KnowledgeSessionScope, MappingProposalState, Project, ProjectDefinition, ProjectEnvironment,
-    SourceSnapshot, StoredKnowledgeScope,
+    EnvironmentConnectionBinding, EnvironmentRiskClass, KnowledgeEnvironmentSummary,
+    KnowledgeGrant, KnowledgeMappingProposal, KnowledgeSessionScope, MappingProposalState, Project,
+    ProjectDefinition, ProjectEnvironment, SourceSnapshot, StoredKnowledgeScope,
 };
 
 /// Hosted Knowledge DTOs belong to the authority port rather than its HTTP
@@ -239,13 +238,13 @@ pub(crate) trait KnowledgeGraphRepositoryPort: Clone + Send + Sync + 'static {
 
 pub(crate) trait KnowledgeGrantPort: Clone + Send + Sync + 'static {
     fn save_grant(&self, grant: &KnowledgeGrant) -> impl Future<Output = AppResult<()>> + Send;
-    fn exact_grant(
-        &self,
-        grant_id: Uuid,
-    ) -> impl Future<Output = AppResult<Option<KnowledgeGrant>>> + Send;
 }
 
 pub(crate) trait KnowledgeMappingRepositoryPort: Clone + Send + Sync + 'static {
+    fn mapping_is_approved(
+        &self,
+        proposal_id: Uuid,
+    ) -> impl Future<Output = AppResult<bool>> + Send;
     fn propose_mapping(
         &self,
         proposal: &KnowledgeMappingProposal,
@@ -311,7 +310,7 @@ pub(crate) trait KnowledgeRepositoryPort:
     fn agent_knowledge_environments(
         &self,
         connection: &PinnedConnection,
-    ) -> impl Future<Output = AppResult<Vec<AgentKnowledgeEnvironment>>> + Send;
+    ) -> impl Future<Output = AppResult<Vec<KnowledgeEnvironmentSummary>>> + Send;
     fn knowledge_session_scope(
         &self,
         connection: &PinnedConnection,

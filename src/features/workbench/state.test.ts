@@ -15,7 +15,7 @@ import { sqlExecutionMarkerPosition } from "../queries/editorStatus";
 import {
   canFallbackFromCombinedRead,
   initialSqlRunPath,
-} from "../../screens/Sql/runPath";
+} from "../queries/runPath";
 import { queryDocument, stableDocument } from "./domain";
 import {
   publishWorkbenchDraft,
@@ -23,6 +23,10 @@ import {
   seedWorkbenchDraft,
 } from "./draftStore";
 import { emptyWorkbenchState, workbenchReducer } from "./state";
+import {
+  appShellNavigationReducer,
+  initialAppShellMode,
+} from "../appShell/navigationState";
 
 function storedDocument(id = "doc-1"): SqlDocument {
   return {
@@ -85,6 +89,42 @@ describe("workbench state ownership", () => {
     seedWorkbenchDraft(query.id, "SELECT 84;");
     expect(readWorkbenchDraft(query.id, "SELECT 0;")).toBe("SELECT 84;");
     expect(second.documents[0]).toBe(query);
+
+    const editing = appShellNavigationReducer(initialAppShellMode, {
+      type: "openConnectionEditor",
+      target: { kind: "existing", connectionId: "db-1" },
+    });
+    const settings = appShellNavigationReducer(editing, {
+      type: "openSettings",
+      section: "safety",
+    });
+    expect(settings).toEqual({
+      kind: "settings",
+      route: { kind: "workbench" },
+      section: "safety",
+    });
+    expect(
+      appShellNavigationReducer(settings, { type: "closeSettings" }),
+    ).toEqual({ kind: "content", route: { kind: "workbench" } });
+
+    const knowledge = appShellNavigationReducer(initialAppShellMode, {
+      type: "openKnowledge",
+      focus: {
+        environmentId: "environment-1",
+        view: "sources",
+        resourceId: null,
+        requestId: 1,
+      },
+    });
+    expect(
+      appShellNavigationReducer(knowledge, {
+        type: "openSchemaDiff",
+        groupKey: "schema-group",
+      }),
+    ).toEqual({
+      kind: "content",
+      route: { kind: "schemaDiff", groupKey: "schema-group" },
+    });
   });
 
   it("creates the welcome fallback when the last SQL tab closes", () => {

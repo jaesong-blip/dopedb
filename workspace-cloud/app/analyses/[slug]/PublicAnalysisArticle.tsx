@@ -73,7 +73,8 @@ function formatFrom(value: unknown): NumberFormat {
     return { style: "number", decimals: 2, currency: null };
   }
   const row = value as Record<string, unknown>;
-  const style = ["number", "percent", "currency", "duration", "compact"].includes(String(row.style))
+  const style = typeof row.style === "string"
+    && ["number", "percent", "currency", "duration", "compact"].includes(row.style)
     ? row.style as NumberFormat["style"] : "number";
   return {
     style,

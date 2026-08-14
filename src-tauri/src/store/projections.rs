@@ -1,6 +1,7 @@
 //! SQLite row projections and stable enum/string codecs.
 
 use super::*;
+use crate::kernel::access::ActiveResourceScope;
 
 pub(super) fn row_to_active_resource_scope(
     row: &sqlx::sqlite::SqliteRow,

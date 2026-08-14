@@ -7,8 +7,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dopedb_protocol::{AnalysisRunError, AnalysisRunState, AnalysisRunTrigger};
-use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
 use super::adapters::hosted::{
@@ -19,35 +17,42 @@ use super::adapters::hosted::{
 };
 use crate::error::{AppError, AppResult};
 use crate::executor::cancel;
-use crate::features::workspaces::WorkspaceKind;
-use crate::state::AppState;
+use crate::features::knowledge::KnowledgeFeature;
+use crate::kernel::access::{ActiveResourceScope, WorkspaceKind};
 
-use super::AnalysisDefinitionRunRequest;
+use super::runtime_ports::{AnalysisRunnerChanged, AnalysisRuntimeDesktopPort};
+use super::{AnalysisDefinitionRunRequest, DesktopAnalysisArticlesFeature};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(20);
 const AUTHORITY_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_CLAIMS_PER_TICK: usize = 4;
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(crate) struct AnalysisRunnerRuntime {
     started: Arc<AtomicBool>,
     background_allowed: Arc<AtomicBool>,
+    dependencies: AnalysisRunnerDependencies,
 }
 
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct AnalysisRunnerChanged {
-    state: &'static str,
-    article_id: Option<Uuid>,
-    run_id: Option<Uuid>,
-    error_kind: Option<String>,
+#[derive(Clone)]
+struct AnalysisRunnerDependencies {
+    knowledge: KnowledgeFeature,
+    analysis: DesktopAnalysisArticlesFeature,
 }
 
 impl AnalysisRunnerRuntime {
-    pub(crate) fn new(background_allowed: bool) -> Self {
+    pub(crate) fn new(
+        background_allowed: bool,
+        knowledge: KnowledgeFeature,
+        analysis: DesktopAnalysisArticlesFeature,
+    ) -> Self {
         Self {
             started: Arc::new(AtomicBool::new(false)),
             background_allowed: Arc::new(AtomicBool::new(background_allowed)),
+            dependencies: AnalysisRunnerDependencies {
+                knowledge,
+                analysis,
+            },
         }
     }
 
@@ -59,7 +64,7 @@ impl AnalysisRunnerRuntime {
         self.background_allowed.load(Ordering::Acquire)
     }
 
-    pub(crate) fn start(&self, app: AppHandle) {
+    pub(crate) fn start(&self, desktop: Arc<dyn AnalysisRuntimeDesktopPort>) {
         if self
             .started
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -68,22 +73,26 @@ impl AnalysisRunnerRuntime {
             return;
         }
         let background_allowed = self.background_allowed.clone();
+        let dependencies = self.dependencies.clone();
         let background_launch = std::env::args().any(|argument| {
             crate::features::automation_runner::is_background_launch_argument(&argument)
         });
-        tauri::async_runtime::spawn(async move {
+        tokio::spawn(async move {
             loop {
                 let allowed = background_allowed.load(Ordering::Acquire);
                 if background_launch && !allowed {
-                    emit(&app, "disabled", None, None, None);
+                    emit(desktop.as_ref(), "disabled", None, None, None);
                     break;
                 }
-                if let Err(error) = poll_active_scope(&app, allowed, background_launch).await {
+                if let Err(error) =
+                    poll_active_scope(&dependencies, desktop.as_ref(), allowed, background_launch)
+                        .await
+                {
                     tracing::warn!(
                         error_kind = error.kind(),
                         "Analysis Article scheduler poll deferred"
                     );
-                    emit(&app, "deferred", None, None, Some(error.kind()));
+                    emit(desktop.as_ref(), "deferred", None, None, Some(error.kind()));
                 }
                 tokio::time::sleep(POLL_INTERVAL).await;
             }
@@ -92,12 +101,12 @@ impl AnalysisRunnerRuntime {
 }
 
 async fn poll_active_scope(
-    app: &AppHandle,
+    dependencies: &AnalysisRunnerDependencies,
+    desktop: &dyn AnalysisRuntimeDesktopPort,
     background_allowed: bool,
     background_launch: bool,
 ) -> AppResult<()> {
-    let state = app.state::<AppState>();
-    let scope = state.services.knowledge.active_resource_scope().await?;
+    let scope = dependencies.knowledge.active_resource_scope().await?;
     if scope.workspace_kind != WorkspaceKind::Team {
         return Ok(());
     }
@@ -105,13 +114,12 @@ async fn poll_active_scope(
         return Ok(());
     };
     let registration_guard = analysis_runner_registration_guard().await;
-    let mut device_id = state
-        .services
-        .analysis_article
+    let mut device_id = dependencies
+        .analysis
         .runner_device_id(account_id, scope.workspace_id)
         .await?
         .to_string();
-    emit(app, "registering", None, None, None);
+    emit(desktop, "registering", None, None, None);
     let runner = match register_analysis_runner(
         account_id,
         scope.workspace_id,
@@ -122,9 +130,8 @@ async fn poll_active_scope(
     {
         Ok(runner) => runner,
         Err(error) if analysis_runner_capability_is_missing(&error) => {
-            device_id = state
-                .services
-                .analysis_article
+            device_id = dependencies
+                .analysis
                 .replace_runner_device_id(account_id, scope.workspace_id)
                 .await?
                 .to_string();
@@ -155,24 +162,32 @@ async fn poll_active_scope(
         };
         let article_id = lease.article_id;
         let run_id = Uuid::new_v4();
-        emit(app, "running", Some(article_id), Some(run_id), None);
-        if let Err(error) = execute_lease(app, &state, &scope, account_id, lease, run_id).await {
+        emit(desktop, "running", Some(article_id), Some(run_id), None);
+        if let Err(error) =
+            execute_lease(dependencies, desktop, &scope, account_id, lease, run_id).await
+        {
             tracing::warn!(
                 article_id = %article_id,
                 error_kind = error.kind(),
                 "scheduled Analysis Article refresh failed"
             );
-            emit(app, "failed", Some(article_id), None, Some(error.kind()));
+            emit(
+                desktop,
+                "failed",
+                Some(article_id),
+                None,
+                Some(error.kind()),
+            );
         }
     }
-    emit(app, "ready", None, None, None);
+    emit(desktop, "ready", None, None, None);
     Ok(())
 }
 
 async fn execute_lease(
-    app: &AppHandle,
-    state: &AppState,
-    scope: &crate::store::ActiveResourceScope,
+    dependencies: &AnalysisRunnerDependencies,
+    desktop: &dyn AnalysisRuntimeDesktopPort,
+    scope: &ActiveResourceScope,
     account_id: &str,
     lease: RemoteAnalysisLease,
     run_id: Uuid,
@@ -222,7 +237,7 @@ async fn execute_lease(
         run_id,
         persist_local_result: true,
     };
-    let execution = state.services.analysis_article.run_definition(request);
+    let execution = dependencies.analysis.run_definition(request);
     tokio::pin!(execution);
     let mut poll = tokio::time::interval(AUTHORITY_POLL_INTERVAL);
     poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -251,7 +266,7 @@ async fn execute_lease(
             }
         }
     };
-    if state.services.knowledge.active_resource_scope().await? != *scope {
+    if dependencies.knowledge.active_resource_scope().await? != *scope {
         cancel::cancel(run_id);
         let error = AppError::Blocked {
             reason: "active workspace changed during scheduled Analysis refresh".into(),
@@ -306,8 +321,8 @@ async fn execute_lease(
             .await?;
             if let Err(error) = super::signals::evaluate_analysis_signals(
                 super::signals::AnalysisSignalEvaluation {
-                    app: Some(app),
-                    state,
+                    desktop,
+                    analysis: &dependencies.analysis,
                     account_id,
                     workspace_id: scope.workspace_id,
                     article: &article,
@@ -342,8 +357,8 @@ async fn execute_lease(
             if run.state != AnalysisRunState::Cancelled {
                 if let Err(signal_error) = super::signals::evaluate_analysis_signals(
                     super::signals::AnalysisSignalEvaluation {
-                        app: Some(app),
-                        state,
+                        desktop,
+                        analysis: &dependencies.analysis,
                         account_id,
                         workspace_id: scope.workspace_id,
                         article: &article,
@@ -406,19 +421,16 @@ async fn complete_failure(
 }
 
 fn emit(
-    app: &AppHandle,
+    desktop: &dyn AnalysisRuntimeDesktopPort,
     state: &'static str,
     article_id: Option<Uuid>,
     run_id: Option<Uuid>,
     error_kind: Option<&str>,
 ) {
-    let _ = app.emit(
-        "analysis-runner:changed",
-        AnalysisRunnerChanged {
-            state,
-            article_id,
-            run_id,
-            error_kind: error_kind.map(str::to_owned),
-        },
-    );
+    desktop.runner_changed(AnalysisRunnerChanged {
+        state,
+        article_id,
+        run_id,
+        error_kind: error_kind.map(str::to_owned),
+    });
 }

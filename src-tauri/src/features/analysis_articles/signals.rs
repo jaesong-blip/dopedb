@@ -9,8 +9,6 @@ use dopedb_protocol::{
     AnalysisRunState,
 };
 use serde_json::Value;
-use tauri::AppHandle;
-use tauri_plugin_notification::NotificationExt;
 use uuid::Uuid;
 
 use super::adapters::hosted::{
@@ -19,9 +17,10 @@ use super::adapters::hosted::{
     RemoteAnalysisRun, RemoteAnalysisSignal,
 };
 use super::ports::{LocalAnalysisSignalMetricSample, LocalAnalysisSignalState};
+use super::runtime_ports::AnalysisRuntimeDesktopPort;
+use super::DesktopAnalysisArticlesFeature;
 use crate::error::{AppError, AppResult};
 use crate::operations::canonical_hash;
-use crate::state::AppState;
 
 const MAX_BASELINE_SAMPLES: usize = 1_000;
 
@@ -40,8 +39,8 @@ struct MetricObservation {
 }
 
 pub(crate) struct AnalysisSignalEvaluation<'a> {
-    pub(crate) app: Option<&'a AppHandle>,
-    pub(crate) state: &'a AppState,
+    pub(crate) desktop: &'a dyn AnalysisRuntimeDesktopPort,
+    pub(crate) analysis: &'a DesktopAnalysisArticlesFeature,
     pub(crate) account_id: &'a str,
     pub(crate) workspace_id: Uuid,
     pub(crate) article: &'a AnalysisArticleRecord,
@@ -56,8 +55,8 @@ pub(crate) async fn evaluate_analysis_signals(
     evaluation: AnalysisSignalEvaluation<'_>,
 ) -> AppResult<()> {
     let AnalysisSignalEvaluation {
-        app,
-        state,
+        desktop,
+        analysis,
         account_id,
         workspace_id,
         article,
@@ -83,8 +82,8 @@ pub(crate) async fn evaluate_analysis_signals(
             && signal.article_revision == run.article_revision
     }) {
         if let Err(error) = evaluate_one(
-            app,
-            state,
+            desktop,
+            analysis,
             account_id,
             workspace_id,
             article,
@@ -111,8 +110,8 @@ pub(crate) async fn evaluate_analysis_signals(
 
 #[allow(clippy::too_many_arguments)]
 async fn evaluate_one(
-    app: Option<&AppHandle>,
-    state: &AppState,
+    desktop: &dyn AnalysisRuntimeDesktopPort,
+    analysis: &DesktopAnalysisArticlesFeature,
     account_id: &str,
     workspace_id: Uuid,
     article: &AnalysisArticleRecord,
@@ -134,7 +133,7 @@ async fn evaluate_one(
     let contract = metric_contract(&article.definition, block)?;
     let schema_fingerprint = canonical_hash(&serde_json::to_value(&contract.columns)?)?;
     let observed = observe_metric(
-        state,
+        analysis,
         account_id,
         workspace_id,
         run,
@@ -148,9 +147,7 @@ async fn evaluate_one(
     let scheduled_at = run.started_at.unwrap_or(run.created_at);
     let revision = u64::try_from(signal.revision)
         .map_err(|_| AppError::Config("Analysis signal revision exceeds local storage".into()))?;
-    state
-        .services
-        .analysis_article
+    analysis
         .record_signal_sample(
             workspace_id,
             account_id,
@@ -206,24 +203,20 @@ async fn evaluate_one(
             .channels
             .contains(&AnalysisSignalChannel::Desktop)
     {
-        if let Some(app) = app {
-            let _ = app
-                .notification()
-                .builder()
-                .title(format!("DopeDB · {}", remote.state.replace('_', " ")))
-                .body(format!(
-                    "{} · Open the Article Signals tab for exact run evidence.",
-                    block.title
-                ))
-                .show();
-        }
+        desktop.notify_signal(
+            format!("DopeDB · {}", remote.state.replace('_', " ")),
+            format!(
+                "{} · Open the Article Signals tab for exact run evidence.",
+                block.title
+            ),
+        );
     }
     Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
 async fn observe_metric(
-    state: &AppState,
+    analysis: &DesktopAnalysisArticlesFeature,
     account_id: &str,
     workspace_id: Uuid,
     run: &RemoteAnalysisRun,
@@ -316,9 +309,7 @@ async fn observe_metric(
         });
     }
     let value = value.expect("validated finite metric");
-    let recent = state
-        .services
-        .analysis_article
+    let recent = analysis
         .recent_signal_samples(
             workspace_id,
             account_id,

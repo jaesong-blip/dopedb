@@ -16,10 +16,12 @@ use crate::audit::{self, RecordArgs};
 use crate::connection::{ConnectionAccess, ConnectionManager, DbPool};
 use crate::error::{AppError, AppResult};
 use crate::executor::cancel;
+use crate::features::knowledge::KnowledgeFeature;
+use crate::kernel::access::PinnedConnection;
 use crate::model::{Engine, HistoryEntry, QueryKind, QueryResult};
 use crate::operations::canonical_hash;
 use crate::safety::{self, PoolRef};
-use crate::store::{PinnedConnection, Store};
+use crate::store::Store;
 
 use super::super::domain::AnalysisDataSet;
 use super::super::ports::{
@@ -30,24 +32,27 @@ use super::super::ports::{
 pub(crate) struct DesktopAnalysisReadExecution {
     store: Store,
     connections: ConnectionManager,
+    knowledge: KnowledgeFeature,
 }
 
 impl DesktopAnalysisReadExecution {
-    pub(crate) fn new(store: Store, connections: ConnectionManager) -> Self {
-        Self { store, connections }
+    pub(crate) fn new(
+        store: Store,
+        connections: ConnectionManager,
+        knowledge: KnowledgeFeature,
+    ) -> Self {
+        Self {
+            store,
+            connections,
+            knowledge,
+        }
     }
 }
 
 impl AnalysisReadExecutionPort for DesktopAnalysisReadExecution {
     async fn verify_join_mappings(&self, mapping_ids: &[Uuid]) -> AppResult<()> {
         for id in mapping_ids {
-            let approved = sqlx::query(
-                "SELECT 1 FROM knowledge_mapping_proposals WHERE id = ?1 AND state = 'approved' LIMIT 1",
-            )
-            .bind(id.to_string())
-            .fetch_optional(self.store.pool())
-            .await?
-            .is_some();
+            let approved = self.knowledge.mapping_is_approved(*id).await?;
             if !approved {
                 return Err(AppError::Blocked {
                     reason: format!(
@@ -69,7 +74,7 @@ impl AnalysisReadExecutionPort for DesktopAnalysisReadExecution {
         }
         let operation_scope = self.connections.begin_operation_scope().await;
         let local_connection_id = if let Some(workspace_id) = request.workspace_id {
-            self.store
+            self.knowledge
                 .local_connection_id_for_remote(workspace_id, request.authority.connection_id)
                 .await?
                 .ok_or_else(|| AppError::Blocked {

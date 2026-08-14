@@ -4,8 +4,8 @@ import { forceParsing } from "@codemirror/language";
 import type { EditorView } from "@codemirror/view";
 import { Transaction } from "@codemirror/state";
 
-import DataGrid from "../components/DataGrid";
-import ErdCanvas from "../components/ErdCanvas";
+import DataGrid from "../features/queryResults/DataGrid";
+import ErdCanvas from "../features/erd/ErdCanvas";
 import SqlViewer from "../components/SqlViewer";
 import {
   AgentPermissionCard,

@@ -4,9 +4,8 @@ use sqlx::sqlite::SqliteRow;
 use sqlx::Row;
 
 use crate::error::{AppError, AppResult};
-use crate::features::workspaces::{
-    Workspace, WorkspaceKind, WorkspaceLifecycleState, WorkspaceRole,
-};
+use crate::features::workspaces::{Workspace, WorkspaceLifecycleState, WorkspaceRole};
+use crate::kernel::access::WorkspaceKind;
 use crate::model::{WorkspaceConnectionAccess, WorkspaceCredentialMode};
 
 use super::parse_uuid;

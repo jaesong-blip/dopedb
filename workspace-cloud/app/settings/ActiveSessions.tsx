@@ -2,7 +2,7 @@
 // are endpoint inputs only and never become DOM content.
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ControlButton } from "../components/Controls";
 import { authClient } from "../../lib/auth-client";
 import { localizedWorkspacePath } from "../../lib/workspace-locale";
@@ -26,7 +26,7 @@ export function ActiveSessions({ currentSessionId }: { currentSessionId: string 
   const [error, setError] = useState("");
   const [needsReauthentication, setNeedsReauthentication] = useState(false);
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     const result = await authClient.listSessions();
     if (result.error) {
       const sessionNotFresh =
@@ -43,11 +43,11 @@ export function ActiveSessions({ currentSessionId }: { currentSessionId: string 
     setNeedsReauthentication(false);
     setError("");
     setSessions(result.data ?? []);
-  }
+  }, [copy, locale]);
 
   useEffect(() => {
     void refresh();
-  }, []);
+  }, [refresh]);
 
   async function revoke(item: SessionItem) {
     if (pending) return;

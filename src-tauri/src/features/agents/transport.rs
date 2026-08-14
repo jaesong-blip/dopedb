@@ -8,11 +8,13 @@ use crate::kernel::identity::{AcpSessionId, ConnectionId, RetiredChatThreadId};
 use crate::state::AppState;
 use uuid::Uuid;
 
+use super::acp::DesktopAcpRuntimePorts;
 use super::domain::{
-    AcpPromptContext, AcpSessionFocus, AcpSessionSummary, AgentCliInfo, AgentKnowledgeEnvironment,
-    AgentProvider, RetiredChatArchiveMessage, RetiredChatArchiveThread,
+    AcpPromptContext, AcpSessionFocus, AcpSessionSummary, AgentCliInfo, AgentProvider,
+    RetiredChatArchiveMessage, RetiredChatArchiveThread,
 };
 use super::runtime::{AcpPluginMutationReceipt, AcpPluginStatus};
+use crate::features::knowledge::domain::KnowledgeEnvironmentSummary;
 
 /// Inspect the two closed-catalog ACP adapter plugin installations.
 #[tauri::command]
@@ -70,8 +72,9 @@ pub async fn start_agent_acp_session(
 ) -> AppResult<AcpSessionFocus> {
     state.wait_for_post_paint_recovery().await?;
     if project_environment_id.is_some() {
-        crate::features::knowledge::transport::sync_current_knowledge_access(&state).await?;
+        state.services.knowledge.reconcile_current_access().await?;
     }
+    let ports = DesktopAcpRuntimePorts::new(app, state.agent_plugins.clone());
     state
         .agents_acp
         .start(
@@ -79,7 +82,7 @@ pub async fn start_agent_acp_session(
             provider,
             project_environment_id,
             environment_connection_ids,
-            app,
+            ports,
         )
         .await
 }
@@ -89,7 +92,7 @@ pub async fn start_agent_acp_session(
 pub async fn list_agent_knowledge_environments(
     state: State<'_, AppState>,
     connection_id: ConnectionId,
-) -> AppResult<Vec<AgentKnowledgeEnvironment>> {
+) -> AppResult<Vec<KnowledgeEnvironmentSummary>> {
     state.wait_for_post_paint_recovery().await?;
     let connection = state
         .services
@@ -97,7 +100,7 @@ pub async fn list_agent_knowledge_environments(
         .pin_connection_for_read(Uuid::from(connection_id))
         .await?;
     if connection.scope.selected_account_id.is_some() {
-        crate::features::knowledge::transport::sync_current_knowledge_access(&state).await?;
+        state.services.knowledge.reconcile_current_access().await?;
     }
     state
         .services
@@ -114,7 +117,8 @@ pub async fn resume_agent_acp_session(
     id: AcpSessionId,
 ) -> AppResult<AcpSessionFocus> {
     state.wait_for_post_paint_recovery().await?;
-    state.agents_acp.resume(id, app).await
+    let ports = DesktopAcpRuntimePorts::new(app, state.agent_plugins.clone());
+    state.agents_acp.resume(id, ports).await
 }
 
 /// List workspace-scoped ACP conversations, including persisted closed history.

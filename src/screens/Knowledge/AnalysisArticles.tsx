@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 
 import ConfirmButton from "../../components/ConfirmButton";
 import { Icon } from "../../components/Icon";
@@ -7,37 +6,16 @@ import { AnalysisArticleEditor } from "../../features/analysisArticles/AnalysisA
 import { AnalysisArticleVisualization } from "../../features/analysisArticles/AnalysisArticleVisualization";
 import { AnalysisPublicationPanel } from "../../features/analysisArticles/AnalysisPublicationPanel";
 import { AnalysisSignalPanel } from "../../features/analysisArticles/AnalysisSignalPanel";
-import { analysisQueryKeys } from "../../features/analysisArticles/queryKeys";
 import {
   articleFreshness,
   mergeAnalysisFragments,
   type AnalysisArticleRecord,
   type AnalysisArticleState,
-  type AnalysisDefinitionRunReceipt,
+  type AnalysisCollaboratorDirectory,
   type AnalysisParameterValue,
-  type AnalysisRunnerChanged,
   type AnalysisRunner,
-  type SharedAnalysisArticleCreate,
 } from "../../features/analysisArticles/domain";
-import {
-  cancelAnalysisArticleRun,
-  deleteAnalysisArticle,
-  getAnalysisArticleResult,
-  getLocalAnalysisArticleResult,
-  listAnalysisArticleRevisions,
-  listAnalysisArticleRuns,
-  listAnalysisArticles,
-  listAnalysisCollaborators,
-  listAnalysisRunners,
-  onAnalysisArticleChanged,
-  onAnalysisRunnerChanged,
-  revokeAnalysisRunner,
-  restoreAnalysisArticleRevision,
-  runAnalysisArticle,
-  transitionAnalysisArticle,
-  transferAnalysisArticle,
-  updateAnalysisArticle,
-} from "../../features/analysisArticles/tauriAdapter";
+import { useAnalysisArticlesController } from "../../features/analysisArticles/useAnalysisArticlesController";
 import type {
   EnvironmentConnection,
   KnowledgeEnvironment,
@@ -65,7 +43,6 @@ import {
 import { errMessage } from "../../ipc/types";
 import { useI18n } from "../../lib/i18n";
 
-type DetailTab = "article" | "definition" | "lineage" | "signals" | "sharing" | "history";
 type Translate = ReturnType<typeof useI18n>["t"];
 
 function stateTone(state: AnalysisArticleState): StatusTone {
@@ -129,12 +106,6 @@ function collectionErrorMessage(error: unknown, t: Translate): string {
     : message;
 }
 
-function defaultParameters(article: AnalysisArticleRecord): Record<string, AnalysisParameterValue> {
-  return Object.fromEntries(
-    article.definition.parameters.map((parameter) => [parameter.id, parameter.defaultValue]),
-  );
-}
-
 export default function AnalysisArticles({
   projectName,
   environment,
@@ -155,272 +126,53 @@ export default function AnalysisArticles({
   onNewConnection?: () => void;
 }) {
   const { t } = useI18n();
-  const queryClient = useQueryClient();
-  const detailTabs = useMemo(() => [
-    { id: "article", label: t("analysis.tabArticle") },
-    { id: "definition", label: t("analysis.tabDefinition") },
-    { id: "lineage", label: t("analysis.tabLineage") },
-    { id: "signals", label: t("analysis.tabSignals") },
-    { id: "sharing", label: t("analysis.tabSharing") },
-    { id: "history", label: t("analysis.tabHistory") },
-  ] as const, [t]);
-  const articleKey = analysisQueryKeys.articles(scopeKey, environment.id);
-  const articles = useQuery({
-    queryKey: articleKey,
-    queryFn: () => listAnalysisArticles(environment.id),
-    enabled: sharedWorkspace,
-    retry: false,
+  const {
+    actionError,
+    agentBinding,
+    articles,
+    askAgent,
+    blockData,
+    cancel,
+    collaborators,
+    detailTabs,
+    editorArticle,
+    effectiveRunId,
+    execute,
+    filter,
+    filtered,
+    parameterValues,
+    recoveredResult,
+    remove,
+    restore,
+    revisions,
+    revokeRunner,
+    runnerState,
+    runners,
+    running,
+    runs,
+    saveArticle,
+    selected,
+    setEditorArticle,
+    setFilter,
+    setParameterValues,
+    setSelectedId,
+    setSelectedRunId,
+    setStateFilter,
+    setTab,
+    sharedResult,
+    startRun,
+    stateFilter,
+    tab,
+    transfer,
+    transition,
+  } = useAnalysisArticlesController({
+    environment,
+    bindings,
+    sharedWorkspace,
+    scopeKey,
+    focusId,
+    onOpenAgent,
   });
-  const runners = useQuery({
-    queryKey: analysisQueryKeys.runners(scopeKey),
-    queryFn: listAnalysisRunners,
-    enabled: sharedWorkspace,
-    retry: false,
-  });
-  const collaborators = useQuery({
-    queryKey: analysisQueryKeys.collaborators(scopeKey),
-    queryFn: listAnalysisCollaborators,
-    enabled: sharedWorkspace,
-    retry: false,
-  });
-  const [selectedId, setSelectedId] = useState<string | null>(focusId ?? null);
-  const [tab, setTab] = useState<DetailTab>("article");
-  const [filter, setFilter] = useState("");
-  const [stateFilter, setStateFilter] = useState<"all" | AnalysisArticleState>("all");
-  const [editorArticle, setEditorArticle] = useState<AnalysisArticleRecord | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [parameterValues, setParameterValues] = useState<Record<string, AnalysisParameterValue>>({});
-  const [localResults, setLocalResults] = useState(new Map<string, AnalysisDefinitionRunReceipt>());
-  const [running, setRunning] = useState<{ articleId: string; runId: string } | null>(null);
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
-  const [runnerState, setRunnerState] = useState<AnalysisRunnerChanged | null>(null);
-
-  const filtered = useMemo(() => {
-    const needle = filter.trim().toLocaleLowerCase();
-    return (articles.data ?? []).filter((article) =>
-      (stateFilter === "all" || article.state === stateFilter)
-      && (!needle
-        || article.definition.title.toLocaleLowerCase().includes(needle)
-        || article.definition.question.toLocaleLowerCase().includes(needle)),
-    );
-  }, [articles.data, filter, stateFilter]);
-
-  useEffect(() => {
-    if (focusId && articles.data?.some((article) => article.id === focusId)) {
-      setSelectedId(focusId);
-      return;
-    }
-    if (selectedId && articles.data?.some((article) => article.id === selectedId)) return;
-    setSelectedId(articles.data?.[0]?.id ?? null);
-  }, [articles.data, focusId, selectedId]);
-
-  const selected = articles.data?.find((article) => article.id === selectedId) ?? null;
-  const revisions = useQuery({
-    queryKey: analysisQueryKeys.revisions(scopeKey, selected?.id),
-    queryFn: () => listAnalysisArticleRevisions(selected!.id),
-    enabled: Boolean(selected) && tab === "history",
-    retry: false,
-  });
-  const runs = useQuery({
-    queryKey: analysisQueryKeys.runs(scopeKey, selected?.id),
-    queryFn: () => listAnalysisArticleRuns(selected!.id),
-    enabled: Boolean(selected) && (tab === "history" || tab === "lineage" || tab === "article"),
-    retry: false,
-    refetchInterval: running?.articleId === selected?.id ? 2_000 : false,
-  });
-  const recoveredResult = useQuery({
-    queryKey: analysisQueryKeys.localResult(scopeKey, selected?.id),
-    queryFn: () => getLocalAnalysisArticleResult(selected!.id),
-    enabled: Boolean(selected),
-    retry: false,
-  });
-  const memoryResult = selected ? localResults.get(selected.id) ?? null : null;
-  const localResult = memoryResult
-    ?? (recoveredResult.data?.articleRevision === selected?.revision
-      ? recoveredResult.data
-      : null);
-  const effectiveRunId = selectedRunId
-    ?? localResult?.runId
-    ?? selected?.liveRunId
-    ?? (selected?.state === "review" ? selected.latestSuccessfulRunId : null);
-  const sharedResult = useQuery({
-    queryKey: analysisQueryKeys.result(scopeKey, selected?.id, effectiveRunId),
-    queryFn: () => getAnalysisArticleResult(selected!.id, effectiveRunId!),
-    enabled: Boolean(
-      selected
-      && effectiveRunId
-      && localResult?.runId !== effectiveRunId
-      && (selected.liveRunId === effectiveRunId || selected.state === "review"),
-    ),
-    retry: false,
-  });
-  const fragments = localResult?.runId === effectiveRunId
-    ? localResult.fragments
-    : sharedResult.data?.fragments ?? [];
-  const blockData = useMemo(() => mergeAnalysisFragments(fragments), [fragments]);
-
-  useEffect(() => {
-    if (!selected) return;
-    setParameterValues(defaultParameters(selected));
-    setSelectedRunId(null);
-  }, [selected?.id, selected?.revision]);
-
-  useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    void onAnalysisRunnerChanged((change) => {
-      if (disposed) return;
-      setRunnerState(change);
-      void queryClient.invalidateQueries({ queryKey: analysisQueryKeys.runners(scopeKey) });
-      if (change.articleId) {
-        void queryClient.invalidateQueries({ queryKey: analysisQueryKeys.runs(scopeKey, change.articleId) });
-        void queryClient.invalidateQueries({ queryKey: articleKey });
-      }
-    }).then((stop) => {
-      if (disposed) stop();
-      else unlisten = stop;
-    });
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, [environment.id, queryClient]);
-
-  useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    void onAnalysisArticleChanged((change) => {
-      if (disposed) return;
-      void queryClient.invalidateQueries({ queryKey: articleKey });
-      void queryClient.invalidateQueries({
-        queryKey: analysisQueryKeys.revisions(scopeKey, change.articleId),
-      });
-      setSelectedId(change.articleId);
-    }).then((stop) => {
-      if (disposed) stop();
-      else unlisten = stop;
-    });
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, [environment.id, queryClient]);
-
-  const refreshArticle = async (articleId?: string) => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: articleKey }),
-      articleId
-        ? queryClient.invalidateQueries({ queryKey: analysisQueryKeys.runs(scopeKey, articleId) })
-        : Promise.resolve(),
-      articleId
-        ? queryClient.invalidateQueries({ queryKey: analysisQueryKeys.revisions(scopeKey, articleId) })
-        : Promise.resolve(),
-    ]);
-  };
-
-  const saveArticle = useMutation({
-    mutationFn: (input: SharedAnalysisArticleCreate) =>
-      updateAnalysisArticle(input.id, editorArticle!.revision, input),
-    onSuccess: async (article) => {
-      setActionError(null);
-      setEditorArticle(null);
-      setSelectedId(article.id);
-      await refreshArticle(article.id);
-    },
-    onError: (error) => setActionError(errMessage(error)),
-  });
-  const transition = useMutation({
-    mutationFn: ({ article, action }: {
-      article: AnalysisArticleRecord;
-      action: "submitReview" | "returnDraft" | "publishLive" | "archive";
-    }) => transitionAnalysisArticle(article.id, article.revision, action),
-    onSuccess: async (article) => {
-      setActionError(null);
-      await refreshArticle(article.id);
-    },
-    onError: (error) => setActionError(errMessage(error)),
-  });
-  const remove = useMutation({
-    mutationFn: (article: AnalysisArticleRecord) => deleteAnalysisArticle(article.id, article.revision),
-    onSuccess: async (_, article) => {
-      setActionError(null);
-      setSelectedId(null);
-      await refreshArticle(article.id);
-    },
-    onError: (error) => setActionError(errMessage(error)),
-  });
-  const restore = useMutation({
-    mutationFn: ({ article, revision }: { article: AnalysisArticleRecord; revision: number }) =>
-      restoreAnalysisArticleRevision(article.id, article.revision, revision),
-    onSuccess: async (article) => {
-      setActionError(null);
-      await refreshArticle(article.id);
-    },
-    onError: (error) => setActionError(errMessage(error)),
-  });
-  const transfer = useMutation({
-    mutationFn: ({ article, ownerMemberId }: { article: AnalysisArticleRecord; ownerMemberId: string }) =>
-      transferAnalysisArticle(article.id, article.revision, ownerMemberId),
-    onSuccess: async (article) => {
-      setActionError(null);
-      await refreshArticle(article.id);
-    },
-    onError: (error) => setActionError(errMessage(error)),
-  });
-  const execute = useMutation({
-    mutationFn: async ({ article, runId }: { article: AnalysisArticleRecord; runId: string }) =>
-      runAnalysisArticle(article.id, article.revision, runId, parameterValues),
-    onMutate: ({ article, runId }) => {
-      setActionError(null);
-      setRunning({ articleId: article.id, runId });
-      setSelectedRunId(runId);
-    },
-    onSuccess: async (value) => {
-      setLocalResults((current) => new Map(current).set(value.result.articleId, value.result));
-      setSelectedRunId(value.result.runId);
-      setRunning(null);
-      await refreshArticle(value.result.articleId);
-    },
-    onError: (error) => {
-      setRunning(null);
-      setActionError(errMessage(error));
-    },
-  });
-  const cancel = useMutation({
-    mutationFn: ({ articleId, runId }: { articleId: string; runId: string }) =>
-      cancelAnalysisArticleRun(articleId, runId),
-    onSuccess: async (run) => {
-      setActionError(null);
-      await refreshArticle(run.articleId);
-    },
-    onError: (error) => setActionError(errMessage(error)),
-  });
-  const revokeRunner = useMutation({
-    mutationFn: (runnerId: string) => revokeAnalysisRunner(runnerId),
-    onSuccess: async () => {
-      setActionError(null);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: analysisQueryKeys.runners(scopeKey) }),
-        queryClient.invalidateQueries({ queryKey: articleKey }),
-      ]);
-    },
-    onError: (error) => setActionError(errMessage(error)),
-  });
-
-  const startRun = (article: AnalysisArticleRecord) => {
-    const runId = crypto.randomUUID();
-    execute.mutate({ article, runId });
-  };
-
-  const agentBinding = bindings.find((binding) => binding.connectionId);
-  const askAgent = () => {
-    if (!agentBinding?.connectionId || !onOpenAgent) return;
-    onOpenAgent(
-      agentBinding.connectionId,
-      environment.id,
-      t("analysis.agentPrompt"),
-    );
-  };
 
   if (!sharedWorkspace) {
     return (
@@ -872,7 +624,7 @@ function LineageView({
   runners: readonly AnalysisRunner[];
   revokingRunnerId: string | null;
   onRevokeRunner: (runnerId: string) => void;
-  collaborators: Awaited<ReturnType<typeof listAnalysisCollaborators>> | undefined;
+  collaborators: AnalysisCollaboratorDirectory | undefined;
   transferring: boolean;
   onTransfer: (ownerMemberId: string) => void;
 }) {
@@ -999,7 +751,7 @@ function OwnershipControl({
   onTransfer,
 }: {
   article: AnalysisArticleRecord;
-  collaborators: Awaited<ReturnType<typeof listAnalysisCollaborators>> | undefined;
+  collaborators: AnalysisCollaboratorDirectory | undefined;
   transferring: boolean;
   onTransfer: (ownerMemberId: string) => void;
 }) {

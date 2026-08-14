@@ -7,7 +7,9 @@ use crate::features::connections::{ConnectionCredentialVault, MAX_CONNECTION_CRE
 use crate::kernel::identity::ConnectionId;
 use crate::model::{ConnectionProfile, WorkspaceConnectionAccess, WorkspaceCredentialMode};
 
-use super::super::domain::{validate_member_username, WorkspaceKind};
+use crate::kernel::access::WorkspaceKind;
+
+use super::super::domain::validate_member_username;
 use super::super::ports::{
     WorkspaceConfigurationPort, WorkspaceConnectionMutationPort, WorkspaceControlPlanePort,
     WorkspaceRepositoryPort, WorkspaceRuntimePort,

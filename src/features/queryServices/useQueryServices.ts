@@ -38,7 +38,10 @@ export function useQueryServices(
   const errorHandlerRef = useRef(onPersistenceError);
   const persistedSnapshots = useRef<Map<string, string>>(new Map());
   scopeKeyRef.current = scope.key;
-  storageScopeRef.current = storageScope(scope);
+  storageScopeRef.current = storageScope(
+    scope.workspaceId,
+    scope.accountScope,
+  );
   errorHandlerRef.current = onPersistenceError;
   const runningUpdatesRef = useRef<
     RunningQueryUpdateScheduler<QueryServiceSession> | null
@@ -57,7 +60,10 @@ export function useQueryServices(
     clearSqlResultPageCache();
     persistedSnapshots.current.clear();
     store.replaceScope(scope.key);
-    const expectedScope = storageScope(scope);
+    const expectedScope = storageScope(
+      scope.workspaceId,
+      scope.accountScope,
+    );
     if (!scope.ready || !expectedScope) {
       return;
     }
@@ -89,7 +95,10 @@ export function useQueryServices(
 
   const updateSession = useCallback(
     (session: QueryServiceSession) => {
-      const expectedScope = storageScope(scope);
+      const expectedScope = storageScope(
+        scope.workspaceId,
+        scope.accountScope,
+      );
       if (
         !scope.ready ||
         !expectedScope ||
@@ -162,11 +171,12 @@ export function useQueryServices(
 }
 
 function storageScope(
-  scope: QueryServiceScope,
+  workspaceId: string | null,
+  accountScope: string | null,
 ): QueryServiceStorageScope | null {
-  if (!scope.workspaceId || !scope.accountScope) return null;
+  if (!workspaceId || !accountScope) return null;
   return {
-    workspaceId: scope.workspaceId,
-    accountScope: scope.accountScope,
+    workspaceId,
+    accountScope,
   };
 }

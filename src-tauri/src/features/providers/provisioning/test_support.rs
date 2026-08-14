@@ -14,11 +14,12 @@ use crate::features::providers::adapters::{
 use crate::features::providers::ports::ProvisioningRuntimePort;
 use crate::features::providers::LocalProvider;
 use crate::features::workspaces::{WorkspaceAuthUser, WorkspaceRole};
+use crate::kernel::access::PinnedConnection;
 use crate::kernel::identity::{AccountId, WorkspaceId};
 use crate::model::{
     ConnectionProfile, Engine, Provider, WorkspaceConnectionAccess, WorkspaceCredentialMode,
 };
-use crate::store::{PinnedConnection, Store};
+use crate::store::Store;
 
 use super::application::{ProvisioningDriver, ProvisioningInspection};
 use super::domain::{

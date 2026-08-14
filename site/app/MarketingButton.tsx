@@ -1,12 +1,13 @@
 import type { AnchorHTMLAttributes, ReactNode } from "react";
-import { TrackedLink } from "./TrackedLink";
+import {
+  TrackedLink,
+  type TrackedLinkTrackingProps,
+} from "./TrackedLink";
 
 type MarketingButtonProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
   children: ReactNode;
-  event?: string;
-  properties?: Record<string, string | number | boolean>;
   variant: "primary" | "secondary";
-};
+} & TrackedLinkTrackingProps;
 
 export function MarketingButton({
   children,

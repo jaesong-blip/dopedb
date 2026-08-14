@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
-import DataGrid from "../../components/DataGrid";
+import DataGrid from "../../features/queryResults/DataGrid";
 import { Icon } from "../../components/Icon";
 import Skeleton from "../../components/Skeleton";
 import {

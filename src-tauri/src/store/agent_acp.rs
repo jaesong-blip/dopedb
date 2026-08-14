@@ -12,9 +12,10 @@ use crate::error::{AppError, AppResult};
 use crate::features::agents::domain::{
     AcpSessionEvent, AcpSessionFocus, AcpSessionLifecycle, AcpSessionSummary, AgentProvider,
 };
+use crate::kernel::access::ActiveResourceScope;
 use crate::kernel::identity::{AcpSessionId, ConnectionId};
 
-use super::{parse_uuid, ActiveResourceScope, Store};
+use super::{parse_uuid, Store};
 
 const MAX_PERSISTED_EVENTS: i64 = 512;
 const MAX_PERSISTED_BYTES: i64 = 4 * 1024 * 1024;

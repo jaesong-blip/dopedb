@@ -23,6 +23,7 @@ import { terminalCatalog } from "./catalogs/terminal";
 import { updatesCatalog } from "./catalogs/updates";
 import { workspaceCatalog } from "./catalogs/workspace";
 import { providerProvisioningCatalog } from "./catalogs/providerProvisioning";
+import { productAnalyticsCatalog } from "./catalogs/productAnalytics";
 import type { Lang, MessageCatalog } from "./types";
 
 export const catalogParts = [
@@ -49,6 +50,7 @@ export const catalogParts = [
   updatesCatalog,
   workspaceCatalog,
   providerProvisioningCatalog,
+  productAnalyticsCatalog,
 ] as const;
 
 type CatalogKey<Parts extends readonly MessageCatalog[]> = Parts[number] extends infer Part

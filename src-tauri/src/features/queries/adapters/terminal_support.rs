@@ -6,12 +6,13 @@ use uuid::Uuid;
 use crate::audit::{self, RecordArgs};
 use crate::connection::DbPool;
 use crate::error::AppError;
+use crate::kernel::access::PinnedConnection;
 use crate::kernel::agent_policy::MAX_AGENT_ROWS;
 use crate::kernel::identity::QueryRunId;
 use crate::model::{Engine, HistoryEntry, QueryKind};
 use crate::operations::canonical_hash;
 use crate::safety::PoolRef;
-use crate::store::{PinnedConnection, Store};
+use crate::store::Store;
 
 use super::super::domain::AgentQueryInvocationOrigin;
 

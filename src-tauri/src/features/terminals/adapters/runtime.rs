@@ -12,8 +12,8 @@ use tauri::AppHandle;
 
 use crate::broker::BrokerSessionRegistry;
 use crate::error::{AppError, AppResult};
+use crate::kernel::access::PinnedConnection;
 use crate::kernel::identity::{ConnectionId, TerminalSessionId};
-use crate::store::PinnedConnection;
 
 use super::super::domain::{
     TerminalCreateRequest, TerminalOutputChunk, TerminalSessionSummary, TerminalSize,

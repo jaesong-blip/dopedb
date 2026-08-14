@@ -7,7 +7,7 @@ import {
   ControlSelect,
 } from "../../app/components/Controls";
 import { selectableProviderResources } from "./domain";
-import type { ProviderAccessController } from "./useProviderAccess";
+import type { SharedDatabaseAccessController } from "./useSharedDatabaseAccess";
 import { useWorkspaceLocale } from "../../app/components/WorkspaceLocale";
 import { workspaceMessages } from "../../lib/workspace-messages";
 import {
@@ -20,7 +20,7 @@ type ImportIntent = "" | "create" | "replace";
 export function ProviderResourcePicker({
   controller,
 }: {
-  controller: ProviderAccessController;
+  controller: SharedDatabaseAccessController;
 }) {
   const locale = useWorkspaceLocale();
   const copy = workspaceMessages[locale].resourcePicker;

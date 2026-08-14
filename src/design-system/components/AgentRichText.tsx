@@ -86,18 +86,45 @@ function AgentRichTextContent({
   onOpenLink?: (href: string) => void;
   text: string;
 }) {
+  const {
+    copied,
+    copyCode,
+    diagram,
+    diagramError,
+    diagramLoading,
+    diagramSource,
+    imageOmitted,
+    openLink,
+    plainTextFallback,
+  } = labels;
   const components = useMemo(
-    () => createMarkdownComponents(labels, false, onOpenLink),
+    () =>
+      createMarkdownComponents(
+        {
+          copied,
+          copyCode,
+          diagram,
+          diagramError,
+          diagramLoading,
+          diagramSource,
+          imageOmitted,
+          openLink,
+          plainTextFallback,
+        },
+        false,
+        onOpenLink,
+      ),
     [
-      labels.copied,
-      labels.copyCode,
-      labels.diagram,
-      labels.diagramError,
-      labels.diagramLoading,
-      labels.diagramSource,
-      labels.imageOmitted,
-      labels.openLink,
+      copied,
+      copyCode,
+      diagram,
+      diagramError,
+      diagramLoading,
+      diagramSource,
+      imageOmitted,
       onOpenLink,
+      openLink,
+      plainTextFallback,
     ],
   );
 
@@ -119,14 +146,11 @@ function AgentRichTextContent({
 /** React-owned escaped renderer for an incomplete ACP response. */
 export function AgentStreamingText({
   chunks,
-  revision,
 }: {
   chunks: string[];
   revision: number;
 }) {
-  const text = useMemo(() => chunks.join(""), [chunks, revision]);
-
-  return <AgentPlainText text={text} />;
+  return <AgentPlainText text={chunks.join("")} />;
 }
 
 export function AgentPlainText({

@@ -2,7 +2,7 @@
 
 import { GcpCloudSetup } from "../../features/providerAccess/GcpCloudSetup";
 import { ProviderIntegrationList } from "../../features/providerAccess/ProviderIntegrationList";
-import { useProviderAccess } from "../../features/providerAccess/useProviderAccess";
+import { useProviderAccountAccess } from "../../features/providerAccess/useProviderAccountAccess";
 import { workspaceMessages } from "../../lib/workspace-messages";
 import { useWorkspaceLocale } from "../components/WorkspaceLocale";
 
@@ -15,7 +15,7 @@ export function CloudAccountPanel({
 }) {
   const locale = useWorkspaceLocale();
   const copy = workspaceMessages[locale].cloudAccounts;
-  const controller = useProviderAccess(workspaceId, gcpSetupId);
+  const controller = useProviderAccountAccess(workspaceId, gcpSetupId);
   const configuringGcp = Boolean(controller.gcpSetupId);
 
   return (

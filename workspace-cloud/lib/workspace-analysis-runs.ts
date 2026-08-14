@@ -223,7 +223,8 @@ export function parseAnalysisRunRequest(
   const revision = safeInteger(row?.articleRevision, 1, Number.MAX_SAFE_INTEGER);
   if (!row || typeof row.id !== "string" || !UUID.test(row.id)
     || revision === null || typeof row.runnerId !== "string" || !UUID.test(row.runnerId)
-    || !["manual", "schedule", "signal", "publication"].includes(String(row.trigger))) {
+    || typeof row.trigger !== "string"
+    || !["manual", "schedule", "signal", "publication"].includes(row.trigger)) {
     throw new Error("Invalid Analysis Article run request");
   }
   return {
@@ -249,7 +250,8 @@ function parseReceipt(value: unknown): AnalysisQueryReceiptInput {
     || connectionRevision === null || typeof row.queryRunId !== "string" || !UUID.test(row.queryRunId)
     || typeof row.queryHash !== "string" || !HASH.test(row.queryHash)
     || typeof row.schemaFingerprint !== "string" || !HASH.test(row.schemaFingerprint)
-    || !["succeeded", "failed", "cancelled", "stale"].includes(String(row.state))
+    || typeof row.state !== "string"
+    || !["succeeded", "failed", "cancelled", "stale"].includes(row.state)
     || rowCount === null || byteCount === null || durationMs === null) {
     throw new Error("Invalid Analysis Article query receipt");
   }
@@ -397,7 +399,8 @@ export function parseAnalysisRunCompletion(
   const stagedRow = exactRecord(value, ["state", "queryReceipts", "fragmentManifest", "error"]);
   const inlineRow = exactRecord(value, ["state", "queryReceipts", "fragments", "error"]);
   const row = stagedRow ?? inlineRow;
-  if (!row || !["succeeded", "failed", "cancelled", "stale"].includes(String(row.state))
+  if (!row || typeof row.state !== "string"
+    || !["succeeded", "failed", "cancelled", "stale"].includes(row.state)
     || !Array.isArray(row.queryReceipts) || row.queryReceipts.length > 64
     || (stagedRow !== null
       && (!Array.isArray(stagedRow.fragmentManifest) || stagedRow.fragmentManifest.length > 256))

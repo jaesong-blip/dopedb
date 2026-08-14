@@ -159,6 +159,7 @@ export default function AgentTools() {
   const queryClient = useQueryClient();
   const statusQ = useQuery(skillStatusQuery());
   const pluginsQ = useQuery(agentPluginStatusQuery());
+  const refetchPlugins = pluginsQ.refetch;
   const agentsQ = useQuery({
     ...agentCliDetectionQuery(),
     staleTime: 5 * 60_000,
@@ -172,9 +173,9 @@ export default function AgentTools() {
 
   useEffect(() => {
     if (busy !== "plugin-batch" && !busy?.startsWith("dopedb.acp.")) return;
-    const timer = window.setInterval(() => void pluginsQ.refetch(), 500);
+    const timer = window.setInterval(() => void refetchPlugins(), 500);
     return () => window.clearInterval(timer);
-  }, [busy, pluginsQ.refetch]);
+  }, [busy, refetchPlugins]);
 
   useEffect(() => {
     if (!pluginsQ.data || selectedPlugins.length > 0) return;

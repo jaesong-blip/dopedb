@@ -1,18 +1,21 @@
 use dopedb_protocol::{
     canonical_knowledge_json_bytes, catalog::CatalogSnapshot, decode_arguments,
-    knowledge_graph_artifact_size_allowed, AcpPluginArtifact, AcpPluginCompatibility, AcpPluginId,
-    AcpPluginLicense, AcpPluginManifestV1, AcpPluginProvider, AcpPluginUpstream,
-    AgentSessionRegisterArguments, AppOpenCommand, AppOpenResult, AuthenticationRequirement,
-    CatalogSearchCommand, CatalogShowCommand, CommandName, CommandSpec, ConnectionListCommand,
-    ConnectionShowCommand, ConnectionTestCommand, DatabaseListCommand, DocumentRunCommand,
-    ErrorCode, GraphBuildArtifactV1, OperationCancelCommand, OperationShowCommand,
-    OperationWaitCommand, ProtocolError, QueryCancelCommand, QueryPlanCommand, QueryRunCommand,
-    RequestEnvelope, ResponseEnvelope, RuntimeDiscovery, SchemaListCommand, SessionAuthentication,
-    SignedAcpPluginManifestV1, SkillInstallCommand, SkillRemoveCommand, SkillRepairCommand,
-    SkillStatusCommand, SkillsGetCommand, SkillsListCommand, SqlProposeCommand, StatusCommand,
-    StatusResult, TableDescribeCommand, VersionCommand, VersionResult,
-    ACP_PLUGIN_MANIFEST_SCHEMA_VERSION, COMMAND_SCHEMA_VERSION,
-    GRAPH_BUILD_ARTIFACT_SCHEMA_VERSION, MAX_KNOWLEDGE_GRAPH_ARTIFACT_BYTES, PROTOCOL_MAX,
+    knowledge_graph_artifact_size_allowed, valid_workspace_sync_cursor, AcpPluginArtifact,
+    AcpPluginCompatibility, AcpPluginId, AcpPluginLicense, AcpPluginManifestV1, AcpPluginProvider,
+    AcpPluginUpstream, AgentSessionRegisterArguments, AppOpenCommand, AppOpenResult,
+    AuthenticationRequirement, CatalogSearchCommand, CatalogShowCommand, CommandName, CommandSpec,
+    ConnectionListCommand, ConnectionShowCommand, ConnectionTestCommand, DatabaseListCommand,
+    DocumentRunCommand, ErrorCode, GraphBuildArtifactV1, ManagedAccessMode, ManagedLeaseRequest,
+    ManagedLeaseResponse, OperationCancelCommand, OperationShowCommand, OperationWaitCommand,
+    ProtocolError, QueryCancelCommand, QueryPlanCommand, QueryRunCommand, RequestEnvelope,
+    ResponseEnvelope, RuntimeDiscovery, SchemaListCommand, SessionAuthentication,
+    SharedAnalysisArticleCreate, SignedAcpPluginManifestV1, SkillInstallCommand,
+    SkillRemoveCommand, SkillRepairCommand, SkillStatusCommand, SkillsGetCommand,
+    SkillsListCommand, SqlProposeCommand, StatusCommand, StatusResult, TableDescribeCommand,
+    VersionCommand, VersionResult, WorkspaceSyncPageResponse, ACP_PLUGIN_MANIFEST_SCHEMA_VERSION,
+    COMMAND_SCHEMA_VERSION, CONTROL_PLANE_CONTRACTS_SCHEMA_VERSION,
+    GRAPH_BUILD_ARTIFACT_SCHEMA_VERSION, MANAGED_LEASE_CONTRACT_VERSION,
+    MAX_KNOWLEDGE_GRAPH_ARTIFACT_BYTES, PROTOCOL_MAX,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -31,6 +34,107 @@ struct CliCommandContract {
     result: Option<Value>,
     #[serde(default)]
     result_fixture: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ControlPlaneContracts {
+    schema_version: u32,
+    workspace_sync: WorkspaceSyncGoldens,
+    managed_lease: ManagedLeaseGolden,
+    analysis_article_create: Value,
+    analysis_article_acceptances: Vec<SemanticAcceptance>,
+    semantic_rejections: Vec<SemanticRejection>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SemanticAcceptance {
+    name: String,
+    mutations: Vec<SemanticMutation>,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum SemanticContract {
+    WorkspaceSyncBootstrap,
+    WorkspaceSyncIncremental,
+    ManagedLeaseRequest,
+    ManagedLeaseResponse,
+    AnalysisArticleCreate,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SemanticRejection {
+    name: String,
+    contract: SemanticContract,
+    mutations: Vec<SemanticMutation>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SemanticMutation {
+    path: Vec<MutationPathSegment>,
+    value: Value,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum MutationPathSegment {
+    Key(String),
+    Index(usize),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WorkspaceSyncGoldens {
+    bootstrap: Value,
+    incremental: Value,
+    reset: Value,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ManagedLeaseGolden {
+    contract_header: String,
+    request: Value,
+    response: Value,
+}
+
+fn apply_semantic_mutations(base: &Value, mutations: &[SemanticMutation]) -> Value {
+    let mut candidate = base.clone();
+    for mutation in mutations {
+        let (last, parents) = mutation
+            .path
+            .split_last()
+            .expect("semantic rejection path must not be empty");
+        let mut cursor = &mut candidate;
+        for segment in parents {
+            cursor = match segment {
+                MutationPathSegment::Key(key) => cursor
+                    .get_mut(key)
+                    .expect("semantic rejection object path must exist"),
+                MutationPathSegment::Index(index) => cursor
+                    .get_mut(*index)
+                    .expect("semantic rejection array path must exist"),
+            };
+        }
+        match last {
+            MutationPathSegment::Key(key) => {
+                cursor
+                    .as_object_mut()
+                    .expect("semantic rejection parent must be an object")
+                    .insert(key.clone(), mutation.value.clone());
+            }
+            MutationPathSegment::Index(index) => {
+                *cursor
+                    .get_mut(*index)
+                    .expect("semantic rejection array target must exist") = mutation.value.clone();
+            }
+        }
+    }
+    candidate
 }
 
 fn typed_cli_contract<C: CommandSpec>(request: &RequestEnvelope, result: &Value) {
@@ -186,7 +290,7 @@ fn assert_cli_command_types(command: CommandName, request: &RequestEnvelope, res
 }
 
 #[test]
-fn query_plan_request_matches_v14_command_schema_and_pinned_agent_registration() {
+fn public_protocol_goldens_match_pinned_agent_and_control_plane_contracts() {
     let source = include_str!("fixtures/query-plan-request.json");
     let request: RequestEnvelope =
         serde_json::from_str(source).expect("request fixture must decode");
@@ -359,6 +463,115 @@ fn query_plan_request_matches_v14_command_schema_and_pinned_agent_registration()
     prerelease_graph["extractor"]["version"] = json!("1.0.0-beta");
     let prerelease_graph: GraphBuildArtifactV1 = serde_json::from_value(prerelease_graph).unwrap();
     assert!(!prerelease_graph.validate());
+
+    let control_plane_source = include_str!("fixtures/control-plane-contracts-v1.json");
+    let contracts: ControlPlaneContracts =
+        serde_json::from_str(control_plane_source).expect("control-plane fixture must decode");
+    assert_eq!(
+        contracts.schema_version,
+        CONTROL_PLANE_CONTRACTS_SCHEMA_VERSION
+    );
+    let workspace_id = uuid::Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap();
+    assert!(valid_workspace_sync_cursor(None));
+    assert!(valid_workspace_sync_cursor(Some(9_007_199_254_740_991)));
+    assert!(!valid_workspace_sync_cursor(Some(-1)));
+    assert!(!valid_workspace_sync_cursor(Some(9_007_199_254_740_992)));
+    for (fixture, cursor) in [
+        (&contracts.workspace_sync.bootstrap, None),
+        (&contracts.workspace_sync.incremental, Some(12)),
+        (&contracts.workspace_sync.reset, Some(999)),
+    ] {
+        let page: WorkspaceSyncPageResponse =
+            serde_json::from_value(fixture.clone()).expect("workspace sync golden must decode");
+        assert!(page.valid_for(workspace_id, cursor));
+        assert_eq!(serde_json::to_value(page).unwrap(), *fixture);
+    }
+    let request: ManagedLeaseRequest =
+        serde_json::from_value(contracts.managed_lease.request.clone())
+            .expect("managed lease request golden must decode");
+    assert!(request.validate());
+    assert_eq!(request.access_mode, ManagedAccessMode::Read);
+    assert_eq!(
+        serde_json::to_value(request).unwrap(),
+        contracts.managed_lease.request
+    );
+    assert_eq!(
+        contracts.managed_lease.contract_header,
+        MANAGED_LEASE_CONTRACT_VERSION
+    );
+    let response: ManagedLeaseResponse =
+        serde_json::from_value(contracts.managed_lease.response.clone())
+            .expect("managed lease response golden must decode");
+    assert!(response.validate());
+    assert_eq!(response.lease.provider, "gcpCloudSql");
+    assert_eq!(response.lease.access_mode, ManagedAccessMode::Read);
+    assert!(!response.lease.password.is_empty());
+    assert!(!response
+        .lease
+        .connector
+        .as_ref()
+        .expect("fixture connector")
+        .access_token
+        .is_empty());
+    let article: SharedAnalysisArticleCreate =
+        serde_json::from_value(contracts.analysis_article_create.clone())
+            .expect("Analysis Article create golden must decode");
+    assert!(article.validate());
+    assert_eq!(
+        serde_json::to_value(article).unwrap(),
+        contracts.analysis_article_create
+    );
+    for acceptance in &contracts.analysis_article_acceptances {
+        let candidate =
+            apply_semantic_mutations(&contracts.analysis_article_create, &acceptance.mutations);
+        let accepted = serde_json::from_value::<SharedAnalysisArticleCreate>(candidate)
+            .is_ok_and(|value| value.validate());
+        assert!(
+            accepted,
+            "shared semantic acceptance rejected: {}",
+            acceptance.name
+        );
+    }
+    for rejection in &contracts.semantic_rejections {
+        let base = match rejection.contract {
+            SemanticContract::WorkspaceSyncBootstrap => &contracts.workspace_sync.bootstrap,
+            SemanticContract::WorkspaceSyncIncremental => &contracts.workspace_sync.incremental,
+            SemanticContract::ManagedLeaseRequest => &contracts.managed_lease.request,
+            SemanticContract::ManagedLeaseResponse => &contracts.managed_lease.response,
+            SemanticContract::AnalysisArticleCreate => &contracts.analysis_article_create,
+        };
+        let candidate = apply_semantic_mutations(base, &rejection.mutations);
+        let accepted = match rejection.contract {
+            SemanticContract::WorkspaceSyncBootstrap => {
+                serde_json::from_value::<WorkspaceSyncPageResponse>(candidate)
+                    .is_ok_and(|value| value.valid_for(workspace_id, None))
+            }
+            SemanticContract::WorkspaceSyncIncremental => {
+                serde_json::from_value::<WorkspaceSyncPageResponse>(candidate)
+                    .is_ok_and(|value| value.valid_for(workspace_id, Some(12)))
+            }
+            SemanticContract::ManagedLeaseRequest => {
+                serde_json::from_value::<ManagedLeaseRequest>(candidate)
+                    .is_ok_and(|value| value.validate())
+            }
+            SemanticContract::ManagedLeaseResponse => {
+                serde_json::from_value::<ManagedLeaseResponse>(candidate)
+                    .is_ok_and(|value| value.validate())
+            }
+            SemanticContract::AnalysisArticleCreate => {
+                serde_json::from_value::<SharedAnalysisArticleCreate>(candidate)
+                    .is_ok_and(|value| value.validate())
+            }
+        };
+        assert!(
+            !accepted,
+            "shared semantic rejection accepted: {}",
+            rejection.name
+        );
+    }
+    let mut drifted_response = contracts.managed_lease.response.clone();
+    drifted_response["lease"]["unexpected"] = json!(true);
+    assert!(serde_json::from_value::<ManagedLeaseResponse>(drifted_response).is_err());
 }
 
 #[test]

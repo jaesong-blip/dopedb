@@ -1,6 +1,7 @@
 //! Scope-pinned query history persistence and Analysis Article provenance reads.
 
 use super::super::*;
+use crate::kernel::access::PinnedConnection;
 
 const HISTORY_PAGE_SIZE: usize = 100;
 const HISTORY_SQL_PREVIEW_CHARS: i64 = 512;

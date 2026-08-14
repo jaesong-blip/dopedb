@@ -37,6 +37,12 @@ copy-link fallback. Signal email can use a separate verified
 `WORKSPACE_SIGNAL_FROM`; when absent it deliberately reuses the invitation sender.
 Failed Signal delivery is claimed durably and retried with bounded backoff. Ambiguous
 email attempts retry within 23 hours, inside Resend's 24-hour idempotency-key lifetime.
+The anonymous first-party product-outcome endpoint is disabled until both
+`PRODUCT_ANALYTICS_POSTHOG_KEY` and `PRODUCT_ANALYTICS_POSTHOG_HOST` are set. The host
+must be exactly `https://eu.i.posthog.com`; the server
+relays bounded, schema-v1 outcome enums without a PostHog SDK or the caller's IP.
+Missing or invalid relay configuration returns a private, retryable HTTP 503 rather
+than acknowledging and dropping events.
 Configure this Google redirect URI:
 
 ```text
@@ -327,6 +333,19 @@ second BI model cannot continue accumulating.
   access mode. The service returns HTTP 426 to legacy clients instead of guessing
   their authority. Deploy this control-plane change immediately before the matching
   desktop release; managed access is intentionally fail-closed during that window.
+- Independently deployed Desktop and Workspace Cloud decode the same versioned
+  `dopedb-protocol/tests/fixtures/control-plane-contracts-v1.json` golden for ordered
+  workspace sync, managed lease request/response, and Analysis Article creation.
+  Cloud route builders use `lib/control-plane-contracts.ts`; Rust adapters use the
+  platform-free `dopedb-protocol` types. The fixture also carries one shared,
+  path-mutation rejection corpus for the protected UUID, enum, length, revision,
+  provider/TLS, duplicate, and definition-relationship invariants. That corpus is
+  representative rather than an exhaustive parser-equivalence proof: a field, enum,
+  or semantic constraint change must add the relevant accept/reject case and pass
+  both parsers before either side ships. `workspace-analysis-articles.ts` remains the
+  sole authority for the full parameter, schedule, and transform/block definition policy;
+  Rust deliberately validates only the named cross-runtime safety and authority
+  invariants before sending a create/update request.
 - Desktop pool retirement calls the exact tenant/user/connection/lease DELETE
   boundary for early provider revocation. Natural provider expiry and the durable
   cleanup worker remain the fallback when the desktop is offline.

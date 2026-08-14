@@ -37,7 +37,7 @@ import {
   filterCatalogSnapshot,
 } from "../../features/catalogExplorer/scopeFilter";
 
-const ErdCanvas = lazy(() => import("../../components/ErdCanvas"));
+const ErdCanvas = lazy(() => import("../../features/erd/ErdCanvas"));
 
 function SchemaFrame({ children }: { children: ReactNode }) {
   return (

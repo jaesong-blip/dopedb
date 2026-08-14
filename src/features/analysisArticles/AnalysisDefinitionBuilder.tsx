@@ -463,7 +463,10 @@ export function AnalysisDataContractEditor({
                         onChange({ ...definition, parameters: replaceAt(definition.parameters, index, {
                           ...parameter,
                           options,
-                          defaultValue: options.includes(String(parameter.defaultValue)) ? parameter.defaultValue : options[0] ?? "",
+                          defaultValue: typeof parameter.defaultValue === "string"
+                            && options.includes(parameter.defaultValue)
+                            ? parameter.defaultValue
+                            : options[0] ?? "",
                         }) });
                       }} />
                     </Field>
@@ -1160,7 +1163,7 @@ export function AnalysisLayoutEditor({
 }) {
   const { t } = useI18n();
   const [newBlockKind, setNewBlockKind] = useState<AnalysisBlockKind>("metric");
-  const nodes = useMemo(() => availableNodes(definition), [definition.queries, definition.transforms]);
+  const nodes = useMemo(() => availableNodes(definition), [definition]);
   const addMetric = () => {
     const metric = defaultMetric(definition);
     if (metric) onChange({ ...definition, metrics: [...definition.metrics, metric] });

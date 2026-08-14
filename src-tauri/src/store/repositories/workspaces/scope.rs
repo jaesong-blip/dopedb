@@ -1,6 +1,7 @@
 //! Active-scope projection, generation, and membership-repair invariants.
 
 use super::super::super::*;
+use crate::kernel::access::{AccountScope, ActiveResourceScope, WorkspaceKind};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ActiveTeamMembershipAuthority {

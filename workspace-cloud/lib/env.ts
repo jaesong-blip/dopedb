@@ -2,6 +2,10 @@
 // without production secrets; request handlers fail closed when configuration is absent.
 import "server-only";
 
+const PRODUCT_ANALYTICS_POSTHOG_HOSTS = new Set([
+  "https://eu.i.posthog.com",
+]);
+
 function required(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`Missing required environment variable: ${name}`);
@@ -54,6 +58,37 @@ function githubKnowledgePrivateKey(): string | null {
   return key;
 }
 
+function productAnalyticsPosthogKey(): string | null {
+  const value = optional("PRODUCT_ANALYTICS_POSTHOG_KEY");
+  if (!value) return null;
+  if (!/^[A-Za-z0-9_-]{8,256}$/.test(value)) {
+    throw new Error("PRODUCT_ANALYTICS_POSTHOG_KEY is invalid");
+  }
+  return value;
+}
+
+function productAnalyticsPosthogHost(): string | null {
+  const value = optional("PRODUCT_ANALYTICS_POSTHOG_HOST");
+  if (!value) return null;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("PRODUCT_ANALYTICS_POSTHOG_HOST is invalid");
+  }
+  if (
+    !PRODUCT_ANALYTICS_POSTHOG_HOSTS.has(url.origin)
+    || url.username
+    || url.password
+    || url.pathname !== "/"
+    || url.search
+    || url.hash
+  ) {
+    throw new Error("PRODUCT_ANALYTICS_POSTHOG_HOST must be the approved EU PostHog origin");
+  }
+  return url.origin;
+}
+
 export const env = {
   appOrigin,
   authSecret,
@@ -68,6 +103,8 @@ export const env = {
   githubKnowledgeWebhookSecret: () => optional("GITHUB_KNOWLEDGE_WEBHOOK_SECRET"),
   planetScaleClientId: () => optional("PLANETSCALE_CLIENT_ID"),
   planetScaleClientSecret: () => optional("PLANETSCALE_CLIENT_SECRET"),
+  productAnalyticsPosthogHost,
+  productAnalyticsPosthogKey,
   resendApiKey: () => optional("RESEND_API_KEY"),
   workspaceInvitationFrom: () => optional("WORKSPACE_INVITATION_FROM"),
   workspaceSignalFrom: () => optional("WORKSPACE_SIGNAL_FROM")

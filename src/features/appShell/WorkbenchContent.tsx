@@ -1,34 +1,41 @@
 import type { Update } from "@tauri-apps/plugin-updater";
-import type { ReactNode } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
 
 import { Icon } from "../../components/Icon";
 import WorkbenchDocumentStrip from "../../components/WorkbenchDocumentStrip";
-import { WorkbenchEmptyState } from "../../design-system/components/Workbench";
 import { Button } from "../../design-system/components/Button";
+import RenderRecoveryBoundary from "../../design-system/components/RenderRecoveryBoundary";
+import { LoadingLabel } from "../../design-system/components/Status";
+import { WorkbenchEmptyState } from "../../design-system/components/Workbench";
+import type { CatalogTable, SafetySettings } from "../../ipc/types";
+import { useI18n } from "../../lib/i18n";
+import type { SchemaConnectionGroup } from "../../lib/schemaDiff";
+import Onboarding from "../../screens/Onboarding";
 import type { ConnectionProfile } from "../connections/domain";
 import type { ConnectionLaunchPreset } from "../connections/presets";
 import type { KnowledgeEnvironmentFocus } from "../knowledge/domain";
 import type { QueryServiceSession } from "../queryServices/domain";
-import { effectiveSafetySettings } from "../safetySettings/policy";
 import type { SqlResolveMode } from "../queries/resolveMode";
+import { effectiveSafetySettings } from "../safetySettings/policy";
+import type { SettingsSection } from "../settings/domain";
 import type { SqlDocument } from "../sqlDocuments/domain";
 import type { WorkbenchDocument } from "../workbench/domain";
-import type { CatalogTable, SafetySettings } from "../../ipc/types";
-import { useI18n } from "../../lib/i18n";
-import type { SchemaConnectionGroup } from "../../lib/schemaDiff";
-import Activity from "../../screens/Activity";
-import { ConnectionForm } from "../../screens/Connections";
-import Documents from "../../screens/Documents";
-import Onboarding from "../../screens/Onboarding";
-import Knowledge from "../../screens/Knowledge";
-import SchemaExplorer from "../../screens/Schema";
-import SchemaDiff from "../../screens/SchemaDiff";
-import Settings, { type SettingsSection } from "../../screens/Settings";
-import Sql from "../../screens/Sql";
-import TableData from "../../screens/Tables";
 import ConnectionPicker from "./ConnectionPicker";
+import type { EditingConnection } from "./useAppShellWorkbenchController";
 
-export type EditingConnection = ConnectionProfile | "new" | null;
+const Activity = lazy(() => import("../../screens/Activity"));
+const ConnectionForm = lazy(() =>
+  import("../../screens/Connections/ConnectionForm").then((module) => ({
+    default: module.ConnectionForm,
+  })),
+);
+const Documents = lazy(() => import("../../screens/Documents"));
+const Knowledge = lazy(() => import("../../screens/Knowledge"));
+const SchemaExplorer = lazy(() => import("../../screens/Schema"));
+const SchemaDiff = lazy(() => import("../../screens/SchemaDiff"));
+const Settings = lazy(() => import("../../screens/Settings"));
+const Sql = lazy(() => import("../../screens/Sql"));
+const TableData = lazy(() => import("../../screens/Tables"));
 
 // The editor may render while policy storage is unavailable, but all execution
 // remains disabled until the authoritative connection policy arrives.
@@ -42,97 +49,123 @@ const BLOCKED_SAFETY_SETTINGS: SafetySettings = {
   execPreviewRowLimit: 0,
 };
 
+type WorkbenchContentModel = {
+  route: {
+    settingsOpen: boolean;
+    settingsSection?: SettingsSection;
+    activeSchemaGroup: SchemaConnectionGroup | null;
+    editing: EditingConnection;
+    connectionPreset: ConnectionLaunchPreset | null;
+    knowledgeEnvironmentFocus: KnowledgeEnvironmentFocus | null;
+  };
+  connection: {
+    selected: ConnectionProfile | null;
+    items: ConnectionProfile[];
+    loadError: string | null;
+    supportsSql: boolean;
+    creatingDemo: boolean;
+    safety: SafetySettings | null;
+    safetyError: string | null;
+  };
+  workbench: {
+    items: WorkbenchDocument[];
+    active: WorkbenchDocument | null;
+    activeId: string | null;
+    initialAuditOpen: boolean;
+  };
+  update: { available: Update | null };
+};
+
+type WorkbenchContentCommands = {
+  route: {
+    closeSettings: () => void;
+    closeSurface: () => void;
+  };
+  connections: {
+    retry: () => void;
+    new: (preset?: ConnectionLaunchPreset) => void;
+    edit: (connection: ConnectionProfile) => void;
+    delete: (id: string) => Promise<void>;
+    select: (id: string) => void;
+    save: (
+      profile: ConnectionProfile,
+      closeEditor: boolean,
+    ) => Promise<void>;
+    createDemo: () => void;
+  };
+  safety: {
+    refresh: () => void;
+    accept: (connectionId: string, settings: SafetySettings) => void;
+  };
+  documents: {
+    activateId: (id: string) => void;
+    rename: (id: string, title: string) => void;
+    close: (id: string) => void;
+    newQuery: () => void;
+    searchEverywhere: (returnFocus?: HTMLElement | null) => void;
+    openAgentTask: (
+      connectionId: string,
+      environmentId?: string,
+      prompt?: string,
+    ) => void;
+    setTitle: (value: string) => void;
+    setDatabase: (value: string) => void;
+    setSchema: (value: string | null) => void;
+    setResolveMode: (value: SqlResolveMode) => void;
+    persisted: (document: SqlDocument) => void;
+    openTable: (connection: ConnectionProfile, table: CatalogTable) => void;
+    openStable: (kind: "schema" | "activity") => void;
+    loadSql: (sql: string) => Promise<void>;
+    consumeInitialAudit: () => void;
+  };
+  queryServices: {
+    updateSession: (session: QueryServiceSession) => void;
+    show: (sessionId: string) => void;
+  };
+  update: { checked: (update: Update | null) => void };
+};
+
 type Props = {
-  settingsOpen: boolean;
-  settingsSection?: SettingsSection;
-  selected: ConnectionProfile | null;
-  activeSchemaGroup: SchemaConnectionGroup | null;
-  editing: EditingConnection;
-  connectionPreset: ConnectionLaunchPreset | null;
-  loadError: string | null;
-  connections: ConnectionProfile[];
-  safety: SafetySettings | null;
-  safetyError: string | null;
-  selectedDocuments: WorkbenchDocument[];
-  activeDocument: WorkbenchDocument | null;
-  activeDocumentId: string | null;
-  supportsSql: boolean;
-  knowledgeEnvironmentFocus: KnowledgeEnvironmentFocus | null;
-  initialAuditOpen: boolean;
-  availableUpdate: Update | null;
-  creatingDemo: boolean;
-  onCloseSettings: () => void;
-  onUpdateChecked: (update: Update | null) => void;
-  onRefreshSafety: () => void;
-  onSafetySaved: (connectionId: string, settings: SafetySettings) => void;
-  onCloseSchemaDiff: () => void;
-  onConnectionSaved: (
-    profile: ConnectionProfile,
-    closeEditor: boolean,
-  ) => Promise<void>;
-  onCreateDemoDatabase: () => void;
-  onCancelEditing: () => void;
-  onRetryConnections: () => void;
-  onNewConnection: (preset?: ConnectionLaunchPreset) => void;
-  onEditConnection: (connection: ConnectionProfile) => void;
-  onDeletedConnection: (id: string) => Promise<void>;
-  onSelectConnection: (id: string) => void;
-  onActivateDocument: (id: string) => void;
-  onRenameDocument: (id: string, title: string) => void;
-  onCloseDocument: (id: string) => void;
-  onNewQuery: () => void;
-  onSearchEverywhere: (returnFocus?: HTMLElement | null) => void;
-  onOpenActivity: () => void;
-  onOpenAgentTask: (
-    connectionId: string,
-    environmentId?: string,
-    prompt?: string,
-  ) => void;
-  onSetQueryTitle: (value: string) => void;
-  onSetQueryDatabase: (value: string) => void;
-  onSetQuerySchema: (value: string | null) => void;
-  onSetQueryResolveMode: (value: SqlResolveMode) => void;
-  onPersistedQuery: (document: SqlDocument) => void;
-  onQueryServiceSessionChange: (session: QueryServiceSession) => void;
-  onShowQueryServices: (sessionId: string) => void;
-  onOpenTable: (table: CatalogTable) => void;
-  onLoadSql: (sql: string) => Promise<void>;
-  onInitialAuditOpenConsumed: () => void;
-  onRetrySafety: () => void;
+  model: WorkbenchContentModel;
+  commands: WorkbenchContentCommands;
 };
 
 export default function WorkbenchContent(props: Props) {
+  return (
+    <Suspense fallback={<WorkbenchLoading />}>
+      <WorkbenchContentResolved {...props} />
+    </Suspense>
+  );
+}
+
+function WorkbenchLoading() {
   const { t } = useI18n();
-  const {
-    settingsOpen,
-    settingsSection,
-    selected,
-    activeSchemaGroup,
-    editing,
-    connectionPreset,
-    loadError,
-    connections,
-    safety,
-    safetyError,
-    selectedDocuments,
-    activeDocument,
-    activeDocumentId,
-    supportsSql,
-    initialAuditOpen,
-    availableUpdate,
-  } = props;
+  return (
+    <div className="tw:flex tw:h-full tw:min-h-0 tw:items-center tw:justify-center tw:bg-background">
+      <LoadingLabel>{t("app.loading")}</LoadingLabel>
+    </div>
+  );
+}
+
+function WorkbenchContentResolved({ model, commands }: Props) {
+  const { t } = useI18n();
+  const { route, connection, workbench, update } = model;
+  const selected = connection.selected;
+  const activeDocument = workbench.active;
   const effectiveSafety =
-    selected && safety ? effectiveSafetySettings(selected, safety) : null;
-  const settingsDialog = settingsOpen ? (
+    selected && connection.safety
+      ? effectiveSafetySettings(selected, connection.safety)
+      : null;
+  const settingsDialog = route.settingsOpen ? (
     <Settings
       connection={selected}
-      initialSection={settingsSection}
-      refreshSafety={props.onRefreshSafety}
-      onSafetySaved={props.onSafetySaved}
-      onEditConnection={props.onEditConnection}
-      availableUpdate={availableUpdate}
-      onUpdateChecked={props.onUpdateChecked}
-      onClose={props.onCloseSettings}
+      initialSection={route.settingsSection}
+      refreshSafety={commands.safety.refresh}
+      onSafetySaved={commands.safety.accept}
+      onEditConnection={commands.connections.edit}
+      availableUpdate={update.available}
+      onUpdateChecked={commands.update.checked}
+      onClose={commands.route.closeSettings}
     />
   ) : null;
   const withSettings = (content: ReactNode) => (
@@ -142,78 +175,86 @@ export default function WorkbenchContent(props: Props) {
     </>
   );
 
-  if (activeSchemaGroup) {
+  if (route.activeSchemaGroup) {
     return withSettings(
       <SchemaDiff
-        key={activeSchemaGroup.key}
-        group={activeSchemaGroup}
-        onClose={props.onCloseSchemaDiff}
+        key={route.activeSchemaGroup.key}
+        group={route.activeSchemaGroup}
+        onClose={commands.route.closeSurface}
       />,
     );
   }
 
-  if (editing !== null) {
+  if (route.editing !== null) {
     return withSettings(
       <div className="tw:h-full tw:min-h-0">
         <ConnectionForm
           key={
-            editing === "new"
-              ? `connection-new-${connectionPreset?.engine ?? "default"}-${connectionPreset?.provider ?? "auto"}-${connectionPreset?.source ?? "standard"}`
-              : `connection-${editing.id}`
+            route.editing === "new"
+              ? `connection-new-${route.connectionPreset?.engine ?? "default"}-${route.connectionPreset?.provider ?? "auto"}-${route.connectionPreset?.source ?? "standard"}`
+              : `connection-${route.editing.id}`
           }
-          initial={editing === "new" ? null : editing}
-          preset={editing === "new" ? connectionPreset : null}
-          connections={connections}
-          creatingDemo={props.creatingDemo}
-          onCreateDemoDatabase={props.onCreateDemoDatabase}
-          onNewConnection={props.onNewConnection}
-          onEditConnection={props.onEditConnection}
-          onDeletedConnection={props.onDeletedConnection}
-          onSaved={props.onConnectionSaved}
-          onCancel={props.onCancelEditing}
+          initial={route.editing === "new" ? null : route.editing}
+          preset={route.editing === "new" ? route.connectionPreset : null}
+          connections={connection.items}
+          creatingDemo={connection.creatingDemo}
+          onCreateDemoDatabase={commands.connections.createDemo}
+          onNewConnection={commands.connections.new}
+          onEditConnection={commands.connections.edit}
+          onDeletedConnection={commands.connections.delete}
+          onSaved={commands.connections.save}
+          onCancel={commands.route.closeSurface}
         />
       </div>,
     );
   }
 
-  if (props.knowledgeEnvironmentFocus) {
+  if (route.knowledgeEnvironmentFocus) {
+    const focus = route.knowledgeEnvironmentFocus;
     return withSettings(
       <section className="scrollbar-sleek tw:min-h-0 tw:flex-1 tw:overflow-auto tw:bg-background">
-        <Knowledge
-          environmentFocus={props.knowledgeEnvironmentFocus}
-          onOpenAgent={props.onOpenAgentTask}
-          onNewConnection={() => props.onNewConnection()}
-        />
+        <RenderRecoveryBoundary
+          fallback={({ retry }) => (
+            <KnowledgeRecovery onRetry={retry} />
+          )}
+          resetKeys={[focus.requestId]}
+        >
+          <Knowledge
+            environmentFocus={focus}
+            onOpenAgent={commands.documents.openAgentTask}
+            onNewConnection={() => commands.connections.new()}
+          />
+        </RenderRecoveryBoundary>
       </section>,
     );
   }
 
-  if (loadError) {
+  if (connection.loadError) {
     return withSettings(
       <div className="tw:flex tw:h-full tw:min-w-0 tw:flex-col tw:items-center tw:justify-center tw:gap-2 tw:bg-muted tw:p-[var(--ds-pane-pad)] tw:text-center tw:leading-relaxed tw:[&>*]:max-w-[min(520px,100%)]">
         <div className="tw:break-words tw:text-ui tw:text-danger" role="alert">
-          {t("app.couldNotLoadConnections", { error: loadError })}
+          {t("app.couldNotLoadConnections", {
+            error: connection.loadError,
+          })}
         </div>
-        <Button onClick={props.onRetryConnections}>
-          {t("app.retry")}
-        </Button>
+        <Button onClick={commands.connections.retry}>{t("app.retry")}</Button>
       </div>,
     );
   }
 
-  if (connections.length === 0) {
+  if (connection.items.length === 0) {
     return withSettings(
       <Onboarding
-        onNewConnection={() => props.onNewConnection()}
-        onSearchEverywhere={props.onSearchEverywhere}
+        onNewConnection={() => commands.connections.new()}
+        onSearchEverywhere={commands.documents.searchEverywhere}
       />,
     );
   }
 
-  const safetyFallback = safetyError ? (
+  const safetyFallback = connection.safetyError ? (
     <div className="tw:text-ui tw:text-danger" role="alert">
-      {t("app.loadSafetyFailed", { error: safetyError })}{" "}
-      <Button size="compact" onClick={props.onRetrySafety}>
+      {t("app.loadSafetyFailed", { error: connection.safetyError })}{" "}
+      <Button size="compact" onClick={commands.safety.refresh}>
         {t("app.retry")}
       </Button>
     </div>
@@ -225,46 +266,45 @@ export default function WorkbenchContent(props: Props) {
     <>
       {selected && (
         <WorkbenchDocumentStrip
-          documents={selectedDocuments}
-          activeId={activeDocumentId}
+          documents={workbench.items}
+          activeId={workbench.activeId}
           engine={selected.engine}
           connectionName={selected.name || t("app.unnamed")}
-          onActivate={props.onActivateDocument}
-          onRename={props.onRenameDocument}
-          onClose={props.onCloseDocument}
+          onActivate={commands.documents.activateId}
+          onRename={commands.documents.rename}
+          onClose={commands.documents.close}
         />
       )}
 
       <section
         data-workbench-pane
         data-edge-to-edge={
-          activeDocument !== null &&
-          activeDocument.kind !== "welcome"
+          activeDocument !== null && activeDocument.kind !== "welcome"
         }
         className="scrollbar-sleek tw:min-h-0 tw:flex-1 tw:overflow-auto tw:bg-background tw:p-[var(--ds-pane-pad)] tw:shadow-[inset_0_var(--ds-border-width)_0_var(--ds-border-subtle)] tw:data-[edge-to-edge=true]:overflow-hidden tw:data-[edge-to-edge=true]:p-0 tw:max-[760px]:p-3 tw:max-[760px]:data-[edge-to-edge=true]:p-0"
       >
         {!selected ? (
           <ConnectionPicker
-            connections={connections}
-            onSelect={props.onSelectConnection}
-            onNew={props.onNewConnection}
+            connections={connection.items}
+            onSelect={commands.connections.select}
+            onNew={commands.connections.new}
           />
         ) : !activeDocument ? (
-          <WorkbenchEmptyState icon={supportsSql ? "play" : "list"}>
+          <WorkbenchEmptyState icon={connection.supportsSql ? "play" : "list"}>
             <span>
-              {supportsSql ? t("tabs.sql") : t("tabs.documents")}
+              {connection.supportsSql ? t("tabs.sql") : t("tabs.documents")}
             </span>
-            <Button variant="primary" onClick={props.onNewQuery}>
+            <Button variant="primary" onClick={commands.documents.newQuery}>
               <Icon name="plus" />
-              {supportsSql ? t("tabs.sql") : t("tabs.documents")}
+              {connection.supportsSql ? t("tabs.sql") : t("tabs.documents")}
             </Button>
           </WorkbenchEmptyState>
         ) : activeDocument.kind === "welcome" ? (
           <Onboarding
             connectionName={selected.name || selected.database}
-            onNewConnection={() => props.onNewConnection()}
-            onNewQuery={props.onNewQuery}
-            onSearchEverywhere={props.onSearchEverywhere}
+            onNewConnection={() => commands.connections.new()}
+            onNewQuery={commands.documents.newQuery}
+            onSearchEverywhere={commands.documents.searchEverywhere}
           />
         ) : activeDocument.kind === "data" ? (
           effectiveSafety ? (
@@ -281,7 +321,7 @@ export default function WorkbenchContent(props: Props) {
             key={activeDocument.id}
             connection={selected}
             selectedTable={null}
-            onOpenTable={props.onOpenTable}
+            onOpenTable={(table) => commands.documents.openTable(selected, table)}
           />
         ) : activeDocument.kind === "sql" ? (
           <Sql
@@ -289,25 +329,25 @@ export default function WorkbenchContent(props: Props) {
             connection={selected}
             documentId={activeDocument.id}
             safety={effectiveSafety ?? BLOCKED_SAFETY_SETTINGS}
-            safetyReady={safety !== null}
-            safetyLoadError={safetyError}
+            safetyReady={connection.safety !== null}
+            safetyLoadError={connection.safetyError}
             draft={activeDocument.draft}
             title={activeDocument.title}
-            setTitle={props.onSetQueryTitle}
+            setTitle={commands.documents.setTitle}
             selectedDatabase={activeDocument.selectedDatabase}
-            setSelectedDatabase={props.onSetQueryDatabase}
+            setSelectedDatabase={commands.documents.setDatabase}
             selectedSchema={activeDocument.selectedSchema}
-            setSelectedSchema={props.onSetQuerySchema}
+            setSelectedSchema={commands.documents.setSchema}
             resolveMode={activeDocument.resolveMode}
-            setResolveMode={props.onSetQueryResolveMode}
+            setResolveMode={commands.documents.setResolveMode}
             persistedId={activeDocument.persistedId}
             revision={activeDocument.revision}
             recovered={activeDocument.recovered}
-            onPersisted={props.onPersistedQuery}
-            onQueryServiceSessionChange={props.onQueryServiceSessionChange}
-            onShowQueryServices={props.onShowQueryServices}
-            onOpenHistory={props.onOpenActivity}
-            onRetrySafety={props.onRetrySafety}
+            onPersisted={commands.documents.persisted}
+            onQueryServiceSessionChange={commands.queryServices.updateSession}
+            onShowQueryServices={commands.queryServices.show}
+            onOpenHistory={() => commands.documents.openStable("activity")}
+            onRetrySafety={commands.safety.refresh}
           />
         ) : activeDocument.kind === "documents" ? (
           <Documents
@@ -319,13 +359,35 @@ export default function WorkbenchContent(props: Props) {
           <Activity
             key={activeDocument.id}
             connection={selected}
-            onLoadSql={props.onLoadSql}
-            initialAuditOpen={initialAuditOpen}
-            onInitialAuditOpenConsumed={props.onInitialAuditOpenConsumed}
+            onLoadSql={commands.documents.loadSql}
+            initialAuditOpen={workbench.initialAuditOpen}
+            onInitialAuditOpenConsumed={commands.documents.consumeInitialAudit}
           />
         )}
       </section>
       {settingsDialog}
     </>
+  );
+}
+
+function KnowledgeRecovery({ onRetry }: { onRetry: () => void }) {
+  const { t } = useI18n();
+  return (
+    <div
+      className="tw:flex tw:h-full tw:min-h-[240px] tw:flex-col tw:items-center tw:justify-center tw:gap-3 tw:p-[var(--ds-pane-pad)] tw:text-center tw:text-sm tw:text-muted-foreground"
+      role="alert"
+    >
+      <Icon className="tw:size-7 tw:text-warning" name="alert" />
+      <strong className="tw:text-title tw:text-foreground">
+        {t("knowledge.renderFailed")}
+      </strong>
+      <p className="tw:m-0 tw:max-w-[420px] tw:leading-body">
+        {t("knowledge.renderFailedBody")}
+      </p>
+      <Button onClick={onRetry} size="compact" variant="primary">
+        <Icon name="refresh" />
+        {t("knowledge.retry")}
+      </Button>
+    </div>
   );
 }

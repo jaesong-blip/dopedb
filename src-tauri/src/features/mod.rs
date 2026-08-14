@@ -16,6 +16,7 @@ pub(crate) mod jobs;
 pub(crate) mod knowledge;
 pub(crate) mod monitoring;
 pub(crate) mod operation_control;
+pub(crate) mod product_analytics;
 pub(crate) mod providers;
 pub(crate) mod queries;
 pub(crate) mod safety_settings;

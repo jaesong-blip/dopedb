@@ -3,8 +3,9 @@
 use chrono::{DateTime, Utc};
 
 use crate::error::{AppError, AppResult};
+use crate::kernel::access::{AccountScope, ActiveResourceScope, WorkspaceKind};
 use crate::kernel::identity::{AccountId, ProviderBindingId, ProviderIntegrationId, WorkspaceId};
-use crate::store::{ActiveResourceScope, Store};
+use crate::store::Store;
 
 use super::sqlite_bindings::{ProviderBindingCommit, ProviderBindingRow, ProviderCleanupRow};
 
@@ -43,11 +44,9 @@ impl SqliteProviderBindingRepository {
         // authority predicate. The other fields are not security inputs there.
         ActiveResourceScope {
             workspace_id: scope.workspace_id.into(),
-            workspace_kind: crate::features::workspaces::WorkspaceKind::Team,
+            workspace_kind: WorkspaceKind::Team,
             selected_account_id: Some(scope.account_id.as_str().to_owned()),
-            account_scope: crate::store::AccountScope::WorkspaceUser(
-                scope.account_id.as_str().to_owned(),
-            ),
+            account_scope: AccountScope::WorkspaceUser(scope.account_id.as_str().to_owned()),
             generation: scope.scope_generation,
         }
     }

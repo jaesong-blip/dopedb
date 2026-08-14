@@ -9,6 +9,10 @@ mod sync;
 
 use std::time::Duration;
 
+use dopedb_protocol::{
+    valid_workspace_sync_cursor, ManagedAccessMode, ManagedLeaseRequest, ManagedLeaseResponse,
+    WorkspaceSyncPageResponse, MANAGED_LEASE_CONTRACT_VERSION,
+};
 use reqwest::{Client, Response, StatusCode, Url};
 use serde::Deserialize;
 use serde::Serialize;
@@ -51,7 +55,6 @@ use sync::workspace_pull_page;
 
 const DESKTOP_CLIENT_ID: &str = "dopedb-desktop";
 const DEVICE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
-const MANAGED_LEASE_CONTRACT: &str = "access-v2";
 const MAX_AUTH_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_WORKSPACE_LIST_RESPONSE_BYTES: usize = 1024 * 1024;
 const MAX_CONNECTION_RESPONSE_BYTES: usize = 128 * 1024;
@@ -71,9 +74,9 @@ struct DeviceCodeResponse {
     interval: u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 struct TokenResponse {
-    access_token: String,
+    access_token: Zeroizing<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -139,38 +142,6 @@ struct AuthorizedConnectionResponse {
     action: String,
     access_mode: String,
     revision: i64,
-}
-
-#[derive(Deserialize)]
-struct ManagedLeaseResponse {
-    lease: RemoteManagedLease,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RemoteManagedLease {
-    id: String,
-    provider: String,
-    engine: String,
-    host: String,
-    port: u16,
-    database: String,
-    username: String,
-    password: String,
-    sslmode: String,
-    tls_server_ca_pem: Option<String>,
-    connector: Option<RemoteManagedConnector>,
-    access_mode: String,
-    expires_at: String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RemoteManagedConnector {
-    kind: String,
-    instance_connection_name: String,
-    access_token: String,
-    network_mode: String,
 }
 
 pub(crate) struct ManagedConnectionLease {

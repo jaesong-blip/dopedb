@@ -95,7 +95,9 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
   const body = parsed.value as { memberId?: unknown; capability?: unknown } | null;
-  if (!validMemberId(body?.memberId) || !["view", "use", "manage"].includes(String(body?.capability))) {
+  if (!validMemberId(body?.memberId)
+    || typeof body?.capability !== "string"
+    || !["view", "use", "manage"].includes(body.capability)) {
     return jsonError("Invalid connection grant", 400);
   }
   const authorization = await liveManageGrant(request, workspaceId, connectionId);

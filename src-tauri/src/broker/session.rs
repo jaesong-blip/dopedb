@@ -15,10 +15,10 @@ use zeroize::Zeroizing;
 
 use crate::error::{AppError, AppResult};
 use crate::features::knowledge::domain::KnowledgeSessionScope;
+use crate::kernel::access::PinnedConnection;
 use crate::kernel::identity::{
     AccountScopeId, ConnectionId, RuntimeId, TerminalSessionId, WorkspaceId,
 };
-use crate::store::PinnedConnection;
 
 use super::peer::{process_is_descendant_or_same, PeerProcessIdentity};
 
@@ -440,11 +440,11 @@ mod tests {
 
     use std::collections::HashMap;
 
-    use crate::features::workspaces::WorkspaceKind;
+    use crate::kernel::access::WorkspaceKind;
+    use crate::kernel::access::{AccountScope, ActiveResourceScope, CatalogCachePolicy};
     use crate::model::{
         ConnectionProfile, Engine, Provider, WorkspaceConnectionAccess, WorkspaceCredentialMode,
     };
-    use crate::store::{AccountScope, ActiveResourceScope, CatalogCachePolicy};
 
     use super::*;
 

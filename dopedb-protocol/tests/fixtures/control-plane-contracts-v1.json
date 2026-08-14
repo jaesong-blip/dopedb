@@ -1,0 +1,427 @@
+{
+  "schemaVersion": 1,
+  "workspaceSync": {
+    "bootstrap": {
+      "workspaceId": "11111111-1111-4111-8111-111111111111",
+      "previousCursor": null,
+      "nextCursor": 12,
+      "hasMore": false,
+      "reset": false,
+      "refresh": {
+        "connections": true,
+        "analyses": true
+      },
+      "tombstones": {
+        "connections": false,
+        "analyses": false
+      }
+    },
+    "incremental": {
+      "workspaceId": "11111111-1111-4111-8111-111111111111",
+      "previousCursor": 12,
+      "nextCursor": 15,
+      "hasMore": true,
+      "reset": false,
+      "refresh": {
+        "connections": true,
+        "analyses": true
+      },
+      "tombstones": {
+        "connections": true,
+        "analyses": false
+      }
+    },
+    "reset": {
+      "workspaceId": "11111111-1111-4111-8111-111111111111",
+      "previousCursor": 999,
+      "nextCursor": 15,
+      "hasMore": false,
+      "reset": true,
+      "refresh": {
+        "connections": true,
+        "analyses": true
+      },
+      "tombstones": {
+        "connections": false,
+        "analyses": false
+      }
+    }
+  },
+  "managedLease": {
+    "contractHeader": "access-v2",
+    "request": {
+      "accessMode": "read"
+    },
+    "response": {
+      "lease": {
+        "id": "55555555-5555-4555-8555-555555555555",
+        "provider": "gcpCloudSql",
+        "engine": "postgres",
+        "host": "127.0.0.1",
+        "port": 5432,
+        "database": "app",
+        "username": "lease_member",
+        "password": "fixture-secret-never-log",
+        "sslmode": "verify-full",
+        "connector": {
+          "kind": "gcpCloudSqlAuthProxy",
+          "instanceConnectionName": "example:asia-northeast3:app",
+          "accessToken": "fixture-access-token-never-log",
+          "networkMode": "PUBLIC"
+        },
+        "accessMode": "read",
+        "expiresAt": "2026-08-14T01:10:00Z"
+      }
+    }
+  },
+  "analysisArticleCreate": {
+    "id": "22222222-2222-4222-8222-222222222222",
+    "projectEnvironmentId": "33333333-3333-4333-8333-333333333333",
+    "environmentRevision": 7,
+    "sourceKnowledgeGrantId": null,
+    "graphRevisionIds": [],
+    "connections": [
+      {
+        "connectionId": "44444444-4444-4444-8444-444444444444",
+        "connectionRevision": 3,
+        "role": "primary",
+        "alias": "Application"
+      }
+    ],
+    "definition": {
+      "version": 1,
+      "source": "human",
+      "title": "Active accounts",
+      "question": "How many accounts are active?",
+      "summary": "A bounded aggregate tied to one exact connection revision.",
+      "timezone": "UTC",
+      "parameters": [],
+      "queries": [
+        {
+          "id": "active_accounts",
+          "title": "Active accounts",
+          "connectionRole": "primary",
+          "sql": "SELECT count(*) AS active_accounts FROM accounts WHERE active = TRUE",
+          "parameterIds": [],
+          "maxRows": 5,
+          "maxBytes": 16384,
+          "cacheTtlSeconds": 0,
+          "columns": [
+            {
+              "name": "active_accounts",
+              "type": "number",
+              "nullable": false,
+              "role": "measure",
+              "sensitivity": "internal",
+              "masking": "none"
+            }
+          ]
+        }
+      ],
+      "transforms": [],
+      "metrics": [
+        {
+          "id": "active_accounts",
+          "label": "Active accounts",
+          "description": "Current active account count",
+          "sourceNodeId": "active_accounts",
+          "valueColumn": "active_accounts",
+          "unit": "accounts",
+          "lowerIsBetter": null,
+          "format": {
+            "style": "number",
+            "decimals": 0,
+            "currency": null
+          }
+        }
+      ],
+      "blocks": [
+        {
+          "id": "active_accounts_metric",
+          "kind": "metric",
+          "title": "Active accounts",
+          "sourceNodeId": "active_accounts",
+          "width": 4,
+          "config": {
+            "metricId": "active_accounts",
+            "comparisonColumn": null,
+            "sparklineColumn": null,
+            "sampleCountColumn": null
+          }
+        },
+        {
+          "id": "active_accounts_detail",
+          "kind": "table",
+          "title": "Active accounts detail",
+          "sourceNodeId": "active_accounts",
+          "width": 8,
+          "config": {
+            "columns": [
+              "active_accounts"
+            ],
+            "pageSize": 10
+          }
+        }
+      ],
+      "claims": [],
+      "refresh": {
+        "mode": "manual",
+        "cron": null,
+        "timezone": "UTC",
+        "runnerId": null,
+        "maxStalenessSeconds": 86400,
+        "resultRetentionDays": 30,
+        "shareReviewedResults": true
+      },
+      "warnings": [
+        "Golden contract fixture only"
+      ]
+    }
+  },
+  "analysisArticleAcceptances": [
+    {
+      "name": "Analysis Article SQL accepts an underscore-prefixed dollar quote tag",
+      "mutations": [
+        {
+          "path": ["definition", "queries", 0, "sql"],
+          "value": "SELECT $_tag$delete$_tag$ AS active_accounts"
+        }
+      ]
+    }
+  ],
+  "semanticRejections": [
+    {
+      "name": "workspace sync rejects a simple UUID representation",
+      "contract": "workspaceSyncBootstrap",
+      "mutations": [
+        { "path": ["workspaceId"], "value": "11111111111141118111111111111111" }
+      ]
+    },
+    {
+      "name": "workspace sync rejects a cursor above JavaScript safe integer",
+      "contract": "workspaceSyncIncremental",
+      "mutations": [
+        { "path": ["nextCursor"], "value": 9007199254740992 }
+      ]
+    },
+    {
+      "name": "lease request rejects an unknown access mode",
+      "contract": "managedLeaseRequest",
+      "mutations": [
+        { "path": ["accessMode"], "value": "owner" }
+      ]
+    },
+    {
+      "name": "lease request rejects an array-coerced access mode",
+      "contract": "managedLeaseRequest",
+      "mutations": [
+        { "path": ["accessMode"], "value": ["read"] }
+      ]
+    },
+    {
+      "name": "lease response rejects a non-contract UUID version",
+      "contract": "managedLeaseResponse",
+      "mutations": [
+        { "path": ["lease", "id"], "value": "55555555-5555-0555-8555-555555555555" }
+      ]
+    },
+    {
+      "name": "lease response rejects an out-of-range port",
+      "contract": "managedLeaseResponse",
+      "mutations": [
+        { "path": ["lease", "port"], "value": 65536 }
+      ]
+    },
+    {
+      "name": "lease response rejects an array-coerced provider",
+      "contract": "managedLeaseResponse",
+      "mutations": [
+        { "path": ["lease", "provider"], "value": ["gcpCloudSql"] }
+      ]
+    },
+    {
+      "name": "lease response rejects an array-coerced engine",
+      "contract": "managedLeaseResponse",
+      "mutations": [
+        { "path": ["lease", "engine"], "value": ["postgres"] }
+      ]
+    },
+    {
+      "name": "lease response rejects an array-coerced TLS mode",
+      "contract": "managedLeaseResponse",
+      "mutations": [
+        { "path": ["lease", "sslmode"], "value": ["verify-full"] }
+      ]
+    },
+    {
+      "name": "lease response rejects an array-coerced access mode",
+      "contract": "managedLeaseResponse",
+      "mutations": [
+        { "path": ["lease", "accessMode"], "value": ["read"] }
+      ]
+    },
+    {
+      "name": "lease response rejects an array-coerced connector network mode",
+      "contract": "managedLeaseResponse",
+      "mutations": [
+        { "path": ["lease", "connector", "networkMode"], "value": ["PUBLIC"] }
+      ]
+    },
+    {
+      "name": "lease response rejects whitespace in a host",
+      "contract": "managedLeaseResponse",
+      "mutations": [
+        { "path": ["lease", "host"], "value": "db host" }
+      ]
+    },
+    {
+      "name": "lease response rejects NEL whitespace in a host",
+      "contract": "managedLeaseResponse",
+      "mutations": [
+        { "path": ["lease", "host"], "value": "db\u0085host" }
+      ]
+    },
+    {
+      "name": "lease response binds the connector to GCP",
+      "contract": "managedLeaseResponse",
+      "mutations": [
+        { "path": ["lease", "provider"], "value": "neon" }
+      ]
+    },
+    {
+      "name": "lease response forbids provider CA material",
+      "contract": "managedLeaseResponse",
+      "mutations": [
+        { "path": ["lease", "tlsServerCaPem"], "value": "fixture-ca-never-log" }
+      ]
+    },
+    {
+      "name": "lease response distinguishes an absent connector from null",
+      "contract": "managedLeaseResponse",
+      "mutations": [
+        { "path": ["lease", "connector"], "value": null }
+      ]
+    },
+    {
+      "name": "lease response requires an exact RFC3339 instant",
+      "contract": "managedLeaseResponse",
+      "mutations": [
+        { "path": ["lease", "expiresAt"], "value": "2026-08-14 01:10:00Z" }
+      ]
+    },
+    {
+      "name": "lease response rejects a normalized 24-hour instant",
+      "contract": "managedLeaseResponse",
+      "mutations": [
+        { "path": ["lease", "expiresAt"], "value": "2026-08-14T24:00:00Z" }
+      ]
+    },
+    {
+      "name": "Analysis Article rejects a non-contract UUID version",
+      "contract": "analysisArticleCreate",
+      "mutations": [
+        { "path": ["id"], "value": "22222222-2222-0222-8222-222222222222" }
+      ]
+    },
+    {
+      "name": "Analysis Article rejects a simple root UUID representation",
+      "contract": "analysisArticleCreate",
+      "mutations": [
+        { "path": ["id"], "value": "22222222222242228222222222222222" }
+      ]
+    },
+    {
+      "name": "Analysis Article rejects a simple connection UUID representation",
+      "contract": "analysisArticleCreate",
+      "mutations": [
+        { "path": ["connections", 0, "connectionId"], "value": "44444444444444448444444444444444" }
+      ]
+    },
+    {
+      "name": "Analysis Article rejects a simple graph UUID representation",
+      "contract": "analysisArticleCreate",
+      "mutations": [
+        { "path": ["sourceKnowledgeGrantId"], "value": "66666666-6666-4666-8666-666666666666" },
+        { "path": ["graphRevisionIds"], "value": ["77777777777747778777777777777777"] }
+      ]
+    },
+    {
+      "name": "Analysis Article rejects an unsafe Environment revision",
+      "contract": "analysisArticleCreate",
+      "mutations": [
+        { "path": ["environmentRevision"], "value": 9007199254740992 }
+      ]
+    },
+    {
+      "name": "Analysis Article rejects a non-positive connection revision",
+      "contract": "analysisArticleCreate",
+      "mutations": [
+        { "path": ["connections", 0, "connectionRevision"], "value": 0 }
+      ]
+    },
+    {
+      "name": "Analysis Article rejects duplicate graph revisions",
+      "contract": "analysisArticleCreate",
+      "mutations": [
+        { "path": ["sourceKnowledgeGrantId"], "value": "66666666-6666-4666-8666-666666666666" },
+        { "path": ["graphRevisionIds"], "value": ["77777777-7777-4777-8777-777777777777", "77777777-7777-4777-8777-777777777777"] }
+      ]
+    },
+    {
+      "name": "Analysis Article requires complete Knowledge authority",
+      "contract": "analysisArticleCreate",
+      "mutations": [
+        { "path": ["sourceKnowledgeGrantId"], "value": "66666666-6666-4666-8666-666666666666" }
+      ]
+    },
+    {
+      "name": "Analysis Article rejects an unknown definition source",
+      "contract": "analysisArticleCreate",
+      "mutations": [
+        { "path": ["definition", "source"], "value": "external" }
+      ]
+    },
+    {
+      "name": "Analysis Article rejects a blank definition title",
+      "contract": "analysisArticleCreate",
+      "mutations": [
+        { "path": ["definition", "title"], "value": " \t" }
+      ]
+    },
+    {
+      "name": "Analysis Article rejects a FEFF-only definition title",
+      "contract": "analysisArticleCreate",
+      "mutations": [
+        { "path": ["definition", "title"], "value": "\uFEFF" }
+      ]
+    },
+    {
+      "name": "Analysis Article enforces query row bounds",
+      "contract": "analysisArticleCreate",
+      "mutations": [
+        { "path": ["definition", "queries", 0, "maxRows"], "value": 50001 }
+      ]
+    },
+    {
+      "name": "Analysis Article binds queries to declared connection roles",
+      "contract": "analysisArticleCreate",
+      "mutations": [
+        { "path": ["definition", "queries", 0, "connectionRole"], "value": "missing" }
+      ]
+    },
+    {
+      "name": "Analysis Article rejects duplicate block identifiers",
+      "contract": "analysisArticleCreate",
+      "mutations": [
+        { "path": ["definition", "blocks", 1, "id"], "value": "active_accounts_metric" }
+      ]
+    },
+    {
+      "name": "Analysis Article metric blocks require a compatible metric",
+      "contract": "analysisArticleCreate",
+      "mutations": [
+        { "path": ["definition", "blocks", 0, "config", "metricId"], "value": "missing_metric" }
+      ]
+    }
+  ]
+}

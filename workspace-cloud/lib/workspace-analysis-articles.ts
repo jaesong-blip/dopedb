@@ -709,7 +709,9 @@ function parseTransformConfig(operation: AnalysisTransformOperation, value: unkn
       const row = exactRecord(value, ["entityColumn", "eventTimeColumn", "cohortUnit", "as"]);
       if (!row || displayText(row.entityColumn, 256) === null
         || displayText(row.eventTimeColumn, 256) === null
-        || !["day", "week", "month"].includes(String(row.cohortUnit)) || id(row.as) === null) {
+        || typeof row.cohortUnit !== "string"
+        || !["day", "week", "month"].includes(row.cohortUnit)
+        || id(row.as) === null) {
         throw new Error("Invalid cohort transform");
       }
       return { entityColumn: row.entityColumn, eventTimeColumn: row.eventTimeColumn, cohortUnit: row.cohortUnit, as: row.as };
@@ -719,7 +721,8 @@ function parseTransformConfig(operation: AnalysisTransformOperation, value: unkn
       const periods = safeInteger(row?.periods, 1, 365);
       if (!row || displayText(row.entityColumn, 256) === null
         || displayText(row.cohortColumn, 256) === null || displayText(row.eventTimeColumn, 256) === null
-        || !["day", "week", "month"].includes(String(row.periodUnit)) || periods === null
+        || typeof row.periodUnit !== "string"
+        || !["day", "week", "month"].includes(row.periodUnit) || periods === null
         || id(row.as) === null) throw new Error("Invalid retention transform");
       return { entityColumn: row.entityColumn, cohortColumn: row.cohortColumn, eventTimeColumn: row.eventTimeColumn, periodUnit: row.periodUnit, periods, as: row.as };
     }
@@ -791,7 +794,8 @@ function parseBlockConfig(kind: AnalysisBlockKind, value: unknown) {
   if (kind === "callout") {
     const row = exactRecord(value, ["tone", "markdown"]);
     const markdown = displayText(row?.markdown, 32_000);
-    if (!row || !["info", "success", "warning", "danger"].includes(String(row.tone))
+    if (!row || typeof row.tone !== "string"
+      || !["info", "success", "warning", "danger"].includes(row.tone)
       || markdown === null) throw new Error("Invalid callout block");
     return { tone: row.tone, markdown };
   }

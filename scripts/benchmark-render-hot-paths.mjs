@@ -220,7 +220,7 @@ function benchmarkFrameCoalescing(createFrameCoalescer) {
 
 async function inspectSourceBoundaries() {
   const [erd, streamHook, adapter] = await Promise.all([
-    readFile(join(root, "src/components/ErdCanvas.tsx"), "utf8"),
+    readFile(join(root, "src/features/erd/ErdCanvas.tsx"), "utf8"),
     readFile(
       join(root, "src/features/queries/useSqlResultStream.ts"),
       "utf8",

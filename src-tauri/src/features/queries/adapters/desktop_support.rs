@@ -6,6 +6,7 @@ use crate::connection::{ConnectionAccess, DbPool};
 use crate::error::AppError;
 use crate::executor;
 use crate::features::queries::ManualExecutionTarget;
+use crate::kernel::access::PinnedConnection;
 use crate::kernel::identity::OperationId;
 use crate::model::{Classification, PreviewMode, PreviewReport, QueryKind, SafetySettings};
 use crate::operations::{
@@ -13,7 +14,6 @@ use crate::operations::{
 };
 use crate::safety;
 use crate::safety::PoolRef;
-use crate::store::PinnedConnection;
 
 #[cfg(feature = "packaged-benchmark")]
 use super::desktop_contracts::DesktopSqlStreamBenchmarkStages;

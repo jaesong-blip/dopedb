@@ -5,8 +5,9 @@ use std::time::Instant;
 use uuid::Uuid;
 
 use crate::audit::{self, RecordArgs};
+use crate::kernel::access::PinnedConnection;
 use crate::model::{HistoryEntry, QueryKind};
-use crate::store::{PinnedConnection, Store};
+use crate::store::Store;
 
 use super::desktop_trace::{AUDIT_PERSIST, HISTORY_PERSIST};
 

@@ -1,5 +1,5 @@
 import {
-  useCallback,
+  useMemo,
   useReducer,
   type SetStateAction,
 } from "react";
@@ -25,6 +25,7 @@ export type ProviderAccessState = {
   integrations: Integration[];
   connections: SharedConnection[];
   managedConnections: ManagedConnection[];
+  managedConnectionsLoaded: boolean;
   selectedConnectionId: string;
   selectedIntegrationId: string;
   selection: Record<string, string>;
@@ -60,11 +61,16 @@ type FieldUpdate = {
   };
 }[keyof ProviderAccessState];
 
+export type ProviderAccessFieldSetter = <Key extends keyof ProviderAccessState>(
+  key: Key,
+) => (update: SetStateAction<ProviderAccessState[Key]>) => void;
+
 export const initialProviderAccessState: ProviderAccessState = {
   providers: [],
   integrations: [],
   connections: [],
   managedConnections: [],
+  managedConnectionsLoaded: false,
   selectedConnectionId: "",
   selectedIntegrationId: "",
   selection: {},
@@ -113,11 +119,23 @@ export function useProviderAccessState() {
     providerAccessReducer,
     initialProviderAccessState,
   );
-  const setter = useCallback(
-    <Key extends keyof ProviderAccessState>(key: Key) =>
-      (update: SetStateAction<ProviderAccessState[Key]>) =>
-        dispatch({ type: "field", key, update } as FieldUpdate),
-    [],
-  );
+  const setter = useMemo(() => {
+    const setters = new Map<keyof ProviderAccessState, (update: unknown) => void>();
+    return (<Key extends keyof ProviderAccessState>(key: Key) => {
+      const existing = setters.get(key);
+      if (existing) {
+        return existing as (
+          update: SetStateAction<ProviderAccessState[Key]>,
+        ) => void;
+      }
+      const fieldSetter = (update: unknown) => {
+        dispatch({ type: "field", key, update } as FieldUpdate);
+      };
+      setters.set(key, fieldSetter);
+      return fieldSetter as (
+        update: SetStateAction<ProviderAccessState[Key]>,
+      ) => void;
+    }) as ProviderAccessFieldSetter;
+  }, []);
   return [state, setter] as const;
 }

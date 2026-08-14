@@ -153,6 +153,29 @@ export function collectProviderOwnershipDiagnostics(context) {
     }
   }
 
+  const providerPorts = read("src-tauri/src/features/providers/ports.rs");
+  const providerComposition = read("src-tauri/src/features/providers/mod.rs");
+  const desktopComposition = read("src-tauri/src/state.rs");
+  if (/\bOnceLock\b/.test(providerPorts)) {
+    diagnostics.push(
+      "Provider runtime ports must be supplied by completed composition, not late-bound OnceLock handles",
+    );
+  }
+  if (/\bbind_(?:revocation_port|provisioning_runtime)\b/.test(providerComposition + desktopComposition)) {
+    diagnostics.push(
+      "Provider facade must not expose a callable partially bound runtime",
+    );
+  }
+  if (
+    !/pub\(crate\) struct ProviderComposition\b/.test(providerComposition) ||
+    !/pub\(crate\) fn finish\s*\(/.test(providerComposition) ||
+    !/provider_composition\s*\.finish\s*\(/s.test(desktopComposition)
+  ) {
+    diagnostics.push(
+      "Provider desktop composition must prepare the local resolver and finish with every runtime port",
+    );
+  }
+
   const transportPath = "src-tauri/src/features/providers/transport.rs";
   const transport = productionRust(read(transportPath));
   for (const [pattern, reason] of [

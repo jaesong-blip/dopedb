@@ -1,7 +1,7 @@
 //! Projection and comparison of scope-pinned connection authority.
 
+use crate::kernel::access::PinnedConnection;
 use crate::kernel::identity::{ConnectionId, WorkspaceId};
-use crate::store::PinnedConnection;
 
 use super::super::domain::{TerminalConnectionPin, TerminalDatabasePolicy};
 

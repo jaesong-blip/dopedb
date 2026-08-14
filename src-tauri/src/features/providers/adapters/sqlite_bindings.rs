@@ -9,7 +9,8 @@ use sqlx::Transaction;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::store::{ActiveResourceScope, Store};
+use crate::kernel::access::ActiveResourceScope;
+use crate::store::Store;
 
 mod sqlite_binding_rows;
 use sqlite_binding_rows::{row_to_binding, row_to_cleanup};

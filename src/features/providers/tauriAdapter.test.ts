@@ -25,7 +25,8 @@ import gcpSetupSource from "../../../workspace-cloud/features/providerAccess/Gcp
 import providerIntegrationListSource from "../../../workspace-cloud/features/providerAccess/ProviderIntegrationList.tsx?raw";
 import providerResourcePickerSource from "../../../workspace-cloud/features/providerAccess/ProviderResourcePicker.tsx?raw";
 import neonBranchManagerSource from "../../../workspace-cloud/features/providerAccess/NeonBranchManager.tsx?raw";
-import providerAccessControllerSource from "../../../workspace-cloud/features/providerAccess/useProviderAccess.ts?raw";
+import sharedDatabaseControllerSource from "../../../workspace-cloud/features/providerAccess/useSharedDatabaseAccess.ts?raw";
+import neonProviderBootstrapControllerSource from "../../../workspace-cloud/features/providerAccess/useNeonProviderBootstrap.ts?raw";
 import providerAccessDomainSource from "../../../workspace-cloud/features/providerAccess/domain.ts?raw";
 import sharedDatabasePanelSource from "../../../workspace-cloud/app/settings/SharedDatabasePanel.tsx?raw";
 import legacyProviderBackupSource from "../../../workspace-cloud/fixtures/provider-legacy-connection-backup-v1.json?raw";
@@ -45,6 +46,14 @@ import providerProvisioningTargetSource from "../../../workspace-cloud/lib/provi
 import providerResourcesRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/[integrationId]/resources/route.ts?raw";
 import neonBranchesRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/[integrationId]/neon-branches/route.ts?raw";
 import neonBranchOperationsRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/[integrationId]/neon-branches/operations/route.ts?raw";
+import neonBranchOperationsApplicationEntrySource from "../../../workspace-cloud/lib/providers/neon-branch-operation-application.ts?raw";
+import neonBranchOperationsContractsSource from "../../../workspace-cloud/lib/providers/neon-branch-operations/contracts.ts?raw";
+import neonBranchOperationsCreateSource from "../../../workspace-cloud/lib/providers/neon-branch-operations/create.ts?raw";
+import neonBranchOperationsDeleteSource from "../../../workspace-cloud/lib/providers/neon-branch-operations/delete.ts?raw";
+import neonBranchOperationsInventorySource from "../../../workspace-cloud/lib/providers/neon-branch-operations/inventory.ts?raw";
+import neonBranchOperationsLiveContextsSource from "../../../workspace-cloud/lib/providers/neon-branch-operations/live-contexts.ts?raw";
+import neonBranchOperationsSwitchSource from "../../../workspace-cloud/lib/providers/neon-branch-operations/switch.ts?raw";
+import neonBranchOperationCommandSource from "../../../workspace-cloud/lib/providers/neon-branch-operation-command.ts?raw";
 import managedAccessTargetRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/connections/[connectionId]/managed-access-target/route.ts?raw";
 import providerOperationStoreSource from "../../../workspace-cloud/lib/provider-operation-store.ts?raw";
 import providerOperationMarkerSource from "../../../workspace-cloud/lib/provider-operation-marker.ts?raw";
@@ -81,6 +90,7 @@ import {
   parseNeonBranchCreatePlanRequest,
   revalidateNeonBranchCreatePlan,
 } from "../../../workspace-cloud/lib/providers/neon-branch-plan";
+import { parseNeonBranchOperationCommand } from "../../../workspace-cloud/lib/providers/neon-branch-operation-command";
 import {
   buildNeonBranchDeletePlan,
   revalidateNeonBranchDeletePlan,
@@ -103,6 +113,17 @@ import {
   parseNeonBranchInventory as parseNeonBranchInventoryResponse,
   parseNeonBranchOperations,
 } from "../../../workspace-cloud/features/providerAccess/neonBranches";
+
+const neonBranchOperationsApplicationSource = [
+  neonBranchOperationsApplicationEntrySource,
+  neonBranchOperationsContractsSource,
+  neonBranchOperationsInventorySource,
+  neonBranchOperationsLiveContextsSource,
+  // Preserve lifecycle order for the raw-source safety assertions below.
+  neonBranchOperationsSwitchSource,
+  neonBranchOperationsDeleteSource,
+  neonBranchOperationsCreateSource,
+].join("\n");
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
@@ -1003,34 +1024,57 @@ describe("provider credential Tauri adapter", () => {
     expect(neonBranchesRouteSource).not.toContain("export async function POST");
     expect(neonBranchOperationsRouteSource).toContain("boundedJsonBody");
     expect(neonBranchOperationsRouteSource).toContain("export async function GET");
-    expect(neonBranchOperationsRouteSource).toContain("listProviderOperationExecutions");
-    expect(neonBranchOperationsRouteSource).toContain("requestedByCurrentActor");
-    expect(neonBranchOperationsRouteSource).toContain("canApprove");
-    expect(neonBranchOperationsRouteSource).toContain("recordProviderOperationPlan");
-    expect(neonBranchOperationsRouteSource).toContain("revalidateNeonBranchCreatePlan");
-    expect(neonBranchOperationsRouteSource).toContain("decideProviderOperation");
-    expect(neonBranchOperationsRouteSource).toContain("claimProviderOperationExecution");
-    expect(neonBranchOperationsRouteSource).toContain("cancelExpiredProviderOperationExecution");
-    expect(neonBranchOperationsRouteSource).toContain("markProviderOperationRemoteStarted");
-    expect(neonBranchOperationsRouteSource).toContain("reconcileNeonBranchCreate");
-    expect(neonBranchOperationsRouteSource).toContain("revalidateNeonBranchDeletePlan");
-    expect(neonBranchOperationsRouteSource).toContain("verifyNeonBranchOwnership");
-    expect(neonBranchOperationsRouteSource).toContain("reconcileNeonBranchDelete");
-    expect(neonBranchOperationsRouteSource).toContain("revalidateNeonBranchSwitchPlan");
-    expect(neonBranchOperationsRouteSource).toContain("completeNeonBranchSwitch");
-    expect(neonBranchOperationsRouteSource).toContain("needsCredentialFenceRecovery");
-    const switchExecutionStart = neonBranchOperationsRouteSource.indexOf(
+    expect(neonBranchOperationsRouteSource).toContain("listNeonBranchOperations");
+    expect(neonBranchOperationsRouteSource).toContain("runNeonBranchOperation");
+    expect(neonBranchOperationsRouteSource).toContain("authorizeWorkspaceConnection");
+    expect(neonBranchOperationsRouteSource).not.toContain("drizzle-orm");
+    expect(neonBranchOperationsRouteSource).not.toContain("provider-operation-store");
+    expect(neonBranchOperationsRouteSource).not.toContain("recordProviderOperationPlan");
+    expect(neonBranchOperationCommandSource).toContain("Object.keys(body).length === 4");
+    expect(neonBranchOperationCommandSource).toContain("/^[0-9a-f]{64}$/");
+    expect(parseNeonBranchOperationCommand({
+      action: "executeCreate",
+      operationId: "00000000-0000-4000-8000-000000000001",
+      planHash: "a".repeat(64),
+    })).toEqual({
+      action: "executeCreate",
+      operationId: "00000000-0000-4000-8000-000000000001",
+      planHash: "a".repeat(64),
+    });
+    expect(parseNeonBranchOperationCommand({
+      action: "executeCreate",
+      operationId: "00000000-0000-4000-8000-000000000001",
+      planHash: "a".repeat(64),
+      ignored: true,
+    })).toBeNull();
+    expect(neonBranchOperationsApplicationSource).toContain("listProviderOperationExecutions");
+    expect(neonBranchOperationsApplicationSource).toContain("requestedByCurrentActor");
+    expect(neonBranchOperationsApplicationSource).toContain("canApprove");
+    expect(neonBranchOperationsApplicationSource).toContain("recordProviderOperationPlan");
+    expect(neonBranchOperationsApplicationSource).toContain("revalidateNeonBranchCreatePlan");
+    expect(neonBranchOperationsApplicationSource).toContain("decideProviderOperation");
+    expect(neonBranchOperationsApplicationSource).toContain("claimProviderOperationExecution");
+    expect(neonBranchOperationsApplicationSource).toContain("cancelExpiredProviderOperationExecution");
+    expect(neonBranchOperationsApplicationSource).toContain("markProviderOperationRemoteStarted");
+    expect(neonBranchOperationsApplicationSource).toContain("reconcileNeonBranchCreate");
+    expect(neonBranchOperationsApplicationSource).toContain("revalidateNeonBranchDeletePlan");
+    expect(neonBranchOperationsApplicationSource).toContain("verifyNeonBranchOwnership");
+    expect(neonBranchOperationsApplicationSource).toContain("reconcileNeonBranchDelete");
+    expect(neonBranchOperationsApplicationSource).toContain("revalidateNeonBranchSwitchPlan");
+    expect(neonBranchOperationsApplicationSource).toContain("completeNeonBranchSwitch");
+    expect(neonBranchOperationsApplicationSource).toContain("needsCredentialFenceRecovery");
+    const switchExecutionStart = neonBranchOperationsApplicationSource.indexOf(
       'if (body.action === "executeSwitch") {',
     );
-    const switchRemoteStart = neonBranchOperationsRouteSource.indexOf(
+    const switchRemoteStart = neonBranchOperationsApplicationSource.indexOf(
       "const remoteStart = await markProviderOperationRemoteStarted",
       switchExecutionStart,
     );
-    const switchLeaseRevocation = neonBranchOperationsRouteSource.indexOf(
+    const switchLeaseRevocation = neonBranchOperationsApplicationSource.indexOf(
       "revocation = await revokeActiveLeases",
       switchExecutionStart,
     );
-    const switchCommit = neonBranchOperationsRouteSource.indexOf(
+    const switchCommit = neonBranchOperationsApplicationSource.indexOf(
       "const completed = await completeNeonBranchSwitch",
       switchExecutionStart,
     );
@@ -1038,35 +1082,35 @@ describe("provider credential Tauri adapter", () => {
     expect(switchRemoteStart).toBeGreaterThan(switchExecutionStart);
     expect(switchLeaseRevocation).toBeGreaterThan(switchRemoteStart);
     expect(switchCommit).toBeGreaterThan(switchLeaseRevocation);
-    const switchAmbiguousCommit = neonBranchOperationsRouteSource.slice(
+    const switchAmbiguousCommit = neonBranchOperationsApplicationSource.slice(
       switchCommit,
-      neonBranchOperationsRouteSource.indexOf("if (!completed)", switchCommit),
+      neonBranchOperationsApplicationSource.indexOf("if (!completed)", switchCommit),
     );
     expect(switchAmbiguousCommit).toContain("releaseRevocationGateClaim(connectionClaim)");
     expect(switchAmbiguousCommit).not.toContain("clearRevocationGate(connectionClaim)");
-    const deleteExecutionStart = neonBranchOperationsRouteSource.indexOf(
+    const deleteExecutionStart = neonBranchOperationsApplicationSource.indexOf(
       'if (body.action === "executeDelete") {',
     );
-    const deleteRemoteStart = neonBranchOperationsRouteSource.indexOf(
+    const deleteRemoteStart = neonBranchOperationsApplicationSource.indexOf(
       "const remoteStart = await markProviderOperationRemoteStarted",
       deleteExecutionStart,
     );
-    const deleteProviderCall = neonBranchOperationsRouteSource.indexOf(
+    const deleteProviderCall = neonBranchOperationsApplicationSource.indexOf(
       "const receipt = await deleteNeonBranch",
       deleteExecutionStart,
     );
     expect(deleteExecutionStart).toBeGreaterThanOrEqual(0);
     expect(deleteRemoteStart).toBeGreaterThan(deleteExecutionStart);
     expect(deleteProviderCall).toBeGreaterThan(deleteRemoteStart);
-    const createExecutionStart = neonBranchOperationsRouteSource.indexOf(
+    const createExecutionStart = neonBranchOperationsApplicationSource.indexOf(
       'if (body.action === "executeCreate") {',
       deleteProviderCall,
     );
-    const createRemoteStart = neonBranchOperationsRouteSource.indexOf(
+    const createRemoteStart = neonBranchOperationsApplicationSource.indexOf(
       "const remoteStart = await markProviderOperationRemoteStarted",
       createExecutionStart,
     );
-    const createProviderCall = neonBranchOperationsRouteSource.indexOf(
+    const createProviderCall = neonBranchOperationsApplicationSource.indexOf(
       "const receipt = await createNeonBranch",
       createExecutionStart,
     );
@@ -1164,7 +1208,7 @@ describe("provider credential Tauri adapter", () => {
     expect(neonSource).toContain("pg_terminate_backend(pid)");
     expect(neonSource).toContain("NEON_INHERITED_CREDENTIAL_FENCE_FAILED");
     expect(neonSource).toContain('"bootstrap_required"');
-    expect(neonBranchOperationsRouteSource).toContain("databaseFingerprint");
+    expect(neonBranchOperationsApplicationSource).toContain("databaseFingerprint");
     expect(providerOperationStoreSource).toContain("managedAccessState");
     expect(providerOperationStoreSource).toContain("credentialFenceFingerprint");
     expect(providerOperationStoreSource).toContain("provider-operation:complete-fenced");
@@ -1232,9 +1276,9 @@ describe("provider credential Tauri adapter", () => {
     );
     expect(providerAccessDomainSource).toContain("parseNeonBootstrapPreflight");
     expect(providerAccessDomainSource).toContain("parseNeonBootstrapApply");
-    expect(providerAccessControllerSource).toContain('action: "preflight"');
-    expect(providerAccessControllerSource).toContain('action: "apply"');
-    expect(providerAccessControllerSource).toContain("pendingNeonApplyRef");
+    expect(neonProviderBootstrapControllerSource).toContain('action: "preflight"');
+    expect(neonProviderBootstrapControllerSource).toContain('action: "apply"');
+    expect(neonProviderBootstrapControllerSource).toContain("pendingApplyRef");
     expect(providerResourcePickerSource).toContain("copy.neonTitle");
     expect(providerResourcePickerSource).toContain("copy.publicApproval");
     expect(workspaceMessagesSource).toContain("Prepare Neon least-privilege access");
@@ -1250,8 +1294,8 @@ describe("provider credential Tauri adapter", () => {
     expect(neonBranchManagerSource).toContain("copy.safeRun.returnPlan");
     expect(workspaceMessagesSource).toContain("Create no-change plan");
     expect(workspaceMessagesSource).toContain("변경 없는 계획 만들기");
-    expect(providerAccessControllerSource).toContain('method: "DELETE"');
-    expect(providerAccessControllerSource).toContain('"if-match"');
+    expect(sharedDatabaseControllerSource).toContain('method: "DELETE"');
+    expect(sharedDatabaseControllerSource).toContain('"if-match"');
     expect(sharedDatabasePanelSource).toContain("copy.remove");
     expect(workspaceMessagesSource).toContain("Remove shared database");
     expect(workspaceMessagesSource).toContain("공유 DB 제거");

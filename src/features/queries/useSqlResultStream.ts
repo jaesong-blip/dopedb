@@ -1,7 +1,13 @@
 // Query feature application state. A run owns its controller and every pending
 // React commit acknowledgement, so replacement and lifecycle cleanup cannot
 // resolve a callback from another run.
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import type {
   SqlStreamBatch,
@@ -62,17 +68,20 @@ export function useSqlResultStream(scopeKey: string) {
   const nextRunIdRef = useRef(0);
   const mountedRef = useRef(false);
 
-  const owns = (run: StreamRun) =>
-    mountedRef.current && run.active && activeRunRef.current === run;
+  const owns = useCallback(
+    (run: StreamRun) =>
+      mountedRef.current && run.active && activeRunRef.current === run,
+    [],
+  );
 
-  const settlePending = (run: StreamRun, error?: Error) => {
+  const settlePending = useCallback((run: StreamRun, error?: Error) => {
     for (const pending of run.pendingCommits) {
       if (pending.settled) continue;
       pending.settled = true;
       error ? pending.reject(error) : pending.resolve();
     }
     run.pendingCommits.clear();
-  };
+  }, []);
 
   // A batch callback waits for this exact run's post-commit layout effect. A
   // replacement cannot flush it because its pending set is not shared.
@@ -98,9 +107,9 @@ export function useSqlResultStream(scopeKey: string) {
         // Direct hook tests and non-interactive consumers have no click mark.
       }
     }
-  }, [stream]);
+  }, [owns, settlePending, stream]);
 
-  const commit = (run: StreamRun, next: SqlStreamViewState) => {
+  const commit = useCallback((run: StreamRun, next: SqlStreamViewState) => {
     if (!owns(run)) return Promise.reject(staleRun());
     stateRef.current = next;
     setStream(next);
@@ -113,9 +122,9 @@ export function useSqlResultStream(scopeKey: string) {
         reject(staleRun());
       }
     });
-  };
+  }, [owns]);
 
-  const invalidate = async (run: StreamRun | null) => {
+  const invalidate = useCallback(async (run: StreamRun | null) => {
     if (!run || !run.active) return;
     run.active = false;
     run.resolveInvalidated();
@@ -141,11 +150,14 @@ export function useSqlResultStream(scopeKey: string) {
     // Cancellation is best effort. Its transport failure must never leave a
     // commit callback unresolved or stop the next run from being created.
     await controller?.cancel().catch(() => undefined);
-  };
+  }, [settlePending]);
 
-  const cancel = async () => invalidate(activeRunRef.current);
+  const cancel = useCallback(
+    async () => invalidate(activeRunRef.current),
+    [invalidate],
+  );
 
-  const start = async (factory: ControllerFactory) => {
+  const start = useCallback(async (factory: ControllerFactory) => {
     await cancel();
     const run = newRun(++nextRunIdRef.current);
     activeRunRef.current = run;
@@ -200,9 +212,9 @@ export function useSqlResultStream(scopeKey: string) {
         activeRunRef.current = null;
       }
     }
-  };
+  }, [cancel, commit, owns, settlePending]);
 
-  const reset = async () => {
+  const reset = useCallback(async () => {
     await cancel();
     if (!mountedRef.current) return;
     const run = newRun(++nextRunIdRef.current);
@@ -212,7 +224,7 @@ export function useSqlResultStream(scopeKey: string) {
       run.active = false;
       activeRunRef.current = null;
     }
-  };
+  }, [cancel, commit]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -220,7 +232,7 @@ export function useSqlResultStream(scopeKey: string) {
       mountedRef.current = false;
       void invalidate(activeRunRef.current);
     };
-  }, [scopeKey]);
+  }, [invalidate, scopeKey]);
 
   return { stream, start, cancel, reset };
 }

@@ -19,8 +19,8 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::executor::read::DESKTOP_STREAM_BATCH_MAX_BYTES;
+use crate::kernel::access::PinnedConnection;
 use crate::kernel::identity::OperationId;
-use crate::store::PinnedConnection;
 
 use super::super::domain::{
     DesktopSqlResultExportFormat, DesktopSqlResultExportProgress, DesktopSqlResultExportReceipt,

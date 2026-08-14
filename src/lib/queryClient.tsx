@@ -9,6 +9,7 @@ import type {
   ManualTransactionChangedEvent,
   ManualTransactionStatus,
 } from "../features/queries/domain";
+import { knowledgeQueryScope } from "../features/knowledge/queryKeys";
 import { qk } from "./queries";
 
 // Scope changes are a security boundary, so new feature queries are private by
@@ -28,6 +29,7 @@ const isWorkspaceResource = (query: { queryKey: readonly unknown[] }) =>
   !WORKSPACE_QUERY_ALLOWLIST.has(String(query.queryKey[0]));
 
 const CONNECTION_RESOURCE_QUERY_ROOTS = new Set([
+  ...knowledgeQueryScope.connectionRoots,
   "catalog",
   "catalogOverview",
   "catalogSnapshot",

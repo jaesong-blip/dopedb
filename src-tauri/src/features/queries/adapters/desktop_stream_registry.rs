@@ -8,9 +8,9 @@ use tokio::sync::watch;
 use uuid::Uuid;
 
 use crate::executor::read::DESKTOP_STREAM_BATCH_MAX_BYTES;
+use crate::kernel::access::PinnedConnection;
 use crate::kernel::identity::OperationId;
 use crate::kernel::sync::lock_unpoisoned;
-use crate::store::PinnedConnection;
 
 use super::super::domain::{
     DesktopSqlResultExportFormat, DesktopSqlResultExportProgress, DesktopSqlResultExportReceipt,

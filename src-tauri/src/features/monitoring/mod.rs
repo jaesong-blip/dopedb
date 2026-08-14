@@ -17,13 +17,14 @@ use crate::connection::{
     ConnectionAccess, ConnectionLease, ConnectionManager, ConnectionOperationScope,
 };
 use crate::error::AppError;
+use crate::kernel::access::PinnedConnection;
 use crate::model::{Engine, HistoryEntry, MonitoringStatus, QueryKind};
 use crate::monitoring;
 use crate::operations::{
     actor_for_pin, capture_policy, ensure_operation_scope, required_confirmation, NewOperation,
     OperationPlanDisposition, OperationRuntime,
 };
-use crate::store::{PinnedConnection, Store};
+use crate::store::Store;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MonitoringProposalRequest {

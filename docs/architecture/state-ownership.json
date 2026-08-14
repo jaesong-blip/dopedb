@@ -1,6 +1,35 @@
 {
-  "version": 1,
+  "version": 2,
   "states": [
+    {
+      "name": "appShellNavigation",
+      "owner": "src/features/appShell/navigationState.ts",
+      "dispatcher": "src/features/appShell/AppShell.tsx",
+      "writerTokens": [
+        "export function appShellNavigationReducer("
+      ],
+      "forbiddenWriterTokens": [
+        "setEditing(",
+        "setConnectionPreset(",
+        "setKnowledgeEnvironmentFocus(",
+        "setSettingsOpen(",
+        "setSettingsSection(",
+        "setSchemaDiffGroupKey("
+      ]
+    },
+    {
+      "name": "agentSessionProjection",
+      "owner": "src/features/agents/sessionStore.ts",
+      "dispatcher": "src/features/agents/sessionStore.ts",
+      "writerTokens": [
+        "export class AcpSessionStore",
+        "private publish("
+      ],
+      "forbiddenWriterTokens": [
+        "useState<AcpSessionSummary",
+        "setProjectionRevision("
+      ]
+    },
     {
       "name": "workbenchDocuments",
       "owner": "src/features/workbench/state.ts",
@@ -36,7 +65,7 @@
       "owner": "src/features/providers/state.ts",
       "dispatcher": "src/features/providers/ProviderCredentialDialog.tsx",
       "writerTokens": [
-        "case \"setApiKey\":",
+        "case \"select\":",
         "case \"receipt\":"
       ],
       "forbiddenWriterTokens": [
@@ -155,23 +184,13 @@
       ]
     },
     {
-      "name": "terminalQueryRunCapabilities",
-      "owner": "src-tauri/src/features/queries/adapters/provenance.rs",
-      "writerTokens": [
-        "runs: Arc<Mutex<HashMap<QueryRunId, RunCapability>>>,",
-        "runs.retain(",
-        "runs.remove(",
-        "runs.insert("
-      ]
-    },
-    {
       "name": "desktopQueryStreamCredits",
       "owner": "src-tauri/src/features/queries/adapters/desktop_stream_registry.rs",
       "writerTokens": [
         "streams: Arc<Mutex<HashMap<OperationId, StreamCredit>>>",
         "streams.insert(",
         "stream.in_flight = Some(sequence);",
-        "stream.batch = Some(batch);",
+        "stream.ephemeral_batch = Some(batch);",
         "stream.pulled = true;",
         "stream.next_sequence = stream.next_sequence.saturating_add(1);",
         "lock_unpoisoned(&self.streams).remove(&operation_id)"
@@ -222,14 +241,6 @@
       "owner": "src-tauri/src/features/erd/adapters/repository.rs",
       "writerTokens": [
         "pub(in crate::features::erd) struct SqliteErdRepository"
-      ]
-    },
-    {
-      "name": "dashboardStore",
-      "owner": "src-tauri/src/store/repositories/dashboards.rs",
-      "writerTokens": [
-        "pub(crate) async fn save_dashboard_if_current(",
-        "async fn delete_dashboard_revision_if_current("
       ]
     },
     {

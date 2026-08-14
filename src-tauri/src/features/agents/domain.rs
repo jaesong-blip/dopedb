@@ -28,16 +28,6 @@ pub(crate) struct AgentCliInfo {
     pub(crate) note: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct AgentKnowledgeEnvironment {
-    pub(crate) id: uuid::Uuid,
-    pub(crate) project_name: String,
-    pub(crate) name: String,
-    pub(crate) risk_class: crate::features::knowledge::domain::EnvironmentRiskClass,
-    pub(crate) graph_revision_count: u64,
-}
-
 /// A thread persisted by the retired in-app Agent chat; it has no mutation path.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

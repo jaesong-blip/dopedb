@@ -11,9 +11,9 @@ use tokio::time::Instant;
 use zeroize::Zeroizing;
 
 use crate::error::{AppError, AppResult};
+use crate::kernel::access::PinnedConnection;
 use crate::kernel::identity::{AccountId, ConnectionId, WorkspaceId};
 use crate::model::{ConnectionProfile, Engine, Provider, WorkspaceCredentialMode};
-use crate::store::PinnedConnection;
 
 use super::{release_managed_bounded, CacheEntry, Live};
 use super::{

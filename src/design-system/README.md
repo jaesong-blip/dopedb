@@ -27,7 +27,7 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며 vendor widget�
 | 반복되는 React UI primitive | `src/design-system/components/` |
 | 앱 shell과 workbench 레이아웃 | shell·tool-window TSX의 정적 Tailwind utility |
 | 새 화면 고유 배치 | TSX에 직접 작성한 정적 `tw:` utility |
-| React Flow generated DOM | `src/components/ErdCanvas.css` vendor integration |
+| React Flow generated DOM | `src/features/erd/ErdCanvas.css` vendor integration |
 | xterm generated DOM | upstream `@xterm/xterm/css/xterm.css` + host TSX Tailwind utility |
 
 컴포넌트 코드에 토큰이 이미 있는데 hex/rgb 값을 직접 추가하지 않는다. 새 역할이

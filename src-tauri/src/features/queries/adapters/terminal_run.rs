@@ -5,6 +5,7 @@ use crate::connection::{
 };
 use crate::error::AppError;
 use crate::executor;
+use crate::kernel::access::PinnedConnection;
 use crate::kernel::agent_policy::MAX_AGENT_ROWS;
 use crate::kernel::identity::{ConnectionId, OperationId};
 use crate::kernel::TerminalAuthority;
@@ -13,7 +14,7 @@ use crate::operations::{
     OperationState,
 };
 use crate::safety;
-use crate::store::{PinnedConnection, Store};
+use crate::store::Store;
 use uuid::Uuid;
 
 use super::super::domain::{AgentQueryRun, AgentQueryRunEventContext};

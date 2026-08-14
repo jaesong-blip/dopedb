@@ -22,9 +22,10 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::features::workspaces::{Workspace, WorkspaceAuthUser, WorkspaceRole};
+use crate::kernel::access::PinnedConnection;
 use crate::kernel::identity::{AccountId, ConnectionId, ProviderBindingId, WorkspaceId};
 use crate::model::{ConnectionProfile, Engine, Provider, WorkspaceCredentialMode};
-use crate::store::{PinnedConnection, Store};
+use crate::store::Store;
 
 use super::remote_authority::RemoteConnectionAuthorityPort;
 use super::Live;

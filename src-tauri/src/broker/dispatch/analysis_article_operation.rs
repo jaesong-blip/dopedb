@@ -118,7 +118,7 @@ fn article_create(
     let mut definition = definition.with_source(source);
     definition.refresh.runner_id = None;
     definition.refresh.share_reviewed_results = false;
-    Ok(SharedAnalysisArticleCreate {
+    let article = SharedAnalysisArticleCreate {
         id: article_id,
         project_environment_id: scope.project_environment_id,
         environment_revision,
@@ -135,7 +135,11 @@ fn article_create(
             })
             .collect(),
         definition,
-    })
+    };
+    article
+        .validate()
+        .then_some(article)
+        .ok_or(ErrorCode::InvalidRequest)
 }
 
 async fn propose(

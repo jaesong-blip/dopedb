@@ -16,9 +16,9 @@ use crate::features::providers::adapters::{
     AuthorizedProvisioningTarget, ProvisioningTargetAuthorityPort,
 };
 use crate::features::providers::ports::ProvisioningRuntimePort;
+use crate::kernel::access::PinnedConnection;
 use crate::model::{Provider, WorkspaceCredentialMode};
 use crate::operations::canonical_hash;
-use crate::store::PinnedConnection;
 
 use super::super::domain::LocalProvider;
 use super::application::{ProvisioningInspection, ProvisioningStepEvidence};

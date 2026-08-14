@@ -15,9 +15,9 @@ import type {
 } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
 import type { ConnectionProfile } from "../../features/connections/domain";
-import DataGrid from "../../components/DataGrid";
+import DataGrid from "../../features/queryResults/DataGrid";
 import { Icon } from "../../components/Icon";
-import ResultToolbar from "../../components/ResultToolbar";
+import ResultToolbar from "../../features/queryResults/ResultToolbar";
 import { Button } from "../../design-system/components/Button";
 import {
   WorkbenchDivider,
@@ -70,7 +70,10 @@ export default function Documents({
   const { t } = useI18n();
   const catalogScope = useCatalogScope();
   const catalog = useQuery(catalogQuery(connection.id, catalogScope));
-  const tables = catalog.data?.tables ?? [];
+  const tables = useMemo(
+    () => catalog.data?.tables ?? [],
+    [catalog.data?.tables],
+  );
 
   const [collection, setCollection] = useState("");
   useEffect(() => {

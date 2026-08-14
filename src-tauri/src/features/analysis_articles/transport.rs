@@ -28,12 +28,12 @@ use super::adapters::hosted::{
     RemoteAnalysisPublication, RemoteAnalysisResult, RemoteAnalysisRun, RemoteAnalysisSignal,
     RemoteAnalysisSignalHistoryReceipt,
 };
+use super::adapters::TauriAnalysisRuntimeAdapter;
 use crate::error::{AppError, AppResult};
 use crate::executor::cancel;
-use crate::features::workspaces::WorkspaceKind;
+use crate::kernel::access::{ActiveResourceScope, WorkspaceKind};
 use crate::kernel::identity::AccountId;
 use crate::state::AppState;
-use crate::store::ActiveResourceScope;
 
 use super::{AnalysisArticleMutation, AnalysisDefinitionRunReceipt, AnalysisDefinitionRunRequest};
 
@@ -509,6 +509,7 @@ pub(crate) async fn run_analysis_article_command(
     parameter_values: Option<BTreeMap<String, serde_json::Value>>,
 ) -> AppResult<AnalysisRunCommandResult> {
     let parameter_values = parameter_values.unwrap_or_default();
+    let desktop = TauriAnalysisRuntimeAdapter::new(app);
     let (scope, account) = remote_scope(&state).await?;
     let registration_guard = analysis_runner_registration_guard().await;
     let mut device_id = state
@@ -635,8 +636,8 @@ pub(crate) async fn run_analysis_article_command(
             .await?;
             if let Err(error) = super::signals::evaluate_analysis_signals(
                 super::signals::AnalysisSignalEvaluation {
-                    app: Some(&app),
-                    state: &state,
+                    desktop: &desktop,
+                    analysis: &state.services.analysis_article,
                     account_id: account.as_str(),
                     workspace_id: scope.workspace_id,
                     article: &article,
@@ -687,8 +688,8 @@ pub(crate) async fn run_analysis_article_command(
                 Ok(run) if terminal_state != AnalysisRunState::Cancelled => {
                     if let Err(signal_error) = super::signals::evaluate_analysis_signals(
                         super::signals::AnalysisSignalEvaluation {
-                            app: Some(&app),
-                            state: &state,
+                            desktop: &desktop,
+                            analysis: &state.services.analysis_article,
                             account_id: account.as_str(),
                             workspace_id: scope.workspace_id,
                             article: &article,

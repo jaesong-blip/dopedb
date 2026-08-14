@@ -11,9 +11,9 @@ use tauri::{AppHandle, Emitter};
 
 use crate::broker::BrokerSessionRegistry;
 use crate::error::{AppError, AppResult};
+use crate::kernel::access::PinnedConnection;
 use crate::kernel::identity::{ConnectionId, TerminalSessionId};
 use crate::kernel::sync::lock_unpoisoned;
-use crate::store::PinnedConnection;
 
 use super::super::domain::{
     TerminalConnectionPin, TerminalExit, TerminalLifecycle, TerminalOutputChunk, TerminalProfile,

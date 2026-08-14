@@ -5,12 +5,17 @@ vi.mock("./tauriAdapter", () => ({
   onAgentAcpChanged: vi.fn(),
 }));
 
-import type { AcpSessionChanged, AcpSessionSummary } from "./domain";
+import type {
+  AcpSessionChanged,
+  AcpSessionEvent,
+  AcpSessionSummary,
+} from "./domain";
 import { listAgentAcpSessions, onAgentAcpChanged } from "./tauriAdapter";
 import {
   AcpSessionStore,
   mergeAcpSessionSummaries,
 } from "./sessionStore";
+import { isCurrentAcpFocusRequest } from "./sessionFocus";
 
 function session(
   id: string,
@@ -40,6 +45,21 @@ async function settle() {
   await Promise.resolve();
 }
 
+function messageEvent(
+  id: string,
+  sequence: number,
+  text: string,
+): AcpSessionEvent {
+  return {
+    sessionId: id as AcpSessionEvent["sessionId"],
+    sequence,
+    createdAt: "2026-08-13T00:00:00.000Z",
+    type: "userMessage",
+    text,
+    attachments: [],
+  };
+}
+
 describe("ACP session store", () => {
   const list = vi.mocked(listAgentAcpSessions);
   const listen = vi.mocked(onAgentAcpChanged);
@@ -67,6 +87,20 @@ describe("ACP session store", () => {
     const merged = mergeAcpSessionSummaries(prior, [session("one")]);
     expect(merged).toHaveLength(1);
     expect(prior).toHaveLength(0);
+    const selected = session("one").id;
+    const request = {
+      requestId: 4,
+      scopeKey: "workspace:a",
+      selectionGeneration: 2,
+      selectedSessionId: selected,
+    };
+    expect(isCurrentAcpFocusRequest(request, request)).toBe(true);
+    expect(isCurrentAcpFocusRequest(request, {
+      ...request,
+      requestId: 5,
+      selectionGeneration: 3,
+      selectedSessionId: session("two").id,
+    })).toBe(false);
   });
 
   it("rejects an older event for the same exact session", () => {
@@ -85,10 +119,74 @@ describe("ACP session store", () => {
 
   it("registers one listener before reading the initial snapshot", async () => {
     const store = new AcpSessionStore();
+    const observedLiveChanges: AcpSessionChanged[] = [];
+    const stopObservingLiveChanges = store.observeLiveChanges((event) => {
+      observedLiveChanges.push(event);
+    });
     store.activate("workspace:a");
     await settle();
     expect(listen).toHaveBeenCalledTimes(1);
     expect(list).toHaveBeenCalledTimes(1);
+    const focused = session("focused");
+    expect(store.recordFocus("workspace:a", {
+      session: focused,
+      events: [messageEvent("focused", 1, "focused replay")],
+      replayTruncated: false,
+    })).toBe(true);
+    expect(store.getSnapshot().projections.get(focused.id)?.items).toEqual([
+      expect.objectContaining({ kind: "user", text: "focused replay" }),
+    ]);
+    expect(observedLiveChanges).toEqual([]);
+
+    for (let index = 1; index <= 15; index += 1) {
+      const candidate = session(`cached-${index}`);
+      store.recordFocus("workspace:a", {
+        session: candidate,
+        events: [messageEvent(candidate.id, 1, `replay ${index}`)],
+        replayTruncated: false,
+      });
+    }
+    store.recordFocus("workspace:a", {
+      session: focused,
+      events: [messageEvent("focused", 1, "focused replay")],
+      replayTruncated: false,
+    });
+    const overflow = session("overflow");
+    store.recordFocus("workspace:a", {
+      session: overflow,
+      events: [messageEvent(overflow.id, 1, "overflow replay")],
+      replayTruncated: false,
+    });
+    expect(store.getSnapshot().projections.size).toBe(16);
+    expect(store.getSnapshot().projections.has(session("cached-1").id)).toBe(
+      false,
+    );
+    expect(store.getSnapshot().projections.has(focused.id)).toBe(true);
+
+    const eventTouched = session("cached-2");
+    change?.({
+      session: eventTouched,
+      event: messageEvent(eventTouched.id, 2, "live event"),
+    });
+    expect(observedLiveChanges).toEqual([
+      expect.objectContaining({ session: eventTouched }),
+    ]);
+    await settle();
+    const secondOverflow = session("second-overflow");
+    store.recordFocus("workspace:a", {
+      session: secondOverflow,
+      events: [messageEvent(secondOverflow.id, 1, "second overflow replay")],
+      replayTruncated: false,
+    });
+    expect(store.getSnapshot().projections.size).toBe(16);
+    expect(store.getSnapshot().projections.has(session("cached-2").id)).toBe(true);
+    expect(store.getSnapshot().projections.has(session("cached-3").id)).toBe(false);
+    stopObservingLiveChanges();
+    change?.({
+      session: eventTouched,
+      event: messageEvent(eventTouched.id, 3, "unobserved live event"),
+    });
+    expect(observedLiveChanges).toHaveLength(1);
   });
 
   it("does not duplicate the listener for the same scope generation", async () => {
@@ -110,6 +208,12 @@ describe("ACP session store", () => {
       sessions: [],
       loading: true,
     });
+    expect(store.recordFocus("workspace:a", {
+      session: session("private"),
+      events: [messageEvent("private", 1, "old workspace")],
+      replayTruncated: false,
+    })).toBe(false);
+    expect(store.getSnapshot().projections.size).toBe(0);
     expect(unlistenCalls).toBe(1);
   });
 
@@ -127,13 +231,17 @@ describe("ACP session store", () => {
     await Promise.resolve();
     change?.({
       session: session("event", "2026-08-13T00:00:02.000Z"),
-      event: null,
+      event: messageEvent("event", 1, "newer event"),
     });
+    await settle();
     expect(store.getSnapshot()).toMatchObject({
       sessions: [expect.objectContaining({ id: "event" })],
       loading: true,
       error: null,
     });
+    const eventSession = session("event", "2026-08-13T00:00:02.000Z");
+    expect(store.getSnapshot().projections.get(eventSession.id)?.items)
+      .toEqual([expect.objectContaining({ kind: "user", text: "newer event" })]);
     resolveList([session("event", "2026-08-13T00:00:01.000Z")]);
     await settle();
     expect(store.getSnapshot().sessions).toEqual([
@@ -156,6 +264,7 @@ describe("ACP session store", () => {
       session: session("partial-event"),
       event: null,
     });
+    await settle();
     expect(store.getSnapshot()).toMatchObject({
       sessions: [expect.objectContaining({ id: "partial-event" })],
       error: new Error("denied"),

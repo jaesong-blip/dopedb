@@ -2,128 +2,170 @@ import type { ReactNode, RefObject } from "react";
 import type { Update } from "@tauri-apps/plugin-updater";
 
 import { Icon } from "../../components/Icon";
-import AcpChatPanel from "../agents/AcpChatPanel";
-import type { AgentComposerRequest } from "../agents/domain";
-import { AgentSelectionProvider } from "../agents/selectionContext";
-import type { BackgroundTask } from "../backgroundTasks/domain";
-import type { ConnectionProfile } from "../connections/domain";
-import type {
-  KnowledgeEnvironmentFocus,
-  KnowledgeEnvironmentView,
-} from "../knowledge/domain";
-import type { QueryServiceStore } from "../queryServices/store";
-import { defaultSqlNamespace } from "../queries/namespace";
-import type { WorkspaceManualTransaction } from "../queries/useWorkspaceManualTransactions";
-import type { WorkbenchDocument } from "../workbench/domain";
-import QueryServicesToolWindow from "../queryServices/QueryServicesToolWindow";
-import LocalHistoryToolWindow from "../localHistory/LocalHistoryToolWindow";
-import WorkspaceAccount from "../workspaces/components/WorkspaceAccount";
-import WorkspaceSwitcher from "../workspaces/components/WorkspaceSwitcher";
 import type { CatalogTable } from "../../ipc/types";
 import { useI18n } from "../../lib/i18n";
 import type { SchemaConnectionGroup } from "../../lib/schemaDiff";
 import { tableKey } from "../../lib/tableRef";
 import { DatabaseExplorer } from "../../screens/Connections";
-import type { ConnectionLaunchPreset } from "../connections/presets";
+import AcpChatPanel from "../agents/AcpChatPanel";
+import type { AgentComposerRequest } from "../agents/domain";
 import { clampAgentDockWidth } from "../agents/layout";
+import { AgentSelectionProvider } from "../agents/selectionContext";
+import type { BackgroundTask } from "../backgroundTasks/domain";
+import type { ConnectionProfile } from "../connections/domain";
+import type { ConnectionLaunchPreset } from "../connections/presets";
+import type {
+  KnowledgeEnvironmentFocus,
+  KnowledgeEnvironmentView,
+} from "../knowledge/domain";
+import LocalHistoryToolWindow from "../localHistory/LocalHistoryToolWindow";
+import QueryServicesToolWindow from "../queryServices/QueryServicesToolWindow";
+import type { QueryServiceStore } from "../queryServices/store";
+import { defaultSqlNamespace } from "../queries/namespace";
+import type { WorkspaceManualTransaction } from "../queries/useWorkspaceManualTransactions";
+import type { WorkbenchDocument } from "../workbench/domain";
+import WorkspaceAccount from "../workspaces/components/WorkspaceAccount";
+import WorkspaceSwitcher from "../workspaces/components/WorkspaceSwitcher";
 import { IdeStatusBar, IdeTopBar } from "./IdeChrome";
 
 const IS_MACOS =
   typeof navigator !== "undefined" &&
   /Macintosh|Mac OS X/.test(navigator.userAgent);
 
+type ShellLayoutModel = {
+  workspace: {
+    connections: ConnectionProfile[];
+    selected: ConnectionProfile | null;
+    selectedId: string | null;
+    supportsSql: boolean;
+    writeEnabled: boolean;
+    settingsOpen: boolean;
+    availableUpdate: Update | null;
+    creatingDemo: boolean;
+  };
+  explorer: {
+    databaseOpen: boolean;
+    localHistoryOpen: boolean;
+    activeSchemaGroupKey: string | null;
+    knowledgeFocus: KnowledgeEnvironmentFocus | null;
+    revealRequest: number;
+  };
+  workbench: {
+    documents: WorkbenchDocument[];
+    activeDocumentId: string | null;
+    selectedTable: CatalogTable | null;
+    content: ReactNode;
+  };
+  services: {
+    open: boolean;
+    height: number;
+    store: QueryServiceStore;
+  };
+  agent: {
+    open: boolean;
+    composerRequest: AgentComposerRequest | null;
+    overlay: boolean;
+    width: number;
+    buttonRef: RefObject<HTMLButtonElement | null>;
+  };
+  status: {
+    backgroundTasks: BackgroundTask[];
+    cancellingBackgroundTaskKeys: ReadonlySet<string>;
+    manualTransactions: WorkspaceManualTransaction[];
+    settlingManualTransactionIds: ReadonlySet<string>;
+    unseenOperationCount: number;
+  };
+  viewport: {
+    compact: boolean;
+    mobileExplorerOpen: boolean;
+    sidebarWidth: number;
+    mainRef: RefObject<HTMLElement | null>;
+  };
+  search: {
+    open: boolean;
+    buttonRef: RefObject<HTMLButtonElement | null>;
+  };
+};
+
+type ShellLayoutCommands = {
+  workspace: {
+    scopeChanged: () => Promise<void>;
+    dataRefreshed: () => Promise<void>;
+    newConnection: (preset?: ConnectionLaunchPreset) => void;
+    createDemo: () => void;
+    editConnection: (connection: ConnectionProfile) => void;
+    deleteConnection: (id: string) => Promise<void>;
+    updateConnection: (connection: ConnectionProfile) => void;
+    settings: () => void;
+    safetySettings: () => void;
+    openUpdateSettings: () => void;
+  };
+  explorer: {
+    toggleDatabase: () => void;
+    toggleLocalHistory: () => void;
+    closeLocalHistory: () => void;
+    selectConnection: (id: string) => void;
+    openTable: (connection: ConnectionProfile, table: CatalogTable) => void;
+    openSchemaDiff: (group: SchemaConnectionGroup) => void;
+    openProjectEnvironment: (
+      environmentId: string | null,
+      view: KnowledgeEnvironmentView,
+      resourceId?: string | null,
+    ) => void;
+    dismissMobile: () => void;
+  };
+  workbench: {
+    activateDocument: (id: string) => void;
+    restoreDocument: (id: string, content: string) => void;
+    newQuery: () => void;
+  };
+  services: {
+    toggle: () => void;
+    close: () => void;
+    startResize: (event: {
+      preventDefault(): void;
+      clientY: number;
+    }) => void;
+    resetHeight: () => void;
+  };
+  agent: {
+    open: () => void;
+    openTask: (
+      connectionId: string,
+      environmentId?: string,
+      prompt?: string,
+    ) => void;
+    openArchive: () => void;
+    widthChanged: (width: number) => void;
+    close: () => void;
+  };
+  status: {
+    cancelBackgroundTask: (task: BackgroundTask) => Promise<void>;
+    openManualTransaction: (transaction: WorkspaceManualTransaction) => void;
+    commitManualTransaction: (
+      transaction: WorkspaceManualTransaction,
+    ) => Promise<void>;
+    rollbackManualTransaction: (
+      transaction: WorkspaceManualTransaction,
+    ) => Promise<void>;
+    revealDatabaseContext: () => void;
+    openNotifications: () => void;
+  };
+  viewport: {
+    startSidebarDrag: (event: {
+      preventDefault(): void;
+      clientX: number;
+    }) => void;
+    resetSidebar: () => void;
+  };
+  search: {
+    open: (returnFocus?: HTMLElement | null) => void;
+  };
+};
+
 type Props = {
-  settingsOpen: boolean;
-  activeSchemaGroupKey: string | null;
-  connections: ConnectionProfile[];
-  selected: ConnectionProfile | null;
-  selectedId: string | null;
-  selectedTable: CatalogTable | null;
-  supportsSql: boolean;
-  writeEnabled: boolean;
-  knowledgeEnvironmentFocus: KnowledgeEnvironmentFocus | null;
-  compact: boolean;
-  mobileExplorerOpen: boolean;
-  databaseExplorerOpen: boolean;
-  localHistoryOpen: boolean;
-  servicesOpen: boolean;
-  servicesHeight: number;
-  queryServiceStore: QueryServiceStore;
-  backgroundTasks: BackgroundTask[];
-  cancellingBackgroundTaskKeys: ReadonlySet<string>;
-  manualTransactions: WorkspaceManualTransaction[];
-  settlingManualTransactionIds: ReadonlySet<string>;
-  workbenchDocuments: WorkbenchDocument[];
-  activeWorkbenchDocumentId: string | null;
-  explorerRevealRequest: number;
-  unseenOperationCount: number;
-  sidebarWidth: number;
-  mainRef: RefObject<HTMLElement | null>;
-  agentButtonRef: RefObject<HTMLButtonElement | null>;
-  searchEverywhereButtonRef: RefObject<HTMLButtonElement | null>;
-  mainContent: ReactNode;
-  availableUpdate: Update | null;
-  agentDockOpen: boolean;
-  agentComposerRequest: AgentComposerRequest | null;
-  searchEverywhereOpen: boolean;
-  agentOverlay: boolean;
-  agentWidth: number;
-  creatingDemo: boolean;
-  onWorkspaceScopeChanged: () => Promise<void>;
-  onWorkspaceDataRefreshed: () => Promise<void>;
-  onNewConnection: (preset?: ConnectionLaunchPreset) => void;
-  onCreateDemoDatabase: () => void;
-  onOpenProjectEnvironment: (
-    environmentId: string | null,
-    view: KnowledgeEnvironmentView,
-    resourceId?: string | null,
-  ) => void;
-  onToggleDatabaseExplorer: () => void;
-  onToggleLocalHistory: () => void;
-  onCloseLocalHistory: () => void;
-  onToggleServices: () => void;
-  onCloseServices: () => void;
-  onCancelBackgroundTask: (task: BackgroundTask) => Promise<void>;
-  onOpenAgentTask: (connectionId: string) => void;
-  onOpenManualTransaction: (
-    transaction: WorkspaceManualTransaction,
-  ) => void;
-  onCommitManualTransaction: (
-    transaction: WorkspaceManualTransaction,
-  ) => Promise<void>;
-  onRollbackManualTransaction: (
-    transaction: WorkspaceManualTransaction,
-  ) => Promise<void>;
-  onRevealDatabaseContext: () => void;
-  onActivateWorkbenchDocument: (id: string) => void;
-  onRestoreWorkbenchDocument: (id: string, content: string) => void;
-  onStartServicesResize: (event: {
-    preventDefault(): void;
-    clientY: number;
-  }) => void;
-  onResetServicesHeight: () => void;
-  onSettings: () => void;
-  onSafetySettings: () => void;
-  onOpenNotifications: () => void;
-  onNewQuery: () => void;
-  onOpenAgentArchive: () => void;
-  onOpenAgent: () => void;
-  onSearchEverywhere: (returnFocus?: HTMLElement | null) => void;
-  onSelectWorkspaceConnection: (id: string) => void;
-  onOpenTable: (connection: ConnectionProfile, table: CatalogTable) => void;
-  onOpenSchemaDiff: (group: SchemaConnectionGroup) => void;
-  onEditConnection: (connection: ConnectionProfile) => void;
-  onDeletedConnection: (id: string) => Promise<void>;
-  onConnectionUpdated: (connection: ConnectionProfile) => void;
-  onDismissMobileExplorer: () => void;
-  onStartSidebarDrag: (event: {
-    preventDefault(): void;
-    clientX: number;
-  }) => void;
-  onResetSidebar: () => void;
-  onOpenUpdateSettings: () => void;
-  onAgentWidthChange: (width: number) => void;
-  onCloseAgent: () => void;
+  model: ShellLayoutModel;
+  commands: ShellLayoutCommands;
 };
 
 export default function ShellLayout(props: Props) {
@@ -134,125 +176,113 @@ export default function ShellLayout(props: Props) {
   );
 }
 
-function ShellLayoutContent(props: Props) {
+function ShellLayoutContent({ model, commands }: Props) {
   const { t } = useI18n();
   const {
-    settingsOpen,
-    activeSchemaGroupKey,
-    connections,
-    selected,
-    selectedId,
-    selectedTable,
-    supportsSql,
-    writeEnabled,
-    compact,
-    mobileExplorerOpen,
-    databaseExplorerOpen,
-    localHistoryOpen,
-    servicesOpen,
-    servicesHeight,
-    queryServiceStore,
-    workbenchDocuments,
-    activeWorkbenchDocumentId,
-    sidebarWidth,
-    mainRef,
-    mainContent,
-    availableUpdate,
-    agentDockOpen,
-    agentOverlay,
-    agentWidth,
-    creatingDemo,
-  } = props;
-  const showUpdateBadge = !!availableUpdate && !settingsOpen;
-  const databaseExplorerVisible = databaseExplorerOpen;
-  const environmentDetailOpen = props.knowledgeEnvironmentFocus !== null;
-  const localHistoryVisible = !environmentDetailOpen && localHistoryOpen;
+    workspace,
+    explorer,
+    workbench,
+    services,
+    agent,
+    status,
+    viewport,
+    search,
+  } = model;
+  const showUpdateBadge =
+    !!workspace.availableUpdate && !workspace.settingsOpen;
+  const databaseExplorerVisible = explorer.databaseOpen;
+  const environmentDetailOpen = explorer.knowledgeFocus !== null;
+  const localHistoryVisible =
+    !environmentDetailOpen && explorer.localHistoryOpen;
   const leftToolWindowVisible =
     databaseExplorerVisible || localHistoryVisible;
-  const servicesVisible = servicesOpen;
-  const rightDockWidth = agentDockOpen && !agentOverlay
+  const servicesVisible = services.open;
+  const rightDockWidth = agent.open && !agent.overlay
     ? clampAgentDockWidth(
-        agentWidth,
+        agent.width,
         typeof window === "undefined" ? 1_280 : window.innerWidth,
       )
     : 0;
   const activeWorkbenchDocument =
-    workbenchDocuments.find(
-      (document) => document.id === activeWorkbenchDocumentId,
+    workbench.documents.find(
+      (document) => document.id === workbench.activeDocumentId,
     ) ?? null;
-  const selectedNamespace = selected
+  const selectedNamespace = workspace.selected
     ? activeWorkbenchDocument?.kind === "sql"
       ? activeWorkbenchDocument.selectedSchema ??
-        defaultSqlNamespace(selected)
+        defaultSqlNamespace(workspace.selected)
       : activeWorkbenchDocument?.kind === "data"
         ? activeWorkbenchDocument.table.schema ??
-          defaultSqlNamespace(selected)
-        : defaultSqlNamespace(selected)
+          defaultSqlNamespace(workspace.selected)
+        : defaultSqlNamespace(workspace.selected)
     : null;
-  const selectedDatabase = selected
+  const selectedDatabase = workspace.selected
     ? activeWorkbenchDocument?.kind === "sql"
-      ? activeWorkbenchDocument.selectedDatabase || selected.database
+      ? activeWorkbenchDocument.selectedDatabase || workspace.selected.database
       : activeWorkbenchDocument?.kind === "data"
-        ? activeWorkbenchDocument.table.database ?? selected.database
-        : selected.database
+        ? activeWorkbenchDocument.table.database ?? workspace.selected.database
+        : workspace.selected.database
     : null;
+
   return (
     <div
       className="app tw:grid tw:h-dvh tw:overflow-hidden tw:bg-muted"
-      data-compact={compact}
+      data-compact={viewport.compact}
       data-platform={IS_MACOS ? "macos" : "other"}
-      data-agent-open={agentDockOpen}
-      data-mobile-explorer-open={mobileExplorerOpen}
+      data-agent-open={agent.open}
+      data-mobile-explorer-open={viewport.mobileExplorerOpen}
       data-database-explorer-open={databaseExplorerVisible}
       data-local-history-open={localHistoryVisible}
       data-services-open={servicesVisible}
       style={{
-        gridTemplateColumns: compact
+        gridTemplateColumns: viewport.compact
           ? "minmax(0, 1fr)"
           : leftToolWindowVisible
-            ? `${sidebarWidth}px 4px minmax(0, 1fr) ${rightDockWidth}px`
+            ? `${viewport.sidebarWidth}px 4px minmax(0, 1fr) ${rightDockWidth}px`
             : `0 0 minmax(0, 1fr) ${rightDockWidth}px`,
-        gridTemplateRows: compact
+        gridTemplateRows: viewport.compact
           ? "var(--ds-title-toolbar-height) minmax(0, 1fr) var(--ds-status-bar-height)"
           : `var(--ds-title-toolbar-height) minmax(0, 1fr) ${
-              servicesVisible ? servicesHeight : 0
+              servicesVisible ? services.height : 0
             }px var(--ds-status-bar-height)`,
       }}
     >
       <IdeTopBar
-        selected={selected}
-        supportsSql={supportsSql}
+        selected={workspace.selected}
+        supportsSql={workspace.supportsSql}
         databaseExplorerOpen={
-          databaseExplorerVisible && (!compact || mobileExplorerOpen)
+          databaseExplorerVisible &&
+          (!viewport.compact || viewport.mobileExplorerOpen)
         }
         localHistoryOpen={
-          localHistoryVisible && (!compact || mobileExplorerOpen)
+          localHistoryVisible &&
+          (!viewport.compact || viewport.mobileExplorerOpen)
         }
         servicesOpen={servicesVisible}
-        agentDockOpen={agentDockOpen}
-        searchEverywhereOpen={props.searchEverywhereOpen}
-        settingsOpen={settingsOpen}
+        agentDockOpen={agent.open}
+        searchEverywhereOpen={search.open}
+        settingsOpen={workspace.settingsOpen}
         account={
           <WorkspaceAccount
             compact
             menuPlacement="topbar"
-            onScopeChanged={props.onWorkspaceScopeChanged}
-            onWorkspaceDataRefreshed={props.onWorkspaceDataRefreshed}
+            onScopeChanged={commands.workspace.scopeChanged}
+            onWorkspaceDataRefreshed={commands.workspace.dataRefreshed}
           />
         }
-        onNewQuery={props.onNewQuery}
-        onToggleDatabaseExplorer={props.onToggleDatabaseExplorer}
-        onToggleLocalHistory={props.onToggleLocalHistory}
-        onToggleServices={props.onToggleServices}
-        onOpenAgent={props.onOpenAgent}
-        agentButtonRef={props.agentButtonRef}
-        searchEverywhereButtonRef={props.searchEverywhereButtonRef}
-        onSearchEverywhere={props.onSearchEverywhere}
-        onSettings={props.onSettings}
+        onNewQuery={commands.workbench.newQuery}
+        onToggleDatabaseExplorer={commands.explorer.toggleDatabase}
+        onToggleLocalHistory={commands.explorer.toggleLocalHistory}
+        onToggleServices={commands.services.toggle}
+        onOpenAgent={commands.agent.open}
+        agentButtonRef={agent.buttonRef}
+        searchEverywhereButtonRef={search.buttonRef}
+        onSearchEverywhere={commands.search.open}
+        onSettings={commands.workspace.settings}
         workspace={
           <WorkspaceSwitcher
-            onNew={props.onNewConnection}
-            onChanged={props.onWorkspaceScopeChanged}
+            onNew={commands.workspace.newConnection}
+            onChanged={commands.workspace.scopeChanged}
           />
         }
       />
@@ -264,158 +294,162 @@ function ShellLayoutContent(props: Props) {
       >
         {localHistoryVisible ? (
           <LocalHistoryToolWindow
-            connection={selected}
-            documents={workbenchDocuments}
-            activeDocumentId={activeWorkbenchDocumentId}
-            onActivateDocument={props.onActivateWorkbenchDocument}
-            onRestoreRevision={props.onRestoreWorkbenchDocument}
-            onClose={props.onCloseLocalHistory}
-            compact={compact}
-            compactOpen={mobileExplorerOpen}
+            connection={workspace.selected}
+            documents={workbench.documents}
+            activeDocumentId={workbench.activeDocumentId}
+            onActivateDocument={commands.workbench.activateDocument}
+            onRestoreRevision={commands.workbench.restoreDocument}
+            onClose={commands.explorer.closeLocalHistory}
+            compact={viewport.compact}
+            compactOpen={viewport.mobileExplorerOpen}
           />
         ) : (
           <DatabaseExplorer
-            connections={connections}
-            selectedId={environmentDetailOpen ? null : selectedId}
+            connections={workspace.connections}
+            selectedId={
+              environmentDetailOpen ? null : workspace.selectedId
+            }
             selectedTableKey={
-              !environmentDetailOpen && selectedTable
-                ? tableKey(selectedTable)
+              !environmentDetailOpen && workbench.selectedTable
+                ? tableKey(workbench.selectedTable)
                 : null
             }
             activeSchemaGroupKey={
-              environmentDetailOpen ? null : activeSchemaGroupKey
+              environmentDetailOpen ? null : explorer.activeSchemaGroupKey
             }
-            onSelectConn={props.onSelectWorkspaceConnection}
-            onOpenTable={props.onOpenTable}
-            onOpenSchemaDiff={props.onOpenSchemaDiff}
-            onEdit={props.onEditConnection}
-            onDeleted={props.onDeletedConnection}
-            onConnectionUpdated={props.onConnectionUpdated}
-            onNewConnection={props.onNewConnection}
-            onClose={props.onToggleDatabaseExplorer}
-            onCreateDemoDatabase={props.onCreateDemoDatabase}
-            creatingDemo={creatingDemo}
-            compact={compact}
-            compactOpen={mobileExplorerOpen}
-            revealRequest={props.explorerRevealRequest}
+            onSelectConn={commands.explorer.selectConnection}
+            onOpenTable={commands.explorer.openTable}
+            onOpenSchemaDiff={commands.explorer.openSchemaDiff}
+            onEdit={commands.workspace.editConnection}
+            onDeleted={commands.workspace.deleteConnection}
+            onConnectionUpdated={commands.workspace.updateConnection}
+            onNewConnection={commands.workspace.newConnection}
+            onClose={commands.explorer.toggleDatabase}
+            onCreateDemoDatabase={commands.workspace.createDemo}
+            creatingDemo={workspace.creatingDemo}
+            compact={viewport.compact}
+            compactOpen={viewport.mobileExplorerOpen}
+            revealRequest={explorer.revealRequest}
             revealDatabase={selectedDatabase}
             revealNamespace={selectedNamespace}
             activeProjectEnvironmentId={
-              props.knowledgeEnvironmentFocus?.environmentId ?? null
+              explorer.knowledgeFocus?.environmentId ?? null
             }
             activeProjectEnvironmentView={
-              props.knowledgeEnvironmentFocus?.view ?? null
+              explorer.knowledgeFocus?.view ?? null
             }
             activeProjectEnvironmentResourceId={
-              props.knowledgeEnvironmentFocus?.resourceId ?? null
+              explorer.knowledgeFocus?.resourceId ?? null
             }
-            onOpenProjectEnvironment={props.onOpenProjectEnvironment}
+            onOpenProjectEnvironment={commands.explorer.openProjectEnvironment}
           />
         )}
       </div>
 
       <button
         type="button"
-        data-open={mobileExplorerOpen}
+        data-open={viewport.mobileExplorerOpen}
         className="tw:hidden tw:max-[561px]:fixed tw:max-[561px]:inset-x-0 tw:max-[561px]:top-title-toolbar tw:max-[561px]:bottom-status-bar tw:max-[561px]:z-[var(--ds-z-sticky)] tw:max-[561px]:block tw:max-[561px]:cursor-default tw:max-[561px]:border-0 tw:max-[561px]:bg-overlay tw:max-[561px]:p-0 tw:max-[561px]:opacity-0 tw:max-[561px]:pointer-events-none tw:max-[561px]:transition-opacity tw:max-[561px]:duration-150 tw:max-[561px]:data-[open=true]:opacity-100 tw:max-[561px]:data-[open=true]:pointer-events-auto"
         aria-label={t("common.close")}
-        aria-hidden={!mobileExplorerOpen}
-        tabIndex={mobileExplorerOpen ? 0 : -1}
-        onClick={props.onDismissMobileExplorer}
+        aria-hidden={!viewport.mobileExplorerOpen}
+        tabIndex={viewport.mobileExplorerOpen ? 0 : -1}
+        onClick={commands.explorer.dismissMobile}
       />
       <div
         className="tw:col-start-2 tw:row-start-2 tw:ml-[var(--ds-active-offset)] tw:cursor-col-resize tw:bg-transparent tw:hover:bg-muted tw:active:bg-muted tw:max-[561px]:hidden"
         hidden={!leftToolWindowVisible}
         title={t("app.dragResize")}
-        onMouseDown={props.onStartSidebarDrag}
-        onDoubleClick={props.onResetSidebar}
+        onMouseDown={commands.viewport.startSidebarDrag}
+        onDoubleClick={commands.viewport.resetSidebar}
       />
       <main
-        ref={mainRef}
-        data-compact={compact}
+        ref={viewport.mainRef}
+        data-compact={viewport.compact}
         className="main tw:col-start-3 tw:row-start-2 tw:mt-0 tw:mr-panel-gutter tw:mb-panel-gutter tw:ml-0 tw:flex tw:min-w-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:outline-none tw:[container-name:main-pane] tw:[container-type:inline-size] tw:data-[compact=true]:col-start-1 tw:data-[compact=true]:m-0 tw:data-[compact=true]:min-h-0 tw:data-[compact=true]:rounded-none tw:data-[compact=true]:border-0"
         tabIndex={-1}
-        inert={mobileExplorerOpen ? true : undefined}
+        inert={viewport.mobileExplorerOpen ? true : undefined}
       >
-        {mainContent}
+        {workbench.content}
         {showUpdateBadge && (
           <div className="ds-attention-stack">
             <button
               className="ds-attention-badge ds-tone-trust"
-              onClick={props.onOpenUpdateSettings}
+              onClick={commands.workspace.openUpdateSettings}
               title={t("updates.badgeTitle")}
               aria-label={t("updates.badgeTitle")}
             >
               <Icon name="download" />
               <span>
-                {t("updates.badge", { version: availableUpdate?.version ?? "" })}
+                {t("updates.badge", {
+                  version: workspace.availableUpdate?.version ?? "",
+                })}
               </span>
             </button>
           </div>
         )}
       </main>
 
-      {agentDockOpen && selected && (
+      {agent.open && workspace.selected && (
         <AcpChatPanel
-          connection={selected}
-          composerRequest={props.agentComposerRequest}
-          documents={workbenchDocuments}
-          activeDocumentId={activeWorkbenchDocumentId}
-          selectedTable={selectedTable}
-          overlay={agentOverlay}
-          compact={compact}
+          connection={workspace.selected}
+          composerRequest={agent.composerRequest}
+          documents={workbench.documents}
+          activeDocumentId={workbench.activeDocumentId}
+          selectedTable={workbench.selectedTable}
+          overlay={agent.overlay}
+          compact={viewport.compact}
           width={rightDockWidth}
-          onWidthChange={props.onAgentWidthChange}
-          onOpenArchive={props.onOpenAgentArchive}
+          onWidthChange={commands.agent.widthChanged}
+          onOpenArchive={commands.agent.openArchive}
           onOpenKnowledgeAnalysis={(environmentId, articleId) =>
-            props.onOpenProjectEnvironment(environmentId, "analyses", articleId)
+            commands.explorer.openProjectEnvironment(
+              environmentId,
+              "analyses",
+              articleId,
+            )
           }
-          onClose={props.onCloseAgent}
+          onClose={commands.agent.close}
         />
       )}
 
       {servicesVisible && (
         <QueryServicesToolWindow
-          store={queryServiceStore}
-          connections={connections}
-          documents={workbenchDocuments}
-          activeDocumentId={activeWorkbenchDocumentId}
-          onActivateDocument={props.onActivateWorkbenchDocument}
-          onClose={props.onCloseServices}
-          onStartResize={props.onStartServicesResize}
-          onResetHeight={props.onResetServicesHeight}
-          compact={compact}
+          store={services.store}
+          connections={workspace.connections}
+          documents={workbench.documents}
+          activeDocumentId={workbench.activeDocumentId}
+          onActivateDocument={commands.workbench.activateDocument}
+          onClose={commands.services.close}
+          onStartResize={commands.services.startResize}
+          onResetHeight={commands.services.resetHeight}
+          compact={viewport.compact}
         />
       )}
 
       <IdeStatusBar
-        selected={selected}
-        selectedTable={selectedTable}
+        selected={workspace.selected}
+        selectedTable={workbench.selectedTable}
         selectedDatabase={selectedDatabase}
         selectedNamespace={selectedNamespace}
         activeDocument={activeWorkbenchDocument}
-        backgroundTasks={props.backgroundTasks}
-        cancellingBackgroundTaskKeys={
-          props.cancellingBackgroundTaskKeys
-        }
-        manualTransactions={props.manualTransactions}
-        settlingManualTransactionIds={
-          props.settlingManualTransactionIds
-        }
-        writeEnabled={writeEnabled}
-        unseenOperationCount={props.unseenOperationCount}
+        backgroundTasks={status.backgroundTasks}
+        cancellingBackgroundTaskKeys={status.cancellingBackgroundTaskKeys}
+        manualTransactions={status.manualTransactions}
+        settlingManualTransactionIds={status.settlingManualTransactionIds}
+        writeEnabled={workspace.writeEnabled}
+        unseenOperationCount={status.unseenOperationCount}
         onOpenQueryTask={(sessionId) => {
-          queryServiceStore.activate(sessionId);
-          if (!servicesVisible) props.onToggleServices();
+          services.store.activate(sessionId);
+          if (!servicesVisible) commands.services.toggle();
         }}
-        onOpenAgentTask={props.onOpenAgentTask}
-        onOpenManualTransaction={props.onOpenManualTransaction}
-        onCommitManualTransaction={props.onCommitManualTransaction}
-        onRollbackManualTransaction={props.onRollbackManualTransaction}
-        onCancelBackgroundTask={props.onCancelBackgroundTask}
-        onRevealDatabaseContext={props.onRevealDatabaseContext}
-        onOpenNotifications={props.onOpenNotifications}
-        onSafetySettings={props.onSafetySettings}
+        onOpenAgentTask={commands.agent.openTask}
+        onOpenManualTransaction={commands.status.openManualTransaction}
+        onCommitManualTransaction={commands.status.commitManualTransaction}
+        onRollbackManualTransaction={commands.status.rollbackManualTransaction}
+        onCancelBackgroundTask={commands.status.cancelBackgroundTask}
+        onRevealDatabaseContext={commands.status.revealDatabaseContext}
+        onOpenNotifications={commands.status.openNotifications}
+        onSafetySettings={commands.workspace.safetySettings}
       />
     </div>
   );

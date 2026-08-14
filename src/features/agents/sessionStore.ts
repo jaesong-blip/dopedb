@@ -3,25 +3,48 @@
 // Agent tool window plus status bar observe the same authoritative projection.
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 
-import type { AcpSessionChanged, AcpSessionSummary } from "./domain";
+import type {
+  AcpSessionChanged,
+  AcpSessionFocus,
+  AcpSessionId,
+  AcpSessionSummary,
+} from "./domain";
 import { listAgentAcpSessions, onAgentAcpChanged } from "./tauriAdapter";
+import {
+  appendAcpConversationEvents,
+  mergeAcpConversationFocus,
+  type AcpConversationProjection,
+} from "./transcript";
 
-type Snapshot = {
+export type AcpSessionSnapshot = {
   scopeKey: string | null;
   sessions: readonly AcpSessionSummary[];
+  projections: ReadonlyMap<AcpSessionId, AcpConversationProjection>;
   loading: boolean;
   error: unknown;
 };
 
 type Listener = () => void;
-type ChangeListener = (change: AcpSessionChanged) => void;
+type LiveChangeListener = (change: AcpSessionChanged) => void;
+const MAX_ACP_SESSION_PROJECTIONS = 16;
 
-const EMPTY_SNAPSHOT: Snapshot = {
+const EMPTY_SNAPSHOT: AcpSessionSnapshot = {
   scopeKey: null,
   sessions: [],
+  projections: new Map(),
   loading: false,
   error: null,
 };
+
+function pendingSnapshot(scopeKey: string): AcpSessionSnapshot {
+  return {
+    scopeKey,
+    sessions: [],
+    projections: new Map(),
+    loading: true,
+    error: null,
+  };
+}
 
 export function mergeAcpSessionSummaries(
   current: readonly AcpSessionSummary[],
@@ -40,23 +63,31 @@ export function mergeAcpSessionSummaries(
 }
 
 export class AcpSessionStore {
-  private snapshot: Snapshot = EMPTY_SNAPSHOT;
+  private snapshot: AcpSessionSnapshot = EMPTY_SNAPSHOT;
   private listeners = new Set<Listener>();
-  private changeListeners = new Set<ChangeListener>();
+  private liveChangeListeners = new Set<LiveChangeListener>();
   private unlisten: (() => void) | null = null;
   private generation = 0;
+  private pendingChanges = new Map<
+    AcpSessionId,
+    {
+      session: AcpSessionSummary;
+      events: NonNullable<AcpSessionChanged["event"]>[];
+    }
+  >();
+  private flushScheduled = false;
 
   subscribe = (listener: Listener) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   };
 
-  subscribeChanges = (listener: ChangeListener) => {
-    this.changeListeners.add(listener);
-    return () => this.changeListeners.delete(listener);
-  };
-
   getSnapshot = () => this.snapshot;
+
+  observeLiveChanges = (listener: LiveChangeListener) => {
+    this.liveChangeListeners.add(listener);
+    return () => this.liveChangeListeners.delete(listener);
+  };
 
   activate(scopeKey: string) {
     if (
@@ -68,12 +99,19 @@ export class AcpSessionStore {
     const generation = ++this.generation;
     this.unlisten?.();
     this.unlisten = null;
-    this.publish({ scopeKey, sessions: [], loading: true, error: null });
+    this.pendingChanges.clear();
+    this.flushScheduled = false;
+    this.publish({
+      scopeKey,
+      sessions: [],
+      projections: new Map(),
+      loading: true,
+      error: null,
+    });
 
     void onAgentAcpChanged((change) => {
       if (generation !== this.generation) return;
-      this.upsert([change.session]);
-      for (const listener of this.changeListeners) listener(change);
+      this.queueChange(change);
     })
       .then((unlisten) => {
         if (generation !== this.generation) {
@@ -97,21 +135,101 @@ export class AcpSessionStore {
       });
   }
 
-  upsert(sessions: readonly AcpSessionSummary[]) {
-    const merged = mergeAcpSessionSummaries(this.snapshot.sessions, sessions);
-    if (merged === this.snapshot.sessions) return;
+  recordFocus(scopeKey: string, focus: AcpSessionFocus): boolean {
+    if (this.snapshot.scopeKey !== scopeKey) return false;
+    const sessions = mergeAcpSessionSummaries(
+      this.snapshot.sessions,
+      [focus.session],
+    );
+    const projections = new Map(this.snapshot.projections);
+    touchProjection(
+      projections,
+      focus.session.id,
+      mergeAcpConversationFocus(
+        projections.get(focus.session.id),
+        focus.events,
+        focus.replayTruncated,
+      ),
+    );
+    this.publish({ ...this.snapshot, sessions, projections });
+    return true;
+  }
+
+  private applyChanges(
+    changes: readonly {
+      session: AcpSessionSummary;
+      events: readonly NonNullable<AcpSessionChanged["event"]>[];
+    }[],
+  ) {
+    let sessions = this.snapshot.sessions;
+    const projections = this.snapshot.projections;
+    let nextProjections: Map<AcpSessionId, AcpConversationProjection> | null =
+      null;
+    for (const change of changes) {
+      sessions = mergeAcpSessionSummaries(sessions, [change.session]);
+      if (change.events.length === 0) continue;
+      const activeProjections = nextProjections ?? projections;
+      const result = appendAcpConversationEvents(
+        activeProjections.get(change.session.id),
+        [...change.events],
+      );
+      nextProjections ??= new Map(projections);
+      touchProjection(nextProjections, change.session.id, result.projection);
+    }
+    const publishedProjections = nextProjections ?? projections;
+    if (
+      sessions === this.snapshot.sessions &&
+      publishedProjections === this.snapshot.projections
+    ) {
+      return;
+    }
     this.publish({
       ...this.snapshot,
-      sessions: merged,
-      // A change event proves only that one session changed; it is neither a complete
-      // inventory receipt nor a recovery receipt. Preserve both the pending list and
-      // a failed-list error until a full inventory read succeeds.
-      loading: this.snapshot.loading,
-      error: this.snapshot.error,
+      sessions,
+      projections: publishedProjections,
     });
   }
 
-  private publish(snapshot: Snapshot) {
+  private queueChange(change: AcpSessionChanged) {
+    // Only the Tauri listener enters this path. Focus replay deliberately bypasses
+    // it so one live outcome cannot be counted again when a transcript is reopened.
+    for (const listener of this.liveChangeListeners) {
+      try {
+        listener(change);
+      } catch {
+        // Outcome observation is best-effort and must never interrupt the
+        // authoritative session projection.
+      }
+    }
+    const pending = this.pendingChanges.get(change.session.id);
+    const session =
+      pending && pending.session.updatedAt > change.session.updatedAt
+        ? pending.session
+        : change.session;
+    this.pendingChanges.set(change.session.id, {
+      session,
+      events: change.event
+        ? [...(pending?.events ?? []), change.event]
+        : pending?.events ?? [],
+    });
+    if (isProjectionBoundary(change.event)) {
+      this.flushChanges();
+      return;
+    }
+    if (this.flushScheduled) return;
+    this.flushScheduled = true;
+    queueMicrotask(() => this.flushChanges());
+  }
+
+  private flushChanges() {
+    this.flushScheduled = false;
+    if (this.pendingChanges.size === 0) return;
+    const pending = [...this.pendingChanges.values()];
+    this.pendingChanges.clear();
+    this.applyChanges(pending);
+  }
+
+  private publish(snapshot: AcpSessionSnapshot) {
     this.snapshot = snapshot;
     for (const listener of this.listeners) listener();
   }
@@ -129,15 +247,47 @@ export function useAcpSessionSnapshot(scopeKey: string, enabled = true) {
     acpSessionStore.getSnapshot,
   );
   return useMemo(
-    () => snapshot.scopeKey === scopeKey ? snapshot : EMPTY_SNAPSHOT,
-    [scopeKey, snapshot],
+    () => snapshot.scopeKey === scopeKey
+      ? snapshot
+      : enabled
+        ? pendingSnapshot(scopeKey)
+        : EMPTY_SNAPSHOT,
+    [enabled, scopeKey, snapshot],
   );
-}
-
-export function subscribeAcpSessionChanges(listener: ChangeListener) {
-  return acpSessionStore.subscribeChanges(listener);
 }
 
 export function retryAcpSessionSnapshot(scopeKey: string) {
   acpSessionStore.activate(scopeKey);
+}
+
+export function recordAcpSessionFocus(
+  scopeKey: string,
+  focus: AcpSessionFocus,
+) {
+  return acpSessionStore.recordFocus(scopeKey, focus);
+}
+
+/** Observe only new ACP changes from the native event stream, never focus replay. */
+export function observeLiveAcpSessionChanges(listener: LiveChangeListener) {
+  return acpSessionStore.observeLiveChanges(listener);
+}
+
+function isProjectionBoundary(change: AcpSessionChanged["event"]) {
+  if (!change || change.type !== "sessionUpdate") return true;
+  const update = change.update.sessionUpdate;
+  return update !== "agent_message_chunk" && update !== "agent_thought_chunk";
+}
+
+function touchProjection(
+  projections: Map<AcpSessionId, AcpConversationProjection>,
+  sessionId: AcpSessionId,
+  projection: AcpConversationProjection,
+) {
+  projections.delete(sessionId);
+  projections.set(sessionId, projection);
+  while (projections.size > MAX_ACP_SESSION_PROJECTIONS) {
+    const oldestSessionId = projections.keys().next().value;
+    if (oldestSessionId === undefined) break;
+    projections.delete(oldestSessionId);
+  }
 }

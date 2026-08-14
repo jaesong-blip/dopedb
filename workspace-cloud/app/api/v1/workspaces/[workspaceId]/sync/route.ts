@@ -3,6 +3,7 @@
 // recheck the live member and per-connection grants before returning any resource.
 import { sql } from "drizzle-orm";
 
+import { workspaceSyncPage } from "../../../../../../lib/control-plane-contracts";
 import { db } from "../../../../../../lib/db";
 import { isUuid, jsonError, privateJson } from "../../../../../../lib/http";
 import { authorizeWorkspace } from "../../../../../../lib/workspace-authorization";
@@ -113,7 +114,7 @@ export async function GET(request: Request, context: RouteContext) {
     }
   }
 
-  return privateJson({
+  return privateJson(workspaceSyncPage({
     workspaceId,
     previousCursor: cursor,
     nextCursor,
@@ -127,5 +128,5 @@ export async function GET(request: Request, context: RouteContext) {
       connections: connectionTombstone,
       analyses: analysisTombstone,
     },
-  });
+  }));
 }

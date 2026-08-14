@@ -1,6 +1,6 @@
 // Account-specific Better Auth device login lifecycle and unified local account menu.
 // Session tokens stay behind Rust IPC; this component caches public identity only.
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ProviderCredentialDialog } from "../../providers/ProviderCredentialDialog";
@@ -46,6 +46,7 @@ import {
   refetchWorkspaceResourceQueries,
   resetWorkspaceResourceQueries,
 } from "../../../lib/queryClient";
+import { captureProductEvent } from "../../productAnalytics/client";
 
 export default function WorkspaceAccount({
   onScopeChanged,
@@ -70,7 +71,12 @@ export default function WorkspaceAccount({
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const loginAttempt = useRef(0);
-  const pendingLogin = useRef<{ attempt: number; deviceCode: string } | null>(null);
+  const pendingLogin = useRef<{
+    attempt: number;
+    analyticsAttemptId: string;
+    deviceCode: string;
+  } | null>(null);
+  const completedLoginAnalyticsAttempts = useRef(new Set<string>());
   const pollInFlight = useRef<{
     deviceCode: string;
     request: Promise<WorkspaceLoginPoll>;
@@ -90,13 +96,14 @@ export default function WorkspaceAccount({
   workspaceDataRefreshHandler.current = onWorkspaceDataRefreshed;
   scopeChangeHandler.current = onScopeChanged;
 
-  async function refreshWorkspaceAuthority(
-    refreshAuth: () => Promise<Awaited<ReturnType<typeof workspaceAuthState>>>,
-    previousAuthority?: {
-      auth: WorkspaceAuthState | undefined;
-      context: WorkspaceContextState | undefined;
-    },
-  ) {
+  const refreshWorkspaceAuthority = useCallback(
+    async function refreshWorkspaceAuthority(
+      refreshAuth: () => Promise<Awaited<ReturnType<typeof workspaceAuthState>>>,
+      previousAuthority?: {
+        auth: WorkspaceAuthState | undefined;
+        context: WorkspaceContextState | undefined;
+      },
+    ) {
     const previousAuth = previousAuthority?.auth ??
       queryClient.getQueryData<WorkspaceAuthState>(workspaceQueryKeys.auth());
     const previousContext = previousAuthority?.context ??
@@ -181,7 +188,9 @@ export default function WorkspaceAccount({
     // refreshing only Connections would otherwise strand Explorer Knowledge forever.
     await refetchWorkspaceResourceQueries(queryClient);
     await workspaceDataRefreshHandler.current();
-  }
+    },
+    [queryClient],
+  );
 
   useEffect(() => {
     const onBlur = () => {
@@ -251,10 +260,35 @@ export default function WorkspaceAccount({
         }
       });
     membershipRefreshInFlight.current = request;
-  }, [queryClient]);
+  }, [refreshWorkspaceAuthority]);
 
   async function wait(ms: number) {
     await new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+  }
+
+  function captureLoginOutcome(
+    analyticsAttemptId: string,
+    outcome: "success" | "denied" | "expired" | "failed",
+    actorId?: string,
+  ) {
+    if (completedLoginAnalyticsAttempts.current.has(analyticsAttemptId)) return;
+    completedLoginAnalyticsAttempts.current.add(analyticsAttemptId);
+    if (outcome === "success" && actorId) {
+      void captureProductEvent({
+        name: "workspace_authentication_completed",
+        properties: { outcome },
+        context: { actorId },
+        dedupeId: analyticsAttemptId,
+      });
+      return;
+    }
+    if (outcome !== "success") {
+      void captureProductEvent({
+        name: "workspace_authentication_completed",
+        properties: { outcome },
+        dedupeId: analyticsAttemptId,
+      });
+    }
   }
 
   async function pollOnce(deviceCode: string) {
@@ -284,15 +318,22 @@ export default function WorkspaceAccount({
   async function handlePollResult(result: WorkspaceLoginPoll, attempt: number) {
     if (pendingLogin.current?.attempt !== attempt) return true;
     if (result.status === "signedIn" && result.user) {
+      const analyticsAttemptId = pendingLogin.current.analyticsAttemptId;
       pendingLogin.current = null;
       setLoginPhase("idle");
+      // The native poll returns `signedIn` only after the account credential has
+      // been durably accepted. Scope synchronization is measured separately and
+      // must not turn a successful authentication into a second outcome.
+      captureLoginOutcome(analyticsAttemptId, "success", result.user.id);
       await refreshWorkspaceAuthority(workspaceAuthState);
       toast(t("workspace.loginComplete", { name: result.user.displayName }), "success");
       return true;
     }
     if (result.status === "denied" || result.status === "expired") {
+      const analyticsAttemptId = pendingLogin.current.analyticsAttemptId;
       pendingLogin.current = null;
       setLoginPhase("idle");
+      captureLoginOutcome(analyticsAttemptId, result.status);
       toast(
         t(result.status === "denied" ? "workspace.loginDenied" : "workspace.loginExpired"),
         "error",
@@ -354,10 +395,15 @@ export default function WorkspaceAccount({
   async function login() {
     if (loginPhase !== "idle") return;
     const attempt = ++loginAttempt.current;
+    const analyticsAttemptId = crypto.randomUUID();
     setLoginPhase("starting");
     try {
       const authorization = await beginWorkspaceLogin();
-      pendingLogin.current = { attempt, deviceCode: authorization.deviceCode };
+      pendingLogin.current = {
+        attempt,
+        analyticsAttemptId,
+        deviceCode: authorization.deviceCode,
+      };
       browserWasActive.current = false;
       await openUrl(authorization.verificationUriComplete);
       if (loginAttempt.current !== attempt) return;
@@ -377,9 +423,11 @@ export default function WorkspaceAccount({
         if (await handlePollResult(result, attempt)) return;
       }
       pendingLogin.current = null;
+      captureLoginOutcome(analyticsAttemptId, "expired");
       toast(t("workspace.loginExpired"), "error");
     } catch (error) {
       pendingLogin.current = null;
+      captureLoginOutcome(analyticsAttemptId, "failed");
       toast(t("workspace.loginFailed", { error: errMessage(error) }), "error");
     } finally {
       if (loginAttempt.current === attempt) setLoginPhase("idle");

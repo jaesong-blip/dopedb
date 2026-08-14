@@ -4,7 +4,6 @@ pub(crate) mod analysis_signal_samples;
 mod catalog;
 mod connections;
 mod history;
-mod knowledge;
 mod safety;
 mod workspaces;
 

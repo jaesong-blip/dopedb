@@ -5,6 +5,7 @@
 //! being exchanged accidentally while preserving the existing string/UUID wire shape.
 
 use crate::error::{AppError, AppResult};
+use crate::kernel::access::WorkspaceKind;
 use crate::kernel::identity::{AccountId, WorkspaceId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -86,13 +87,6 @@ pub(crate) enum WorkspaceLoginPollStatus {
 pub(crate) struct WorkspaceLoginPoll {
     pub(crate) status: WorkspaceLoginPollStatus,
     pub(crate) user: Option<WorkspaceAuthUser>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) enum WorkspaceKind {
-    Personal,
-    Team,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

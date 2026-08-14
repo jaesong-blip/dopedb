@@ -7,12 +7,14 @@ mod facade;
 mod ports;
 mod runner;
 pub(crate) mod runtime;
+mod runtime_ports;
 mod signals;
 mod transforms;
 pub(crate) mod transport;
 mod validation;
 
 use crate::connection::ConnectionManager;
+use crate::features::knowledge::KnowledgeFeature;
 use crate::store::Store;
 
 pub(crate) use domain::{AnalysisDefinitionRunReceipt, AnalysisDefinitionRunRequest};
@@ -29,10 +31,11 @@ pub(crate) type DesktopAnalysisArticlesFeature = facade::AnalysisArticlesFeature
 pub(crate) fn compose(
     store: Store,
     connections: ConnectionManager,
+    knowledge: KnowledgeFeature,
 ) -> DesktopAnalysisArticlesFeature {
     facade::AnalysisArticlesFeature::new(
         adapters::SqliteAnalysisLocalRepository::new(store.clone()),
-        adapters::DesktopAnalysisReadExecution::new(store, connections),
+        adapters::DesktopAnalysisReadExecution::new(store, connections, knowledge),
         adapters::HostedAnalysisAuthority,
     )
 }

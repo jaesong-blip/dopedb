@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type {
   Catalog,
   CatalogConstraint,
@@ -206,10 +213,7 @@ export default function CatalogTree(props: Props) {
     };
   }, [
     catalogs,
-    connection.database,
-    connection.engine,
-    connection.extraParams,
-    connection.id,
+    connection,
     filter,
     fullCatalog,
     groupByConnectionId,
@@ -219,7 +223,7 @@ export default function CatalogTree(props: Props) {
   const databaseSectionKey = (section: string) =>
     `${connection.database}\u0000${section}`;
 
-  useEffect(() => {
+  const revealSelection = useEffectEvent(() => {
     if (
       !selected ||
       props.revealRequest === 0 ||
@@ -295,8 +299,12 @@ export default function CatalogTree(props: Props) {
       cancelAnimationFrame(outerFrame);
       if (innerFrame) cancelAnimationFrame(innerFrame);
     };
-    // The request counter deliberately snapshots the current catalog/tree callbacks.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
+
+  useEffect(() => {
+    // The request counter is the lifecycle trigger; the Effect Event snapshots the
+    // latest catalog and tree commands for that request without replaying on each render.
+    return revealSelection();
   }, [props.revealRequest]);
 
   function toggleTableDetails(table: CatalogTable) {

@@ -7,9 +7,13 @@ use crate::connection::ConnectionManager;
 use crate::error::AppResult;
 use crate::features::agents::acp::AcpRuntime;
 use crate::features::agents::runtime::AcpPluginManager;
+use crate::features::analysis_articles::adapters::TauriAnalysisRuntimeAdapter;
 use crate::features::analysis_articles::runtime::AnalysisRunnerRuntime;
-use crate::features::knowledge::adapters::local::LocalFolderAdapter;
 use crate::features::knowledge::runtime::KnowledgeWatchRuntime;
+use crate::features::knowledge::{
+    KeychainKnowledgeSourceRoot, KnowledgeSourceSynchronizer, LocalFolderAdapter,
+    TauriKnowledgeSourceEventSink,
+};
 use crate::features::providers;
 use crate::features::terminals::{self, TerminalsFeature};
 use crate::operations::{LocalApprovalAuthority, OperationRuntime};
@@ -52,14 +56,14 @@ impl AppState {
         let store = store?;
         let automation_background_allowed = store.automation_runner_background_allowed().await?;
         let (operation, local_operation_approval) = OperationRuntime::new(&store);
-        let providers = providers::compose(store.clone(), operation.clone());
+        let provider_composition = providers::prepare(store.clone(), operation.clone());
         let connections = ConnectionManager::with_authorities(
             store.clone(),
             Arc::new(crate::features::workspaces::adapters::HostedWorkspaceControlPlane),
-            providers.local_connection_port(),
+            provider_composition.local_connection_port(),
         );
-        providers.bind_revocation_port(Arc::new(connections.clone()))?;
-        providers.bind_provisioning_runtime(Arc::new(connections.clone()))?;
+        let providers = provider_composition
+            .finish(Arc::new(connections.clone()), Arc::new(connections.clone()));
         let broker = BrokerRuntime::new(operation.runtime_id().into());
         let terminals = terminals::compose(store.clone(), broker.clone());
         let agent_plugins = AcpPluginManager::new()?;
@@ -69,13 +73,19 @@ impl AppState {
             operation,
             providers,
         );
-        let agents_acp = AcpRuntime::new(
-            store.clone(),
-            services.knowledge.clone(),
-            broker.clone(),
-            agent_plugins.clone(),
-        );
+        let agents_acp = AcpRuntime::new(store.clone(), services.knowledge.clone(), broker.clone());
         let skills = SkillManager::new()?;
+        let analysis_runner = AnalysisRunnerRuntime::new(
+            automation_background_allowed,
+            services.knowledge.clone(),
+            services.analysis_article.clone(),
+        );
+        let local_knowledge_sources = LocalFolderAdapter::new();
+        let knowledge_watches = KnowledgeWatchRuntime::new(KnowledgeSourceSynchronizer::new(
+            services.knowledge.clone(),
+            local_knowledge_sources.clone(),
+            Arc::new(KeychainKnowledgeSourceRoot),
+        ));
         let started = startup_trace.stage_started();
         let recovery = services.operation.recover_previous_runtimes().await;
         startup_trace.finish("operation_recovery", "critical", started, recovery.is_ok());
@@ -100,9 +110,9 @@ impl AppState {
             agents_acp,
             agent_plugins,
             local_operation_approval,
-            local_knowledge_sources: LocalFolderAdapter::new(),
-            knowledge_watches: KnowledgeWatchRuntime::default(),
-            analysis_runner: AnalysisRunnerRuntime::new(automation_background_allowed),
+            local_knowledge_sources,
+            knowledge_watches,
+            analysis_runner,
             startup_trace,
             store,
             post_paint_recovery: PostPaintRecoveryGate::new(),
@@ -137,7 +147,7 @@ impl AppState {
             if let Err(error) = &jobs {
                 tracing::error!(%error, "post-paint Job recovery failed");
             }
-            analysis_runner.start(app.clone());
+            analysis_runner.start(Arc::new(TauriAnalysisRuntimeAdapter::new(app.clone())));
             let succeeded = acp.is_ok() && jobs.is_ok();
             if succeeded {
                 let started = trace.stage_started();
@@ -149,7 +159,8 @@ impl AppState {
                 });
                 let watch_app = app.clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(error) = knowledge_watches.start_workspace(watch_app).await {
+                    let events = Arc::new(TauriKnowledgeSourceEventSink::new(watch_app));
+                    if let Err(error) = knowledge_watches.start_workspace(events).await {
                         tracing::warn!(
                             error_kind = error.kind(),
                             "Project Knowledge watcher recovery deferred"

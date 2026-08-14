@@ -91,22 +91,25 @@ export async function GET(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId)) return jsonError("Invalid workspace id", 400);
   const authorization = await authorizeWorkspace(request, workspaceId, "manage");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
-  const [integrations, managedRows] = await Promise.all([
-    db.select({
-      id: workspaceProviderIntegration.id,
-      provider: workspaceProviderIntegration.provider,
-      status: workspaceProviderIntegration.status,
-      generation: workspaceProviderIntegration.generation,
-      displayName: workspaceProviderIntegration.displayName,
-      credentialExpiresAt: workspaceProviderIntegration.credentialExpiresAt,
-      grantedScope: workspaceProviderIntegration.grantedScope,
-      createdAt: workspaceProviderIntegration.createdAt,
-      updatedAt: workspaceProviderIntegration.updatedAt,
-    }).from(workspaceProviderIntegration).where(and(
-      eq(workspaceProviderIntegration.organizationId, workspaceId),
-      inArray(workspaceProviderIntegration.status, ["active", "reconnect_required"]),
-    )),
-    db.select({
+  const includeManagedConnections = new URL(request.url).searchParams.get(
+    "includeManagedConnections",
+  ) === "1";
+  const integrations = await db.select({
+    id: workspaceProviderIntegration.id,
+    provider: workspaceProviderIntegration.provider,
+    status: workspaceProviderIntegration.status,
+    generation: workspaceProviderIntegration.generation,
+    displayName: workspaceProviderIntegration.displayName,
+    credentialExpiresAt: workspaceProviderIntegration.credentialExpiresAt,
+    grantedScope: workspaceProviderIntegration.grantedScope,
+    createdAt: workspaceProviderIntegration.createdAt,
+    updatedAt: workspaceProviderIntegration.updatedAt,
+  }).from(workspaceProviderIntegration).where(and(
+    eq(workspaceProviderIntegration.organizationId, workspaceId),
+    inArray(workspaceProviderIntegration.status, ["active", "reconnect_required"]),
+  ));
+  const managedRows = includeManagedConnections
+    ? await db.select({
       connectionId: workspaceConnection.id,
       integrationId: workspaceConnection.providerIntegrationId,
       resource: workspaceConnection.providerResource,
@@ -114,8 +117,8 @@ export async function GET(request: Request, context: RouteContext) {
       eq(workspaceConnection.organizationId, workspaceId),
       eq(workspaceConnection.credentialMode, "managed"),
       isNull(workspaceConnection.deletedAt),
-    )),
-  ]);
+    ))
+    : [];
   const managedConnections = managedRows.flatMap((row) => {
     if (!row.integrationId) return [];
     const provider = integrations.find((item) => item.id === row.integrationId)?.provider;
@@ -160,7 +163,7 @@ export async function GET(request: Request, context: RouteContext) {
       credentialMode: "managed" as const,
       reconnectRequired: integration.status === "reconnect_required",
     })),
-    managedConnections,
+    ...(includeManagedConnections ? { managedConnections } : {}),
   });
 }
 

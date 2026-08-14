@@ -49,7 +49,6 @@ export function useConnectionProfiles(scopeKey: string) {
   const queryClient = useQueryClient();
   const options = connectionsQuery(scopeKey);
   const query = useQuery(options);
-  const queryKey = connectionQueryKeys.all(scopeKey);
 
   const refresh = useCallback(async (): Promise<ConnectionProfile[] | null> => {
     const result = await queryClient.fetchQuery({
@@ -63,8 +62,10 @@ export function useConnectionProfiles(scopeKey: string) {
     connections: query.data ?? [],
     setConnections: useCallback(
       (update: SetStateAction<ConnectionProfile[]>) => {
-        queryClient.setQueryData(queryKey, (current: ConnectionProfile[] = []) =>
-          typeof update === "function" ? update(current) : update
+        queryClient.setQueryData(
+          connectionQueryKeys.all(scopeKey),
+          (current: ConnectionProfile[] = []) =>
+            typeof update === "function" ? update(current) : update,
         );
       },
       [queryClient, scopeKey],

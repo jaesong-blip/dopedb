@@ -217,7 +217,7 @@ pub(super) async fn poll_login(device_code: &str) -> AppResult<WorkspaceLoginPol
             MAX_AUTH_RESPONSE_BYTES,
         )
         .await?;
-        let token = Zeroizing::new(payload.access_token);
+        let token = payload.access_token;
         if token.len() < 20 || token.len() > 4096 || token.chars().any(char::is_whitespace) {
             return Err(AppError::Network(
                 "workspace login returned an invalid session token".into(),

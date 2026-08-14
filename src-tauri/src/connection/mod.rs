@@ -39,9 +39,9 @@ pub(crate) use runtime::{
 pub use pool::DbPool as Pool;
 
 use crate::error::{AppError, AppResult};
+use crate::kernel::access::PinnedConnection;
 use crate::kernel::TerminalAuthority;
 use crate::model::{ConnectionProfile, WorkspaceConnectionAccess, WorkspaceCredentialMode};
-use crate::store::PinnedConnection;
 use uuid::Uuid;
 
 /// Validate a Terminal capability against the exact scope-pinned connection snapshot.

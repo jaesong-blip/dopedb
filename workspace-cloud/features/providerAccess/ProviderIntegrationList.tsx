@@ -6,7 +6,7 @@ import {
   ControlInput,
   ControlLink,
 } from "../../app/components/Controls";
-import type { ProviderAccessController } from "./useProviderAccess";
+import type { ProviderAccountAccessController } from "./useProviderAccountAccess";
 import { useWorkspaceLocale } from "../../app/components/WorkspaceLocale";
 import { workspaceMessages } from "../../lib/workspace-messages";
 import { localizedIntegrationDisplayName } from "../../lib/workspace-provider-copy";
@@ -14,7 +14,7 @@ import { localizedIntegrationDisplayName } from "../../lib/workspace-provider-co
 export function ProviderIntegrationList({
   controller,
 }: {
-  controller: ProviderAccessController;
+  controller: ProviderAccountAccessController;
 }) {
   const locale = useWorkspaceLocale();
   const copy = workspaceMessages[locale].providerList;
@@ -23,6 +23,7 @@ export function ProviderIntegrationList({
     providers,
     integrations,
     managedConnections,
+    managedConnectionsLoaded,
     setupProvider,
     neonConfiguration,
     mutation,
@@ -73,9 +74,11 @@ export function ProviderIntegrationList({
                     </span>
                   </span>
                   <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
-                    {locale === "ko"
-                      ? `${copy.databases} ${databaseCount}${common.countSuffix}`
-                      : `${databaseCount} ${copy.databases}`}
+                    {managedConnectionsLoaded
+                      ? locale === "ko"
+                        ? `${copy.databases} ${databaseCount}${common.countSuffix}`
+                        : `${databaseCount} ${copy.databases}`
+                      : copy.databasesUnavailable}
                     {" · "}{copy.lastChecked}{" "}
                     {new Date(integration.updatedAt).toLocaleString(
                       locale === "ko" ? "ko-KR" : "en-US",

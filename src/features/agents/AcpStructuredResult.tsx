@@ -1,4 +1,4 @@
-import DataGrid from "../../components/DataGrid";
+import DataGrid from "../queryResults/DataGrid";
 import type { JsonValue, QueryResult } from "../../ipc/types";
 
 const MAX_COLUMNS = 18;

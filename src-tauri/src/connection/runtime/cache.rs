@@ -12,8 +12,8 @@ use tokio::sync::Mutex;
 use tokio::time::Instant;
 use uuid::Uuid;
 
+use crate::kernel::access::{AccountScope, PinnedConnection};
 use crate::kernel::sync::lock_unpoisoned;
-use crate::store::{AccountScope, PinnedConnection};
 
 use super::{
     release_managed_bounded, ConnectionAccess, Live, ManagedLeaseHandle, ProviderLocalBindingPin,

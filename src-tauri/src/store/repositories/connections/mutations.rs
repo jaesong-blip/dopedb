@@ -1,6 +1,7 @@
 //! Connection creation, remote synchronization, and credential binding mutations.
 
 use super::super::super::*;
+use crate::kernel::access::WorkspaceKind;
 
 impl Store {
     // ── connections ────────────────────────────────────────────────────────

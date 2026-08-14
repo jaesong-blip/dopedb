@@ -5,10 +5,13 @@
 pub mod acp_plugin;
 pub mod analysis_article;
 pub mod analysis_article_command;
+mod analysis_article_sql;
+mod analysis_article_validation;
 pub mod catalog;
 pub mod catalog_command;
 pub mod command;
 pub mod connection;
+pub mod control_plane;
 pub mod ddl;
 pub mod discovery;
 pub mod document_command;
@@ -36,6 +39,7 @@ pub use command::{
     MAX_AGENT_LAUNCHER_PATH_BYTES,
 };
 pub use connection::*;
+pub use control_plane::*;
 pub use ddl::*;
 pub use discovery::{
     RuntimeDiscovery, RuntimeDiscoveryError, RUNTIME_DIRECTORY_NAME, RUNTIME_FILE_NAME,

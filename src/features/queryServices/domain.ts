@@ -105,7 +105,8 @@ export function parseQueryServiceSession(value: unknown): QueryServiceSession {
   if (
     strings.some((key) => typeof normalized[key] !== "string") ||
     typeof normalized.updatedAt !== "number" ||
-    !["completed", "failed", "cancelled"].includes(String(normalized.status)) ||
+    typeof normalized.status !== "string" ||
+    !["completed", "failed", "cancelled"].includes(normalized.status) ||
     !isQueryServiceResult(normalized.result)
   ) {
     throw new Error("Invalid Services session snapshot");

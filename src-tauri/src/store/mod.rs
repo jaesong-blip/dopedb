@@ -52,8 +52,7 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::features::workspaces::{
-    Workspace, WorkspaceAccountMembership, WorkspaceAuthAccount, WorkspaceAuthUser, WorkspaceKind,
-    WorkspaceRole,
+    Workspace, WorkspaceAccountMembership, WorkspaceAuthAccount, WorkspaceAuthUser, WorkspaceRole,
 };
 use crate::kernel::identity::{AccountId, WorkspaceId};
 use crate::model::{
@@ -71,57 +70,6 @@ pub struct Store {
     /// chain, making `verify_chain` report false tampering.
     // ponytail: one global async lock; audit writes are rare, contention is a non-issue.
     audit_lock: Arc<Mutex<()>>,
-}
-
-/// Stable, non-secret identity for local execution artifacts. Team resources are
-/// partitioned by the exact Better Auth account; Personal resources remain
-/// account-free even while an account is selected in the switcher. Account-backed
-/// Personal GitHub Knowledge grants carry their separate account pin explicitly.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) enum AccountScope {
-    Personal,
-    WorkspaceUser(String),
-}
-
-impl AccountScope {
-    pub(crate) fn storage_key(&self) -> &str {
-        match self {
-            Self::Personal => "personal",
-            Self::WorkspaceUser(user_id) => user_id,
-        }
-    }
-}
-
-/// One atomically observed workspace/account selection. `generation` changes for
-/// every committed selection, including A → B → A, so a late task cannot mistake a
-/// newly re-selected scope for the one in which it originally started.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ActiveResourceScope {
-    pub workspace_id: Uuid,
-    pub workspace_kind: WorkspaceKind,
-    pub selected_account_id: Option<String>,
-    pub account_scope: AccountScope,
-    pub generation: i64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CatalogCachePolicy {
-    Persistent,
-    EphemeralOnly,
-}
-
-/// A connection resolved together with the exact active scope and every piece of
-/// local credential material that can change its meaning.
-#[derive(Clone)]
-pub(crate) struct PinnedConnection {
-    pub scope: ActiveResourceScope,
-    pub connection_id: Uuid,
-    pub connection_revision: i64,
-    pub binding_revision: i64,
-    pub binding_updated_at: String,
-    pub profile: ConnectionProfile,
-    pub requires_remote_rbac: bool,
-    pub catalog_cache_policy: CatalogCachePolicy,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

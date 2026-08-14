@@ -7,8 +7,8 @@
 use serde_json::{json, Value};
 
 use crate::error::{AppError, AppResult};
+use crate::kernel::access::{AccountScope, PinnedConnection};
 use crate::model::SafetySettings;
-use crate::store::{AccountScope, PinnedConnection};
 
 use super::{
     canonical_hash, OperationActor, OperationActorKind, OperationActorProvenance,

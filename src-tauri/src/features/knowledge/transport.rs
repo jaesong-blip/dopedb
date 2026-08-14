@@ -4,6 +4,8 @@
 //! installation tokens remain in the control plane, and Local Folder paths stay
 //! behind this native command boundary and the OS credential store.
 
+use std::sync::Arc;
+
 use dopedb_protocol::{
     KnowledgeSourceBindingV1, KnowledgeSourceProvider, KnowledgeSourceVisibility,
     SourceRevisionIdentity,
@@ -16,23 +18,20 @@ use crate::connection::keychain::{
     delete_knowledge_source_root, fetch_knowledge_source_root, store_knowledge_source_root,
 };
 use crate::error::{AppError, AppResult};
-use crate::features::workspaces::WorkspaceKind;
+use crate::kernel::access::{ActiveResourceScope, WorkspaceKind};
 use crate::kernel::identity::{AccountId, WorkspaceId};
 use crate::state::AppState;
-use crate::store::ActiveResourceScope;
 
 use super::application::{search_graphs, KnowledgeSearchResult};
 use super::domain::{
-    validate_graph_publish, EnvironmentRiskClass, KnowledgeMappingProposal, MappingProposalState,
-    Project, ProjectDefinition, ProjectEnvironment, SourceBindingDraft, SourceHealthState,
-    SourceLocator, StoredKnowledgeScope,
+    EnvironmentRiskClass, KnowledgeMappingProposal, MappingProposalState, Project,
+    ProjectDefinition, ProjectEnvironment, SourceBindingDraft, SourceHealthState, SourceLocator,
+    StoredKnowledgeScope,
 };
-use super::extractor::build_graph;
 use super::ports::{
     AppendKnowledgeEnvironmentRequest, CreateKnowledgeEnvironmentRequest,
     CreateKnowledgeProjectRequest, LocalKnowledgeSourcePort, RemoteGithubRepository,
-    RemoteKnowledgeEnvironment, RemoteKnowledgeGrant, RemoteKnowledgeProject,
-    RemoteKnowledgeSource,
+    RemoteKnowledgeEnvironment, RemoteKnowledgeProject, RemoteKnowledgeSource,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -48,10 +47,89 @@ pub(crate) struct KnowledgeSourceProjection {
     provider: KnowledgeSourceProvider,
     display_name: String,
     visibility: KnowledgeSourceVisibility,
-    revision: SourceRevisionIdentity,
+    revision: KnowledgeSourceRevisionProjection,
     health: SourceHealthState,
     graph_revision_id: Option<Uuid>,
     local_capability_available: bool,
+}
+
+// `SourceRevisionIdentity` is also part of the persisted graph-artifact
+// protocol, where its fields intentionally use snake_case.  The desktop IPC
+// contract is camelCase, so translate at this boundary instead of changing the
+// protocol representation (and therefore its canonical hash).
+#[derive(Debug, Clone, Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
+enum KnowledgeSourceRevisionProjection {
+    Github {
+        repository_id: String,
+        repository: String,
+        ref_name: String,
+        commit_sha: String,
+    },
+    LocalGit {
+        root_fingerprint: String,
+        git_root_fingerprint: String,
+        ref_name: String,
+        commit_sha: String,
+        dirty: bool,
+        worktree: bool,
+    },
+    LocalSnapshot {
+        root_fingerprint: String,
+        snapshot_sha256: String,
+    },
+}
+
+impl From<SourceRevisionIdentity> for KnowledgeSourceRevisionProjection {
+    fn from(revision: SourceRevisionIdentity) -> Self {
+        match revision {
+            SourceRevisionIdentity::Github {
+                repository_id,
+                repository,
+                ref_name,
+                commit_sha,
+            } => Self::Github {
+                repository_id,
+                repository,
+                ref_name,
+                commit_sha,
+            },
+            SourceRevisionIdentity::LocalGit {
+                root_fingerprint,
+                git_root_fingerprint,
+                ref_name,
+                commit_sha,
+                dirty,
+                worktree,
+            } => Self::LocalGit {
+                root_fingerprint,
+                git_root_fingerprint,
+                ref_name,
+                commit_sha,
+                dirty,
+                worktree,
+            },
+            SourceRevisionIdentity::LocalSnapshot {
+                root_fingerprint,
+                snapshot_sha256,
+            } => Self::LocalSnapshot {
+                root_fingerprint,
+                snapshot_sha256,
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn serialize_knowledge_source_revision_for_test(
+    revision: SourceRevisionIdentity,
+) -> serde_json::Value {
+    serde_json::to_value(KnowledgeSourceRevisionProjection::from(revision))
+        .expect("revision projection should serialize")
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -87,19 +165,6 @@ pub(crate) struct LocalFolderSourceInput {
     project_id: Uuid,
     project_environment_id: Uuid,
     display_name: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct KnowledgeSyncProjection {
-    source_id: Uuid,
-    state: SourceHealthState,
-    graph_revision_id: Option<Uuid>,
-    parsed_files: u64,
-    skipped_files: u64,
-    changed_files: Vec<String>,
-    node_count: usize,
-    edge_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -215,7 +280,6 @@ struct ActiveRemoteKnowledgeScope {
     local_scope: ActiveResourceScope,
     account: AccountId,
     remote_workspace_id: Uuid,
-    personal_member_id: Option<String>,
     projects: Vec<RemoteKnowledgeProject>,
 }
 
@@ -233,7 +297,6 @@ async fn active_remote_scope(state: &AppState) -> AppResult<ActiveRemoteKnowledg
             local_scope: scope,
             account,
             remote_workspace_id: remote.workspace_id,
-            personal_member_id: Some(remote.member_id),
             projects,
         });
     }
@@ -241,7 +304,6 @@ async fn active_remote_scope(state: &AppState) -> AppResult<ActiveRemoteKnowledg
         remote_workspace_id: scope.workspace_id,
         local_scope: scope,
         account,
-        personal_member_id: None,
         projects,
     })
 }
@@ -286,7 +348,7 @@ fn project_projection(definition: ProjectDefinition) -> RemoteKnowledgeProject {
     }
 }
 
-async fn active_project_inventory(
+async fn fetch_active_project_inventory(
     state: &AppState,
     scope: &ActiveResourceScope,
 ) -> AppResult<Vec<RemoteKnowledgeProject>> {
@@ -304,13 +366,36 @@ async fn active_project_inventory(
         .knowledge
         .list_remote_projects(account.as_str(), scope.workspace_id)
         .await?;
-    for project in &projects {
+    Ok(projects)
+}
+
+async fn persist_team_project_inventory(
+    state: &AppState,
+    scope: &ActiveResourceScope,
+    projects: &[RemoteKnowledgeProject],
+) -> AppResult<()> {
+    if scope.workspace_kind != WorkspaceKind::Team {
+        return Ok(());
+    }
+    for project in projects {
         state
             .services
             .knowledge
             .save_knowledge_project(&project_definition(scope.workspace_id, project))
             .await?;
     }
+    Ok(())
+}
+
+// Mutation and source workflows require the local bounded copy to advance with
+// the remote inventory. The list command deliberately uses the two phases
+// separately so a cache write cannot hide a successfully fetched inventory.
+async fn active_project_inventory(
+    state: &AppState,
+    scope: &ActiveResourceScope,
+) -> AppResult<Vec<RemoteKnowledgeProject>> {
+    let projects = fetch_active_project_inventory(state, scope).await?;
+    persist_team_project_inventory(state, scope, &projects).await?;
     Ok(projects)
 }
 
@@ -428,26 +513,11 @@ async fn project_source(
         provider: scope.binding.provider,
         display_name: scope.binding.display_name,
         visibility: scope.binding.visibility,
-        revision: scope.binding.revision,
+        revision: scope.binding.revision.into(),
         health,
         graph_revision_id,
         local_capability_available,
     })
-}
-
-fn unchanged_graph(
-    previous_snapshot: Option<&super::domain::SourceSnapshot>,
-    snapshot: &super::domain::SourceSnapshot,
-    previous_artifact: Option<&dopedb_protocol::GraphBuildArtifactV1>,
-) -> Option<dopedb_protocol::GraphBuildArtifactV1> {
-    previous_snapshot
-        .filter(|previous| {
-            previous.source_revision_sha256 == snapshot.source_revision_sha256
-                && previous.binding.source_id == snapshot.binding.source_id
-        })
-        .and(previous_artifact)
-        .filter(|artifact| artifact.binding.source_id == snapshot.binding.source_id)
-        .cloned()
 }
 
 #[tauri::command]
@@ -455,250 +525,15 @@ pub(crate) async fn list_knowledge_projects_command(
     state: State<'_, AppState>,
 ) -> AppResult<Vec<RemoteKnowledgeProject>> {
     let scope = state.services.knowledge.active_resource_scope().await?;
-    let projects = active_project_inventory(&state, &scope).await?;
-    if scope.workspace_kind == WorkspaceKind::Team {
-        let account = selected_team_account(&scope)?;
-        let grants = state
-            .services
-            .knowledge
-            .list_current_grants(account.as_str(), scope.workspace_id)
-            .await?;
-        sync_current_knowledge_access_with_projects(
-            &state,
-            &scope,
-            &account,
-            scope.workspace_id,
-            &projects,
-            grants,
-        )
-        .await?;
+    let projects = fetch_active_project_inventory(&state, &scope).await?;
+    if let Err(error) = persist_team_project_inventory(&state, &scope, &projects).await {
+        tracing::warn!(
+            workspace_id = %scope.workspace_id,
+            error_kind = error.kind(),
+            "Project Knowledge inventory cache refresh deferred"
+        );
     }
     Ok(projects)
-}
-
-pub(crate) async fn sync_current_knowledge_access(state: &AppState) -> AppResult<()> {
-    let remote = active_remote_scope(state).await?;
-    let projects = remote.projects;
-    if remote.local_scope.workspace_kind == WorkspaceKind::Team {
-        for project in &projects {
-            state
-                .services
-                .knowledge
-                .save_knowledge_project(&project_definition(
-                    remote.local_scope.workspace_id,
-                    project,
-                ))
-                .await?;
-        }
-    }
-    let mut grants = state
-        .services
-        .knowledge
-        .list_current_grants(remote.account.as_str(), remote.remote_workspace_id)
-        .await?;
-    if let Some(member_id) = remote.personal_member_id.as_deref() {
-        let sources = state
-            .services
-            .knowledge
-            .list_remote_sources(remote.account.as_str(), remote.remote_workspace_id)
-            .await?;
-        let mut created = false;
-        for project in &projects {
-            for environment in &project.environments {
-                let mut graph_revision_ids = sources
-                    .iter()
-                    .filter(|source| {
-                        source.project_id == project.id
-                            && source.project_environment_id == environment.id
-                            && source.environment_revision == environment.revision
-                    })
-                    .filter_map(|source| source.graph_revision_id)
-                    .collect::<Vec<_>>();
-                graph_revision_ids.sort_unstable();
-                graph_revision_ids.dedup();
-                if graph_revision_ids.is_empty()
-                    || grants.iter().any(|grant| {
-                        grant_matches_revision_set(
-                            grant,
-                            environment.id,
-                            environment.revision,
-                            &graph_revision_ids,
-                        )
-                    })
-                {
-                    continue;
-                }
-                state
-                    .services
-                    .knowledge
-                    .create_current_grant(
-                        remote.account.as_str(),
-                        remote.remote_workspace_id,
-                        member_id,
-                        environment.id,
-                    )
-                    .await?;
-                created = true;
-            }
-        }
-        if created {
-            grants = state
-                .services
-                .knowledge
-                .list_current_grants(remote.account.as_str(), remote.remote_workspace_id)
-                .await?;
-        }
-    }
-    sync_current_knowledge_access_with_projects(
-        state,
-        &remote.local_scope,
-        &remote.account,
-        remote.remote_workspace_id,
-        &projects,
-        grants,
-    )
-    .await
-}
-
-fn grant_matches_revision_set(
-    grant: &RemoteKnowledgeGrant,
-    environment_id: Uuid,
-    environment_revision: u64,
-    expected: &[Uuid],
-) -> bool {
-    if grant.project_environment_id != environment_id
-        || grant.environment_revision != environment_revision
-    {
-        return false;
-    }
-    let mut actual = grant.graph_revision_ids.clone();
-    actual.sort_unstable();
-    actual.dedup();
-    actual == expected
-}
-
-async fn sync_current_knowledge_access_with_projects(
-    state: &AppState,
-    scope: &ActiveResourceScope,
-    account: &AccountId,
-    remote_workspace_id: Uuid,
-    projects: &[RemoteKnowledgeProject],
-    grants: Vec<RemoteKnowledgeGrant>,
-) -> AppResult<()> {
-    // Revoke stale hosted heads before importing current grants. The store
-    // prunes GitHub heads only, so device-owned Local Folder graphs survive a
-    // missing, changed, or empty hosted grant set.
-    for project in projects {
-        for environment in &project.environments {
-            let allowed_graph_revision_ids = grants
-                .iter()
-                .filter(|grant| {
-                    grant.project_environment_id == environment.id
-                        && grant.environment_revision == environment.revision
-                })
-                .flat_map(|grant| grant.graph_revision_ids.iter().copied())
-                .collect::<Vec<_>>();
-            state
-                .services
-                .knowledge
-                .retain_granted_environment_heads(environment.id, &allowed_graph_revision_ids)
-                .await?;
-        }
-    }
-    for grant in &grants {
-        let remote_project = projects
-            .iter()
-            .find(|project| project.id == grant.project_id)
-            .ok_or_else(|| AppError::Network("Knowledge grant project is missing".into()))?;
-        let remote_environment = remote_project
-            .environments
-            .iter()
-            .find(|environment| environment.id == grant.project_environment_id)
-            .filter(|environment| environment.revision == grant.environment_revision)
-            .ok_or_else(|| AppError::Network("Knowledge grant environment is stale".into()))?;
-        let project = Project {
-            id: remote_project.id,
-            workspace_id: WorkspaceId::from(scope.workspace_id),
-            name: remote_project.name.clone(),
-            revision: remote_project.revision,
-        };
-        let environment = ProjectEnvironment {
-            id: remote_environment.id,
-            project_id: remote_project.id,
-            name: remote_environment.name.clone(),
-            risk_class: remote_environment.risk_class,
-            revision: remote_environment.revision,
-        };
-        for graph_scope in &grant.graph_scopes {
-            let artifact = match state
-                .services
-                .knowledge
-                .by_revision(graph_scope.graph_revision_id)
-                .await?
-            {
-                Some(artifact) => artifact,
-                None => {
-                    state
-                        .services
-                        .knowledge
-                        .download_remote_graph(
-                            account.as_str(),
-                            remote_workspace_id,
-                            grant.id,
-                            graph_scope.source_id,
-                            graph_scope.graph_revision_id,
-                        )
-                        .await?
-                }
-            };
-            if artifact.binding.project_id != project.id
-                || artifact.binding.project_environment_id != environment.id
-                || artifact.environment_revision != environment.revision
-                || artifact.binding.source_id != graph_scope.source_id
-            {
-                return Err(AppError::Network(
-                    "Knowledge grant graph crossed its Project Environment".into(),
-                ));
-            }
-            state
-                .services
-                .knowledge
-                .save_scope(
-                    &project,
-                    &environment,
-                    &artifact.binding,
-                    artifact.environment_revision,
-                )
-                .await?;
-            state
-                .services
-                .knowledge
-                .import_granted_active_graph(&artifact)
-                .await?;
-        }
-    }
-    state
-        .services
-        .knowledge
-        .revoke_knowledge_grants_for_account(scope.workspace_id, account.as_str())
-        .await?;
-    for grant in grants {
-        state
-            .services
-            .knowledge
-            .save_grant(&super::domain::KnowledgeGrant {
-                id: grant.id,
-                workspace_id: WorkspaceId::from(scope.workspace_id),
-                account_id: account.clone(),
-                project_id: grant.project_id,
-                project_environment_id: grant.project_environment_id,
-                environment_revision: grant.environment_revision,
-                graph_revision_ids: grant.graph_revision_ids,
-                expires_at: grant.expires_at,
-            })
-            .await?;
-    }
-    Ok(())
 }
 
 #[tauri::command]
@@ -932,8 +767,13 @@ pub(crate) async fn connect_knowledge_local_folder(
         let _ = state.local_knowledge_sources.revoke(&binding).await;
         return Err(error);
     }
-    sync_knowledge_source_inner(&state, source_id).await?;
-    state.knowledge_watches.start(app.clone(), source_id);
+    state.knowledge_watches.sync(source_id).await?;
+    state.knowledge_watches.start(
+        Arc::new(super::runtime_adapter::TauriKnowledgeSourceEventSink::new(
+            app.clone(),
+        )),
+        source_id,
+    );
     Ok(Some(
         project_source(
             &state,
@@ -1075,125 +915,8 @@ pub(crate) async fn revoke_knowledge_source(
 pub(crate) async fn sync_knowledge_source(
     state: State<'_, AppState>,
     source_id: Uuid,
-) -> AppResult<KnowledgeSyncProjection> {
-    sync_knowledge_source_inner(&state, source_id).await
-}
-
-pub(super) async fn sync_knowledge_source_inner(
-    state: &AppState,
-    source_id: Uuid,
-) -> AppResult<KnowledgeSyncProjection> {
-    let active_scope = state.services.knowledge.active_resource_scope().await?;
-    let stored = state
-        .services
-        .knowledge
-        .scopes(active_scope.workspace_id)
-        .await?
-        .into_iter()
-        .find(|candidate| candidate.binding.source_id == source_id)
-        .ok_or_else(|| AppError::NotFound("the Project Knowledge source".into()))?;
-    let previous_artifact = state
-        .services
-        .knowledge
-        .active_for_source(source_id)
-        .await?;
-    if stored.binding.provider == KnowledgeSourceProvider::Github {
-        let remote = active_remote_scope(state).await?;
-        let previous_graph_revision_id = state
-            .services
-            .knowledge
-            .request_remote_source_sync(
-                remote.account.as_str(),
-                remote.remote_workspace_id,
-                source_id,
-            )
-            .await?;
-        return Ok(KnowledgeSyncProjection {
-            source_id,
-            state: SourceHealthState::Syncing,
-            graph_revision_id: previous_graph_revision_id,
-            parsed_files: previous_artifact
-                .as_ref()
-                .map_or(0, |artifact| artifact.health.parsed_files),
-            skipped_files: previous_artifact
-                .as_ref()
-                .map_or(0, |artifact| artifact.health.skipped_files),
-            changed_files: previous_artifact
-                .as_ref()
-                .map_or_else(Vec::new, |artifact| artifact.changed_files.clone()),
-            node_count: previous_artifact
-                .as_ref()
-                .map_or(0, |artifact| artifact.nodes.len()),
-            edge_count: previous_artifact
-                .as_ref()
-                .map_or(0, |artifact| artifact.edges.len()),
-        });
-    }
-    let parent = previous_artifact
-        .as_ref()
-        .map(|artifact| artifact.graph_revision_id);
-    let previous_snapshot = state.services.knowledge.source_snapshot(source_id).await?;
-    let artifact = match stored.binding.provider {
-        KnowledgeSourceProvider::LocalFolder => {
-            let root = fetch_knowledge_source_root(source_id)?.ok_or_else(|| {
-                AppError::NotFound("the Local Folder capability on this device".into())
-            })?;
-            state.local_knowledge_sources.restore(
-                stored.binding.clone(),
-                stored.environment.revision,
-                root,
-            )?;
-            let snapshot = state
-                .local_knowledge_sources
-                .snapshot(&stored.binding, previous_snapshot.as_ref())
-                .await?;
-            if let Some(artifact) = unchanged_graph(
-                previous_snapshot.as_ref(),
-                &snapshot,
-                previous_artifact.as_ref(),
-            ) {
-                artifact
-            } else {
-                let artifact = build_graph(
-                    &state.local_knowledge_sources,
-                    &snapshot,
-                    parent,
-                    previous_artifact.as_ref(),
-                )
-                .await?;
-                validate_graph_publish(&artifact, &stored.environment)?;
-                state.services.knowledge.stage(&artifact).await?;
-                state
-                    .services
-                    .knowledge
-                    .save_scope(
-                        &stored.project,
-                        &stored.environment,
-                        &snapshot.binding,
-                        snapshot.environment_revision,
-                    )
-                    .await?;
-                state.services.knowledge.save_snapshot(&snapshot).await?;
-                artifact
-            }
-        }
-        KnowledgeSourceProvider::Github => {
-            unreachable!("GitHub sync is owned by the control plane")
-        }
-    };
-    if parent != Some(artifact.graph_revision_id) {
-        state.services.knowledge.activate(&artifact).await?;
-    }
-    Ok(KnowledgeSyncProjection {
-        source_id,
-        state: SourceHealthState::Ready,
-        graph_revision_id: Some(artifact.graph_revision_id),
-        parsed_files: artifact.health.parsed_files,
-        skipped_files: artifact.health.skipped_files,
-        changed_files: artifact.changed_files,
-        node_count: artifact.nodes.len(),
-        edge_count: artifact.edges.len(),
-    })
+) -> AppResult<super::source_sync::KnowledgeSyncReceipt> {
+    state.knowledge_watches.sync(source_id).await
 }
 
 async fn active_workspace_graphs(
@@ -1202,9 +925,9 @@ async fn active_workspace_graphs(
 ) -> AppResult<Vec<dopedb_protocol::GraphBuildArtifactV1>> {
     let active_scope = state.services.knowledge.active_resource_scope().await?;
     if active_scope.workspace_kind == WorkspaceKind::Team {
-        sync_current_knowledge_access(state).await?;
+        state.services.knowledge.reconcile_current_access().await?;
     } else if active_scope.selected_account_id.is_some() {
-        if let Err(error) = sync_current_knowledge_access(state).await {
+        if let Err(error) = state.services.knowledge.reconcile_current_access().await {
             let has_remote_graph = state
                 .services
                 .knowledge
@@ -1406,26 +1129,6 @@ pub(crate) async fn list_knowledge_environment_connections(
                 .knowledge
                 .local_connection_id_for_remote(scope.workspace_id, binding.connection_id)
                 .await?;
-            if let Some(local_connection_id) = local_connection_id {
-                if let Ok(connection) = state
-                    .services
-                    .knowledge
-                    .pin_connection_for_read(local_connection_id)
-                    .await
-                {
-                    let _ = state
-                        .services
-                        .knowledge
-                        .bind_environment_connection(
-                            binding.id,
-                            &connection,
-                            project_environment_id,
-                            &binding.role,
-                            &binding.alias,
-                        )
-                        .await;
-                }
-            }
             projections.push(EnvironmentConnectionProjection {
                 id: binding.id,
                 project_environment_id: binding.project_environment_id,

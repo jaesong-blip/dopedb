@@ -764,8 +764,8 @@ function selfTest() {
     const stagedAuthMode = lstatSync(join(isolatedCodexHome, "auth.json")).mode & 0o777;
     if (
       environmentProbe.HOME !== isolatedHome
-      || !environmentProbe.GH_CONFIG_DIR.startsWith(`${isolatedHome}/`)
-      || !environmentProbe.XDG_CONFIG_HOME.startsWith(`${isolatedHome}/`)
+      || !environmentProbe.GH_CONFIG_DIR.startsWith(`${isolatedHome}${sep}`)
+      || !environmentProbe.XDG_CONFIG_HOME.startsWith(`${isolatedHome}${sep}`)
       || environmentProbe.CODEX_HOME !== isolatedCodexHome
       || stagedFiles.length !== 1
       || stagedFiles[0] !== "auth.json"

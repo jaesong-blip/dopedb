@@ -27,7 +27,7 @@ const CATALOG_DDL_TIMEOUT: Duration = Duration::from_secs(30);
 /// of exhausting a small driver pool or a remote database connection quota.
 const MAX_CONCURRENT_CATALOG_READS_PER_CONNECTION: usize = 2;
 
-fn database_bound_authority(pin: &crate::store::PinnedConnection) -> bool {
+fn database_bound_authority(pin: &crate::kernel::access::PinnedConnection) -> bool {
     let profile = &pin.profile;
     profile.credential_mode == WorkspaceCredentialMode::Managed
         || (pin.requires_remote_rbac

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer } from "react";
+import { useEffect, useReducer } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 
 import type { ConnectionId } from "../connections/domain";
@@ -85,14 +85,10 @@ export function useCachedCatalogOverviews(
   scopeKey: string,
   enabled: boolean,
 ) {
-  const [cacheRevision, bumpRevision] = useReducer(
+  const [, bumpRevision] = useReducer(
     (revision) => revision + 1,
     0,
   );
-  const connectionKey = connections
-    .map((connection) => `${connection.id}\u0000${connection.database}`)
-    .join("\u0001");
-
   useEffect(() => {
     if (!enabled) return;
     return queryClient.getQueryCache().subscribe((event) => {
@@ -101,14 +97,7 @@ export function useCachedCatalogOverviews(
     });
   }, [enabled, queryClient, scopeKey]);
 
-  return useMemo(
-    () =>
-      enabled
-        ? cachedCatalogOverviews(queryClient, connections, scopeKey)
-        : [],
-    // connectionKey is the stable identity of the lookup inputs. The query
-    // cache subscription above invalidates this memo by rerendering the hook.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [cacheRevision, connectionKey, enabled, queryClient, scopeKey],
-  );
+  return enabled
+    ? cachedCatalogOverviews(queryClient, connections, scopeKey)
+    : [];
 }

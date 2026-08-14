@@ -5,9 +5,10 @@ use sqlx::{AssertSqlSafe, Row};
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
+use crate::kernel::access::{ActiveResourceScope, PinnedConnection};
 use crate::kernel::identity::WorkspaceId;
 use crate::model::SafetySettings;
-use crate::store::{ActiveResourceScope, PinnedConnection, Store};
+use crate::store::Store;
 
 use super::domain::ProvisioningReceipt;
 
@@ -380,8 +381,7 @@ pub(crate) async fn assert_repository_fences() {
     use crate::features::providers::provisioning::domain::{
         fixture_plan, ManagedAccessCapability, ProvisioningCapabilityManifest, ProvisioningIntent,
     };
-    use crate::features::workspaces::WorkspaceKind;
-    use crate::store::AccountScope;
+    use crate::kernel::access::{AccountScope, WorkspaceKind};
 
     use ManagedAccessCapability::{
         Apply, Destroy, Detect, Discover, Issue, Plan, Reconcile, Verify,

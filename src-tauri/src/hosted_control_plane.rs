@@ -11,6 +11,7 @@ use std::time::Duration;
 use reqwest::{redirect::Policy, Client, Response, Url};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
+use zeroize::Zeroizing;
 
 use crate::error::{AppError, AppResult};
 
@@ -123,7 +124,10 @@ pub(crate) async fn bounded_json_response<T: DeserializeOwned>(
         .and_then(|length| usize::try_from(length).ok())
         .unwrap_or(0)
         .min(maximum);
-    let mut body = Vec::with_capacity(initial_capacity);
+    // This is the application-owned copy of the bounded response. It can carry
+    // managed lease/provider credentials, so wipe it on every success or error
+    // path. reqwest and TLS implementation buffers are not owned here.
+    let mut body = Zeroizing::new(Vec::with_capacity(initial_capacity));
     while let Some(chunk) = response
         .chunk()
         .await
@@ -141,7 +145,7 @@ pub(crate) async fn bounded_json_response<T: DeserializeOwned>(
             "{action} returned an empty response"
         )));
     }
-    serde_json::from_slice(&body)
+    serde_json::from_slice(body.as_slice())
         .map_err(|_| AppError::Network(format!("{action} returned an incompatible response")))
 }
 

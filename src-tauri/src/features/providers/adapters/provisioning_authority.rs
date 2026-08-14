@@ -12,9 +12,9 @@ use zeroize::Zeroizing;
 use crate::connection::keychain::{delete_workspace_session, fetch_workspace_session};
 use crate::error::{AppError, AppResult};
 use crate::hosted_control_plane;
+use crate::kernel::access::PinnedConnection;
 use crate::kernel::identity::ProviderIntegrationId;
 use crate::model::{Engine, Provider, WorkspaceCredentialMode};
-use crate::store::PinnedConnection;
 
 use super::super::domain::LocalProvider;
 use super::super::provisioning::ProvisioningTarget;
@@ -589,11 +589,11 @@ fn blocked(reason: &'static str) -> AppError {
 #[cfg(test)]
 pub(crate) fn assert_target_projection_contract() {
     let connection = PinnedConnection {
-        scope: crate::store::ActiveResourceScope {
+        scope: crate::kernel::access::ActiveResourceScope {
             workspace_id: Uuid::from_u128(90),
-            workspace_kind: crate::features::workspaces::WorkspaceKind::Team,
+            workspace_kind: crate::kernel::access::WorkspaceKind::Team,
             selected_account_id: Some("member-1".into()),
-            account_scope: crate::store::AccountScope::WorkspaceUser("member-1".into()),
+            account_scope: crate::kernel::access::AccountScope::WorkspaceUser("member-1".into()),
             generation: 1,
         },
         connection_id: Uuid::from_u128(92),
@@ -622,7 +622,7 @@ pub(crate) fn assert_target_projection_contract() {
             provider_target: None,
         },
         requires_remote_rbac: true,
-        catalog_cache_policy: crate::store::CatalogCachePolicy::EphemeralOnly,
+        catalog_cache_policy: crate::kernel::access::CatalogCachePolicy::EphemeralOnly,
     };
     let expires = (Utc::now() + chrono::Duration::minutes(5)).to_rfc3339();
     let body = serde_json::json!({

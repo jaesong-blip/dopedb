@@ -1,6 +1,7 @@
 //! Atomic account/workspace selection and account removal.
 
 use super::super::super::*;
+use crate::kernel::access::WorkspaceKind;
 
 impl Store {
     /// Atomically select an account and workspace. Team scopes require an active

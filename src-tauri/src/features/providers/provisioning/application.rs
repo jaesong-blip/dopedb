@@ -13,6 +13,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
+use crate::kernel::access::{ActiveResourceScope, PinnedConnection};
 use crate::model::Engine;
 use crate::operations::{
     actor_for_pin, capture_policy, required_confirmation, ClaimedOperation, NewOperation,
@@ -20,7 +21,6 @@ use crate::operations::{
 };
 #[cfg(test)]
 use crate::store::Store;
-use crate::store::{ActiveResourceScope, PinnedConnection};
 
 use super::super::domain::LocalProvider;
 use super::domain::{

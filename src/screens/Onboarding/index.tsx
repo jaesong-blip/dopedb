@@ -2,6 +2,7 @@
 // appear here; provider setup and Agent actions stay in their tool windows.
 import { useI18n } from "../../lib/i18n";
 import { Button } from "../../design-system/components/Button";
+import { ProductAnalyticsConsentPrompt } from "../../features/productAnalytics/ConsentPrompt";
 
 export default function Onboarding({
   connectionName,
@@ -44,6 +45,7 @@ export default function Onboarding({
       <div className="tw:grid tw:min-h-0 tw:flex-1 tw:place-items-center tw:overflow-auto tw:p-5">
         <main className="tw:w-full tw:max-w-[320px]">
           <h1 className="tw:sr-only">{t("onboarding.title")}</h1>
+          <ProductAnalyticsConsentPrompt />
           {!connected ? (
             <p className="tw:mt-0 tw:mb-3 tw:text-center tw:text-sm tw:leading-body tw:text-muted-foreground">
               {t("onboarding.firstRunLead")}

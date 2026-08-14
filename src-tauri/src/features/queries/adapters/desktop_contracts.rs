@@ -2,10 +2,10 @@
 
 use crate::connection::{ConnectionLease, ConnectionOperationScope};
 use crate::error::AppError;
+use crate::kernel::access::PinnedConnection;
 use crate::kernel::identity::OperationId;
 use crate::model::{Classification, ExecOutcome, PreviewReport};
 use crate::operations::OperationState;
-use crate::store::PinnedConnection;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::fmt;

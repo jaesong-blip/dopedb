@@ -1,0 +1,46 @@
+/* The feature's React Flow generated subtree and inline-positioned handles are documented
+   vendor boundaries. DopeDB-owned surface and control layout stays in Tailwind. */
+.erd-flow .react-flow__background {
+  background: var(--ds-surface-1);
+  opacity: 0.42;
+}
+
+.erd-flow .react-flow__edge-text {
+  fill: var(--ds-text-muted);
+  font-size: var(--ds-font-size-2xs);
+}
+
+.erd-flow .react-flow__edge-textbg {
+  fill: var(--ds-surface-0);
+}
+
+.erd-flow .react-flow__controls,
+.erd-flow .react-flow__minimap {
+  overflow: hidden;
+  border: var(--ds-border-width) solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-sm);
+  background: var(--ds-surface-0);
+  box-shadow: var(--ds-shadow-panel);
+}
+
+.erd-flow .react-flow__controls-button {
+  border-bottom-color: var(--ds-border-subtle);
+  background: var(--ds-surface-0);
+  color: var(--ds-text);
+}
+
+.erd-flow .react-flow__minimap-mask {
+  fill: var(--ds-surface-2);
+}
+
+.erd-flow .react-flow__minimap-node {
+  fill: var(--ds-text-muted);
+}
+
+.erd-node-handle {
+  width: 7px;
+  height: 18px;
+  border: 0;
+  border-radius: var(--ds-radius-xs);
+  background: var(--ds-text-muted);
+}

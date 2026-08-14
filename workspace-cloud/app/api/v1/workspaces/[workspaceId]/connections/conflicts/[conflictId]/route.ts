@@ -74,7 +74,8 @@ export async function POST(request: Request, context: RouteContext) {
     return jsonError("Connection conflict decision is invalid", 400);
   }
   const resolution = (body.value as { resolution?: unknown }).resolution;
-  if (!["server", "candidate", "dismissed"].includes(String(resolution))) {
+  if (typeof resolution !== "string"
+    || !["server", "candidate", "dismissed"].includes(resolution)) {
     return jsonError("Connection conflict decision is invalid", 400);
   }
   const requested = resolution as ConnectionConflictResolution;

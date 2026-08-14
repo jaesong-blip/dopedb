@@ -925,6 +925,11 @@ pub(crate) async fn create_analysis_article(
     workspace_id: Uuid,
     article: &SharedAnalysisArticleCreate,
 ) -> AppResult<AnalysisArticleRecord> {
+    if !article.validate() {
+        return Err(AppError::Config(
+            "Analysis Article create contract is invalid".into(),
+        ));
+    }
     let token = token(user_id)?;
     let raw = client()?
         .post(format!(
@@ -962,9 +967,9 @@ pub(crate) async fn mutate_analysis_article(
     }
     let body = match mutation {
         AnalysisArticleMutation::Update(article) => {
-            if article.id != article_id {
+            if article.id != article_id || !article.validate() {
                 return Err(AppError::Config(
-                    "Analysis Article update changed identity".into(),
+                    "Analysis Article update contract is invalid".into(),
                 ));
             }
             json!({ "action": "update", "article": article })

@@ -48,7 +48,7 @@ a write. GCP resources discovered through a newly completed bootstrap may set it
 
 | Layer | Entrypoint | Decision | Owner / removal condition |
 | --- | --- | --- | --- |
-| Web UI | `ProviderIntegrationList`, `GcpCloudSetup`, `ProviderResourcePicker`, `useProviderAccess` | keep | Current account connection, redacted discovery, safe-default import, GCP read/write bootstrap, Neon environment/preflight/approval/apply/verify flow, and administrator DB write policy. Provider-specific setup is selected by the server catalog, not a planned UI placeholder. |
+| Web UI | `ProviderIntegrationList`, `GcpCloudSetup`, `ProviderResourcePicker`, `useProviderAccountAccess`, `useSharedDatabaseAccess` | keep | Account integration setup and shared database import use independent controllers and error boundaries. Together they retain redacted discovery, safe-default import, GCP read/write bootstrap, Neon environment/preflight/approval/apply/verify flow, and administrator DB write policy. Provider-specific setup is selected by the server catalog, not a planned UI placeholder. |
 | Catalog API | `GET /api/v1/workspaces/:id/provider-integrations` | keep, narrowed | Returns only the three working adapters and no write capability claim. DQ-18 must change before another descriptor is added. |
 | Integration mutation | `POST/DELETE /provider-integrations` and provider OAuth callbacks | keep | Current Neon, GCP Cloud SQL, and PlanetScale authorization boundary. Replacement is #99/#100, after equivalent CLI setup and rollback exist. |
 | Discovery | `GET /provider-integrations/:id/resources` | keep | Provider response is bounded, normalized server-side, and projected into opaque receipts. |

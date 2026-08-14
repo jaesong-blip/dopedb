@@ -12,7 +12,11 @@ import {
   initializeClientMonitoring,
   listenForAgentPluginTelemetry,
 } from "./features/monitoring/client";
+import { initializeProductAnalytics } from "./features/productAnalytics/client";
+import { ProductAnalyticsWorkspaceScopeObserver } from "./features/productAnalytics/WorkspaceScopeObserver";
 import { AppProviders } from "./lib/appProviders";
+
+void initializeProductAnalytics();
 
 void initializeClientMonitoring()
   .then(() => listenForAgentPluginTelemetry())
@@ -39,6 +43,7 @@ if (benchmarkConfig?.kind === "workload") {
 } else {
   application = (
     <AppProviders>
+      {!packagedBenchmark ? <ProductAnalyticsWorkspaceScopeObserver /> : null}
       <App />
     </AppProviders>
   );

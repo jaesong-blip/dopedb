@@ -61,6 +61,7 @@ export default function SkillStartupGate() {
     ...agentPluginStatusQuery(),
     enabled: postPaintReady,
   });
+  const refetchPlugins = pluginsQ.refetch;
   const agentsQ = useQuery({
     ...agentCliDetectionQuery(),
     enabled: postPaintReady,
@@ -86,9 +87,9 @@ export default function SkillStartupGate() {
 
   useEffect(() => {
     if (!busy) return;
-    const timer = window.setInterval(() => void pluginsQ.refetch(), 500);
+    const timer = window.setInterval(() => void refetchPlugins(), 500);
     return () => window.clearInterval(timer);
-  }, [busy, pluginsQ.refetch]);
+  }, [busy, refetchPlugins]);
 
   async function installSelected() {
     if (selected.length === 0) {

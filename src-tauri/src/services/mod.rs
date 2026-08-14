@@ -15,6 +15,7 @@ use crate::features::jobs::{self, JobsFeature};
 use crate::features::knowledge::{self, KnowledgeFeature};
 use crate::features::monitoring::{self, MonitoringFeature};
 use crate::features::operation_control::{self, OperationControlFeature};
+use crate::features::product_analytics::{self, ProductAnalyticsFeature};
 use crate::features::providers::ProvidersFeature;
 use crate::features::queries::QueriesFeature;
 use crate::features::safety_settings::{self, SafetySettingsFeature};
@@ -40,6 +41,7 @@ pub(crate) struct ApplicationServices {
     pub(crate) monitoring: MonitoringFeature,
     pub(crate) operation: OperationControlFeature,
     pub(crate) providers: ProvidersFeature,
+    pub(crate) product_analytics: ProductAnalyticsFeature,
     pub(crate) queries: QueriesFeature,
     pub(crate) safety: SafetySettingsFeature,
     pub(crate) script: ScriptFeature,
@@ -76,6 +78,9 @@ impl ApplicationServices {
             connections.clone(),
             connection_credentials.clone(),
         );
+        let knowledge = knowledge::compose(store.clone());
+        let analysis_article =
+            analysis_articles::compose(store.clone(), connections.clone(), knowledge.clone());
         let sql_documents = sql_documents::compose(store.clone(), connections.clone());
         let erd = erd::compose(store.clone(), connections.clone());
         let job = jobs::compose(
@@ -87,19 +92,17 @@ impl ApplicationServices {
         Self {
             activity: activity::compose(store.clone()),
             agents: agents::compose(store.clone()),
-            analysis_article: analysis_articles::compose(store.clone(), connections.clone()),
+            analysis_article,
             connections: connection_feature,
             catalog,
             document: documents::compose(store.clone(), connections.clone(), operation.clone()),
             erd,
             job,
-            knowledge: knowledge::compose(
-                knowledge::adapters::SqliteKnowledgeRepository::new(store.clone()),
-                knowledge::adapters::HostedKnowledgeAuthority,
-            ),
+            knowledge,
             monitoring: monitoring::compose(store.clone(), connections.clone(), operation.clone()),
             operation: operation_service,
             providers,
+            product_analytics: product_analytics::compose(store.clone()),
             queries,
             safety: safety_settings::compose(store.clone(), connections.clone()),
             script,

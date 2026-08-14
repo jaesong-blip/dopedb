@@ -19,21 +19,14 @@ import {
 } from "../../design-system/components/Modal";
 import { TreeSearch } from "../../design-system/components/TreeControls";
 import { useI18n } from "../../lib/i18n";
+import type { SettingsSection } from "../../features/settings/domain";
 import AdvancedSettings from "./Advanced";
 import AgentTools from "./AgentTools";
 import CliSettings from "./Cli";
+import PrivacySettings from "./Privacy";
 import RetiredChatArchive from "./RetiredChatArchive";
 import Safety from "./Safety";
 import Updates from "./Updates";
-
-export type SettingsSection =
-  | "agent-tools"
-  | "advanced"
-  | "archive"
-  | "cli"
-  | "safety"
-  | "updates"
-  | "language";
 
 type SettingsScope = "application" | "dataSource";
 
@@ -100,6 +93,13 @@ export default function Settings({
           scope: "application",
           disabled: false,
           keywords: "locale korean english",
+        },
+        {
+          id: "privacy",
+          label: t("settings.privacy"),
+          scope: "application",
+          disabled: false,
+          keywords: "privacy analytics telemetry consent 개인정보 분석 동의",
         },
         {
           id: "updates",
@@ -282,6 +282,7 @@ export default function Settings({
                 {section === "archive" && (
                   <RetiredChatArchive connection={connection} />
                 )}
+                {section === "privacy" && <PrivacySettings />}
                 {section === "updates" && (
                   <Updates
                     initialUpdate={availableUpdate}

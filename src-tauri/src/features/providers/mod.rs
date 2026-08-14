@@ -16,10 +16,7 @@ use adapters::{
     SqliteProviderBindingRepository,
 };
 use application::ProviderUseCases;
-use ports::{
-    ProviderBindingRevocationHandle, ProviderBindingRevocationPort, ProvisioningRuntimeHandle,
-    ProvisioningRuntimePort,
-};
+use ports::{ProviderBindingRevocationPort, ProvisioningRuntimePort};
 use provisioning::{
     managed_provider_registry, GcpCloudSqlProvisioningDriver, NeonProvisioningDriver,
     PlanetScaleProvisioningDriver, ProvisioningCoordinator, ProvisioningRepository,
@@ -47,88 +44,89 @@ type ComposedProviderApplication = ProviderUseCases<
 #[derive(Clone)]
 pub(crate) struct ProvidersFeature {
     application: ComposedProviderApplication,
-    local_connection: ProviderLocalResolver,
-    revocation: ProviderBindingRevocationHandle,
-    provisioning_runtime: ProvisioningRuntimeHandle,
     provisioning: ProvisioningCoordinator,
 }
 
-pub(crate) fn compose(store: Store, operation: OperationRuntime) -> ProvidersFeature {
+/// First composition phase. It exposes only the provider-local resolver needed
+/// to construct the connection runtime; no callable Provider feature exists
+/// until [`ProviderComposition::finish`] receives every runtime dependency.
+pub(crate) struct ProviderComposition {
+    store: Store,
+    operation: OperationRuntime,
+    repository: SqliteProviderBindingRepository,
+    local_connection: ProviderLocalResolver,
+}
+
+pub(crate) fn prepare(store: Store, operation: OperationRuntime) -> ProviderComposition {
     let repository = SqliteProviderBindingRepository::new(store.clone());
-    let vault = KeyringProviderCredentialVault;
-    let authority = HostedProviderAuthority::new();
-    let revocation = ProviderBindingRevocationHandle::default();
-    let provisioning_runtime = ProvisioningRuntimeHandle::default();
-    let provisioning_target_authority =
-        std::sync::Arc::new(HostedProvisioningTargetAuthority::new());
-    let provisioning_repository = ProvisioningRepository::new(store.clone());
-    let provisioning_driver = PlanetScaleProvisioningDriver::new(
-        provisioning_repository.clone(),
-        provisioning_target_authority.clone(),
-        std::sync::Arc::new(provisioning_runtime.clone()),
-    );
-    let gcp_provisioning_driver = GcpCloudSqlProvisioningDriver::new(
-        provisioning_repository.clone(),
-        provisioning_target_authority.clone(),
-        std::sync::Arc::new(provisioning_runtime.clone()),
-    );
-    let neon_provisioning_driver = NeonProvisioningDriver::new(
-        provisioning_repository.clone(),
-        provisioning_target_authority,
-        std::sync::Arc::new(provisioning_runtime.clone()),
-    );
-    ProvidersFeature {
-        application: ProviderUseCases::new(
-            repository.clone(),
-            vault.clone(),
-            ProductionGcpAdcVerifier,
-            InMemoryProviderReceiptRegistry::default(),
-            authority,
-            std::sync::Arc::new(revocation.clone()),
-        ),
-        local_connection: ProviderLocalResolver::new(repository),
-        revocation,
-        provisioning_runtime,
-        provisioning: ProvisioningCoordinator::new(
-            provisioning_repository,
-            operation,
-            managed_provider_registry(
-                provisioning_driver,
-                gcp_provisioning_driver,
-                neon_provisioning_driver,
-            ),
-        ),
+    ProviderComposition {
+        store,
+        operation,
+        local_connection: ProviderLocalResolver::new(repository.clone()),
+        repository,
     }
 }
 
-impl ProvidersFeature {
-    /// The sole provider-local port shared with the connection runtime.
-    ///
-    /// Cloning the facade retains the same repository/vault owner; composing a
-    /// second feature would create independent receipt and cache lifecycles.
+impl ProviderComposition {
+    /// The sole provider-local port needed while constructing the connection
+    /// runtime. The returned adapter owns no mutation use cases.
     pub(crate) fn local_connection_port(
         &self,
     ) -> std::sync::Arc<dyn crate::connection::ProviderLocalConnectionPort> {
         std::sync::Arc::new(self.local_connection.clone())
     }
 
-    /// Bind the one runtime-owned cache fence after the provider-local resolver
-    /// has been injected into that runtime.  The application sees only the
-    /// explicit port and cannot name `ConnectionManager`.
-    pub(crate) fn bind_revocation_port(
-        &self,
-        port: std::sync::Arc<dyn ProviderBindingRevocationPort>,
-    ) -> crate::error::AppResult<()> {
-        self.revocation.bind(port)
+    /// Complete the feature atomically with all of its runtime ports. Unlike a
+    /// late-bound holder, the resulting facade cannot represent an unbound or
+    /// partially initialized Provider feature.
+    pub(crate) fn finish(
+        self,
+        revocation: std::sync::Arc<dyn ProviderBindingRevocationPort>,
+        provisioning_runtime: std::sync::Arc<dyn ProvisioningRuntimePort>,
+    ) -> ProvidersFeature {
+        let vault = KeyringProviderCredentialVault;
+        let authority = HostedProviderAuthority::new();
+        let provisioning_target_authority =
+            std::sync::Arc::new(HostedProvisioningTargetAuthority::new());
+        let provisioning_repository = ProvisioningRepository::new(self.store);
+        let provisioning_driver = PlanetScaleProvisioningDriver::new(
+            provisioning_repository.clone(),
+            provisioning_target_authority.clone(),
+            provisioning_runtime.clone(),
+        );
+        let gcp_provisioning_driver = GcpCloudSqlProvisioningDriver::new(
+            provisioning_repository.clone(),
+            provisioning_target_authority.clone(),
+            provisioning_runtime.clone(),
+        );
+        let neon_provisioning_driver = NeonProvisioningDriver::new(
+            provisioning_repository.clone(),
+            provisioning_target_authority,
+            provisioning_runtime,
+        );
+        ProvidersFeature {
+            application: ProviderUseCases::new(
+                self.repository,
+                vault,
+                ProductionGcpAdcVerifier,
+                InMemoryProviderReceiptRegistry::default(),
+                authority,
+                revocation,
+            ),
+            provisioning: ProvisioningCoordinator::new(
+                provisioning_repository,
+                self.operation,
+                managed_provider_registry(
+                    provisioning_driver,
+                    gcp_provisioning_driver,
+                    neon_provisioning_driver,
+                ),
+            ),
+        }
     }
+}
 
-    pub(crate) fn bind_provisioning_runtime(
-        &self,
-        port: std::sync::Arc<dyn ProvisioningRuntimePort>,
-    ) -> crate::error::AppResult<()> {
-        self.provisioning_runtime.bind(port)
-    }
-
+impl ProvidersFeature {
     pub(crate) async fn list_integrations(
         &self,
     ) -> crate::error::AppResult<Vec<ProviderIntegrationSummary>> {

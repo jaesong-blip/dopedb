@@ -2,32 +2,6 @@
 
 use super::*;
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct RemoteWorkspacePullPage {
-    workspace_id: String,
-    previous_cursor: Option<i64>,
-    next_cursor: i64,
-    has_more: bool,
-    reset: bool,
-    refresh: RemoteWorkspaceRefresh,
-    tombstones: RemoteWorkspaceTombstones,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RemoteWorkspaceRefresh {
-    connections: bool,
-    analyses: bool,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RemoteWorkspaceTombstones {
-    connections: bool,
-    analyses: bool,
-}
-
 pub(super) async fn workspace_pull_page(
     user_id: &str,
     workspace_id: Uuid,
@@ -36,6 +10,11 @@ pub(super) async fn workspace_pull_page(
     if cursor.is_some_and(|value| value < 0) {
         return Err(AppError::Config(
             "workspace pull cursor cannot be negative".into(),
+        ));
+    }
+    if !valid_workspace_sync_cursor(cursor) {
+        return Err(AppError::Config(
+            "workspace pull cursor exceeds the exact Cloud range".into(),
         ));
     }
     let token = fetch_workspace_session(user_id)?
@@ -67,24 +46,13 @@ pub(super) async fn workspace_pull_page(
     if !response.status().is_success() {
         return Err(oauth_error(response).await);
     }
-    let body: RemoteWorkspacePullPage = crate::hosted_control_plane::bounded_json_response(
+    let body: WorkspaceSyncPageResponse = crate::hosted_control_plane::bounded_json_response(
         response,
         "reading workspace changes",
         MAX_WORKSPACE_SYNC_RESPONSE_BYTES,
     )
     .await?;
-    if body.workspace_id != workspace_id.to_string()
-        || body.previous_cursor != cursor
-        || body.next_cursor < 0
-        || (!body.reset && cursor.is_some_and(|value| body.next_cursor < value))
-        || (body.reset && (!cursor.is_some_and(|value| body.next_cursor != value) || body.has_more))
-        || (cursor.is_none() && (body.reset || body.has_more))
-        || ((cursor.is_none() || body.reset)
-            && (!body.refresh.connections || !body.refresh.analyses))
-        || (body.has_more && cursor.is_some_and(|value| body.next_cursor <= value))
-        || (body.tombstones.connections && !body.refresh.connections)
-        || (body.tombstones.analyses && !body.refresh.analyses)
-    {
+    if !body.valid_for(workspace_id, cursor) {
         return Err(AppError::Network(
             "workspace sync page violated its ordered contract".into(),
         ));

@@ -1,15 +1,13 @@
 //! Platform ports for provider credential use cases.
 
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
-
 use crate::error::AppResult;
 use crate::kernel::identity::{
     ProviderBindingId, ProviderCredentialReceiptId, ProviderIntegrationId,
 };
 use crate::model::Engine;
 use chrono::{DateTime, Utc};
+use std::future::Future;
+use std::pin::Pin;
 
 use super::domain::{
     ProviderBindingScope, ProviderBindingStatus, ProviderCredentialCleanup,
@@ -98,39 +96,6 @@ pub(crate) trait ProviderBindingRevocationPort: Send + Sync + 'static {
     ) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>>;
 }
 
-/// Composition-only holder used because the connection runtime consumes the
-/// provider-local resolver while the provider application consumes this fence.
-/// It fails closed if a non-desktop composition forgets to bind the runtime.
-#[derive(Clone, Default)]
-pub(crate) struct ProviderBindingRevocationHandle {
-    target: Arc<std::sync::OnceLock<Arc<dyn ProviderBindingRevocationPort>>>,
-}
-
-impl ProviderBindingRevocationHandle {
-    pub(crate) fn bind(&self, target: Arc<dyn ProviderBindingRevocationPort>) -> AppResult<()> {
-        self.target.set(target).map_err(|_| {
-            crate::error::AppError::Config(
-                "provider binding revocation port was bound more than once".into(),
-            )
-        })
-    }
-}
-
-impl ProviderBindingRevocationPort for ProviderBindingRevocationHandle {
-    fn force_fence<'a>(
-        &'a self,
-        binding_id: ProviderBindingId,
-    ) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>> {
-        let target = self.target.get().cloned();
-        Box::pin(async move {
-            let target = target.ok_or_else(|| crate::error::AppError::Blocked {
-                reason: "provider binding revocation runtime is unavailable".into(),
-            })?;
-            target.force_fence(binding_id).await
-        })
-    }
-}
-
 /// Narrow connection-runtime boundary consumed by complete managed-access
 /// provisioners. It can open one exact uncached short lease or fence one
 /// connection, but cannot execute arbitrary SQL or inspect credential material.
@@ -148,57 +113,6 @@ pub(crate) trait ProvisioningRuntimePort: Send + Sync + 'static {
         &'a self,
         connection_id: uuid::Uuid,
     ) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>>;
-}
-
-/// Late-bound holder that keeps provider composition independent of the
-/// concrete `ConnectionManager` type and fails closed in incomplete runtimes.
-#[derive(Clone, Default)]
-pub(crate) struct ProvisioningRuntimeHandle {
-    target: Arc<std::sync::OnceLock<Arc<dyn ProvisioningRuntimePort>>>,
-}
-
-impl ProvisioningRuntimeHandle {
-    pub(crate) fn bind(&self, target: Arc<dyn ProvisioningRuntimePort>) -> AppResult<()> {
-        self.target.set(target).map_err(|_| {
-            crate::error::AppError::Config(
-                "provider provisioning runtime was bound more than once".into(),
-            )
-        })
-    }
-}
-
-impl ProvisioningRuntimePort for ProvisioningRuntimeHandle {
-    fn smoke<'a>(
-        &'a self,
-        connection_id: uuid::Uuid,
-        connection_revision: i64,
-        provider: super::domain::LocalProvider,
-        engine: Engine,
-        access: super::provisioning::ProvisioningAccessMode,
-    ) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>> {
-        let target = self.target.get().cloned();
-        Box::pin(async move {
-            let target = target.ok_or_else(|| crate::error::AppError::Blocked {
-                reason: "provider provisioning runtime is unavailable".into(),
-            })?;
-            target
-                .smoke(connection_id, connection_revision, provider, engine, access)
-                .await
-        })
-    }
-
-    fn force_fence<'a>(
-        &'a self,
-        connection_id: uuid::Uuid,
-    ) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>> {
-        let target = self.target.get().cloned();
-        Box::pin(async move {
-            let target = target.ok_or_else(|| crate::error::AppError::Blocked {
-                reason: "provider provisioning runtime is unavailable".into(),
-            })?;
-            target.force_fence(connection_id).await
-        })
-    }
 }
 
 /// Single-owner memory-only receipt state. A process restart intentionally loses it.

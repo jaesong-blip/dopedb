@@ -10,14 +10,14 @@ import {
   ControlLink,
   ControlSelect,
 } from "../../app/components/Controls";
-import type { ProviderAccessController } from "./useProviderAccess";
+import type { ProviderAccountAccessController } from "./useProviderAccountAccess";
 import { useWorkspaceLocale } from "../../app/components/WorkspaceLocale";
 import { workspaceMessages } from "../../lib/workspace-messages";
 
 export function GcpCloudSetup({
   controller,
 }: {
-  controller: ProviderAccessController;
+  controller: ProviderAccountAccessController;
 }) {
   const locale = useWorkspaceLocale();
   const copy = workspaceMessages[locale].gcpSetup;

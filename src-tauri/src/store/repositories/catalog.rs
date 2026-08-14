@@ -1,6 +1,7 @@
 //! Catalog V2 cache persistence and legacy schema-cache compatibility.
 
 use super::super::*;
+use crate::kernel::access::{CatalogCachePolicy, PinnedConnection};
 
 impl Store {
     /// Return a valid Catalog V2 snapshot only when both its stored provenance and the

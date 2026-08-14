@@ -3,9 +3,16 @@ import { fileURLToPath } from "node:url";
 
 import {
   validateHarnessEnvironment,
+  validateHarnessSourceTree,
 } from "./provider-import-postgres-harness-guard.mjs";
 
 const workspaceCloudDirectory = fileURLToPath(new URL("..", import.meta.url));
+try {
+  validateHarnessSourceTree(workspaceCloudDirectory);
+} catch {
+  console.error("Refusing PostgreSQL harness: source safety guard failed.");
+  process.exit(2);
+}
 let harness;
 try {
   harness = validateHarnessEnvironment(process.env);

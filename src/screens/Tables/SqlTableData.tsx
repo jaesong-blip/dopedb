@@ -1,5 +1,5 @@
 // SQL table query, paging, filtering, and staged row-edit controller.
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type {
   CatalogTable,
@@ -20,9 +20,9 @@ import {
   sameFilters,
   TABLE_PAGE_SIZE,
 } from "../../features/tableData/tableState";
-import DataGrid from "../../components/DataGrid";
+import DataGrid from "../../features/queryResults/DataGrid";
 import type { RowEditorSubmission } from "../../components/RowEditor";
-import JobPanel from "../../components/JobPanel";
+import JobPanel from "../../features/jobs/JobPanel";
 import Skeleton from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import DdlModal from "../Connections/DdlModal";
@@ -143,6 +143,14 @@ export default function SqlTableData({
       candidate.object.name === table.name &&
       candidate.object.namespace === table.schema,
   );
+  const settleFilters = useEffectEvent(() => commands.settleFilters());
+  const clearSelectionAfterRowsChange = useEffectEvent(() => {
+    commands.patch({
+      selectedRow: null,
+      selectedCell: null,
+      writeError: null,
+    });
+  });
 
   // Settling a filter always returns to the first page; both land in one render so only the
   // final query key is ever fetched. The equality guard keeps this inert on mount and on a
@@ -150,7 +158,7 @@ export default function SqlTableData({
   useEffect(() => {
     if (sameFilters(filters, appliedFilters)) return;
     const timer = window.setTimeout(() => {
-      commands.settleFilters();
+      settleFilters();
     }, FILTER_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [filters, appliedFilters]);
@@ -165,11 +173,7 @@ export default function SqlTableData({
   // Fresh rows landed, so any row/cell the user had selected now points at data that may
   // no longer be there, and a stale write error no longer describes what is on screen.
   useEffect(() => {
-    commands.patch({
-      selectedRow: null,
-      selectedCell: null,
-      writeError: null,
-    });
+    clearSelectionAfterRowsChange();
   }, [rowsQuery.dataUpdatedAt]);
 
   const rows = result?.rowCount ?? 0;

@@ -1,6 +1,7 @@
 //! Scoped connection lookup and retained authority validation.
 
 use super::super::super::*;
+use crate::kernel::access::{CatalogCachePolicy, PinnedConnection, WorkspaceKind};
 
 impl Store {
     pub async fn list_connections(&self) -> AppResult<Vec<ConnectionProfile>> {

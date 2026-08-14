@@ -3,6 +3,7 @@
 // for the connection create/edit form that used to live alongside it).
 import {
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -50,6 +51,7 @@ import {
   knowledgeEnvironmentBadge,
   knowledgeRevisionLabel,
 } from "../../features/knowledge/presentation";
+import { knowledgeQueryKeys } from "../../features/knowledge/queryKeys";
 import { useCatalogExplorerState } from "../../features/catalogExplorer/state";
 import { useSchemaGroupDrag } from "../../features/catalogExplorer/useSchemaGroupDrag";
 import {
@@ -179,13 +181,13 @@ export function DatabaseExplorer({
     catalogScope.accountScope !== null;
   const sharedKnowledgeWorkspace = knowledgeEnabled;
   const knowledgeProjects = useQuery({
-    queryKey: ["knowledge", "projects", catalogScope.key],
+    queryKey: knowledgeQueryKeys.projects(catalogScope.key),
     queryFn: listKnowledgeProjects,
     enabled: knowledgeEnabled,
     retry: false,
   });
   const knowledgeSources = useQuery({
-    queryKey: ["knowledge", "sources", catalogScope.key],
+    queryKey: knowledgeQueryKeys.sources(catalogScope.key),
     queryFn: listKnowledgeSources,
     enabled: knowledgeEnabled,
     retry: false,
@@ -199,12 +201,10 @@ export function DatabaseExplorer({
   );
   const environmentConnectionQueries = useQueries({
     queries: projectEnvironmentIds.map((environmentId) => ({
-      queryKey: [
-        "knowledge",
-        "environment-connections",
+      queryKey: knowledgeQueryKeys.environmentConnections(
         environmentId,
         catalogScope.key,
-      ],
+      ),
       queryFn: () => listKnowledgeEnvironmentConnections(environmentId),
       enabled: knowledgeEnabled,
       retry: false,
@@ -262,6 +262,9 @@ export function DatabaseExplorer({
     },
     commands,
   } = useCatalogExplorerState(catalogScope.key);
+  const closeOpenMenu = useEffectEvent(() => {
+    commands.patch({ openMenuId: null });
+  });
 
   useEffect(() => {
     if (!knowledgeProjects.data) return;
@@ -321,9 +324,11 @@ export function DatabaseExplorer({
     let unlisten: (() => void) | undefined;
     void onKnowledgeSourceChanged(() => {
       if (disposed) return;
-      void queryClient.invalidateQueries({ queryKey: ["knowledge", "sources"] });
       void queryClient.invalidateQueries({
-        queryKey: ["agentKnowledgeEnvironments"],
+        queryKey: knowledgeQueryKeys.sources(),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: knowledgeQueryKeys.agentEnvironments(),
       });
     }).then((stop) => {
       if (disposed) stop();
@@ -384,7 +389,7 @@ export function DatabaseExplorer({
     const closeOnOutsidePointer = (event: globalThis.PointerEvent) => {
       const target = event.target;
       if (target instanceof Element && target.closest(".db-menu")) return;
-      commands.patch({ openMenuId: null });
+      closeOpenMenu();
     };
     document.addEventListener("pointerdown", closeOnOutsidePointer);
     return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
@@ -504,12 +509,15 @@ export function DatabaseExplorer({
     setGlobalFilter(value);
   }
 
+  const openSelectedConnection = useEffectEvent((id: string) => {
+    commands.openConnection(id);
+    ensureGroupLoaded(id);
+  });
+
   // Selecting a connection auto-expands it (collapse stays a free action after).
   useEffect(() => {
     if (!selectedId) return;
-    commands.openConnection(selectedId);
-    ensureGroupLoaded(selectedId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    openSelectedConnection(selectedId);
   }, [selectedId]);
 
   // Refresh every database target discovered through this server connection. The
@@ -555,15 +563,15 @@ export function DatabaseExplorer({
           refetchType: "active",
         }),
         queryClient.invalidateQueries({
-          queryKey: ["knowledge", "projects", scopeKey],
+          queryKey: knowledgeQueryKeys.projects(scopeKey),
           refetchType: "active",
         }),
         queryClient.invalidateQueries({
-          queryKey: ["knowledge", "sources", scopeKey],
+          queryKey: knowledgeQueryKeys.sources(scopeKey),
           refetchType: "active",
         }),
         queryClient.invalidateQueries({
-          queryKey: ["knowledge", "environment-connections"],
+          queryKey: knowledgeQueryKeys.environmentConnections(),
           refetchType: "active",
         }),
         queryClient.invalidateQueries({

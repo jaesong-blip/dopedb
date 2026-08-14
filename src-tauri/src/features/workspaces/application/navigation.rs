@@ -4,7 +4,9 @@ use crate::error::{AppError, AppResult};
 use crate::features::connections::ConnectionCredentialVault;
 use crate::kernel::identity::{AccountId, WorkspaceId};
 
-use super::super::domain::{Workspace, WorkspaceAuthUser, WorkspaceKind};
+use crate::kernel::access::WorkspaceKind;
+
+use super::super::domain::{Workspace, WorkspaceAuthUser};
 use super::super::ports::{
     WorkspaceConfigurationPort, WorkspaceControlPlanePort, WorkspaceRepositoryPort,
     WorkspaceRuntimePort,

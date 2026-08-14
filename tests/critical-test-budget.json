@@ -9,7 +9,7 @@
     "rule": "A new test must replace a lower-value test. Raise a cap only after an explicit user request."
   },
   "frontend": {
-    "src/components/DataGridVirtual.test.ts": {
+    "src/features/queryResults/DataGridVirtual.test.ts": {
       "tests": 2,
       "protects": "Large-grid virtualization, bounded result-page cache eviction, and keyboard reachability"
     },
@@ -31,15 +31,15 @@
     },
     "src/features/agents/sessionStore.test.ts": {
       "tests": 8,
-      "protects": "Exact-scope ACP session isolation, stale-event rejection, singleton list/listen ownership, and incomplete-inventory failure preservation"
+      "protects": "Exact-scope ACP session isolation, stale-event and stale-focus-intent rejection, singleton list/listen ownership, live-only Agent outcome observation, bounded projection retention, and incomplete-inventory failure preservation"
     },
     "src/features/workbench/state.test.ts": {
       "tests": 4,
-      "protects": "Workbench document identity, save ownership, and SQL resolve context"
+      "protects": "Workbench document identity, save ownership, SQL resolve context, and mutually exclusive AppShell route transitions"
     },
     "src/features/workspaces/authPolicy.test.ts": {
       "tests": 3,
-      "protects": "Workspace authentication cooldown, request deduplication, exact external authentication URL scope, active-observer cache clearing, and role-only authority refetch"
+      "protects": "Workspace authentication cooldown, request deduplication, exact external authentication URL scope, active-observer cache clearing, connection-scoped Agent Knowledge reset, role-only authority refetch, and consent-gated product analytics identity, queue, scope, bucketing, and raw-field exclusion"
     }
   },
   "rust": {
@@ -49,7 +49,7 @@
     },
     "dopedb-protocol/tests/golden.rs": {
       "tests": 8,
-      "protects": "Versioned public wire contracts and fail-closed decoding"
+      "protects": "Versioned public CLI and Cloud↔Desktop sync, managed lease, and Analysis Article wire contracts with fail-closed decoding"
     },
     "src-tauri/src/broker/session.rs": {
       "tests": 4,
@@ -89,7 +89,7 @@
     },
     "src-tauri/src/store/tests/connections_scope.rs": {
       "tests": 4,
-      "protects": "Account isolation, credential binding, managed write projection, scope ABA rejection, bounded History/Audit metadata and exact detail reads, streamed audit verification identity, ACP provider migration, active-session-preserving history pruning, and ordered count/byte-bounded ACP replay batches"
+      "protects": "Account isolation, credential binding, managed write projection, scope ABA rejection, Knowledge source revision IPC casing, bounded History/Audit metadata and exact detail reads, streamed audit verification identity, ACP provider migration, active-session-preserving history pruning, and ordered count/byte-bounded ACP replay batches"
     },
     "tools/release-updater-verify/src/main.rs": {
       "tests": 4,

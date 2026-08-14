@@ -26,6 +26,7 @@ use crate::features::catalog::CatalogFeature;
 use crate::features::queries::{
     ManualExecutionTarget, ManualScriptRequest, ManualTransactionRuntime,
 };
+use crate::kernel::access::PinnedConnection;
 use crate::kernel::agent_policy::QUERY_PLAN_TTL;
 use crate::model::{HistoryEntry, QueryKind, ScriptOutcome, ScriptStatement};
 use crate::operations::{
@@ -34,7 +35,7 @@ use crate::operations::{
     OperationRuntime, OperationState,
 };
 use crate::safety;
-use crate::store::{PinnedConnection, Store};
+use crate::store::Store;
 
 const DESKTOP_SCRIPT_PAYLOAD_SCHEMA_VERSION: u32 = 3;
 

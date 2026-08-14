@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
 
-import DataGrid from "../../components/DataGrid";
-import ResultToolbar from "../../components/ResultToolbar";
+import DataGrid from "../queryResults/DataGrid";
+import ResultToolbar from "../queryResults/ResultToolbar";
 import {
   ResultWorkbenchFooter,
   ResultWorkbenchToolbar,
   resultCellText,
-} from "../../components/ResultWorkbench";
+} from "../queryResults/ResultWorkbench";
 import {
   ResultMeta,
   SqlSnippet,
@@ -17,7 +17,7 @@ import {
 import { Icon } from "../../components/Icon";
 import { stamp } from "../../lib/export";
 import { useI18n } from "../../lib/i18n";
-import StreamOutcome from "../../screens/Sql/StreamOutcome";
+import StreamOutcome from "./StreamOutcome";
 import type {
   QueryServiceError,
   QueryServiceResult as QueryServiceResultModel,

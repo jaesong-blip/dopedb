@@ -25,6 +25,7 @@ use crate::connection::{
 };
 use crate::error::AppError;
 use crate::executor;
+use crate::kernel::access::PinnedConnection;
 use crate::kernel::agent_policy::{MAX_AGENT_ROWS, QUERY_PLAN_TTL};
 use crate::kernel::TerminalAuthority;
 use crate::model::{DocumentPage, DocumentQuery, HistoryEntry, QueryKind, SafetySettings};
@@ -33,7 +34,7 @@ use crate::operations::{
     OperationKind, OperationPlanDisposition, OperationRiskLevel, OperationRuntime, OperationState,
 };
 use crate::safety::{self, GateDecision};
-use crate::store::{PinnedConnection, Store};
+use crate::store::Store;
 
 const MAX_DESKTOP_ROWS: u64 = 100_000;
 

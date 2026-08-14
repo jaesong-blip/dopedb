@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "../../../design-system/components/Button";
@@ -16,10 +16,15 @@ import {
 import { InlineNotice } from "../../../design-system/components/Status";
 import { errMessage } from "../../../ipc/types";
 import { useI18n } from "../../../lib/i18n";
+import { useCatalogScope } from "../../../lib/queries";
+import { captureProductEvent } from "../../productAnalytics/client";
+import type { ProductAnalyticsWorkspaceContextInput } from "../../productAnalytics/domain";
+import { productAnalyticsWorkspaceContext } from "../../productAnalytics/outcomes";
 import type {
   KnowledgeEnvironment,
   KnowledgeProject,
 } from "../domain";
+import { knowledgeQueryKeys } from "../queryKeys";
 import { createKnowledgeProject } from "../tauriAdapter";
 
 const PROJECT_SETUP_TITLE_ID = "project-setup-title";
@@ -35,23 +40,44 @@ export function ProjectSetupDialog({
 }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
+  const catalogScope = useCatalogScope();
+  const analyticsContext = useRef<ProductAnalyticsWorkspaceContextInput | null>(
+    null,
+  );
   const [projectName, setProjectName] = useState("");
   const [environmentName, setEnvironmentName] = useState("main");
   const [riskClass, setRiskClass] =
     useState<KnowledgeEnvironment["riskClass"]>("development");
   const createProject = useMutation({
     mutationFn: createKnowledgeProject,
+    onMutate: () => {
+      analyticsContext.current = productAnalyticsWorkspaceContext(catalogScope);
+    },
     onSuccess: async (project) => {
+      const context = analyticsContext.current;
+      analyticsContext.current = null;
+      const environmentId = project.environments[0]?.id;
+      if (context && environmentId) {
+        void captureProductEvent({
+          name: "knowledge_environment_created",
+          properties: { creationKind: "project_default" },
+          context,
+          dedupeId: environmentId,
+        });
+      }
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["knowledge", "projects", catalogScopeKey],
+          queryKey: knowledgeQueryKeys.projects(catalogScopeKey),
         }),
         queryClient.invalidateQueries({
-          queryKey: ["agentKnowledgeEnvironments"],
+          queryKey: knowledgeQueryKeys.agentEnvironments(),
         }),
       ]);
       onCreated(project);
       onClose();
+    },
+    onError: () => {
+      analyticsContext.current = null;
     },
   });
   const canCreate =

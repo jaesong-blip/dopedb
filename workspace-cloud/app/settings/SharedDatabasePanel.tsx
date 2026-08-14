@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ControlButton, ControlLink } from "../components/Controls";
 import { NeonBranchManager } from "../../features/providerAccess/NeonBranchManager";
 import { ProviderResourcePicker } from "../../features/providerAccess/ProviderResourcePicker";
-import { useProviderAccess } from "../../features/providerAccess/useProviderAccess";
+import { useSharedDatabaseAccess } from "../../features/providerAccess/useSharedDatabaseAccess";
 import { localizedWorkspacePath } from "../../lib/workspace-locale";
 import { workspaceMessages } from "../../lib/workspace-messages";
 import { useWorkspaceLocale } from "../components/WorkspaceLocale";
@@ -22,11 +22,7 @@ export function SharedDatabasePanel({
     workspaceMessages.en.providerAccess.gcpSessionExpired,
     workspaceMessages.ko.providerAccess.gcpSessionExpired,
   ];
-  const controller = useProviderAccess(
-    workspaceId,
-    null,
-    initialIntegrationId,
-  );
+  const controller = useSharedDatabaseAccess(workspaceId, initialIntegrationId);
   const [adding, setAdding] = useState(Boolean(initialIntegrationId));
   const managedByConnection = new Map(
     controller.managedConnections.map((item) => [item.connectionId, item]),

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -116,12 +116,16 @@ export default function Updates({
     }
   }
 
+  const refreshInitialUpdate = useEffectEvent(() => {
+    if (!initialUpdate) void refresh();
+  });
+
   useEffect(() => {
     let alive = true;
     void getVersion().then((version) => {
       if (alive) setCurrentVersion(version);
     });
-    if (!initialUpdate) void refresh();
+    refreshInitialUpdate();
     return () => {
       alive = false;
     };

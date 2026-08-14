@@ -1,6 +1,13 @@
 // Device-local provider binding wizard. The reducer owns the ephemeral secret and
 // one-use receipt; query caches receive summaries only.
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Icon } from "../../components/Icon";
@@ -106,6 +113,13 @@ export function ProviderCredentialDialog({
   const [revoking, setRevoking] = useState<string | null>(null);
   const [actionFailed, setActionFailed] = useState(false);
   const dialogRef = useRef<HTMLElement>(null);
+  const onCloseRef = useRef(onClose);
+  const returnFocusRef = useRef(returnFocus);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    returnFocusRef.current = returnFocus;
+  }, [onClose, returnFocus]);
   const memberLocalIntegrations = useMemo(
     () => integrations.data?.filter(supportsMemberLocal) ?? [],
     [integrations.data],
@@ -133,11 +147,11 @@ export function ProviderCredentialDialog({
     }
   }, [initialProvider, memberLocalIntegrations, state.selectedIntegrationId]);
 
-  const close = () => {
+  const close = useCallback(() => {
     dispatch({ type: "discard" });
-    onClose();
-    window.requestAnimationFrame(returnFocus);
-  };
+    onCloseRef.current();
+    window.requestAnimationFrame(returnFocusRef.current);
+  }, []);
 
   useEffect(() => {
     initialFocus(dialogRef.current);
@@ -167,9 +181,7 @@ export function ProviderCredentialDialog({
       window.removeEventListener("keydown", onKeyDown);
       dispatch({ type: "discard" });
     };
-  // The dialog closes over the current reducer, but this listener intentionally mounts once.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [close]);
 
   async function verify(receipt: NonNullable<typeof state.receipt>) {
     setPending("verify");

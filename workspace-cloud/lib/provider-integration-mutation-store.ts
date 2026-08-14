@@ -8,7 +8,7 @@ import { db } from "./db";
 import {
   providerMutationAuthoritySql,
   type ProviderMutationAuthority,
-} from "./provider-integrations";
+} from "./provider-integrations/authority";
 import {
   workspaceAuditEvent,
   workspaceConnection,

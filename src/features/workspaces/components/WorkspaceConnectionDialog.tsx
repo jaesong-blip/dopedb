@@ -23,6 +23,7 @@ import type { ConnectionProfile } from "../../connections/domain";
 import { CONNECTION_SSH_ALIAS_PARAMETER } from "../../connections/options";
 import { errDetails } from "../../../ipc/types";
 import { useI18n } from "../../../lib/i18n";
+import { useCatalogScope } from "../../../lib/queries";
 import { useToast } from "../../../components/Toast";
 import { Button } from "../../../design-system/components/Button";
 import {
@@ -34,6 +35,11 @@ import {
   ModalBackdrop,
   ModalSurface,
 } from "../../../design-system/components/Modal";
+import { captureProductEvent } from "../../productAnalytics/client";
+import {
+  productAnalyticsConnectionEngine,
+  productAnalyticsWorkspaceContext,
+} from "../../productAnalytics/outcomes";
 
 export default function WorkspaceConnectionDialog({
   connection,
@@ -51,6 +57,7 @@ export default function WorkspaceConnectionDialog({
   const { t } = useI18n();
   const toast = useToast();
   const queryClient = useQueryClient();
+  const catalogScope = useCatalogScope();
   const context = useQuery(workspaceContextQuery());
   const auth = useQuery(workspaceAuthStateQuery());
   const targetGroups = useMemo(
@@ -89,14 +96,14 @@ export default function WorkspaceConnectionDialog({
 
   useEffect(() => {
     const trigger = document.activeElement as HTMLElement | null;
+    const returnFocus = returnFocusRef?.current ?? trigger;
     const focusTarget = initialFocusRef.current;
     if (focusTarget instanceof HTMLSelectElement && focusTarget.disabled) {
       cancelRef.current?.focus();
     } else {
       focusTarget?.focus();
     }
-    return () =>
-      (returnFocusRef?.current ?? trigger)?.focus?.();
+    return () => returnFocus?.focus?.();
   }, [returnFocusRef]);
 
   useEffect(() => {
@@ -128,6 +135,10 @@ export default function WorkspaceConnectionDialog({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    const analyticsContext = mode === "credentials"
+      ? productAnalyticsWorkspaceContext(catalogScope)
+      : null;
+    const analyticsAttemptId = crypto.randomUUID();
     setPending(true);
     setError("");
     try {
@@ -148,6 +159,17 @@ export default function WorkspaceConnectionDialog({
           password,
           sshAlias,
         );
+        if (analyticsContext) {
+          void captureProductEvent({
+            name: "shared_connection_access_ready",
+            properties: {
+              accessMode: "local",
+              engine: productAnalyticsConnectionEngine(bound.engine),
+            },
+            context: analyticsContext,
+            dedupeId: analyticsAttemptId,
+          });
+        }
         onBound(bound);
         toast(t("workspace.credentialsBound"));
       }

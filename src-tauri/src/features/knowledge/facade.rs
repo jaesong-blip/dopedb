@@ -11,21 +11,21 @@ use dopedb_protocol::{
 use uuid::Uuid;
 
 use crate::error::AppResult;
-use crate::features::agents::domain::AgentKnowledgeEnvironment;
-use crate::store::{ActiveResourceScope, PinnedConnection};
+use crate::kernel::access::{ActiveResourceScope, PinnedConnection};
 
 use super::domain::{
-    validate_binding_draft, EnvironmentConnectionBinding, EnvironmentRiskClass, KnowledgeGrant,
-    KnowledgeMappingProposal, KnowledgeSessionScope, MappingProposalState, Project,
-    ProjectDefinition, ProjectEnvironment, SourceBindingDraft, SourceLocator, SourceSnapshot,
-    StoredKnowledgeScope,
+    validate_binding_draft, EnvironmentConnectionBinding, EnvironmentRiskClass,
+    KnowledgeEnvironmentSummary, KnowledgeMappingProposal, KnowledgeSessionScope,
+    MappingProposalState, Project, ProjectDefinition, ProjectEnvironment, SourceBindingDraft,
+    SourceLocator, SourceSnapshot, StoredKnowledgeScope,
 };
 use super::ports::{
     AppendKnowledgeEnvironmentRequest, CreateKnowledgeProjectRequest, CreateKnowledgeSourceRequest,
     HostedKnowledgeAuthorityPort, KnowledgeRepositoryPort, RemoteEnvironmentConnectionBinding,
-    RemoteGithubRepository, RemoteKnowledgeGrant, RemoteKnowledgeProject, RemoteKnowledgeSource,
+    RemoteGithubRepository, RemoteKnowledgeProject, RemoteKnowledgeSource,
     RemotePersonalKnowledgeScope,
 };
+use super::KnowledgeAccessReconciliation;
 
 #[derive(Clone)]
 pub(crate) struct KnowledgeFeature<R, H> {
@@ -47,6 +47,24 @@ where
 
     pub(crate) async fn active_resource_scope(&self) -> AppResult<ActiveResourceScope> {
         self.repository.active_resource_scope().await
+    }
+
+    /// Reconcile hosted grants and Environment bindings explicitly before an
+    /// Agent or graph workflow consumes them. Read transports never trigger
+    /// this mutation implicitly.
+    pub(crate) async fn reconcile_current_access(
+        &self,
+    ) -> AppResult<KnowledgeAccessReconciliation> {
+        let receipt =
+            super::reconciliation::reconcile_current_access(&self.repository, &self.authority)
+                .await?;
+        tracing::debug!(
+            projects = receipt.projects.len(),
+            grants = receipt.grant_count,
+            environment_bindings = receipt.environment_binding_count,
+            "reconciled exact Project Knowledge access"
+        );
+        Ok(receipt)
     }
 
     pub(crate) async fn knowledge_projects(
@@ -164,7 +182,7 @@ where
     pub(crate) async fn agent_knowledge_environments(
         &self,
         connection: &PinnedConnection,
-    ) -> AppResult<Vec<AgentKnowledgeEnvironment>> {
+    ) -> AppResult<Vec<KnowledgeEnvironmentSummary>> {
         self.repository
             .agent_knowledge_environments(connection)
             .await
@@ -191,10 +209,6 @@ where
             .await
     }
 
-    pub(crate) async fn save_grant(&self, grant: &KnowledgeGrant) -> AppResult<()> {
-        self.repository.save_grant(grant).await
-    }
-
     pub(crate) async fn active_knowledge_grant(
         &self,
         workspace_id: Uuid,
@@ -214,33 +228,6 @@ where
             .await
     }
 
-    pub(crate) async fn revoke_knowledge_grants_for_account(
-        &self,
-        workspace_id: Uuid,
-        account_id: &str,
-    ) -> AppResult<()> {
-        self.repository
-            .revoke_knowledge_grants_for_account(workspace_id, account_id)
-            .await
-    }
-
-    pub(crate) async fn import_granted_active_graph(
-        &self,
-        graph: &GraphBuildArtifactV1,
-    ) -> AppResult<()> {
-        self.repository.import_granted_active_graph(graph).await
-    }
-
-    pub(crate) async fn retain_granted_environment_heads(
-        &self,
-        environment_id: Uuid,
-        revisions: &[Uuid],
-    ) -> AppResult<()> {
-        self.repository
-            .retain_granted_environment_heads(environment_id, revisions)
-            .await
-    }
-
     pub(crate) async fn sync_remote_knowledge_mapping(
         &self,
         proposal: &KnowledgeMappingProposal,
@@ -255,6 +242,10 @@ where
         proposal: &KnowledgeMappingProposal,
     ) -> AppResult<()> {
         self.repository.propose_mapping(proposal).await
+    }
+
+    pub(crate) async fn mapping_is_approved(&self, proposal_id: Uuid) -> AppResult<bool> {
+        self.repository.mapping_is_approved(proposal_id).await
     }
 
     pub(crate) async fn decide_mapping(
@@ -381,28 +372,6 @@ where
             .await
     }
 
-    pub(crate) async fn list_current_grants(
-        &self,
-        account_id: &str,
-        workspace_id: Uuid,
-    ) -> AppResult<Vec<RemoteKnowledgeGrant>> {
-        self.authority
-            .list_current_grants(account_id, workspace_id)
-            .await
-    }
-
-    pub(crate) async fn create_current_grant(
-        &self,
-        account_id: &str,
-        workspace_id: Uuid,
-        member_id: &str,
-        environment_id: Uuid,
-    ) -> AppResult<()> {
-        self.authority
-            .create_current_grant(account_id, workspace_id, member_id, environment_id)
-            .await
-    }
-
     pub(crate) async fn list_remote_mappings(
         &self,
         account_id: &str,
@@ -426,25 +395,6 @@ where
                 mapping_id,
                 expected_graph_revision_id,
                 decision,
-            )
-            .await
-    }
-
-    pub(crate) async fn download_remote_graph(
-        &self,
-        account_id: &str,
-        workspace_id: Uuid,
-        grant_id: Uuid,
-        source_id: Uuid,
-        expected_graph_revision_id: Uuid,
-    ) -> AppResult<GraphBuildArtifactV1> {
-        self.authority
-            .download_graph(
-                account_id,
-                workspace_id,
-                grant_id,
-                source_id,
-                expected_graph_revision_id,
             )
             .await
     }

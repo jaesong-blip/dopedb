@@ -1,6 +1,11 @@
 // Native-client-only one-time credential issuance. The provider secret is returned
 // over HTTPS exactly once and is absent from all database and audit writes.
 import { and, count, eq, gt, isNull, sql } from "drizzle-orm";
+import {
+  managedLeaseResponse,
+  MANAGED_LEASE_CONTRACT_VERSION,
+  parseManagedLeaseRequest,
+} from "../../../../../../../../lib/control-plane-contracts";
 import { db } from "../../../../../../../../lib/db";
 import {
   boundedJsonBody,
@@ -72,7 +77,10 @@ export async function POST(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId) || !isUuid(connectionId)) {
     return jsonError("Invalid workspace or connection id", 400);
   }
-  if (request.headers.get("x-dopedb-managed-lease-contract") !== "access-v2") {
+  if (
+    request.headers.get("x-dopedb-managed-lease-contract")
+    !== MANAGED_LEASE_CONTRACT_VERSION
+  ) {
     return jsonError(
       "Update DopeDB to use managed database access safely",
       426,
@@ -89,18 +97,9 @@ export async function POST(request: Request, context: RouteContext) {
   }
   let requestedAccessMode: "read" | "write";
   try {
-    const payload = parsedBody.value as { accessMode?: unknown };
-    if (
-      !payload
-      || typeof payload !== "object"
-      || typeof payload.accessMode !== "string"
-      || !["read", "write"].includes(payload.accessMode)
-    ) {
-      return jsonError("Managed access mode must be read or write", 400);
-    }
-    requestedAccessMode = payload.accessMode as "read" | "write";
+    requestedAccessMode = parseManagedLeaseRequest(parsedBody.value).accessMode;
   } catch {
-    return jsonError("Managed access request must be valid JSON", 400);
+    return jsonError("Managed access mode must be read or write", 400);
   }
   const authorization = await authorizeWorkspaceConnection(
     request, workspaceId, connectionId, "use",
@@ -279,7 +278,7 @@ export async function POST(request: Request, context: RouteContext) {
       });
       return jsonError("Workspace database authority changed. Retry with current access.", 409);
     }
-    return privateJson({
+    return privateJson(managedLeaseResponse({
       lease: {
         id: lease.leaseId,
         provider: integration.provider,
@@ -297,7 +296,7 @@ export async function POST(request: Request, context: RouteContext) {
         accessMode,
         expiresAt: lease.expiresAt,
       },
-    }, {
+    }), {
       headers: {
         pragma: "no-cache",
         expires: "0",

@@ -388,15 +388,30 @@ pub(super) async fn issue_managed_connection_lease(
             AppError::Config("managed database access requires an authenticated session".into())
         })?;
     let origin = origin()?;
-    let requested_access = if write { "write" } else { "read" };
+    let requested_access = if write {
+        ManagedAccessMode::Write
+    } else {
+        ManagedAccessMode::Read
+    };
+    let lease_request = ManagedLeaseRequest {
+        access_mode: requested_access,
+    };
+    if !lease_request.validate() {
+        return Err(AppError::Config(
+            "managed database access request is incompatible".into(),
+        ));
+    }
     let response = client()?
         .post(format!(
             "{origin}/api/v1/workspaces/{workspace_id}/connections/{}/lease",
             profile.id
         ))
         .bearer_auth(token.as_str())
-        .header("x-dopedb-managed-lease-contract", MANAGED_LEASE_CONTRACT)
-        .json(&json!({ "accessMode": requested_access }))
+        .header(
+            "x-dopedb-managed-lease-contract",
+            MANAGED_LEASE_CONTRACT_VERSION,
+        )
+        .json(&lease_request)
         .send()
         .await
         .map_err(|error| request_error("requesting managed database access", error))?;
@@ -412,51 +427,18 @@ pub(super) async fn issue_managed_connection_lease(
         MAX_MANAGED_LEASE_RESPONSE_BYTES,
     )
     .await?;
-    let mut lease = payload.lease;
-    let secret = Zeroizing::new(std::mem::take(&mut lease.password));
-    let connector = lease.connector.take();
+    if !payload.validate() {
+        return Err(AppError::Network(
+            "managed database access returned invalid connection material".into(),
+        ));
+    }
+    let lease = payload.lease;
     let lease_id = Uuid::parse_str(&lease.id)
         .map_err(|_| AppError::Network("managed database access returned an invalid id".into()))?;
-    let provider = crate::store::parse_provider(lease.provider)?;
-    let engine = crate::store::parse_engine(lease.engine)?;
-    let valid_provider_tls = match provider {
-        Provider::Neon | Provider::PlanetScale => {
-            lease.sslmode == "verify-full"
-                && lease.tls_server_ca_pem.is_none()
-                && connector.is_none()
-        }
-        Provider::GcpCloudSql => {
-            matches!(lease.sslmode.as_str(), "verify-ca" | "verify-full")
-                && lease.tls_server_ca_pem.is_none()
-                && connector.as_ref().is_some_and(|connector| {
-                    connector.kind == "gcpCloudSqlAuthProxy"
-                        && !connector.instance_connection_name.is_empty()
-                        && connector.instance_connection_name.len() <= 300
-                        && !connector.access_token.is_empty()
-                        && connector.access_token.len() <= 64 * 1024
-                        && !connector.access_token.chars().any(char::is_whitespace)
-                        && matches!(
-                            connector.network_mode.as_str(),
-                            "PUBLIC" | "PRIVATE_SERVICES_ACCESS" | "PRIVATE_SERVICE_CONNECT"
-                        )
-                })
-        }
-        Provider::Auto | Provider::Generic => false,
-    };
+    let provider = crate::store::parse_provider(lease.provider.clone())?;
+    let engine = crate::store::parse_engine(lease.engine.clone())?;
     if engine != profile.engine
         || provider != profile.provider
-        || lease.host.is_empty()
-        || lease.host.len() > 512
-        || lease.host.contains("://")
-        || lease.host.chars().any(char::is_whitespace)
-        || lease.port == 0
-        || lease.database.is_empty()
-        || lease.database.len() > 512
-        || lease.username.is_empty()
-        || lease.username.len() > 512
-        || secret.is_empty()
-        || secret.len() > (1 << 16)
-        || !valid_provider_tls
         || lease.access_mode != requested_access
         || (write && !profile.workspace_access.can_write())
     {
@@ -475,21 +457,32 @@ pub(super) async fn issue_managed_connection_lease(
             "managed database access returned an unsafe expiry".into(),
         ));
     }
+    let dopedb_protocol::ManagedLeasePayload {
+        host,
+        port,
+        database,
+        username,
+        password: secret,
+        sslmode,
+        tls_server_ca_pem,
+        connector,
+        ..
+    } = lease;
     let mut leased_profile = profile.clone();
     leased_profile.provider = provider;
-    leased_profile.host = lease.host;
-    leased_profile.port = lease.port;
-    leased_profile.database = lease.database;
-    leased_profile.username = lease.username;
-    leased_profile.sslmode = lease.sslmode;
+    leased_profile.host = host;
+    leased_profile.port = port;
+    leased_profile.database = database;
+    leased_profile.username = username;
+    leased_profile.sslmode = sslmode;
     leased_profile.extra_params.clear();
-    if let Some(ca) = lease.tls_server_ca_pem {
+    if let Some(ca) = tls_server_ca_pem {
         leased_profile
             .extra_params
             .insert("sslrootcert_pem".into(), ca);
     }
     leased_profile.secret_ref = None;
-    let cloud_sql_proxy = connector.map(|mut connector| {
+    let cloud_sql_proxy = connector.map(|connector| {
         let network_mode = match connector.network_mode.as_str() {
             "PUBLIC" => GcpCloudSqlNetworkMode::Public,
             "PRIVATE_SERVICES_ACCESS" => GcpCloudSqlNetworkMode::PrivateServicesAccess,
@@ -498,7 +491,7 @@ pub(super) async fn issue_managed_connection_lease(
         };
         crate::connection::CloudSqlProxyConfig {
             instance_connection_name: connector.instance_connection_name,
-            access_token: Zeroizing::new(std::mem::take(&mut connector.access_token)),
+            access_token: connector.access_token,
             network_mode,
         }
     });

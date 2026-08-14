@@ -79,7 +79,8 @@ export function returnedAnalysisArticle(row: RawRow | undefined): StoredAnalysis
   if (typeof row.id !== "string" || typeof row.projectEnvironmentId !== "string"
     || environmentRevision === null || revision === null || !validLiveRevision
     || !(row.sourceKnowledgeGrantId === null || typeof row.sourceKnowledgeGrantId === "string")
-    || !["draft", "review", "live", "archived"].includes(String(row.state))
+    || typeof row.state !== "string"
+    || !["draft", "review", "live", "archived"].includes(row.state)
     || typeof row.ownerMemberId !== "string" || typeof row.updatedByMemberId !== "string"
     || !(row.liveRunId === null || typeof row.liveRunId === "string")
     || (nextRefreshAt !== null && Number.isNaN(nextRefreshAt.valueOf()))

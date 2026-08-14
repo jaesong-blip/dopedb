@@ -17,6 +17,9 @@
           "url": "https://app.dopedb.dev/settings*"
         },
         {
+          "url": "https://dopedb.dev/privacy"
+        },
+        {
           "url": "https://github.com/apps/dopedb-knowledge/installations/new?state=*"
         }
       ]

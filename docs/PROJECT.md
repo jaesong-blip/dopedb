@@ -31,7 +31,7 @@ Current scope:
 - Distribution: GitHub Releases and Tauri updater metadata
 
 The shipped workspace core and the remaining grant administration, provider
-lifecycle, sync, recovery, shared-dashboard, and Agent-report work are tracked in
+lifecycle, sync, recovery, Analysis Article, and Agent-report work are tracked in
 the [Workspace Collaboration Roadmap](./WORKSPACE_ROADMAP.md). The app is still
 an alpha; that roadmap, not landing copy, determines what may be described as
 complete.
@@ -45,10 +45,14 @@ The Rust core owns the trust boundary:
 - `safety/`: SQL classification, read-only enforcement, preview, and approval policy
 - `executor/`: read execution and gated write execution
 - `audit/`: query history and hash-chained audit records
-- `services/`: transport-neutral connection, catalog, query, dashboard, and operation behavior
+- `kernel/access.rs`: workspace/account/connection pins shared across domains without
+  making persistence their owner
+- `features/<domain>/`: transport-neutral use cases and facades, domain-owned ports,
+  and concrete adapters; transports translate requests but do not call sibling transports
+- `services/`: the composition root that wires concrete adapters into cloneable feature facades
 - `operations/`: immutable exact-payload plans, approvals, claims, and lifecycle receipts
-- `features/agents/acp.rs`: official ACP adapter lifecycle, bounded replay, permission handling,
-  and the session-local DopeDB tool attachment
+- `features/agents/acp.rs` and `features/agents/acp/`: one serialized ACP session actor
+  plus injected process, persistence, Knowledge-scope, and desktop-event ports
 - `dopedb-protocol::acp_plugin`: closed Claude/Codex plugin IDs and the signed
   adapter catalog wire shape
 - `broker/`: owner-local, versioned UDS/named-pipe control messages for the CLI
@@ -60,8 +64,25 @@ The Rust core owns the trust boundary:
   its only Desktop entry is the explicit Settings → Command line advanced Shell
   dialog, and it is not the ACP Agent execution path
 - `legacy_mcp_cleanup.rs`: explicit preview, backup, and targeted cleanup for retired client entries
-- `store/`: local SQLite app store under the platform app data directory, including
-  connection-scoped saved dashboard definitions
+- `store/`: local SQLite app store under the platform app data directory; feature-owned
+  repositories such as Knowledge keep their SQL adapters inside the owning feature
+
+The React application follows the same ownership direction. `features/` owns reducers,
+query keys, external stores, workflow controllers, and transport adapters. `screens/` and
+Cloud views render those controllers and never become dependencies of feature code.
+`AppShell` composes one discriminated navigation state, while the ACP session store owns
+the shared list/event projection. Cold workbench screens load behind one `React.lazy`
+boundary so they do not inflate the startup entry.
+
+The hosted control plane keeps HTTP routes thin. Versioned Cloud/Desktop payloads are
+defined in `dopedb-protocol`, mirrored by the Cloud contract module, and verified against
+one golden fixture plus its representative shared semantic-rejection mutations. The corpus
+protects named cross-language invariants but is not an exhaustive proof that independent
+parsers are equivalent. Workspace Cloud remains authoritative for full Analysis Article
+parameter, schedule, and transform/block definition semantics; Rust checks only the shared safety
+and authority subset before transport. Provider routes parse and authorize transport input,
+then delegate to provider-owned application workflows; provider persistence and provider
+API adapters stay behind that application boundary.
 
 The frontend renders database state and approval decisions. It does not own the safety decision.
 Writes and DDL require an immutable Operation proposal, an exact stored approval, and
@@ -145,7 +166,7 @@ consumes the same bearer shape only as a one-time, descriptor-bound capability i
 app-only Agent bridge launcher; stdio MCP settings and Agent descendants carry a session identifier,
 not the bearer, and the Broker revalidates their OS ancestry for every request. The command
 surface covers secret-free connection summaries, canonical catalog/schema/table metadata,
-typed MongoDB reads, SQL read planning/execution, provenance-bound dashboard creation,
+typed MongoDB reads, SQL read planning/execution, declarative Analysis Article drafting,
 immutable SQL proposals, and operation receipts.
 
 The bounded activity projection keeps only command, request/session/connection
@@ -162,13 +183,11 @@ bridge or `dopedb document run` with bounded `find`, `aggregate`,
 or `count` JSON shapes; unknown fields and write stages such as `$out` or `$merge` fail
 closed.
 
-Each successful SQL query returns a durable `queryRunId`. After explicit user agreement,
-`dopedb dashboard create` must reference that exact ID from the same pinned Broker
-session. DopeDB
-loads the connection and SQL from the successful history row instead of accepting
-replacements. Dashboard creation writes only to `app.db`. Opening a dashboard reloads
-and revalidates its versioned declarative visualization (`auto`, `metric`, `line`, `bar`,
-or `table`) and executes through the read-only database path. Result rows are not stored.
+Analysis Article commands accept a closed, versioned declarative definition. Draft runs
+remain pinned to the session's exact Knowledge grant and connection revisions, execute
+through the read-only database path, and return bounded result fragments. Propose and
+update operations preserve the article revision contract; public publication remains an
+immutable approved snapshot rather than an executable query surface.
 
 Query planning never sends other sessions' SQL text, users, client addresses, or
 parameters to the agent. It returns aggregate connection usage, active/long-running

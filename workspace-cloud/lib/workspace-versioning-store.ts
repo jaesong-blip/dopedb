@@ -157,7 +157,8 @@ function conflictVersion(
   if (
     typeof id !== "string"
     || revision === null
-    || !["create", "update", "delete", "restore"].includes(String(operation))
+    || typeof operation !== "string"
+    || !["create", "update", "delete", "restore"].includes(operation)
     || typeof payloadHash !== "string"
     || canonicalHash(payload) !== payloadHash
   ) {

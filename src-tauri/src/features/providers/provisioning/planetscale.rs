@@ -17,11 +17,11 @@ use crate::features::providers::adapters::{
     AuthorizedProvisioningResource, AuthorizedProvisioningTarget, ProvisioningTargetAuthorityPort,
 };
 use crate::features::providers::ports::ProvisioningRuntimePort;
+use crate::kernel::access::PinnedConnection;
 use crate::kernel::identity::ConnectionId;
 #[cfg(test)]
 use crate::kernel::identity::ProviderIntegrationId;
 use crate::model::{Engine, Provider, WorkspaceCredentialMode};
-use crate::store::PinnedConnection;
 #[cfg(test)]
 use crate::store::Store;
 

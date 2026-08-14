@@ -5,6 +5,7 @@ use super::scope::{
     active_scope_from_row, active_team_membership_authority,
     repair_active_scope_after_membership_change,
 };
+use crate::kernel::access::ActiveResourceScope;
 
 impl Store {
     // ── workspaces ─────────────────────────────────────────────────────────

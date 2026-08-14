@@ -7,13 +7,13 @@ use dopedb_protocol::{GraphBuildArtifactV1, GraphRevisionDiffV1, KnowledgeSource
 use uuid::Uuid;
 
 use crate::error::AppResult;
-use crate::features::agents::domain::AgentKnowledgeEnvironment;
-use crate::store::{ActiveResourceScope, PinnedConnection, Store};
+use crate::kernel::access::{ActiveResourceScope, PinnedConnection};
+use crate::store::Store;
 
 use super::super::domain::{
-    EnvironmentConnectionBinding, EnvironmentRiskClass, KnowledgeGrant, KnowledgeMappingProposal,
-    KnowledgeSessionScope, MappingProposalState, Project, ProjectDefinition, ProjectEnvironment,
-    SourceSnapshot, StoredKnowledgeScope,
+    EnvironmentConnectionBinding, EnvironmentRiskClass, KnowledgeEnvironmentSummary,
+    KnowledgeGrant, KnowledgeMappingProposal, KnowledgeSessionScope, MappingProposalState, Project,
+    ProjectDefinition, ProjectEnvironment, SourceSnapshot, StoredKnowledgeScope,
 };
 use super::super::ports::{
     KnowledgeGrantPort, KnowledgeGraphRepositoryPort, KnowledgeMappingRepositoryPort,
@@ -33,58 +33,53 @@ impl KnowledgeScopeRepositoryPort for SqliteKnowledgeRepository {
         binding: &KnowledgeSourceBindingV1,
         environment_revision: u64,
     ) -> AppResult<()> {
-        KnowledgeScopeRepositoryPort::save_scope(
-            &self.store,
-            project,
-            environment,
-            binding,
-            environment_revision,
-        )
-        .await
+        self.store
+            .save_scope(project, environment, binding, environment_revision)
+            .await
     }
 
     async fn scopes(&self, workspace_id: Uuid) -> AppResult<Vec<StoredKnowledgeScope>> {
-        KnowledgeScopeRepositoryPort::scopes(&self.store, workspace_id).await
+        self.store.scopes(workspace_id).await
     }
 
     async fn remove_scope(&self, source_id: Uuid) -> AppResult<()> {
-        KnowledgeScopeRepositoryPort::remove_scope(&self.store, source_id).await
+        self.store.remove_scope(source_id).await
     }
 
     async fn save_snapshot(&self, snapshot: &SourceSnapshot) -> AppResult<()> {
-        KnowledgeScopeRepositoryPort::save_snapshot(&self.store, snapshot).await
+        self.store.save_snapshot(snapshot).await
     }
 
     async fn source_snapshot(&self, source_id: Uuid) -> AppResult<Option<SourceSnapshot>> {
-        KnowledgeScopeRepositoryPort::source_snapshot(&self.store, source_id).await
+        self.store.source_snapshot(source_id).await
     }
 }
 
 impl KnowledgeGraphRepositoryPort for SqliteKnowledgeRepository {
     async fn stage(&self, artifact: &GraphBuildArtifactV1) -> AppResult<()> {
-        KnowledgeGraphRepositoryPort::stage(&self.store, artifact).await
+        self.store.stage(artifact).await
     }
 
     async fn activate(&self, artifact: &GraphBuildArtifactV1) -> AppResult<()> {
-        KnowledgeGraphRepositoryPort::activate(&self.store, artifact).await
+        self.store.activate(artifact).await
     }
 
     async fn active_for_source(&self, source_id: Uuid) -> AppResult<Option<GraphBuildArtifactV1>> {
-        KnowledgeGraphRepositoryPort::active_for_source(&self.store, source_id).await
+        self.store.active_for_source(source_id).await
     }
 
     async fn active_set(
         &self,
         project_environment_id: Uuid,
     ) -> AppResult<Vec<GraphBuildArtifactV1>> {
-        KnowledgeGraphRepositoryPort::active_set(&self.store, project_environment_id).await
+        self.store.active_set(project_environment_id).await
     }
 
     async fn by_revision(
         &self,
         graph_revision_id: Uuid,
     ) -> AppResult<Option<GraphBuildArtifactV1>> {
-        KnowledgeGraphRepositoryPort::by_revision(&self.store, graph_revision_id).await
+        self.store.by_revision(graph_revision_id).await
     }
 
     async fn diff(
@@ -92,28 +87,25 @@ impl KnowledgeGraphRepositoryPort for SqliteKnowledgeRepository {
         from_graph_revision_id: Uuid,
         to_graph_revision_id: Uuid,
     ) -> AppResult<GraphRevisionDiffV1> {
-        KnowledgeGraphRepositoryPort::diff(
-            &self.store,
-            from_graph_revision_id,
-            to_graph_revision_id,
-        )
-        .await
+        self.store
+            .diff(from_graph_revision_id, to_graph_revision_id)
+            .await
     }
 }
 
 impl KnowledgeGrantPort for SqliteKnowledgeRepository {
     async fn save_grant(&self, grant: &KnowledgeGrant) -> AppResult<()> {
-        KnowledgeGrantPort::save_grant(&self.store, grant).await
-    }
-
-    async fn exact_grant(&self, grant_id: Uuid) -> AppResult<Option<KnowledgeGrant>> {
-        KnowledgeGrantPort::exact_grant(&self.store, grant_id).await
+        self.store.save_grant(grant).await
     }
 }
 
 impl KnowledgeMappingRepositoryPort for SqliteKnowledgeRepository {
+    async fn mapping_is_approved(&self, proposal_id: Uuid) -> AppResult<bool> {
+        self.store.mapping_is_approved(proposal_id).await
+    }
+
     async fn propose_mapping(&self, proposal: &KnowledgeMappingProposal) -> AppResult<()> {
-        KnowledgeMappingRepositoryPort::propose_mapping(&self.store, proposal).await
+        self.store.propose_mapping(proposal).await
     }
 
     async fn decide_mapping(
@@ -122,13 +114,9 @@ impl KnowledgeMappingRepositoryPort for SqliteKnowledgeRepository {
         expected_graph_revision_id: Uuid,
         state: MappingProposalState,
     ) -> AppResult<()> {
-        KnowledgeMappingRepositoryPort::decide_mapping(
-            &self.store,
-            proposal_id,
-            expected_graph_revision_id,
-            state,
-        )
-        .await
+        self.store
+            .decide_mapping(proposal_id, expected_graph_revision_id, state)
+            .await
     }
 
     async fn mappings_for_revision(
@@ -136,12 +124,9 @@ impl KnowledgeMappingRepositoryPort for SqliteKnowledgeRepository {
         project_environment_id: Uuid,
         graph_revision_id: Uuid,
     ) -> AppResult<Vec<KnowledgeMappingProposal>> {
-        KnowledgeMappingRepositoryPort::mappings_for_revision(
-            &self.store,
-            project_environment_id,
-            graph_revision_id,
-        )
-        .await
+        self.store
+            .mappings_for_revision(project_environment_id, graph_revision_id)
+            .await
     }
 }
 
@@ -198,7 +183,7 @@ impl KnowledgeRepositoryPort for SqliteKnowledgeRepository {
     async fn agent_knowledge_environments(
         &self,
         connection: &PinnedConnection,
-    ) -> AppResult<Vec<AgentKnowledgeEnvironment>> {
+    ) -> AppResult<Vec<KnowledgeEnvironmentSummary>> {
         self.store.agent_knowledge_environments(connection).await
     }
 

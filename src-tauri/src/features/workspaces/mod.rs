@@ -23,8 +23,8 @@ pub(crate) use application::{
 pub(crate) use domain::{
     RemoteWorkspace, Workspace, WorkspaceAccountMembership, WorkspaceAuthAccount,
     WorkspaceAuthState, WorkspaceAuthUser, WorkspaceDeviceAuthorization, WorkspaceFeatureState,
-    WorkspaceKind, WorkspaceLifecycleState, WorkspaceLoginPoll, WorkspaceLoginPollStatus,
-    WorkspacePullPage, WorkspaceRole,
+    WorkspaceLifecycleState, WorkspaceLoginPoll, WorkspaceLoginPollStatus, WorkspacePullPage,
+    WorkspaceRole,
 };
 
 pub(crate) type WorkspacesFeature = WorkspaceUseCases<

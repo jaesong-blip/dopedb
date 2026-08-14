@@ -88,6 +88,7 @@ pub enum AnalysisColumnMasking {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AnalysisArticleConnection {
+    #[serde(deserialize_with = "deserialize_contract_uuid")]
     pub connection_id: Uuid,
     pub connection_revision: i64,
     pub role: String,
@@ -133,6 +134,7 @@ pub enum AnalysisNumberStyle {
 pub struct AnalysisNumberFormat {
     pub style: AnalysisNumberStyle,
     pub decimals: u8,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
     pub currency: Option<String>,
 }
 
@@ -145,6 +147,7 @@ pub struct AnalysisMetric {
     pub source_node_id: String,
     pub value_column: String,
     pub unit: String,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
     pub lower_is_better: Option<bool>,
     pub format: AnalysisNumberFormat,
 }
@@ -222,6 +225,7 @@ pub struct AnalysisBlock {
     pub id: String,
     pub kind: AnalysisBlockKind,
     pub title: String,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
     pub source_node_id: Option<String>,
     pub width: u8,
     pub config: Value,
@@ -247,8 +251,10 @@ pub enum AnalysisRefreshMode {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AnalysisRefreshPolicy {
     pub mode: AnalysisRefreshMode,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
     pub cron: Option<String>,
     pub timezone: String,
+    #[serde(deserialize_with = "deserialize_required_contract_uuid_nullable")]
     pub runner_id: Option<Uuid>,
     pub max_staleness_seconds: u64,
     pub result_retention_days: u16,
@@ -319,13 +325,83 @@ impl AnalysisArticleDraftDefinition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SharedAnalysisArticleCreate {
+    #[serde(deserialize_with = "deserialize_contract_uuid")]
     pub id: Uuid,
+    #[serde(deserialize_with = "deserialize_contract_uuid")]
     pub project_environment_id: Uuid,
     pub environment_revision: i64,
+    #[serde(deserialize_with = "deserialize_required_contract_uuid_nullable")]
     pub source_knowledge_grant_id: Option<Uuid>,
+    #[serde(deserialize_with = "deserialize_contract_uuid_list")]
     pub graph_revision_ids: Vec<Uuid>,
     pub connections: Vec<AnalysisArticleConnection>,
     pub definition: AnalysisArticleDefinition,
+}
+
+impl SharedAnalysisArticleCreate {
+    /// Validate the semantic create contract shared with Workspace Cloud.
+    /// Callers receive only a boolean so invalid declarative content cannot be
+    /// copied into transport errors or logs.
+    pub fn validate(&self) -> bool {
+        crate::analysis_article_validation::shared_create_is_valid(self)
+    }
+}
+
+fn deserialize_required_nullable<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer)
+}
+
+fn deserialize_contract_uuid<'de, D>(deserializer: D) -> Result<Uuid, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = String::deserialize(deserializer)?;
+    parse_contract_uuid(&value).ok_or_else(|| serde::de::Error::custom("invalid contract UUID"))
+}
+
+fn deserialize_required_contract_uuid_nullable<'de, D>(
+    deserializer: D,
+) -> Result<Option<Uuid>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer)?
+        .map(|value| {
+            parse_contract_uuid(&value)
+                .ok_or_else(|| serde::de::Error::custom("invalid contract UUID"))
+        })
+        .transpose()
+}
+
+fn deserialize_contract_uuid_list<'de, D>(deserializer: D) -> Result<Vec<Uuid>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Vec::<String>::deserialize(deserializer)?
+        .into_iter()
+        .map(|value| {
+            parse_contract_uuid(&value)
+                .ok_or_else(|| serde::de::Error::custom("invalid contract UUID"))
+        })
+        .collect()
+}
+
+fn parse_contract_uuid(value: &str) -> Option<Uuid> {
+    let bytes = value.as_bytes();
+    (bytes.len() == 36
+        && [8, 13, 18, 23].iter().all(|index| bytes[*index] == b'-')
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit())
+        && matches!(bytes[14], b'1'..=b'8')
+        && matches!(bytes[19], b'8' | b'9' | b'a' | b'A' | b'b' | b'B'))
+    .then(|| Uuid::parse_str(value).ok())
+    .flatten()
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

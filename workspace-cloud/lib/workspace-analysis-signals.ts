@@ -100,7 +100,8 @@ function condition(value: unknown): Readonly<Record<string, unknown>> {
     throw new Error("Invalid Analysis signal condition");
   }
   const kind = (value as Record<string, unknown>).kind;
-  if (["threshold_above", "threshold_below", "absolute_change"].includes(String(kind))) {
+  if (typeof kind === "string"
+    && ["threshold_above", "threshold_below", "absolute_change"].includes(kind)) {
     const row = exactRecord(value, ["kind", "value"]);
     if (!row || typeof row.value !== "number" || !Number.isFinite(row.value)) {
       throw new Error("Invalid Analysis signal threshold");
@@ -141,7 +142,10 @@ export function parseAnalysisSignalDefinition(value: unknown): AnalysisSignalDef
     || row.recipientMemberIds.some((id) => typeof id !== "string" || !UUID.test(id))
     || new Set(row.recipientMemberIds).size !== row.recipientMemberIds.length
     || !Array.isArray(row.channels) || row.channels.length < 1 || row.channels.length > 3
-    || row.channels.some((channel) => !["desktop", "workspace_web", "email"].includes(String(channel)))
+    || row.channels.some((channel) => (
+      typeof channel !== "string"
+      || !["desktop", "workspace_web", "email"].includes(channel)
+    ))
     || new Set(row.channels).size !== row.channels.length
     || row.productionConfirmed !== true) {
     throw new Error("Invalid Analysis signal definition");
@@ -233,7 +237,7 @@ export function parseAnalysisSignalMutation(value: unknown): AnalysisSignalMutat
       definition: parseAnalysisSignalDefinition(row.definition),
     };
   }
-  if (["enable", "disable", "delete"].includes(String(action))) {
+  if (typeof action === "string" && ["enable", "disable", "delete"].includes(action)) {
     const row = exactRecord(value, ["action"]);
     if (!row) throw new Error("Invalid Analysis signal action");
     return { action: action as "enable" | "disable" | "delete" };
@@ -250,7 +254,8 @@ export function parseAnalysisSignalReceipt(value: unknown): AnalysisSignalReceip
   const evaluatedAt = typeof row?.evaluatedAt === "string" ? new Date(row.evaluatedAt) : null;
   if (!row || typeof row.id !== "string" || !UUID.test(row.id)
     || signalRevision === null || typeof row.runId !== "string" || !UUID.test(row.runId)
-    || !["normal", "firing", "no_data", "error", "stale"].includes(String(row.observedState))
+    || typeof row.observedState !== "string"
+    || !["normal", "firing", "no_data", "error", "stale"].includes(row.observedState)
     || !(row.resultHash === null || (typeof row.resultHash === "string" && HASH.test(row.resultHash)))
     || typeof row.schemaFingerprint !== "string" || !HASH.test(row.schemaFingerprint)
     || typeof row.dedupeKey !== "string" || row.dedupeKey.length < 1 || row.dedupeKey.length > 256
@@ -258,7 +263,7 @@ export function parseAnalysisSignalReceipt(value: unknown): AnalysisSignalReceip
     || !(row.errorKind === null || (typeof row.errorKind === "string"
       && row.errorKind.length > 0 && row.errorKind.length <= 128 && !UNSAFE_DISPLAY.test(row.errorKind)))
     || ((row.observedState === "error") !== (row.errorKind !== null))
-    || (["normal", "firing", "no_data"].includes(String(row.observedState))
+    || (["normal", "firing", "no_data"].includes(row.observedState)
       ? typeof row.resultHash !== "string" : row.resultHash !== null)
     || !evaluatedAt || Number.isNaN(evaluatedAt.valueOf()) || evaluatedAt > new Date(Date.now() + 60_000)) {
     throw new Error("Invalid Analysis signal receipt");
