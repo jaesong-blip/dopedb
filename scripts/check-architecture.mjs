@@ -33,8 +33,13 @@ function relative(file) {
   return path.relative(root, file).split(path.sep).join("/");
 }
 
+function readTextFile(file) {
+  // Architecture markers describe source structure, not checkout line endings.
+  return fs.readFileSync(file, "utf8").replace(/\r\n?/g, "\n");
+}
+
 function read(relativePath) {
-  return fs.readFileSync(path.join(root, relativePath), "utf8");
+  return readTextFile(path.join(root, relativePath));
 }
 
 function exists(relativePath) {
@@ -60,12 +65,12 @@ const sourceFiles = [...walk("src"), ...walk("src-tauri/src")]
   .filter((file) => /\.(?:rs|ts|tsx)$/.test(file));
 const frontendSource = sourceFiles
   .filter((file) => /\.(?:ts|tsx)$/.test(file))
-  .map((file) => [relative(file), fs.readFileSync(file, "utf8")]);
+  .map((file) => [relative(file), readTextFile(file)]);
 const frontendProductionSource = frontendSource
   .filter(([filePath]) => !/\.(?:test|spec)\.[^.]+$/.test(filePath));
 const rustSource = sourceFiles
   .filter((file) => file.endsWith(".rs"))
-  .map((file) => fs.readFileSync(file, "utf8"))
+  .map((file) => readTextFile(file))
   .join("\n");
 const context = {
   exists,
