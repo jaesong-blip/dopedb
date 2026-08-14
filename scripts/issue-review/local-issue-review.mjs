@@ -762,6 +762,10 @@ function selfTest() {
     const environmentProbe = codexEnvironment(isolatedHome, isolatedCodexHome);
     const stagedFiles = readdirSync(isolatedCodexHome);
     const stagedAuthMode = lstatSync(join(isolatedCodexHome, "auth.json")).mode & 0o777;
+    // Windows does not expose POSIX owner/group/other mode bits. The isolated
+    // user temp directory ACL is the security boundary there; macOS/Linux must
+    // still prove the copied credential is exactly 0600.
+    const stagedAuthModeIsPrivate = platform() === "win32" || stagedAuthMode === 0o600;
     if (
       environmentProbe.HOME !== isolatedHome
       || !environmentProbe.GH_CONFIG_DIR.startsWith(`${isolatedHome}${sep}`)
@@ -769,7 +773,7 @@ function selfTest() {
       || environmentProbe.CODEX_HOME !== isolatedCodexHome
       || stagedFiles.length !== 1
       || stagedFiles[0] !== "auth.json"
-      || stagedAuthMode !== 0o600
+      || !stagedAuthModeIsPrivate
       || "GH_TOKEN" in environmentProbe
       || "GITHUB_TOKEN" in environmentProbe
     ) {
