@@ -8,6 +8,7 @@ use crate::error::{AppError, AppResult};
 use crate::features::knowledge::domain::{
     validate_environment_connection_label, EnvironmentConnectionBinding,
     KnowledgeEnvironmentSummary, KnowledgeSessionConnection, KnowledgeSessionScope,
+    KnowledgeSessionSource,
 };
 use crate::kernel::access::{AccountScope, PinnedConnection};
 use crate::kernel::identity::WorkspaceId;
@@ -16,6 +17,61 @@ use crate::store::{parse_uuid, Store};
 use super::codec::{parse_risk_class, u64_to_i64, EnvironmentConnectionRow};
 
 impl Store {
+    async fn github_session_sources(
+        &self,
+        project_environment_id: Uuid,
+        environment_revision: u64,
+    ) -> AppResult<Vec<KnowledgeSessionSource>> {
+        let bindings: Vec<String> = sqlx::query_scalar(
+            "SELECT binding_json
+             FROM knowledge_sources
+             WHERE project_environment_id = ?1
+               AND environment_revision = ?2
+               AND provider = 'github'
+               AND revoked_at IS NULL
+             ORDER BY id",
+        )
+        .bind(project_environment_id.to_string())
+        .bind(u64_to_i64(environment_revision, "environment revision")?)
+        .fetch_all(self.pool())
+        .await?;
+        if bindings.len() > 100 {
+            return Err(AppError::Blocked {
+                reason: "the Project Environment has too many GitHub sources".into(),
+            });
+        }
+        let mut sources = Vec::with_capacity(bindings.len());
+        for raw in bindings {
+            let binding: dopedb_protocol::KnowledgeSourceBindingV1 = serde_json::from_str(&raw)?;
+            let dopedb_protocol::SourceRevisionIdentity::Github {
+                repository_id,
+                repository,
+                ref_name,
+                commit_sha,
+            } = binding.revision
+            else {
+                return Err(AppError::Config(
+                    "the stored GitHub source revision is invalid".into(),
+                ));
+            };
+            let source = KnowledgeSessionSource {
+                source_id: binding.source_id,
+                display_name: binding.display_name,
+                repository_id,
+                repository,
+                ref_name,
+                commit_sha,
+            };
+            if !source.validate() {
+                return Err(AppError::Config(
+                    "the stored GitHub source identity is invalid".into(),
+                ));
+            }
+            sources.push(source);
+        }
+        Ok(sources)
+    }
+
     pub(in crate::features::knowledge::adapters) async fn agent_knowledge_environments(
         &self,
         connection: &PinnedConnection,
@@ -156,6 +212,12 @@ impl Store {
             .iter()
             .map(|graph| graph.graph_revision_id)
             .collect::<Vec<_>>();
+        let sources = if connection.scope.selected_account_id.is_some() {
+            self.github_session_sources(project_environment_id, environment_revision)
+                .await?
+        } else {
+            Vec::new()
+        };
         let remote_graph_revision_ids = graphs
             .iter()
             .filter(|graph| {
@@ -243,6 +305,7 @@ impl Store {
             knowledge_grant_id,
             project_environment_id,
             environment_revision,
+            sources,
             graph_revision_ids,
             connections,
         }))
@@ -254,6 +317,19 @@ impl Store {
         expected_workspace_id: Uuid,
         expected_account_id: &str,
     ) -> AppResult<Vec<GraphBuildArtifactV1>> {
+        let active_sources = if expected_account_id == AccountScope::Personal.storage_key() {
+            Vec::new()
+        } else {
+            self.github_session_sources(scope.project_environment_id, scope.environment_revision)
+                .await?
+        };
+        if active_sources != scope.sources {
+            return Err(AppError::Blocked {
+                reason:
+                    "the Agent GitHub source scope changed; start a new session to reconfirm it"
+                        .into(),
+            });
+        }
         let mut graphs = self.active_set(scope.project_environment_id).await?;
         if expected_account_id == AccountScope::Personal.storage_key() {
             graphs.retain(|graph| {

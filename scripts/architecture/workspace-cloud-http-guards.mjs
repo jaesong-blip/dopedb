@@ -35,6 +35,10 @@ const neonOperationsApplicationDirectory =
 const productAnalyticsRoute =
   "workspace-cloud/app/api/v1/product-analytics/events/route.ts";
 const productAnalyticsService = "workspace-cloud/lib/product-analytics.ts";
+const knowledgeSourceBrowseRoute =
+  "workspace-cloud/app/api/v1/workspaces/[workspaceId]/knowledge/sources/[sourceId]/browse/route.ts";
+const knowledgeSourceBrowseApplication =
+  "workspace-cloud/lib/knowledge/source-browser-application.ts";
 const workspaceSchedulerService = "workspace-cloud/lib/workspace-background-scheduler.ts";
 const workspaceSchedulerWorker = "workspace-scheduler-cloudflare/src/index.ts";
 
@@ -258,6 +262,29 @@ export function collectWorkspaceCloudHttpDiagnostics({ lineCount, read, relative
     || environmentSource.includes("us.i.posthog.com")
   ) {
     diagnostics.push("workspace-cloud/lib/env.ts: product analytics must use only the dedicated Cloudflare Worker");
+  }
+
+  const sourceBrowseRouteSource = read(knowledgeSourceBrowseRoute);
+  const sourceBrowseApplicationSource = read(knowledgeSourceBrowseApplication);
+  for (const forbidden of ["drizzle-orm", "@/lib/db", "@/lib/schema"]) {
+    if (sourceBrowseRouteSource.includes(forbidden)) {
+      diagnostics.push(`${knowledgeSourceBrowseRoute}: source browse transport must not own ${forbidden}`);
+    }
+  }
+  for (const token of [
+    "authorizeWorkspace(",
+    "authorizeWorkspaceConnection(",
+    '"use"',
+    "personalKnowledgeOrganizationId(",
+    "isPersonalKnowledgeMetadata(",
+    "knowledgeEnvironmentConnection.connectionRevision",
+    "workspaceConnection.revision",
+    "knowledgeSource.commitSha",
+    "knowledgeGithubInstallation.status",
+  ]) {
+    if (!sourceBrowseApplicationSource.includes(token)) {
+      diagnostics.push(`${knowledgeSourceBrowseApplication}: exact source authority is missing ${token}`);
+    }
   }
 
   const schedulerServiceSource = read(workspaceSchedulerService);

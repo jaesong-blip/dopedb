@@ -19,6 +19,9 @@ export async function POST(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId) || !isUuid(sourceId)) return jsonError("Invalid source id", 400);
   const authorization = await authorizeWorkspace(request, workspaceId, "manage");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
+  if (!env.knowledgeGraphBuildsEnabled()) {
+    return jsonError("Knowledge graph indexing is temporarily disabled; this source is available through exact-commit browsing", 409);
+  }
   const authority = knowledgeMutationAuthority(authorization, workspaceId, "manage");
   const queued = await requeueGithubKnowledgeSync({
     organizationId: workspaceId,

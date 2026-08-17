@@ -850,6 +850,11 @@ Every milestone must include:
 
 ## Remaining Product Decisions
 
+- Knowledge graphs are dormant. GitHub sources use exact-commit tree/path/file reads
+  by default; graph construction returns only after a benchmark proves material Agent
+  quality or latency gains relative to its PostgreSQL, GitHub API, and scheduler cost,
+  and after a paid/experimental entitlement boundary is approved.
+
 - Account recovery and the timing of non-Google identity providers.
 - Member-local versus managed authorization for any Provider selected by DQ-18;
   PlanetScale already uses its native OAuth flow for the managed-access pilot.

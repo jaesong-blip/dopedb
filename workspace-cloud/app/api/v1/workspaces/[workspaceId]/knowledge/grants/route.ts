@@ -30,6 +30,7 @@ export async function GET(request: Request, context: RouteContext) {
     ownOnly ? "view" : "manage",
   );
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
+  if (!env.knowledgeGraphBuildsEnabled()) return privateJson({ grants: [] });
   const rows = await db.select({
     id: knowledgeGrant.id,
     memberId: knowledgeGrant.memberId,
@@ -131,6 +132,9 @@ export async function POST(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId)) return jsonError("Invalid workspace id", 400);
   const authorization = await authorizeWorkspace(request, workspaceId, "manage");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
+  if (!env.knowledgeGraphBuildsEnabled()) {
+    return jsonError("Knowledge graph grants are temporarily disabled", 409);
+  }
   const actorAuthority = knowledgeMutationAuthority(authorization, workspaceId, "manage");
   const parsed = await boundedJsonBody(request, 8 * 1024);
   const body = parsed.ok ? parsed.value as Record<string, unknown> : null;

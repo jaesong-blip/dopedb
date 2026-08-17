@@ -30,6 +30,8 @@
   "operation.wait",
   "operation.cancel",
   "knowledge.search",
+  "source.search",
+  "source.read",
   "knowledge.explain",
   "knowledge.neighbors",
   "knowledge.path",

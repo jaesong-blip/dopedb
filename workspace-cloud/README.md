@@ -102,25 +102,22 @@ webhook once, centrally, at:
 https://app.dopedb.dev/api/v1/knowledge/github/webhook
 ```
 
-The Vercel control plane verifies the raw-body signature, records the delivery id,
-coalesces work by source and immutable commit, and sends one authenticated wake-up to
-the Cloudflare scheduler. When due, the scheduler advances the durable job in bounded
-manifest, file-index, and activation steps. Each invocation downloads only a small batch with a one-hour installation
-token held in memory, extracts deterministic symbols, imports, calls, routes, events,
-and SQL table references, then stores bounded normalized fragments in PostgreSQL.
-Blob bytes are discarded after extraction; stored nodes retain declarations, paths,
-line ranges, and provenance rather than source bodies. Unchanged Git blobs reuse their
-previous fragment. No repository checkout, model call, or container is required; the
-generic scheduler stores no repository data and only wakes this bounded control-plane
-route.
+The default path does not build or persist a graph. The control plane pins each source
+to an exact commit and exposes only bounded repository-relative tree search and UTF-8
+line reads. Every read rechecks the current workspace membership, Environment
+revision, source id, commit SHA, active GitHub installation, and tree membership before
+using an in-memory installation token. Tokens and source bodies are never returned to
+Desktop or stored in PostgreSQL. ACP sessions copy the exact source identities at
+session start, so a branch move makes an old session fail closed rather than silently
+changing its code view.
 
-Activation assembles those fragments into the existing `GraphBuildArtifactV1`
-contract and atomically advances the Environment head. A failed, expired, or stale
-lease never replaces the last-good index. Existing Agent grants remain pinned to
-their exact graph revision; a new head is used only by a subsequent grant/session
-boundary. The same bounded route checks least-recently-reconciled refs in small
-batches. Its one-hour idle receipt is the missed-webhook fallback, so recovery does not
-require a workspace member or a continuously awake PostgreSQL compute.
+`KNOWLEDGE_GRAPH_BUILDS_ENABLED=0` is the fail-closed production default. While it is
+off, webhook pushes advance only the source's pinned commit and the Knowledge cron does
+not claim graph jobs. Migration 0054 supersedes unfinished graph jobs and removes their
+staging rows while preserving every previously activated graph/head. The older bounded
+manifest, index, and activation pipeline remains behind the explicit flag for a later
+paid/experimental evaluation; enabling it is not part of the free-source-browsing
+contract.
 
 Local Folder remains strictly device-local because the cloud cannot observe an
 offline path. Desktop indexes and watches it locally; the hosted source inventory and

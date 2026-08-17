@@ -8,6 +8,10 @@
 
 use std::collections::BTreeSet;
 
+use dopedb_protocol::{
+    KnowledgeSourceBindingV1, KnowledgeSourceProvider, KnowledgeSourceVisibility,
+    SourceRevisionIdentity,
+};
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
@@ -17,7 +21,7 @@ use crate::kernel::identity::{AccountId, WorkspaceId};
 use super::domain::{KnowledgeGrant, Project, ProjectDefinition, ProjectEnvironment};
 use super::ports::{
     HostedKnowledgeAuthorityPort, KnowledgeRepositoryPort, RemoteKnowledgeGrant,
-    RemoteKnowledgeProject,
+    RemoteKnowledgeProject, RemoteKnowledgeSource,
 };
 
 /// What one explicit hosted-authority reconciliation made locally available.
@@ -48,6 +52,10 @@ where
         } else {
             (scope.workspace_id, None)
         };
+    let sources = authority
+        .list_sources(account.as_str(), remote_workspace_id)
+        .await?;
+    reconcile_sources(repository, &scope, &projects, &sources).await?;
 
     let mut grants = authority
         .list_current_grants(account.as_str(), remote_workspace_id)
@@ -59,6 +67,7 @@ where
             remote_workspace_id,
             member_id,
             &projects,
+            &sources,
             grants,
         )
         .await?;
@@ -131,14 +140,12 @@ async fn ensure_personal_grants<H>(
     remote_workspace_id: Uuid,
     member_id: &str,
     projects: &[RemoteKnowledgeProject],
+    sources: &[RemoteKnowledgeSource],
     mut grants: Vec<RemoteKnowledgeGrant>,
 ) -> AppResult<Vec<RemoteKnowledgeGrant>>
 where
     H: HostedKnowledgeAuthorityPort,
 {
-    let sources = authority
-        .list_sources(account.as_str(), remote_workspace_id)
-        .await?;
     let mut created = false;
     for project in projects {
         for environment in &project.environments {
@@ -182,6 +189,87 @@ where
             .await?;
     }
     Ok(grants)
+}
+
+async fn reconcile_sources<R>(
+    repository: &R,
+    scope: &ActiveResourceScope,
+    projects: &[RemoteKnowledgeProject],
+    sources: &[RemoteKnowledgeSource],
+) -> AppResult<()>
+where
+    R: KnowledgeRepositoryPort,
+{
+    let mut remote_ids = BTreeSet::new();
+    for source in sources {
+        let remote_project = projects
+            .iter()
+            .find(|project| project.id == source.project_id)
+            .ok_or_else(|| AppError::Network("Knowledge source project is missing".into()))?;
+        let remote_environment = remote_project
+            .environments
+            .iter()
+            .find(|environment| environment.id == source.project_environment_id)
+            .filter(|environment| environment.revision == source.environment_revision)
+            .ok_or_else(|| AppError::Network("Knowledge source environment is stale".into()))?;
+        let (Some(repository_id), Some(repository_name), Some(ref_name), Some(commit_sha)) = (
+            source.repository_id.as_ref(),
+            source.repository_full_name.as_ref(),
+            source.ref_name.as_ref(),
+            source.commit_sha.as_ref(),
+        ) else {
+            return Err(AppError::Network(
+                "Project Knowledge omitted GitHub source identity".into(),
+            ));
+        };
+        let binding = KnowledgeSourceBindingV1 {
+            source_id: source.id,
+            project_id: source.project_id,
+            project_environment_id: source.project_environment_id,
+            provider: KnowledgeSourceProvider::Github,
+            display_name: source.display_name.clone(),
+            visibility: KnowledgeSourceVisibility::SharedGraph,
+            revision: SourceRevisionIdentity::Github {
+                repository_id: repository_id.clone(),
+                repository: repository_name.clone(),
+                ref_name: ref_name.clone(),
+                commit_sha: commit_sha.clone(),
+            },
+        };
+        if source.provider != "github" || !binding.validate() {
+            return Err(AppError::Network(
+                "Project Knowledge returned invalid GitHub source identity".into(),
+            ));
+        }
+        repository
+            .save_scope(
+                &Project {
+                    id: remote_project.id,
+                    workspace_id: WorkspaceId::from(scope.workspace_id),
+                    name: remote_project.name.clone(),
+                    revision: remote_project.revision,
+                },
+                &ProjectEnvironment {
+                    id: remote_environment.id,
+                    project_id: remote_project.id,
+                    name: remote_environment.name.clone(),
+                    risk_class: remote_environment.risk_class,
+                    revision: remote_environment.revision,
+                },
+                &binding,
+                remote_environment.revision,
+            )
+            .await?;
+        remote_ids.insert(source.id);
+    }
+    for local in repository.scopes(scope.workspace_id).await? {
+        if local.binding.provider == KnowledgeSourceProvider::Github
+            && !remote_ids.contains(&local.binding.source_id)
+        {
+            repository.remove_scope(local.binding.source_id).await?;
+        }
+    }
+    Ok(())
 }
 
 fn grant_matches_revision_set(

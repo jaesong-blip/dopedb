@@ -213,6 +213,8 @@ impl BrokerDispatcher {
                 analysis_article_operation::handle(self, &request).await
             }
             CommandName::KnowledgeSearch
+            | CommandName::SourceSearch
+            | CommandName::SourceRead
             | CommandName::KnowledgeExplain
             | CommandName::KnowledgeNeighbors
             | CommandName::KnowledgePath

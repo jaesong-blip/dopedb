@@ -262,9 +262,9 @@ where
         "INSERT INTO agent_acp_sessions(
              id, connection_id, workspace_id, account_scope, provider, title,
              lifecycle, acp_session_id, project_environment_id,
-             knowledge_grant_id, environment_revision, graph_revision_ids,
+             knowledge_grant_id, environment_revision, knowledge_sources, graph_revision_ids,
              environment_connections, error, created_at, updated_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
          ON CONFLICT(id) DO UPDATE SET
              title = excluded.title,
              lifecycle = excluded.lifecycle,
@@ -294,6 +294,7 @@ where
             .transpose()
             .map_err(|_| AppError::Config("the ACP Environment revision is too large".into()))?,
     )
+    .bind(serde_json::to_string(&summary.knowledge_sources)?)
     .bind(serde_json::to_string(&summary.graph_revision_ids)?)
     .bind(serde_json::to_string(&summary.environment_connections)?)
     .bind(&summary.error)
@@ -328,6 +329,7 @@ fn row_to_summary(row: &sqlx::sqlite::SqliteRow) -> AppResult<AcpSessionSummary>
                 })
             })
             .transpose()?,
+        knowledge_sources: serde_json::from_str(&row.try_get::<String, _>("knowledge_sources")?)?,
         graph_revision_ids: serde_json::from_str::<Vec<String>>(
             &row.try_get::<String, _>("graph_revision_ids")?,
         )?

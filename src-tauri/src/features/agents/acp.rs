@@ -392,6 +392,10 @@ impl AcpRuntime {
                         environment_revision: knowledge_scope
                             .as_ref()
                             .map(|scope| scope.environment_revision),
+                        knowledge_sources: knowledge_scope
+                            .as_ref()
+                            .map(|scope| scope.sources.clone())
+                            .unwrap_or_default(),
                         graph_revision_ids: knowledge_scope
                             .as_ref()
                             .map(|scope| scope.graph_revision_ids.clone())

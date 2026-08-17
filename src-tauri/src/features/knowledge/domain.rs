@@ -161,10 +161,37 @@ pub(crate) struct KnowledgeGrant {
     pub(crate) expires_at: DateTime<Utc>,
 }
 
-/// Immutable Knowledge authority copied into one ACP session. The ordered
-/// revision set is the complete visible graph set for that Environment revision;
-/// the optional hosted grant covers its GitHub subset while Local Folder graphs
-/// remain authorized only by the device-local owner capability.
+/// One exact hosted source revision copied into an ACP session. Repository
+/// credentials and installation tokens never cross this boundary.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct KnowledgeSessionSource {
+    pub(crate) source_id: Uuid,
+    pub(crate) display_name: String,
+    pub(crate) repository_id: String,
+    pub(crate) repository: String,
+    pub(crate) ref_name: String,
+    pub(crate) commit_sha: String,
+}
+
+impl KnowledgeSessionSource {
+    pub(crate) fn validate(&self) -> bool {
+        !self.display_name.trim().is_empty()
+            && self.display_name.len() <= 512
+            && !self.display_name.chars().any(char::is_control)
+            && SourceRevisionIdentity::Github {
+                repository_id: self.repository_id.clone(),
+                repository: self.repository.clone(),
+                ref_name: self.ref_name.clone(),
+                commit_sha: self.commit_sha.clone(),
+            }
+            .validate()
+    }
+}
+
+/// Immutable Knowledge authority copied into one ACP session. GitHub source
+/// revisions are browsed directly at their exact commit. Graph revision fields
+/// remain only for dormant/legacy graphs and optional future graph products.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct KnowledgeSessionScope {
@@ -173,6 +200,7 @@ pub(crate) struct KnowledgeSessionScope {
     pub(crate) knowledge_grant_id: Option<Uuid>,
     pub(crate) project_environment_id: Uuid,
     pub(crate) environment_revision: u64,
+    pub(crate) sources: Vec<KnowledgeSessionSource>,
     pub(crate) graph_revision_ids: Vec<Uuid>,
     pub(crate) connections: Vec<KnowledgeSessionConnection>,
 }

@@ -103,6 +103,13 @@ function workspaceBackgroundSchedulerEnabled(): boolean {
   throw new Error("WORKSPACE_BACKGROUND_SCHEDULER_ENABLED must be 0 or 1");
 }
 
+function knowledgeGraphBuildsEnabled(): boolean {
+  const value = optional("KNOWLEDGE_GRAPH_BUILDS_ENABLED");
+  if (value === null || value === "0") return false;
+  if (value === "1") return true;
+  throw new Error("KNOWLEDGE_GRAPH_BUILDS_ENABLED must be 0 or 1");
+}
+
 function workspaceBackgroundSchedulerToken(): string | null {
   const value = optional("WORKSPACE_BACKGROUND_SCHEDULER_TOKEN");
   if (!value) return null;
@@ -147,6 +154,7 @@ export const env = {
   githubKnowledgeAppSlug: () => optional("GITHUB_KNOWLEDGE_APP_SLUG"),
   githubKnowledgePrivateKey,
   githubKnowledgeWebhookSecret: () => optional("GITHUB_KNOWLEDGE_WEBHOOK_SECRET"),
+  knowledgeGraphBuildsEnabled,
   planetScaleClientId: () => optional("PLANETSCALE_CLIENT_ID"),
   planetScaleClientSecret: () => optional("PLANETSCALE_CLIENT_SECRET"),
   productAnalyticsCloudflareToken,

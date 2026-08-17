@@ -11,11 +11,11 @@ use dopedb_protocol::{
     ResponseEnvelope, RuntimeDiscovery, SchemaListCommand, SessionAuthentication,
     SharedAnalysisArticleCreate, SignedAcpPluginManifestV1, SkillInstallCommand,
     SkillRemoveCommand, SkillRepairCommand, SkillStatusCommand, SkillsGetCommand,
-    SkillsListCommand, SqlProposeCommand, StatusCommand, StatusResult, TableDescribeCommand,
-    VersionCommand, VersionResult, WorkspaceSyncPageResponse, ACP_PLUGIN_MANIFEST_SCHEMA_VERSION,
-    COMMAND_SCHEMA_VERSION, CONTROL_PLANE_CONTRACTS_SCHEMA_VERSION,
-    GRAPH_BUILD_ARTIFACT_SCHEMA_VERSION, MANAGED_LEASE_CONTRACT_VERSION,
-    MAX_KNOWLEDGE_GRAPH_ARTIFACT_BYTES, PROTOCOL_MAX,
+    SkillsListCommand, SourceReadCommand, SqlProposeCommand, StatusCommand, StatusResult,
+    TableDescribeCommand, VersionCommand, VersionResult, WorkspaceSyncPageResponse,
+    ACP_PLUGIN_MANIFEST_SCHEMA_VERSION, COMMAND_SCHEMA_VERSION,
+    CONTROL_PLANE_CONTRACTS_SCHEMA_VERSION, GRAPH_BUILD_ARTIFACT_SCHEMA_VERSION,
+    MANAGED_LEASE_CONTRACT_VERSION, MAX_KNOWLEDGE_GRAPH_ARTIFACT_BYTES, PROTOCOL_MAX,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -845,13 +845,13 @@ fn unknown_envelope_and_active_command_fields_fail_closed() {
 }
 
 #[test]
-fn command_names_match_the_v14_catalog() {
+fn command_names_match_the_v15_catalog() {
     let actual = dopedb_protocol::CommandName::ALL
         .into_iter()
         .map(|command| command.as_str())
         .collect::<Vec<_>>();
     let expected: Vec<String> =
-        serde_json::from_str(include_str!("fixtures/command-catalog-v14.json")).unwrap();
+        serde_json::from_str(include_str!("fixtures/command-catalog-v15.json")).unwrap();
     assert_eq!(actual, expected);
 
     let request: RequestEnvelope = serde_json::from_value(json!({
@@ -893,6 +893,32 @@ fn command_names_match_the_v14_catalog() {
         }]
     });
     typed_cli_contract::<CatalogSearchCommand>(&request, &result);
+
+    let source_request: RequestEnvelope = serde_json::from_value(json!({
+        "protocolVersion": PROTOCOL_MAX,
+        "commandSchemaVersion": COMMAND_SCHEMA_VERSION,
+        "requestId": "018f1111-2222-7333-8444-555566667778",
+        "command": "source.read",
+        "arguments": {
+            "sourceId": "018faaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee",
+            "path": "src/main.ts",
+            "lineStart": 1,
+            "lineEnd": 200
+        }
+    }))
+    .expect("source read request must decode");
+    let source_result = json!({
+        "sourceId": "018faaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee",
+        "repository": "acme/app",
+        "commitSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "path": "src/main.ts",
+        "lineStart": 1,
+        "lineEnd": 2,
+        "totalLines": 2,
+        "truncated": false,
+        "text": "export const ready = true;\n"
+    });
+    typed_cli_contract::<SourceReadCommand>(&source_request, &source_result);
 }
 
 #[test]

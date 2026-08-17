@@ -14,8 +14,9 @@ use crate::kernel::access::{ActiveResourceScope, PinnedConnection};
 
 use super::domain::{
     EnvironmentConnectionBinding, EnvironmentRiskClass, KnowledgeEnvironmentSummary,
-    KnowledgeGrant, KnowledgeMappingProposal, KnowledgeSessionScope, MappingProposalState, Project,
-    ProjectDefinition, ProjectEnvironment, SourceSnapshot, StoredKnowledgeScope,
+    KnowledgeGrant, KnowledgeMappingProposal, KnowledgeSessionScope, KnowledgeSessionSource,
+    MappingProposalState, Project, ProjectDefinition, ProjectEnvironment, SourceSnapshot,
+    StoredKnowledgeScope,
 };
 
 /// Hosted Knowledge DTOs belong to the authority port rather than its HTTP
@@ -65,6 +66,66 @@ pub(crate) struct RemoteKnowledgeSource {
     pub(crate) sync_revision: u64,
     pub(crate) last_failure_code: Option<String>,
     pub(crate) graph_revision_id: Option<Uuid>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct RemoteSourceFileMatch {
+    pub(crate) path: String,
+    pub(crate) blob_sha: String,
+    pub(crate) bytes: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct RemoteSourceSearchResult {
+    pub(crate) source_id: Uuid,
+    pub(crate) repository: String,
+    pub(crate) ref_name: String,
+    pub(crate) commit_sha: String,
+    pub(crate) file_count: u64,
+    pub(crate) matches: Vec<RemoteSourceFileMatch>,
+    pub(crate) total_matches: u64,
+    pub(crate) truncated: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct RemoteSourceReadResult {
+    pub(crate) source_id: Uuid,
+    pub(crate) repository: String,
+    pub(crate) commit_sha: String,
+    pub(crate) path: String,
+    pub(crate) blob_sha: String,
+    pub(crate) bytes: u64,
+    pub(crate) line_start: u32,
+    pub(crate) line_end: u32,
+    pub(crate) total_lines: u32,
+    pub(crate) truncated: bool,
+    pub(crate) text: String,
+}
+
+pub(crate) struct PinnedSourceAuthority<'a> {
+    pub(crate) account_id: &'a str,
+    pub(crate) workspace_id: Uuid,
+    pub(crate) environment_id: Uuid,
+    pub(crate) environment_revision: u64,
+    pub(crate) connection_id: Uuid,
+    pub(crate) connection_revision: i64,
+    pub(crate) source: &'a KnowledgeSessionSource,
+}
+
+pub(crate) struct PinnedSourceSearchRequest<'a> {
+    pub(crate) authority: PinnedSourceAuthority<'a>,
+    pub(crate) query: &'a str,
+    pub(crate) limit: u32,
+}
+
+pub(crate) struct PinnedSourceReadRequest<'a> {
+    pub(crate) authority: PinnedSourceAuthority<'a>,
+    pub(crate) path: &'a str,
+    pub(crate) line_start: u32,
+    pub(crate) line_end: u32,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -530,6 +591,14 @@ pub(crate) trait HostedKnowledgeAuthorityPort: Clone + Send + Sync + 'static {
         account_id: &str,
         workspace_id: Uuid,
     ) -> impl Future<Output = AppResult<Vec<RemoteKnowledgeSource>>> + Send;
+    fn search_source(
+        &self,
+        request: &PinnedSourceSearchRequest<'_>,
+    ) -> impl Future<Output = AppResult<RemoteSourceSearchResult>> + Send;
+    fn read_source(
+        &self,
+        request: &PinnedSourceReadRequest<'_>,
+    ) -> impl Future<Output = AppResult<RemoteSourceReadResult>> + Send;
     fn list_source_sync_progress(
         &self,
         account_id: &str,

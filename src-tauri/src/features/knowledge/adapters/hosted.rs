@@ -13,9 +13,11 @@ use crate::error::{AppError, AppResult};
 use crate::features::knowledge::domain::{KnowledgeMappingProposal, MappingProposalState};
 use crate::features::knowledge::ports::{
     AppendKnowledgeEnvironmentRequest, CreateKnowledgeProjectRequest, CreateKnowledgeSourceRequest,
-    CreatedKnowledgeSource, HostedKnowledgeAuthorityPort, RemoteEnvironmentConnectionBinding,
-    RemoteGithubRepository, RemoteKnowledgeGrant, RemoteKnowledgeProject, RemoteKnowledgeSource,
-    RemoteKnowledgeSyncProgress, RemotePersonalKnowledgeScope,
+    CreatedKnowledgeSource, HostedKnowledgeAuthorityPort, PinnedSourceReadRequest,
+    PinnedSourceSearchRequest, RemoteEnvironmentConnectionBinding, RemoteGithubRepository,
+    RemoteKnowledgeGrant, RemoteKnowledgeProject, RemoteKnowledgeSource,
+    RemoteKnowledgeSyncProgress, RemotePersonalKnowledgeScope, RemoteSourceReadResult,
+    RemoteSourceSearchResult,
 };
 use crate::hosted_control_plane::{
     bounded_json_response, client, origin, request_error, response_error as oauth_error,
@@ -76,6 +78,19 @@ struct QueuedKnowledgeSourceResponse {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RemoteKnowledgeSourcesResponse {
     sources: Vec<RemoteKnowledgeSource>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SourceReadRequest<'a> {
+    environment_id: Uuid,
+    environment_revision: u64,
+    connection_id: Uuid,
+    connection_revision: i64,
+    commit_sha: &'a str,
+    path: &'a str,
+    line_start: u32,
+    line_end: u32,
 }
 
 #[derive(Deserialize)]
@@ -925,6 +940,132 @@ async fn list_remote_knowledge_sources(
     Ok(sources)
 }
 
+fn safe_source_path(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 4_096
+        && !value.starts_with('/')
+        && !value.contains('\\')
+        && !value.chars().any(char::is_control)
+        && value
+            .split('/')
+            .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
+}
+
+async fn search_remote_source(
+    request: &PinnedSourceSearchRequest<'_>,
+) -> AppResult<RemoteSourceSearchResult> {
+    let authority = &request.authority;
+    let source = authority.source;
+    let limit = request.limit;
+    let token = bearer(authority.account_id)?;
+    let mut url = Url::parse(&format!(
+        "{}/api/v1/workspaces/{}/knowledge/sources/{}/browse",
+        origin()?,
+        authority.workspace_id,
+        source.source_id,
+    ))
+    .map_err(|_| AppError::Config("invalid hosted source browse URL".into()))?;
+    url.query_pairs_mut()
+        .append_pair("environmentId", &authority.environment_id.to_string())
+        .append_pair(
+            "environmentRevision",
+            &authority.environment_revision.to_string(),
+        )
+        .append_pair("connectionId", &authority.connection_id.to_string())
+        .append_pair(
+            "connectionRevision",
+            &authority.connection_revision.to_string(),
+        )
+        .append_pair("commitSha", &source.commit_sha)
+        .append_pair("query", request.query)
+        .append_pair("limit", &limit.to_string());
+    let response = client()?
+        .get(url)
+        .bearer_auth(token.as_str())
+        .send()
+        .await
+        .map_err(|error| request_error("searching the pinned GitHub source", error))?;
+    if !response.status().is_success() {
+        return Err(oauth_error(response).await);
+    }
+    let result: RemoteSourceSearchResult =
+        knowledge_response(response, "reading the pinned GitHub source tree").await?;
+    if result.source_id != source.source_id
+        || result.repository != source.repository
+        || result.ref_name != source.ref_name
+        || result.commit_sha != source.commit_sha
+        || result.file_count > 100_000
+        || result.matches.len() > usize::try_from(limit).unwrap_or(usize::MAX)
+        || result.total_matches > result.file_count
+        || result.truncated != (result.total_matches > result.matches.len() as u64)
+        || result.matches.iter().any(|item| {
+            !safe_source_path(&item.path)
+                || item.blob_sha.len() != 40
+                || !item.blob_sha.bytes().all(|byte| byte.is_ascii_hexdigit())
+                || item.bytes > 16 * 1024 * 1024
+        })
+    {
+        return Err(AppError::Network(
+            "Project Knowledge returned an invalid GitHub source tree".into(),
+        ));
+    }
+    Ok(result)
+}
+
+async fn read_remote_source(
+    request: &PinnedSourceReadRequest<'_>,
+) -> AppResult<RemoteSourceReadResult> {
+    let authority = &request.authority;
+    let source = authority.source;
+    let token = bearer(authority.account_id)?;
+    let response = client()?
+        .post(format!(
+            "{}/api/v1/workspaces/{}/knowledge/sources/{}/browse",
+            origin()?,
+            authority.workspace_id,
+            source.source_id,
+        ))
+        .bearer_auth(token.as_str())
+        .json(&SourceReadRequest {
+            environment_id: authority.environment_id,
+            environment_revision: authority.environment_revision,
+            connection_id: authority.connection_id,
+            connection_revision: authority.connection_revision,
+            commit_sha: &source.commit_sha,
+            path: request.path,
+            line_start: request.line_start,
+            line_end: request.line_end,
+        })
+        .send()
+        .await
+        .map_err(|error| request_error("reading the pinned GitHub source", error))?;
+    if !response.status().is_success() {
+        return Err(oauth_error(response).await);
+    }
+    let result: RemoteSourceReadResult =
+        knowledge_response(response, "reading the pinned GitHub source file").await?;
+    if result.source_id != source.source_id
+        || result.repository != source.repository
+        || result.commit_sha != source.commit_sha
+        || result.path != request.path
+        || !safe_source_path(&result.path)
+        || result.blob_sha.len() != 40
+        || !result.blob_sha.bytes().all(|byte| byte.is_ascii_hexdigit())
+        || result.bytes > 1024 * 1024
+        || result.line_start == 0
+        || result.line_end < result.line_start.saturating_sub(1)
+        || result.line_end > request.line_end
+        || result.total_lines < result.line_end
+        || result.text.len() > 128 * 1024
+        || result.text.contains('\0')
+    {
+        return Err(AppError::Network(
+            "Project Knowledge returned an invalid GitHub source file".into(),
+        ));
+    }
+    Ok(result)
+}
+
 async fn list_remote_knowledge_source_sync_progress(
     user_id: &str,
     workspace_id: Uuid,
@@ -1191,6 +1332,20 @@ impl HostedKnowledgeAuthorityPort for HostedKnowledgeAuthority {
         workspace_id: Uuid,
     ) -> impl std::future::Future<Output = AppResult<Vec<RemoteKnowledgeSource>>> + Send {
         list_remote_knowledge_sources(account_id, workspace_id)
+    }
+
+    fn search_source(
+        &self,
+        request: &PinnedSourceSearchRequest<'_>,
+    ) -> impl std::future::Future<Output = AppResult<RemoteSourceSearchResult>> + Send {
+        search_remote_source(request)
+    }
+
+    fn read_source(
+        &self,
+        request: &PinnedSourceReadRequest<'_>,
+    ) -> impl std::future::Future<Output = AppResult<RemoteSourceReadResult>> + Send {
+        read_remote_source(request)
     }
 
     fn list_source_sync_progress(

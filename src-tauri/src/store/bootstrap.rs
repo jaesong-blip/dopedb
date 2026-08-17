@@ -520,6 +520,13 @@ async fn ensure_agent_acp_knowledge_scope(pool: &SqlitePool) -> AppResult<()> {
     add_column_if_missing(
         pool,
         "agent_acp_sessions",
+        "knowledge_sources",
+        "ALTER TABLE agent_acp_sessions ADD COLUMN knowledge_sources TEXT NOT NULL DEFAULT '[]'",
+    )
+    .await?;
+    add_column_if_missing(
+        pool,
+        "agent_acp_sessions",
         "graph_revision_ids",
         "ALTER TABLE agent_acp_sessions ADD COLUMN graph_revision_ids TEXT NOT NULL DEFAULT '[]'",
     )

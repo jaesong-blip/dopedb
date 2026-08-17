@@ -58,7 +58,11 @@ export async function GET(request: Request, context: RouteContext) {
     eq(knowledgeSource.organizationId, workspaceId),
     isNull(knowledgeSource.revokedAt),
   ));
-  return privateJson({ sources });
+  return privateJson({
+    sources: env.knowledgeGraphBuildsEnabled()
+      ? sources
+      : sources.map((source) => ({ ...source, graphRevisionId: null })),
+  });
 }
 
 export async function POST(request: Request, context: RouteContext) {
@@ -149,7 +153,7 @@ export async function POST(request: Request, context: RouteContext) {
       SELECT ${body.sourceId}::uuid, ${workspaceId}, environment."project_id",
         environment."id", environment."revision", 'github', ${body.displayName.trim()},
         'shared_graph', installation."id", ${body.repositoryId}, ${repository.full_name},
-        ${body.refName}, ${commitSha}, 'pending'
+        ${body.refName}, ${commitSha}, ${env.knowledgeGraphBuildsEnabled() ? "pending" : "ready"}
       FROM ${knowledgeProjectEnvironment} AS environment
       JOIN ${knowledgeGithubInstallation} AS installation
         ON installation."organization_id" = environment."organization_id"
@@ -193,14 +197,16 @@ export async function POST(request: Request, context: RouteContext) {
         || source.refName !== body.refName
       ))
     ) return jsonError("Knowledge source id is already bound", 409);
-    const jobId = await enqueueInitialGithubKnowledgeSync({
-      organizationId: workspaceId,
-      sourceId: body.sourceId,
-      commitSha,
-      authority,
-    });
-    if (!jobId) return jsonError("Knowledge source authority changed", 409);
-    await kickWorkspaceBackgroundTask({ task: "knowledge" });
+    if (env.knowledgeGraphBuildsEnabled()) {
+      const jobId = await enqueueInitialGithubKnowledgeSync({
+        organizationId: workspaceId,
+        sourceId: body.sourceId,
+        commitSha,
+        authority,
+      });
+      if (!jobId) return jsonError("Knowledge source authority changed", 409);
+      await kickWorkspaceBackgroundTask({ task: "knowledge" });
+    }
     return privateJson({ source }, { status: 201 });
   } catch {
     return jsonError("GitHub source verification failed", 424);

@@ -1,10 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
-
 import postgres from "postgres";
 import { describe, expect, it, vi } from "vitest";
 import { activateKnowledgeGraph, type KnowledgeSqlQuery } from "./graph-activation-core";
 import { canonicalKnowledgeJson } from "./canonical-json";
-
 const queueHarness = vi.hoisted(() => ({
   query: null as null | ((text: string, parameters: unknown[]) => Promise<unknown[]>),
 }));
@@ -28,7 +26,6 @@ vi.mock("./github-app", async (importOriginal) => {
     }],
   };
 });
-
 const dedicatedDatabaseUrl = process.env.PROVIDER_IMPORT_TEST_DATABASE_URL?.trim() ?? "";
 const dedicatedDatabaseSentinel = process.env.PROVIDER_IMPORT_TEST_DATABASE_SENTINEL?.trim() ?? "";
 const requested = process.env.WORKSPACE_CLOUD_RUN_POSTGRES_IMPORT_HARNESS === "1";
@@ -36,14 +33,12 @@ const enabled = requested
   && process.env.PROVIDER_IMPORT_TEST_DATABASE_ISOLATED === "1"
   && dedicatedDatabaseUrl.length > 0
   && dedicatedDatabaseSentinel.length >= 16;
-
 function queryAdapter(client: ReturnType<typeof postgres>): KnowledgeSqlQuery {
   return async (text, parameters) => await client.unsafe(
     text,
     parameters as never[],
   ) as unknown as readonly Record<string, unknown>[];
 }
-
 function artifact(input: {
   graphRevisionId: string;
   sourceId: string;
@@ -87,7 +82,6 @@ function artifact(input: {
     evidence: [],
   };
 }
-
 describe.runIf(enabled)("Project Knowledge PostgreSQL activation contract", () => {
   it("atomically advances the exact source job and preserves the last-good head", async () => {
     const client = postgres(dedicatedDatabaseUrl, { max: 2, prepare: false });
@@ -497,6 +491,7 @@ describe.runIf(enabled)("Project Knowledge PostgreSQL activation contract", () =
       expect(indexedActivation?.artifactSha256).toBe(indexedActivation?.calculatedSha256);
       const {
         recordGithubKnowledgePush,
+        recordGithubSourceRevision,
         reconcileGithubKnowledgeCommit,
       } = await import("./sync-queue");
       const nextCommitSha = "c".repeat(40);
@@ -606,6 +601,47 @@ describe.runIf(enabled)("Project Knowledge PostgreSQL activation contract", () =
         syncRevision: 3,
         eventState: "failed",
       });
+      const raw = {
+        sourceId: randomUUID(), before: "6".repeat(40), after: "7".repeat(40),
+      };
+      await client`
+        INSERT INTO "workspace_control"."knowledge_source" (
+          "id", "organization_id", "project_id", "project_environment_id",
+          "environment_revision", "display_name", "provider", "visibility",
+          "github_installation_id", "repository_id", "repository_full_name",
+          "ref_name", "commit_sha", "sync_state"
+        ) VALUES (
+          ${raw.sourceId}, ${organizationId}, ${projectId}, ${environmentId}, 1,
+          'json-choi/raw', 'github', 'shared_graph', ${installationRowId},
+          '1004', 'json-choi/raw', 'main', ${raw.before}, 'ready'
+        )
+      `;
+      const recordRaw = (deliveryId: string, afterCommitSha: string) =>
+        recordGithubSourceRevision({ organizationId, sourceId: raw.sourceId, deliveryId,
+          beforeCommitSha: raw.before, afterCommitSha });
+      const rawDeliveryId = randomUUID();
+      expect(await recordRaw(rawDeliveryId, raw.after))
+        .toEqual({ eventId: expect.any(String), advanced: true });
+      expect(await recordRaw(rawDeliveryId, raw.after)).toBeNull();
+      expect(await recordRaw(randomUUID(), "8".repeat(40)))
+        .toEqual({ eventId: expect.any(String), advanced: false });
+      const [rawState] = await client<Array<{ commitSha: string; syncRevision: number;
+        consumedEvents: number; failedEvents: number; jobs: number }>>`
+        SELECT source."commit_sha" AS "commitSha",
+          source."sync_revision"::int AS "syncRevision",
+          count(DISTINCT event."id") FILTER (WHERE event."state" = 'consumed')::int AS "consumedEvents",
+          count(DISTINCT event."id") FILTER (WHERE event."state" = 'failed')::int AS "failedEvents",
+          count(DISTINCT job."id")::int AS "jobs"
+        FROM "workspace_control"."knowledge_source" source
+        LEFT JOIN "workspace_control"."knowledge_source_event" event
+          ON event."source_id" = source."id"
+        LEFT JOIN "workspace_control"."knowledge_source_sync_job" job
+          ON job."source_id" = source."id"
+        WHERE source."id" = ${raw.sourceId}
+        GROUP BY source."commit_sha", source."sync_revision"
+      `;
+      expect(rawState).toEqual({ commitSha: raw.after, syncRevision: 2,
+        consumedEvents: 1, failedEvents: 1, jobs: 0 });
       const {
         claimCodeIndexJob,
         failCodeIndexJob,

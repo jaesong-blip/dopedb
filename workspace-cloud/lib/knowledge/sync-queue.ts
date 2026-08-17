@@ -496,6 +496,64 @@ export async function recordGithubKnowledgePush(input: {
   return rows[0] ?? null;
 }
 
+// Raw-source mode advances only the exact GitHub revision. The delivery row
+// makes webhook replay idempotent and the locked before-SHA prevents an older
+// delivery from rolling a source back after a newer push was accepted.
+export async function recordGithubSourceRevision(input: {
+  organizationId: string;
+  sourceId: string;
+  deliveryId: string;
+  beforeCommitSha: string;
+  afterCommitSha: string | null;
+}) {
+  const before = checkedSha(input.beforeCommitSha);
+  const after = input.afterCommitSha ? checkedSha(input.afterCommitSha) : null;
+  const rows = await neonSql.query(
+    `WITH current_source AS MATERIALIZED (
+       SELECT source."commit_sha"
+       FROM "workspace_control"."knowledge_source" source
+       WHERE source."organization_id" = $1
+         AND source."id" = $2::uuid
+         AND source."provider" = 'github'
+         AND source."revoked_at" IS NULL
+       FOR UPDATE OF source
+     ), inserted_event AS MATERIALIZED (
+       INSERT INTO "workspace_control"."knowledge_source_event" (
+         "organization_id", "source_id", "delivery_id", "event_kind",
+         "before_commit_sha", "after_commit_sha", "changed_files", "state", "consumed_at"
+       )
+       SELECT $1, $2::uuid, $3, 'push', $4, $5, '[]'::jsonb,
+         CASE WHEN current_source."commit_sha" = $4 THEN 'consumed' ELSE 'failed' END,
+         now()
+       FROM current_source
+       ON CONFLICT ("delivery_id", "source_id") DO NOTHING
+       RETURNING "id", "state"
+     ), advanced AS (
+       UPDATE "workspace_control"."knowledge_source" source
+       SET "commit_sha" = COALESCE($5, source."commit_sha"),
+         "sync_state" = CASE WHEN $5::text IS NULL THEN 'stale' ELSE 'ready' END,
+         "sync_revision" = source."sync_revision" + 1,
+         "last_failure_code" = CASE
+           WHEN $5::text IS NULL THEN 'github_ref_deleted'
+           ELSE NULL
+         END,
+         "last_reconciled_at" = CASE WHEN $5::text IS NULL THEN NULL ELSE now() END,
+         "updated_at" = now()
+       FROM current_source CROSS JOIN inserted_event
+       WHERE source."organization_id" = $1
+         AND source."id" = $2::uuid
+         AND current_source."commit_sha" = $4
+         AND inserted_event."state" = 'consumed'
+       RETURNING source."id"
+     )
+     SELECT inserted_event."id"::text AS "eventId",
+       EXISTS(SELECT 1 FROM advanced) AS "advanced"
+     FROM inserted_event`,
+    [input.organizationId, input.sourceId, input.deliveryId, before, after],
+  ) as Array<{ eventId: string; advanced: boolean }>;
+  return rows[0] ?? null;
+}
+
 export async function listGithubKnowledgeReconciliationCandidates(limit = 10) {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) {
     throw new Error("Invalid GitHub reconciliation batch size");

@@ -21,6 +21,13 @@ import {
   compareCodeIndexPath,
   mergeCodeIndexArtifacts,
 } from "./code-index-core";
+import {
+  sourceBrowseMatches,
+  sourceBrowseText,
+  validSourceBrowsePath,
+  validSourceBrowseRange,
+  validSourceBrowseSearch,
+} from "./source-browser";
 
 describe("workspace code index", () => {
   it("extracts navigational symbols and relationships from TypeScript", () => {
@@ -56,6 +63,29 @@ describe("workspace code index", () => {
       .toBeNull();
     expect(analyzeCodeFile("src/unsafe\u0085path.ts", Buffer.from("export const value = 1")))
       .toBeNull();
+    const browse = sourceBrowseMatches([
+      { path: "src/main.ts", blobSha: "a".repeat(40), bytes: 42 },
+      { path: "src/users/service.ts", blobSha: "b".repeat(40), bytes: 84 },
+    ], "users service", 20);
+    expect(browse).toEqual({
+      matches: [{ path: "src/users/service.ts", blobSha: "b".repeat(40), bytes: 84 }],
+      totalMatches: 1,
+      truncated: false,
+    });
+    expect(sourceBrowseText(Buffer.from("one\ntwo\nthree"), 2, 3)).toMatchObject({
+      lineStart: 2,
+      lineEnd: 3,
+      totalLines: 3,
+      truncated: false,
+      text: "two\nthree",
+    });
+    expect(() => sourceBrowseText(Buffer.from([0xff]), 1, 1)).toThrow();
+    expect(validSourceBrowseSearch("orders service", 20)).toBe(true);
+    expect(validSourceBrowseSearch("\u0085", 20)).toBe(false);
+    expect(validSourceBrowsePath("src/orders.ts")).toBe(true);
+    expect(validSourceBrowsePath("../secrets.env")).toBe(false);
+    expect(validSourceBrowseRange(1, 400)).toBe(true);
+    expect(validSourceBrowseRange(1, 401)).toBe(false);
   });
 
   it("extracts navigation from common non-TypeScript services", () => {

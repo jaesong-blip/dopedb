@@ -899,6 +899,7 @@ CREATE TABLE IF NOT EXISTS agent_acp_sessions (
     project_environment_id TEXT,
     knowledge_grant_id TEXT,
     environment_revision INTEGER CHECK(environment_revision IS NULL OR environment_revision > 0),
+    knowledge_sources TEXT NOT NULL DEFAULT '[]',
     graph_revision_ids TEXT NOT NULL DEFAULT '[]',
     environment_connections TEXT NOT NULL DEFAULT '[]',
     error          TEXT,

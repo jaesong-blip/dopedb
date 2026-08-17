@@ -1,9 +1,11 @@
 import { and, eq, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { env } from "@/lib/env";
 import { verifyGithubWebhook } from "@/lib/knowledge/github-app";
 import {
   reconcileGithubKnowledgeCommit,
   recordGithubKnowledgePush,
+  recordGithubSourceRevision,
 } from "@/lib/knowledge/sync-queue";
 import {
   knowledgeGithubInstallation,
@@ -137,6 +139,7 @@ export async function POST(request: Request) {
     installationId,
   ));
   if (installations.length === 0) return new Response(null, { status: 202 });
+  const graphBuildsEnabled = env.knowledgeGraphBuildsEnabled();
   let shouldKick = false;
 
   if (event === "push") {
@@ -170,15 +173,25 @@ export async function POST(request: Request) {
           ),
         ));
       for (const source of sources) {
-        const recorded = await recordGithubKnowledgePush({
-          organizationId: installation.organizationId,
-          sourceId: source.id,
-          deliveryId,
-          beforeCommitSha: before,
-          afterCommitSha: after,
-          changedFiles: files,
-        });
-        shouldKick = Boolean(recorded?.jobId) || shouldKick;
+        if (graphBuildsEnabled) {
+          const recorded = await recordGithubKnowledgePush({
+            organizationId: installation.organizationId,
+            sourceId: source.id,
+            deliveryId,
+            beforeCommitSha: before,
+            afterCommitSha: after,
+            changedFiles: files,
+          });
+          shouldKick = Boolean(recorded?.jobId) || shouldKick;
+        } else {
+          await recordGithubSourceRevision({
+            organizationId: installation.organizationId,
+            sourceId: source.id,
+            deliveryId,
+            beforeCommitSha: before,
+            afterCommitSha: after,
+          });
+        }
       }
     }
   } else if (event === "installation") {
@@ -212,7 +225,7 @@ export async function POST(request: Request) {
       } else {
         for (const installation of installations) {
           const sources = await db.update(knowledgeSource).set({
-            syncState: "pending",
+            syncState: graphBuildsEnabled ? "pending" : "ready",
             syncRevision: sql`${knowledgeSource.syncRevision} + 1`,
             lastFailureCode: null,
             revokedAt: null,
@@ -224,8 +237,10 @@ export async function POST(request: Request) {
             id: knowledgeSource.id,
             commitSha: knowledgeSource.commitSha,
           });
-          const queued = await requeueSources(installation.organizationId, sources);
-          shouldKick = queued || shouldKick;
+          if (graphBuildsEnabled) {
+            const queued = await requeueSources(installation.organizationId, sources);
+            shouldKick = queued || shouldKick;
+          }
         }
       }
     }
@@ -239,7 +254,9 @@ export async function POST(request: Request) {
     for (const installation of installations) {
       for (const repository of changed) {
         const sources = await db.update(knowledgeSource).set({
-          syncState: action === "removed" ? "stale" : "pending",
+          syncState: action === "removed"
+            ? "stale"
+            : graphBuildsEnabled ? "pending" : "ready",
           syncRevision: sql`${knowledgeSource.syncRevision} + 1`,
           lastFailureCode: action === "removed"
             ? "github_repository_access_removed"
@@ -253,7 +270,7 @@ export async function POST(request: Request) {
           id: knowledgeSource.id,
           commitSha: knowledgeSource.commitSha,
         });
-        if (action === "added") {
+        if (action === "added" && graphBuildsEnabled) {
           const queued = await requeueSources(installation.organizationId, sources);
           shouldKick = queued || shouldKick;
         }
@@ -271,7 +288,9 @@ export async function POST(request: Request) {
             ...(available && repository.fullName
               ? { repositoryFullName: repository.fullName }
               : {}),
-            syncState: unavailable ? "stale" : "pending",
+            syncState: unavailable
+              ? "stale"
+              : graphBuildsEnabled ? "pending" : "ready",
             syncRevision: sql`${knowledgeSource.syncRevision} + 1`,
             lastFailureCode: unavailable ? "github_repository_unavailable" : null,
             updatedAt: new Date(),
@@ -283,7 +302,7 @@ export async function POST(request: Request) {
             id: knowledgeSource.id,
             commitSha: knowledgeSource.commitSha,
           });
-          if (available) {
+          if (available && graphBuildsEnabled) {
             const queued = await requeueSources(installation.organizationId, sources);
             shouldKick = queued || shouldKick;
           }

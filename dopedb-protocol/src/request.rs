@@ -7,7 +7,7 @@ use serde_json::Value;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-/// Version-14 command catalog. Any addition, removal, or meaning change requires a
+/// Version-15 command catalog. Any addition, removal, or meaning change requires a
 /// command-schema version bump and an explicitly negotiated compatibility range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CommandName {
@@ -73,6 +73,10 @@ pub enum CommandName {
     OperationCancel,
     #[serde(rename = "knowledge.search")]
     KnowledgeSearch,
+    #[serde(rename = "source.search")]
+    SourceSearch,
+    #[serde(rename = "source.read")]
+    SourceRead,
     #[serde(rename = "knowledge.explain")]
     KnowledgeExplain,
     #[serde(rename = "knowledge.neighbors")]
@@ -96,7 +100,7 @@ pub enum CommandName {
 }
 
 impl CommandName {
-    pub const ALL: [Self; 39] = [
+    pub const ALL: [Self; 41] = [
         Self::Version,
         Self::Status,
         Self::AppOpen,
@@ -128,6 +132,8 @@ impl CommandName {
         Self::OperationWait,
         Self::OperationCancel,
         Self::KnowledgeSearch,
+        Self::SourceSearch,
+        Self::SourceRead,
         Self::KnowledgeExplain,
         Self::KnowledgeNeighbors,
         Self::KnowledgePath,
@@ -171,6 +177,8 @@ impl CommandName {
             Self::OperationWait => "operation.wait",
             Self::OperationCancel => "operation.cancel",
             Self::KnowledgeSearch => "knowledge.search",
+            Self::SourceSearch => "source.search",
+            Self::SourceRead => "source.read",
             Self::KnowledgeExplain => "knowledge.explain",
             Self::KnowledgeNeighbors => "knowledge.neighbors",
             Self::KnowledgePath => "knowledge.path",

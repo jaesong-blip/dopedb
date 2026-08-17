@@ -138,8 +138,8 @@ open roadmap work is complete:
 - packaged two-member production validation of the completed Analysis Article
   migration, scheduled Desktop runner, shared bounded results, and fixed public
   publication flow;
-- the remaining GitHub/Local Folder Project Knowledge and exact Environment source
-  scope gates required by Analysis Articles;
+- the remaining Local Folder Project Knowledge and any paid/experimental graph product;
+  GitHub exact-commit source browsing is the default source path, not a completed graph;
 - bundled Node and independently installed first-party ACP adapter distribution;
 - arbitrary cloud providers, database engines, or provider branching abstractions.
 
@@ -150,8 +150,9 @@ When work competes for time, use this order:
 1. Make sharing one connection and obtaining individual access reliable.
 2. Finish provider discovery, least-privilege issuance, revoke, expiry, and drift.
 3. Strengthen the exact Agent authority, approval, stop, result, and recovery loop.
-4. Bind GitHub and Local Folder evidence to an immutable Project Knowledge graph,
-   then make Project Environment the exact multi-database and source revision scope.
+4. Keep GitHub exploration cheap and exact through pinned tree/path/file reads, then
+   validate a graph product with measured quality, latency, and operating-cost gains
+   before re-enabling graph construction as a paid/experimental capability.
 5. Complete the Analysis Article archive, exact-source multi-database transforms,
    Desktop refresh runner, bounded team results, fixed public publications, and
    article metric signals only on top of that environment boundary.

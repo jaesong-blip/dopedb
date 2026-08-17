@@ -4,20 +4,25 @@ use std::collections::BTreeSet;
 
 use dopedb_protocol::{
     CatalogArguments, ConnectionSelector, EnvironmentConnectionScope, EnvironmentContextCommand,
-    EnvironmentContextResult, FunnelTraceArguments, FunnelTraceCommand, GraphBuildArtifactV1,
-    KnowledgeDiffCommand, KnowledgeEvidenceCommand, KnowledgeEvidenceResult,
+    EnvironmentContextResult, EnvironmentSourceScope, FunnelTraceArguments, FunnelTraceCommand,
+    GraphBuildArtifactV1, KnowledgeDiffCommand, KnowledgeEvidenceCommand, KnowledgeEvidenceResult,
     KnowledgeExplainCommand, KnowledgeMappingProposalResult, KnowledgeMappingProposeArguments,
     KnowledgeMappingProposeCommand, KnowledgeMappingTargetKind, KnowledgeNeighborDirection,
     KnowledgeNeighborsArguments, KnowledgeNeighborsCommand, KnowledgeNodeArguments,
     KnowledgeNodeMatch, KnowledgePathCommand, KnowledgeSearchCommand, KnowledgeSearchResult,
-    KnowledgeSubgraphResult, MAX_KNOWLEDGE_EVIDENCE_IDS, MAX_KNOWLEDGE_NEIGHBORS,
+    KnowledgeSubgraphResult, SourceFileMatch, SourceReadCommand, SourceSearchCommand,
+    SourceSearchResult, MAX_KNOWLEDGE_EVIDENCE_IDS, MAX_KNOWLEDGE_NEIGHBORS,
     MAX_KNOWLEDGE_QUERY_BYTES, MAX_KNOWLEDGE_RESULTS, MAX_KNOWLEDGE_TARGET_IDENTITY_BYTES,
+    MAX_SOURCE_PATH_BYTES, MAX_SOURCE_READ_LINES,
 };
 use serde_json::json;
 
 use super::*;
 use crate::features::knowledge::application::{graph_path, search_graphs};
 use crate::features::knowledge::domain::{KnowledgeMappingProposal, MappingProposalState};
+use crate::features::knowledge::{
+    PinnedSourceAuthority, PinnedSourceReadRequest, PinnedSourceSearchRequest,
+};
 
 pub(super) async fn handle(
     dispatcher: &BrokerDispatcher,
@@ -72,7 +77,145 @@ pub(super) async fn handle(
                             alias: connection.alias.clone(),
                         })
                         .collect(),
+                    sources: scope
+                        .sources
+                        .iter()
+                        .map(|source| EnvironmentSourceScope {
+                            source_id: source.source_id,
+                            display_name: source.display_name.clone(),
+                            repository: source.repository.clone(),
+                            ref_name: source.ref_name.clone(),
+                            commit_sha: source.commit_sha.clone(),
+                        })
+                        .collect(),
                     graph_revision_ids: scope.graph_revision_ids.clone(),
+                }),
+            )
+        }
+        CommandName::SourceSearch => {
+            let arguments = match decode_arguments::<SourceSearchCommand>(request) {
+                Ok(arguments) if valid_query(&arguments.query, arguments.limit) => arguments,
+                _ => return failure(request_id, ErrorCode::InvalidRequest, false),
+            };
+            let selected = if let Some(source_id) = arguments.source_id {
+                match scope
+                    .sources
+                    .iter()
+                    .find(|source| source.source_id == source_id)
+                {
+                    Some(source) => vec![source],
+                    None => return failure(request_id, ErrorCode::ScopeDenied, false),
+                }
+            } else if scope.sources.len() <= 4 {
+                scope.sources.iter().collect::<Vec<_>>()
+            } else {
+                return failure(request_id, ErrorCode::InvalidRequest, false);
+            };
+            if selected.is_empty() {
+                return respond(
+                    request_id,
+                    Ok::<_, ErrorCode>(SourceSearchResult {
+                        matches: Vec::new(),
+                        truncated: false,
+                    }),
+                );
+            }
+            let mut matches = Vec::new();
+            let mut truncated = false;
+            for source in selected {
+                let remaining = usize::try_from(arguments.limit)
+                    .unwrap_or(0)
+                    .saturating_sub(matches.len());
+                if remaining == 0 {
+                    truncated = true;
+                    break;
+                }
+                let remote = match services
+                    .knowledge
+                    .search_source(&PinnedSourceSearchRequest {
+                        authority: PinnedSourceAuthority {
+                            account_id: session.knowledge_account_scope.as_str(),
+                            workspace_id: Uuid::from(session.workspace_id),
+                            environment_id: scope.project_environment_id,
+                            environment_revision: scope.environment_revision,
+                            connection_id: session.connection_id.into(),
+                            connection_revision: session.connection_revision,
+                            source,
+                        },
+                        query: &arguments.query,
+                        limit: u32::try_from(remaining).unwrap_or(arguments.limit),
+                    })
+                    .await
+                {
+                    Ok(result) => result,
+                    Err(error) => return failure(request_id, map_application_error(error), false),
+                };
+                truncated |= remote.truncated;
+                matches.extend(remote.matches.into_iter().map(|item| SourceFileMatch {
+                    source_id: source.source_id,
+                    repository: source.repository.clone(),
+                    commit_sha: source.commit_sha.clone(),
+                    path: item.path,
+                    bytes: item.bytes,
+                }));
+            }
+            respond(
+                request_id,
+                Ok::<_, ErrorCode>(SourceSearchResult { matches, truncated }),
+            )
+        }
+        CommandName::SourceRead => {
+            let arguments = match decode_arguments::<SourceReadCommand>(request) {
+                Ok(arguments)
+                    if valid_source_path(&arguments.path)
+                        && arguments.line_start > 0
+                        && arguments.line_end >= arguments.line_start
+                        && arguments.line_end - arguments.line_start < MAX_SOURCE_READ_LINES =>
+                {
+                    arguments
+                }
+                _ => return failure(request_id, ErrorCode::InvalidRequest, false),
+            };
+            let Some(source) = scope
+                .sources
+                .iter()
+                .find(|source| source.source_id == arguments.source_id)
+            else {
+                return failure(request_id, ErrorCode::ScopeDenied, false);
+            };
+            let remote = match services
+                .knowledge
+                .read_source(&PinnedSourceReadRequest {
+                    authority: PinnedSourceAuthority {
+                        account_id: session.knowledge_account_scope.as_str(),
+                        workspace_id: Uuid::from(session.workspace_id),
+                        environment_id: scope.project_environment_id,
+                        environment_revision: scope.environment_revision,
+                        connection_id: session.connection_id.into(),
+                        connection_revision: session.connection_revision,
+                        source,
+                    },
+                    path: &arguments.path,
+                    line_start: arguments.line_start,
+                    line_end: arguments.line_end,
+                })
+                .await
+            {
+                Ok(result) => result,
+                Err(error) => return failure(request_id, map_application_error(error), false),
+            };
+            respond(
+                request_id,
+                Ok::<_, ErrorCode>(dopedb_protocol::SourceReadResult {
+                    source_id: source.source_id,
+                    repository: source.repository.clone(),
+                    commit_sha: source.commit_sha.clone(),
+                    path: remote.path,
+                    line_start: remote.line_start,
+                    line_end: remote.line_end,
+                    total_lines: remote.total_lines,
+                    truncated: remote.truncated,
+                    text: remote.text,
                 }),
             )
         }
@@ -431,6 +574,17 @@ fn valid_query(query: &str, limit: u32) -> bool {
         && !query.chars().any(char::is_control)
         && limit > 0
         && limit <= MAX_KNOWLEDGE_RESULTS
+}
+
+fn valid_source_path(path: &str) -> bool {
+    !path.is_empty()
+        && path.len() <= MAX_SOURCE_PATH_BYTES
+        && !path.starts_with('/')
+        && !path.contains('\\')
+        && !path.chars().any(char::is_control)
+        && path
+            .split('/')
+            .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
 }
 
 fn valid_hash(value: &str) -> bool {

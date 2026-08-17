@@ -17,6 +17,8 @@ pub const MAX_KNOWLEDGE_RESULTS: u32 = 50;
 pub const MAX_KNOWLEDGE_NEIGHBORS: u32 = 100;
 pub const MAX_KNOWLEDGE_EVIDENCE_IDS: usize = 64;
 pub const MAX_KNOWLEDGE_TARGET_IDENTITY_BYTES: usize = 2_048;
+pub const MAX_SOURCE_PATH_BYTES: usize = 4_096;
+pub const MAX_SOURCE_READ_LINES: u32 = 400;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -24,6 +26,35 @@ pub struct KnowledgeSearchArguments {
     pub query: String,
     #[serde(default = "default_search_limit")]
     pub limit: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SourceSearchArguments {
+    pub query: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<Uuid>,
+    #[serde(default = "default_search_limit")]
+    pub limit: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SourceReadArguments {
+    pub source_id: Uuid,
+    pub path: String,
+    #[serde(default = "default_line_start")]
+    pub line_start: u32,
+    #[serde(default = "default_line_end")]
+    pub line_end: u32,
+}
+
+fn default_line_start() -> u32 {
+    1
+}
+
+fn default_line_end() -> u32 {
+    200
 }
 
 fn default_search_limit() -> u32 {
@@ -141,6 +172,37 @@ pub struct KnowledgeSearchResult {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SourceFileMatch {
+    pub source_id: Uuid,
+    pub repository: String,
+    pub commit_sha: String,
+    pub path: String,
+    pub bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SourceSearchResult {
+    pub matches: Vec<SourceFileMatch>,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SourceReadResult {
+    pub source_id: Uuid,
+    pub repository: String,
+    pub commit_sha: String,
+    pub path: String,
+    pub line_start: u32,
+    pub line_end: u32,
+    pub total_lines: u32,
+    pub truncated: bool,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KnowledgeSubgraphResult {
     pub graph_revision_ids: Vec<Uuid>,
     pub nodes: Vec<KnowledgeNodeV1>,
@@ -156,6 +218,8 @@ pub struct KnowledgeEvidenceResult {
 }
 
 pub struct KnowledgeSearchCommand;
+pub struct SourceSearchCommand;
+pub struct SourceReadCommand;
 pub struct KnowledgeExplainCommand;
 pub struct KnowledgeNeighborsCommand;
 pub struct KnowledgePathCommand;
@@ -176,10 +240,21 @@ pub struct EnvironmentConnectionScope {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EnvironmentSourceScope {
+    pub source_id: Uuid,
+    pub display_name: String,
+    pub repository: String,
+    pub ref_name: String,
+    pub commit_sha: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EnvironmentContextResult {
     pub project_environment_id: Uuid,
     pub environment_revision: u64,
     pub connections: Vec<EnvironmentConnectionScope>,
+    pub sources: Vec<EnvironmentSourceScope>,
     pub graph_revision_ids: Vec<Uuid>,
 }
 
@@ -201,6 +276,18 @@ knowledge_command!(
     KnowledgeSearchArguments,
     KnowledgeSearchResult,
     CommandName::KnowledgeSearch
+);
+knowledge_command!(
+    SourceSearchCommand,
+    SourceSearchArguments,
+    SourceSearchResult,
+    CommandName::SourceSearch
+);
+knowledge_command!(
+    SourceReadCommand,
+    SourceReadArguments,
+    SourceReadResult,
+    CommandName::SourceRead
 );
 knowledge_command!(
     KnowledgeMappingProposeCommand,

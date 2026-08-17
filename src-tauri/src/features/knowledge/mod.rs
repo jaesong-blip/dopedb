@@ -13,6 +13,7 @@ mod source_sync;
 pub(crate) mod transport;
 
 pub(crate) use adapters::local::LocalFolderAdapter;
+pub(crate) use ports::{PinnedSourceAuthority, PinnedSourceReadRequest, PinnedSourceSearchRequest};
 pub(crate) use reconciliation::KnowledgeAccessReconciliation;
 pub(crate) use runtime_adapter::{KeychainKnowledgeSourceRoot, TauriKnowledgeSourceEventSink};
 pub(crate) use source_sync::KnowledgeSourceSynchronizer;

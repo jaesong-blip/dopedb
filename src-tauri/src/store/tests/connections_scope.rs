@@ -508,6 +508,7 @@ async fn assert_current_store_migration_is_write_free() {
         knowledge_grant_id: Some(Uuid::from_u128(0x1290)),
         project_environment_id: environment.id,
         environment_revision: environment.revision,
+        sources: Vec::new(),
         graph_revision_ids: active_set
             .iter()
             .map(|candidate| candidate.graph_revision_id)
@@ -887,6 +888,7 @@ async fn assert_agent_acp_batch_replay_is_bounded(store: &Store, connection_id: 
         knowledge_grant_id: None,
         project_environment_id: None,
         environment_revision: None,
+        knowledge_sources: Vec::new(),
         graph_revision_ids: Vec::new(),
         environment_connections: Vec::new(),
         error: None,
@@ -1237,9 +1239,8 @@ async fn remote_template_sync_preserves_member_local_credential_binding() {
     );
     assert!(!loaded.allow_writes);
 
-    // An Environment with databases but no source-code graph is still a valid
-    // exact Agent scope. Analysis Article drafts must not require users to add
-    // a repository before they can ask a database-only question.
+    // An Environment with a GitHub source but no graph remains an exact Agent
+    // scope. Raw source identity is pinned independently from graph grants.
     sqlx::raw_sql(migrations::KNOWLEDGE_SCHEMA)
         .execute(store.pool())
         .await
@@ -1264,6 +1265,35 @@ async fn remote_template_sync_preserves_member_local_credential_binding() {
     )
     .bind(environment_id.to_string())
     .bind(project_id.to_string())
+    .bind(Utc::now())
+    .execute(store.pool())
+    .await
+    .unwrap();
+    let source_id = Uuid::new_v4();
+    let binding = dopedb_protocol::KnowledgeSourceBindingV1 {
+        source_id,
+        project_id,
+        project_environment_id: environment_id,
+        provider: dopedb_protocol::KnowledgeSourceProvider::Github,
+        display_name: "json-choi/raw".into(),
+        visibility: dopedb_protocol::KnowledgeSourceVisibility::SharedGraph,
+        revision: dopedb_protocol::SourceRevisionIdentity::Github {
+            repository_id: "1004".into(),
+            repository: "json-choi/raw".into(),
+            ref_name: "main".into(),
+            commit_sha: "7".repeat(40),
+        },
+    };
+    sqlx::query(
+        "INSERT INTO knowledge_sources
+             (id, project_id, project_environment_id, environment_revision,
+              provider, display_name, visibility, binding_json, created_at, updated_at)
+         VALUES (?1, ?2, ?3, 1, 'github', 'json-choi/raw', 'shared_graph', ?4, ?5, ?5)",
+    )
+    .bind(source_id.to_string())
+    .bind(project_id.to_string())
+    .bind(environment_id.to_string())
+    .bind(serde_json::to_string(&binding).unwrap())
     .bind(Utc::now())
     .execute(store.pool())
     .await
@@ -1297,6 +1327,9 @@ async fn remote_template_sync_preserves_member_local_credential_binding() {
     assert_eq!(environment_scope.knowledge_grant_id, None);
     assert!(environment_scope.graph_revision_ids.is_empty());
     assert_eq!(environment_scope.connections.len(), 1);
+    assert_eq!(environment_scope.sources.len(), 1);
+    assert_eq!(environment_scope.sources[0].source_id, source_id);
+    assert_eq!(environment_scope.sources[0].commit_sha, "7".repeat(40));
     assert!(knowledge
         .exact_knowledge_session_graphs(&environment_scope, workspace_id, user.id.as_str())
         .await

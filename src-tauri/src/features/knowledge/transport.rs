@@ -498,6 +498,7 @@ async fn project_source(
                 Some("ready") => SourceHealthState::Ready,
                 Some("failed") => SourceHealthState::Failed,
                 Some("stale") => SourceHealthState::Stale,
+                None => SourceHealthState::Ready,
                 _ => SourceHealthState::Syncing,
             },
             remote.and_then(|source| source.graph_revision_id),

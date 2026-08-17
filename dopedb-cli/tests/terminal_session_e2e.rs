@@ -414,6 +414,11 @@ pub(super) fn run() {
     let tools = response(2)["result"]["tools"].as_array().unwrap();
     assert!(tools.iter().any(|tool| tool["name"] == "catalog_search"));
     assert!(tools.iter().any(|tool| tool["name"] == "query_read"));
+    assert!(tools.iter().any(|tool| tool["name"] == "source_search"));
+    assert!(tools.iter().any(|tool| tool["name"] == "source_read"));
+    assert!(!tools.iter().any(|tool| {
+        tool["name"].as_str().is_some_and(|name| name.starts_with("knowledge_") || name == "funnel_trace")
+    }));
     let query_read_tool = tools
         .iter()
         .find(|tool| tool["name"] == "query_read")

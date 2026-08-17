@@ -74,16 +74,30 @@ pub(super) fn summary_scope(
         summary.knowledge_grant_id,
         summary.project_environment_id,
         summary.environment_revision,
+        summary.knowledge_sources.is_empty(),
         summary.graph_revision_ids.is_empty(),
     ) {
-        (None, None, None, true) => Ok(None),
+        (None, None, None, true, true) => Ok(None),
         (
             knowledge_grant_id,
             Some(project_environment_id),
             Some(environment_revision),
+            _,
             graph_ids_empty,
         ) if environment_revision > 0
             && !summary.environment_connections.is_empty()
+            && summary.knowledge_sources.len() <= 100
+            && summary
+                .knowledge_sources
+                .iter()
+                .all(crate::features::knowledge::domain::KnowledgeSessionSource::validate)
+            && summary
+                .knowledge_sources
+                .iter()
+                .map(|source| source.source_id)
+                .collect::<BTreeSet<_>>()
+                .len()
+                == summary.knowledge_sources.len()
             && ((graph_ids_empty && knowledge_grant_id.is_none())
                 || (!graph_ids_empty && knowledge_grant_id.is_some()))
             && summary.graph_revision_ids.len() <= 100
@@ -98,6 +112,7 @@ pub(super) fn summary_scope(
                 knowledge_grant_id,
                 project_environment_id,
                 environment_revision,
+                sources: summary.knowledge_sources.clone(),
                 graph_revision_ids: summary.graph_revision_ids.clone(),
                 connections: summary.environment_connections.clone(),
             }))

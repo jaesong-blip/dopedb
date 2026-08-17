@@ -1154,6 +1154,7 @@ async fn packaged_agent_receipt(
         knowledge_grant_id: None,
         project_environment_id: None,
         environment_revision: None,
+        knowledge_sources: Vec::new(),
         graph_revision_ids: Vec::new(),
         environment_connections: Vec::new(),
         error: None,

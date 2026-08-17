@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { env } from "@/lib/env";
 import { isUuid, jsonError, privateJsonStream } from "@/lib/http";
 import { authorizeKnowledgeGrant } from "@/lib/knowledge/authorization";
 import {
@@ -13,6 +14,9 @@ export async function GET(request: Request, context: RouteContext) {
   const grantId = new URL(request.url).searchParams.get("grantId");
   if (!isUuid(workspaceId) || !isUuid(sourceId) || !grantId || !isUuid(grantId)) {
     return jsonError("Invalid Knowledge graph request", 400);
+  }
+  if (!env.knowledgeGraphBuildsEnabled()) {
+    return jsonError("Knowledge graph access is temporarily disabled", 409);
   }
   const authorization = await authorizeKnowledgeGrant(request, workspaceId, grantId);
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);

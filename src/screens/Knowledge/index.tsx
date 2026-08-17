@@ -100,6 +100,10 @@ const syncPhaseKey = {
   manifest: "knowledge.syncPhaseManifest",
 } as const;
 
+// Exact-commit GitHub browsing is the current default. Existing graph data is
+// preserved for future use, but graph construction and graph UI stay dormant.
+const KNOWLEDGE_GRAPH_UI_ENABLED = false;
+
 type PendingKnowledgeSyncAnalytics = {
   attemptId: string;
   context: ProductAnalyticsWorkspaceContextInput;
@@ -175,7 +179,10 @@ export default function Knowledge({
   });
   const sourceRows = sources.data;
   const sourceSyncProgress = useQuery(
-    knowledgeSyncProgressQuery(catalogScope.key, sharedWorkspace),
+    knowledgeSyncProgressQuery(
+      catalogScope.key,
+      sharedWorkspace && KNOWLEDGE_GRAPH_UI_ENABLED,
+    ),
   );
   const sourceSyncProgressById = useMemo(
     () => new Map(
@@ -250,6 +257,7 @@ export default function Knowledge({
     queryFn: () => listKnowledgeMappings(environmentId),
     enabled:
       sharedWorkspace &&
+      KNOWLEDGE_GRAPH_UI_ENABLED &&
       Boolean(environmentId) &&
       view === "sources" &&
       hasSelectedEnvironmentSource,
@@ -309,7 +317,11 @@ export default function Knowledge({
 
   useEffect(() => {
     if (!environmentFocus || !projects.data) return;
-    setView(environmentFocus.view);
+    setView(
+      environmentFocus.view === "mappings" || environmentFocus.view === "explore"
+        ? "sources"
+        : environmentFocus.view,
+    );
     if (environmentFocus.environmentId === null) return;
     const project = projects.data.find((candidate) =>
       candidate.environments.some(
@@ -811,7 +823,9 @@ export default function Knowledge({
               {githubProviderVisible ? (
                 <Button size="compact" variant={provider === "github" ? "selected" : "ghost"} onClick={() => setProvider("github")}>GitHub</Button>
               ) : null}
-              <Button size="compact" variant={provider === "local_folder" ? "selected" : "ghost"} onClick={() => setProvider("local_folder")}><Icon name="folder" />{t("knowledge.localFolder")}</Button>
+              {KNOWLEDGE_GRAPH_UI_ENABLED ? (
+                <Button size="compact" variant={provider === "local_folder" ? "selected" : "ghost"} onClick={() => setProvider("local_folder")}><Icon name="folder" />{t("knowledge.localFolder")}</Button>
+              ) : null}
             </div>
           </div>
 
@@ -908,7 +922,8 @@ export default function Knowledge({
         </section>
       ) : null}
 
-      {sharedWorkspace &&
+      {KNOWLEDGE_GRAPH_UI_ENABLED &&
+      sharedWorkspace &&
       (projects.data?.length ?? 0) > 0 &&
       view === "sources" &&
       selectedEnvironmentSources.length > 0 ? (
@@ -1088,7 +1103,9 @@ export default function Knowledge({
             {selectedEnvironmentSources.map((source) => {
               const activity = sourceActivity.get(source.sourceId);
               const progress = sourceSyncProgressById.get(source.sourceId);
-              const visibleHealth = progress
+              const visibleHealth = !KNOWLEDGE_GRAPH_UI_ENABLED && source.provider === "github"
+                ? source.health
+                : progress
                 ? "syncing"
                 : activity?.state ?? source.health;
               const tone: StatusTone = visibleHealth === "ready" ? "success" : visibleHealth === "failed" ? "danger" : "warning";
@@ -1109,6 +1126,11 @@ export default function Knowledge({
                       dirty: t("knowledge.revisionDirty"),
                       snapshot: t("knowledge.revisionSnapshot"),
                     })}</span>
+                    {source.provider === "github" && !KNOWLEDGE_GRAPH_UI_ENABLED ? (
+                      <span className="tw:text-xs tw:text-muted-foreground">
+                        {t("knowledge.sourceBrowseMode")}
+                      </span>
+                    ) : null}
                     {progress ? (
                       <div className="tw:grid tw:gap-1.5 tw:pt-1">
                         <span className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-x-2 tw:gap-y-0.5 tw:text-xs tw:text-muted-foreground">
@@ -1156,10 +1178,12 @@ export default function Knowledge({
                     ) : null}
                   </div>
                   <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2 tw:@max-[560px]:justify-start">
-                    <Button size="compact" disabled={sync.isPending || activity?.state === "syncing" || Boolean(progress)} onClick={() => sync.mutate(source.sourceId)}>
-                      <Icon name="refresh" />{(sync.isPending && sync.variables === source.sourceId) || activity?.state === "syncing" || progress ? t("knowledge.syncing") : activity?.state === "failed" ? t("knowledge.retry") : t("knowledge.sync")}
-                    </Button>
-                    <ConfirmButton size="compact" variant="dangerGhost" disabled={revoke.isPending || sync.isPending} onConfirm={() => revoke.mutate(source.sourceId)}>{t("knowledge.remove")}</ConfirmButton>
+                    {KNOWLEDGE_GRAPH_UI_ENABLED ? (
+                      <Button size="compact" disabled={sync.isPending || activity?.state === "syncing" || Boolean(progress)} onClick={() => sync.mutate(source.sourceId)}>
+                        <Icon name="refresh" />{(sync.isPending && sync.variables === source.sourceId) || activity?.state === "syncing" || progress ? t("knowledge.syncing") : activity?.state === "failed" ? t("knowledge.retry") : t("knowledge.sync")}
+                      </Button>
+                    ) : null}
+                    <ConfirmButton size="compact" variant="dangerGhost" disabled={revoke.isPending} onConfirm={() => revoke.mutate(source.sourceId)}>{t("knowledge.remove")}</ConfirmButton>
                   </div>
                 </article>
               );
@@ -1169,7 +1193,7 @@ export default function Knowledge({
       </section>
       ) : null}
 
-      {(projects.data?.length ?? 0) > 0 && view === "explore" ? (
+      {KNOWLEDGE_GRAPH_UI_ENABLED && (projects.data?.length ?? 0) > 0 && view === "explore" ? (
         <section data-primary-flow className="tw:grid tw:gap-3 tw:border-t tw:border-border-subtle tw:pt-5">
           <div className="tw:grid tw:gap-1">
             <h2 className="tw:m-0 tw:text-base tw:font-semibold">{t("knowledge.viewExplore")}</h2>

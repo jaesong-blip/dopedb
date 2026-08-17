@@ -21,9 +21,10 @@ use super::domain::{
 };
 use super::ports::{
     AppendKnowledgeEnvironmentRequest, CreateKnowledgeProjectRequest, CreateKnowledgeSourceRequest,
-    HostedKnowledgeAuthorityPort, KnowledgeRepositoryPort, RemoteEnvironmentConnectionBinding,
-    RemoteGithubRepository, RemoteKnowledgeProject, RemoteKnowledgeSource,
-    RemoteKnowledgeSyncProgress, RemotePersonalKnowledgeScope,
+    HostedKnowledgeAuthorityPort, KnowledgeRepositoryPort, PinnedSourceReadRequest,
+    PinnedSourceSearchRequest, RemoteEnvironmentConnectionBinding, RemoteGithubRepository,
+    RemoteKnowledgeProject, RemoteKnowledgeSource, RemoteKnowledgeSyncProgress,
+    RemotePersonalKnowledgeScope, RemoteSourceReadResult, RemoteSourceSearchResult,
 };
 use super::KnowledgeAccessReconciliation;
 
@@ -207,6 +208,20 @@ where
         self.repository
             .exact_knowledge_session_graphs(scope, workspace_id, account_id)
             .await
+    }
+
+    pub(crate) async fn search_source(
+        &self,
+        request: &PinnedSourceSearchRequest<'_>,
+    ) -> AppResult<RemoteSourceSearchResult> {
+        self.authority.search_source(request).await
+    }
+
+    pub(crate) async fn read_source(
+        &self,
+        request: &PinnedSourceReadRequest<'_>,
+    ) -> AppResult<RemoteSourceReadResult> {
+        self.authority.read_source(request).await
     }
 
     pub(crate) async fn active_knowledge_grant(

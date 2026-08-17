@@ -84,6 +84,8 @@ pub(crate) struct AcpSessionSummary {
     #[serde(default)]
     pub(crate) environment_revision: Option<u64>,
     #[serde(default)]
+    pub(crate) knowledge_sources: Vec<crate::features::knowledge::domain::KnowledgeSessionSource>,
+    #[serde(default)]
     pub(crate) graph_revision_ids: Vec<uuid::Uuid>,
     #[serde(default)]
     pub(crate) environment_connections:

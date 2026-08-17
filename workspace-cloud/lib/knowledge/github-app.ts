@@ -308,6 +308,7 @@ export async function githubSourceManifest(
   installationId: bigint,
   repository: string,
   commitSha: string,
+  options: { maxTotalBytes?: number } = {},
 ) {
   if (!/^[0-9a-f]{40}$/.test(commitSha)) throw new Error("Invalid GitHub commit");
   const token = await installationToken(installationId);
@@ -322,6 +323,10 @@ export async function githubSourceManifest(
   );
   if (tree.truncated || !Array.isArray(tree.tree) || tree.tree.length > MAX_SOURCE_FILES) {
     throw new Error("GitHub repository tree is truncated or invalid");
+  }
+  const maxTotalBytes = options.maxTotalBytes ?? MAX_SOURCE_BYTES;
+  if (!Number.isSafeInteger(maxTotalBytes) || maxTotalBytes < 1) {
+    throw new Error("Invalid GitHub source manifest budget");
   }
   let totalBytes = 0;
   const files: GithubSourceFile[] = [];
@@ -338,7 +343,7 @@ export async function githubSourceManifest(
       continue;
     }
     totalBytes += item.size ?? 0;
-    if (files.length >= MAX_SOURCE_FILES || totalBytes > MAX_SOURCE_BYTES) {
+    if (files.length >= MAX_SOURCE_FILES || totalBytes > maxTotalBytes) {
       throw new Error("GitHub repository exceeds the code-index manifest budget");
     }
     files.push({ path: item.path, blobSha: item.sha, bytes: item.size ?? 0 });
