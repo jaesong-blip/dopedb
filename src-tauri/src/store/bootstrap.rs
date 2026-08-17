@@ -23,7 +23,10 @@ use sqlx::Acquire;
 /// final retired Dashboard operation vocabulary while preserving its immutable
 /// approval and event provenance. Version 20 rejects malformed connection JSON
 /// and ports at the SQLite write boundary instead of relying only on projections.
-pub(super) const LOCAL_SCHEMA_VERSION: i64 = 20;
+/// Version 21 adds the bounded raw-source descriptors captured by resumable ACP
+/// sessions. It is intentionally separate from version 12 so databases that had
+/// already crossed that migration before the field existed are repaired.
+pub(super) const LOCAL_SCHEMA_VERSION: i64 = 21;
 
 pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
     let version: i64 = sqlx::query_scalar("PRAGMA user_version")
@@ -146,6 +149,11 @@ pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
     if version < 20 {
         ensure_connection_integrity_guards(pool).await?;
         set_local_schema_version(pool, 20).await?;
+        migrated = true;
+    }
+    if version < 21 {
+        ensure_agent_acp_knowledge_sources(pool).await?;
+        set_local_schema_version(pool, 21).await?;
         migrated = true;
     }
     Ok(migrated)
@@ -498,6 +506,16 @@ async fn ensure_agent_acp_environment_connections(pool: &SqlitePool) -> AppResul
         "agent_acp_sessions",
         "environment_connections",
         "ALTER TABLE agent_acp_sessions ADD COLUMN environment_connections TEXT NOT NULL DEFAULT '[]'",
+    )
+    .await
+}
+
+async fn ensure_agent_acp_knowledge_sources(pool: &SqlitePool) -> AppResult<()> {
+    add_column_if_missing(
+        pool,
+        "agent_acp_sessions",
+        "knowledge_sources",
+        "ALTER TABLE agent_acp_sessions ADD COLUMN knowledge_sources TEXT NOT NULL DEFAULT '[]'",
     )
     .await
 }

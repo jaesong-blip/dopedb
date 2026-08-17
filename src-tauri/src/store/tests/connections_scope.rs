@@ -710,6 +710,48 @@ async fn assert_current_store_migration_is_write_free() {
     .unwrap();
     assert_eq!(paging_indexes, 2);
 
+    let v20_pool = memory_pool().await;
+    sqlx::raw_sql(migrations::SCHEMA)
+        .execute(&v20_pool)
+        .await
+        .unwrap();
+    sqlx::raw_sql(
+        "INSERT INTO agent_acp_sessions (
+             id, connection_id, workspace_id, account_scope, provider, title,
+             lifecycle, acp_session_id, project_environment_id,
+             knowledge_grant_id, environment_revision, graph_revision_ids,
+             environment_connections, error, created_at, updated_at
+         ) VALUES (
+             'legacy-session', 'legacy-connection',
+             '00000000-0000-0000-0000-000000000001', 'personal', 'codex',
+             'Legacy session', 'closed', NULL, NULL, NULL, NULL, '[]', '[]',
+             NULL, '2026-08-17T00:00:00Z', '2026-08-17T00:00:00Z'
+         );
+         ALTER TABLE agent_acp_sessions DROP COLUMN knowledge_sources;
+         PRAGMA user_version = 20;",
+    )
+    .execute(&v20_pool)
+    .await
+    .unwrap();
+    assert!(super::super::bootstrap::migrate_local_store(&v20_pool)
+        .await
+        .unwrap());
+    let repaired_sources: String = sqlx::query_scalar(
+        "SELECT knowledge_sources FROM agent_acp_sessions WHERE id = 'legacy-session'",
+    )
+    .fetch_one(&v20_pool)
+    .await
+    .unwrap();
+    assert_eq!(repaired_sources, "[]");
+    let repaired_version: i64 = sqlx::query_scalar("PRAGMA user_version")
+        .fetch_one(&v20_pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        repaired_version,
+        super::super::bootstrap::LOCAL_SCHEMA_VERSION
+    );
+
     let gate = crate::startup::PostPaintRecoveryGate::new();
     assert!(gate.claim_start());
     assert!(!gate.claim_start());
@@ -823,6 +865,9 @@ async fn assert_retired_operation_kind_migrates_without_losing_provenance() {
             'event-1', 'operation-1', 1, 'succeeded', 'succeeded', '{}',
             '2026-08-01T00:00:01Z', NULL,
             '1111111111111111111111111111111111111111111111111111111111111111'
+        );
+        CREATE TABLE agent_acp_sessions (
+            id TEXT PRIMARY KEY
         );
         PRAGMA user_version = 18;
         "#,
