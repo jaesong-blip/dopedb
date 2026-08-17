@@ -1,4 +1,4 @@
-// Canonical DopeDB-style application chrome surfaces. Feature code supplies
+// Canonical application chrome surfaces. Feature code supplies
 // commands and state; these primitives own the shared title/status geometry.
 import type {
   ButtonHTMLAttributes,

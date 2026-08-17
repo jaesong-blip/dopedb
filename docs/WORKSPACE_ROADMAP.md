@@ -8,7 +8,7 @@ metadata backup, resumable key rotation, reversible Owner workspace deletion, an
 account-scoped ordered pull cursor are implemented in the control plane. Production uses a dedicated Vercel OIDC principal,
 GCP Workload Identity Federation provider, service account, and single-key KMS grant;
 packaged recovery evidence remains open. General provider inventory, full sync, and per-connection-grant
-exit criteria stay open below. The 2026-08-12 DQ-40 decision supersedes separate
+exit criteria stay open below. The 2026-08-12 PD-40 decision supersedes separate
 Dashboard, Funnel Analysis, Agent Report, and Signal product surfaces with one
 Analysis Article domain. Milestone 8 implementation and one-way removal are complete;
 packaged two-member, live hosted migration, scheduler, email, and public-publication
@@ -289,7 +289,7 @@ resumable rotation across live and tombstoned backups. Production activates that
 through an exact-project, exact-team, production-only Vercel OIDC/WIF principal with
 access to the single metadata-backup key. Managed mode does not
 proxy database queries, and current Provider authorization continues through the three
-implemented adapters until DQ-18 explicitly chooses another Provider or authentication
+implemented adapters until PD-18 explicitly chooses another Provider or authentication
 boundary.
 
 ## Target Data Model
@@ -632,7 +632,7 @@ Exit criteria:
 
 Migration status: the implemented revision, ownership, outbox, conflict, and local
 read-run contracts are inputs to Milestone 8. Dashboard is not a terminal product
-domain after the 2026-08-12 DQ-40 decision.
+domain after the 2026-08-12 PD-40 decision.
 
 Implementation snapshot (2026-08-06): team-workspace dashboard definitions synchronize
 through an explicit outbox and hosted projection while Personal Workspace dashboards
@@ -678,7 +678,7 @@ database access, and shared dashboards.
 
 Migration status: the implemented evidence, proposal, immutable revision, human
 publication, and ordered replay contracts are inputs to Milestone 8. Agent Report is
-not a separate product surface after the 2026-08-12 DQ-40 decision.
+not a separate product surface after the 2026-08-12 PD-40 decision.
 
 Implementation snapshot (2026-08-06): the Agent can propose a complete draft and
 append new immutable evidence only from successful, connection-pinned read runs. The
@@ -761,7 +761,7 @@ Exit criteria:
   centrally.
 - Enterprise controls do not weaken the default local-credential model.
 
-This milestone remains deferred by DQ-32. Analysis Article result fragments and
+This milestone remains deferred by PD-32. Analysis Article result fragments and
 public snapshots are not enterprise shared-secret features and are owned by the
 narrower ADR 0007 contract below.
 
@@ -856,7 +856,7 @@ Every milestone must include:
   and after a paid/experimental entitlement boundary is approved.
 
 - Account recovery and the timing of non-Google identity providers.
-- Member-local versus managed authorization for any Provider selected by DQ-18;
+- Member-local versus managed authorization for any Provider selected by PD-18;
   PlanetScale already uses its native OAuth flow for the managed-access pilot.
 - Provider resource refresh intervals, rate-limit budgets, webhook availability, and
   behavior when an imported resource is deleted outside DopeDB.

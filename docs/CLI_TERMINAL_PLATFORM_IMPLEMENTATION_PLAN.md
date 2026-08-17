@@ -9,7 +9,7 @@
 > Platform, Realtime SQL CRDT, masked result snapshot 단계는 폐기됐다. 현재 범위와
 > 착수 순서는 `AGENTS.md`의 Product direction,
 > [`PRODUCT_POSITIONING.md`](./PRODUCT_POSITIONING.md),
-> [`DopeDB_VISUAL_REFERENCE_SPEC.md`](./DopeDB_VISUAL_REFERENCE_SPEC.md)의
+> [`PRODUCT_UI_SCOPE.md`](./PRODUCT_UI_SCOPE.md)의
 > 기능 범위 결정 표가 소유한다. 이 문서의 Phase 번호나 미완료 checklist는 새 기능
 > 착수 근거가 아니다.
 
@@ -2625,7 +2625,7 @@ Agent/Plugin operation에는:
 - Rust dynamic library를 runtime hot-load하는 것
 - arbitrary Plugin web bundle에 Tauri IPC를 노출하는 것
 - Terminal output과 query result를 기본 cloud sync하는 것
-- Chat2DB 최신 source를 복사하는 것
+- 다른 제품의 source나 asset을 복사하는 것
 
 ## 29. 구현 시작점
 

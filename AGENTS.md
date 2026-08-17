@@ -23,8 +23,8 @@ auditing, and broad driver support are category baseline, not differentiators.
 [`docs/PRODUCT_POSITIONING.md`](docs/PRODUCT_POSITIONING.md) owns the canonical
 market promise and public claim boundary.
 
-DopeDB has three product axes. Judge every feature against them, not against
-DopeDB's or a competitor's feature list.
+DopeDB has three product axes. Judge every feature against them and verified
+user demand.
 
 **1. A workspace owns shared access; members own credentials.** The unit of the
 product is a team workspace, not one person's machine. Connection identity,
@@ -40,10 +40,10 @@ convenience.
 
 **2. Connecting stays trivial.** Reaching a database is the first thing every
 user does and the place they give up. Prefer the fewest fields that can work,
-real defaults, and one verified path per engine. Do not inherit DopeDB's
-property-tab surface just because it exists — every extra option has to earn
-its place against the cost of a longer first run. Where the OS already owns a
-mechanism, delegate to it rather than rebuilding it in a form: SSH tunnelling
+real defaults, and one verified path per engine. Every extra property tab or
+option has to earn its place against the cost of a longer first run. Where the
+OS already owns a mechanism, delegate to it rather than rebuilding it in a
+form: SSH tunnelling
 takes a `~/.ssh/config` host alias and spawns the system `ssh`, so keys,
 passphrases, agents, and ProxyJump stay outside the app.
 
@@ -93,7 +93,7 @@ an exact-grant Desktop runner. Public articles are immutable approved snapshots
 and never execute a query. Arbitrary executable blocks, hosted database proxying,
 and silently inferred cross-database joins are prohibited.
 
-[`docs/DopeDB_VISUAL_REFERENCE_SPEC.md`](docs/DopeDB_VISUAL_REFERENCE_SPEC.md)
+[`docs/PRODUCT_UI_SCOPE.md`](docs/PRODUCT_UI_SCOPE.md)
 owns the per-feature decision table. Anything decided `구현 안 함` or `범위 밖`
 is not built regardless of tracker priority and gets no label, icon, or
 disabled placeholder; anything `미결` is not started. To reverse a decision,
@@ -101,21 +101,19 @@ change that table first and the screen second.
 
 ## UI/UX source of truth
 
-- DopeDB 2026.1 is the primary clean-room UI/UX target **for features that
-  pass the product-direction test above**. Follow its structure, density, and
-  interactions; do not inherit its feature list. Use
-  [`docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md`](docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md)
-  to track visible parity and functional parity separately.
-- Tailwind v4 and DopeDB semantic primitives are the implementation system, not
-  a competing visual direction. Do not reintroduce Orca/Chat2DB styling when it
-  conflicts with an observed DopeDB reference.
-- A DopeDB screenshot baseline proves only self-consistency and must never be
-  used to declare DopeDB parity. Compare the same scenario against a
-  versioned DopeDB reference and keep `wrong`, `partial`, and `missing` gaps
-  explicit.
-- Do not add enabled controls that merely look like DopeDB. Every enabled
-  control needs a real command and state owner; list missing functionality in
-  the tracker instead of hiding it behind visual imitation.
+- [`docs/PRODUCT_UI_SCOPE.md`](docs/PRODUCT_UI_SCOPE.md) owns product UI
+  structure, density, interaction, and per-feature scope. Third-party product
+  screens, feature lists, terminology, code, and assets are not normative.
+- Tailwind v4 and DopeDB semantic primitives are the implementation system.
+  Repeated patterns become documented shared primitives rather than copied
+  class lists or historical style layers.
+- A DopeDB screenshot baseline proves only self-consistency. Use the same
+  DopeDB scenario, accessibility tree, packaged runtime, and measured behavior
+  to keep `complete`, `partial`, and `missing` gaps explicit in
+  [`docs/UI_IMPLEMENTATION_TRACKER.md`](docs/UI_IMPLEMENTATION_TRACKER.md).
+- Do not add enabled controls for appearance alone. Every enabled control needs
+  a real command and state owner; list missing functionality in the tracker
+  instead of hiding it behind visual imitation.
 
 ## UI migration discipline
 

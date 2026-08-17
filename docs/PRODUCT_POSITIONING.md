@@ -86,8 +86,8 @@ versioned block and transform registries in
 [`adr/0007-analysis-article-bi-domain.md`](adr/0007-analysis-article-bi-domain.md),
 not arbitrary executable widgets or hosted cross-database SQL federation.
 
-Do not chase a competitor's driver count or general database-management feature
-list. A new engine or provider is justified only by verified user demand after the
+Do not chase driver count or general database-management feature breadth. A new
+engine or provider is justified only by verified user demand after the
 existing shared-access path meets its discovery, onboarding, issuance, revoke,
 drift, and platform E2E gates.
 

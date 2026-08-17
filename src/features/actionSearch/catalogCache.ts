@@ -76,7 +76,7 @@ function cachedCatalogOverviews(
 }
 
 /**
- * Reads only already-cached Explorer metadata. Opening Search Everywhere never
+ * Reads only already-cached Explorer metadata. Opening Action Search never
  * creates a catalog observer or starts live database introspection.
  */
 export function useCachedCatalogOverviews(

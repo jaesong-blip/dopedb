@@ -193,7 +193,7 @@ export const connectionsCatalog = defineCatalog(
     "connections.importClipboard": "Import clipboard URL",
     "connections.introspectionScope": "Introspection scope",
     "connections.introspectionScopeBody":
-      "Choose the namespaces and object names shown by Database Explorer, Search Everywhere, and schema diagrams.",
+      "Choose the namespaces and object names shown by Database Explorer, Action Search, and schema diagrams.",
     "connections.loadingSchema": "Loading schema...",
     "connections.loadingMetadata": "Loading metadata...",
     "connections.loadingSchemaScope": "Discovering schemas...",

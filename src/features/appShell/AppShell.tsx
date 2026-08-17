@@ -8,9 +8,9 @@ import {
 
 import { errMessage } from "../../ipc/types";
 import { ToastProvider, useToast } from "../../components/Toast";
-import SearchEverywhere from "../actionSearch/SearchEverywhere";
-import { useSearchEverywhereDialog } from "../actionSearch/useSearchEverywhereDialog";
-import { useSearchEverywhereItems } from "../actionSearch/useSearchEverywhereItems";
+import ActionSearch from "../actionSearch/ActionSearch";
+import { useActionSearchDialog } from "../actionSearch/useActionSearchDialog";
+import { useActionSearchItems } from "../actionSearch/useActionSearchItems";
 import type { BackgroundTask } from "../backgroundTasks/domain";
 import { useBackgroundTasks } from "../backgroundTasks/useBackgroundTasks";
 import type { AgentComposerRequest } from "../agents/domain";
@@ -37,7 +37,7 @@ import { useAgentDock } from "./useAgentDock";
 import { useToolWindowLayout } from "./useToolWindowLayout";
 import { useAppShellWorkbenchController } from "./useAppShellWorkbenchController";
 
-// DopeDB-style information architecture:
+// Product-owned information architecture:
 // - the title toolbar opens real workbench areas and tool windows;
 // - database tools are documents inside the selected connection's workbench;
 // - interactive Shell/Agent sessions live in a connection-pinned tool window.
@@ -73,7 +73,7 @@ function Shell() {
     focusMainAfterMobileSelection,
   } = useResponsiveShell();
   const agentDock = useAgentDock();
-  const search = useSearchEverywhereDialog();
+  const search = useActionSearchDialog();
   const reportQueryServicesPersistenceError = useCallback(
     (error: unknown) => toast(errMessage(error), "error"),
     [toast],
@@ -283,7 +283,7 @@ function Shell() {
     setExplorerRevealRequest((request) => request + 1);
   }
 
-  const searchItems = useSearchEverywhereItems({
+  const searchItems = useActionSearchItems({
     open: search.open,
     scope: catalogScope,
     connections: connections.items,
@@ -332,7 +332,7 @@ function Shell() {
         safety: commands.safety,
         documents: {
           ...commands.documents,
-          searchEverywhere: search.show,
+          actionSearch: search.show,
           openAgentTask,
         },
         queryServices: {
@@ -476,7 +476,7 @@ function Shell() {
       />
       <SkillStartupGate />
       {search.open ? (
-        <SearchEverywhere items={searchItems} onClose={search.close} />
+        <ActionSearch items={searchItems} onClose={search.close} />
       ) : null}
     </>
   );

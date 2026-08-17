@@ -3,8 +3,8 @@
 Status: active compatibility boundary for #98
 
 This inventory classifies every Provider access entry point before CLI-driven
-provisioning is introduced. It does not authorize another Provider. DQ-18 in
-`DopeDB_VISUAL_REFERENCE_SPEC.md` owns that decision; until it changes, only
+provisioning is introduced. It does not authorize another Provider. PD-18 in
+`PRODUCT_UI_SCOPE.md` owns that decision; until it changes, only
 Neon, GCP Cloud SQL, and PlanetScale may appear in the managed Provider catalog.
 
 ## Contract that remains public
@@ -49,7 +49,7 @@ a write. GCP resources discovered through a newly completed bootstrap may set it
 | Layer | Entrypoint | Decision | Owner / removal condition |
 | --- | --- | --- | --- |
 | Web UI | `ProviderIntegrationList`, `GcpCloudSetup`, `ProviderResourcePicker`, `useProviderAccountAccess`, `useSharedDatabaseAccess` | keep | Account integration setup and shared database import use independent controllers and error boundaries. Together they retain redacted discovery, safe-default import, GCP read/write bootstrap, Neon environment/preflight/approval/apply/verify flow, and administrator DB write policy. Provider-specific setup is selected by the server catalog, not a planned UI placeholder. |
-| Catalog API | `GET /api/v1/workspaces/:id/provider-integrations` | keep, narrowed | Returns only the three working adapters and no write capability claim. DQ-18 must change before another descriptor is added. |
+| Catalog API | `GET /api/v1/workspaces/:id/provider-integrations` | keep, narrowed | Returns only the three working adapters and no write capability claim. PD-18 must change before another descriptor is added. |
 | Integration mutation | `POST/DELETE /provider-integrations` and provider OAuth callbacks | keep | Current Neon, GCP Cloud SQL, and PlanetScale authorization boundary. Replacement is #99/#100, after equivalent CLI setup and rollback exist. |
 | Discovery | `GET /provider-integrations/:id/resources` | keep | Provider response is bounded, normalized server-side, and projected into opaque receipts. |
 | Import | `POST /provider-integrations/:id/imports` | keep | Receipt-only, idempotent shared connection import with `allowWrites: false`. A later administrator action owns the durable write policy. |
@@ -63,7 +63,7 @@ a write. GCP resources discovered through a newly completed bootstrap may set it
 | Workspace backup | `workspace-backup-core.ts` | keep | Backs up only connection metadata. Provider grants, discovery receipts, leases, and credentials intentionally have no snapshot representation. Historical connection write preferences are normalized to the read-only contract on restore. |
 | Legacy GCP rows without a verification target | local-authority projection and desktop `authority.rs` | remove after reconnect | Exposed only as `reconnect_required`; never accepted as active authority. Delete after all deployed rows have reconnected and a production count is zero for one release window. |
 | Manual GCP trust form | pre-bootstrap browser fields for project/WIF/service accounts/admin confirmations | removed | Replaced by OAuth target selection and server-side bootstrap. A browser contract carrying these values must not return. |
-| Planned Provider catalog entries | AWS, OCI, Atlas, Generic managed placeholders | removed | #106/DQ-18 owns any future choice. No label, icon, disabled row, or capability declaration before that decision. |
+| Planned Provider catalog entries | AWS, OCI, Atlas, Generic managed placeholders | removed | #106/PD-18 owns any future choice. No label, icon, disabled row, or capability declaration before that decision. |
 | Pipedream runtime assumption | roadmap-only future authentication shortcut | removed | It is not a dependency of the current or CLI provisioning architecture. A future adapter requires a fresh product decision. |
 
 ## Compatibility and rollback order

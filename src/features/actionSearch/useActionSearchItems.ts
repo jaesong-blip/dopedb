@@ -13,9 +13,9 @@ import type { ConnectionProfile } from "../connections/domain";
 import type { SettingsSection } from "../settings/domain";
 import type { WorkbenchDocument } from "../workbench/domain";
 import { useCachedCatalogOverviews } from "./catalogCache";
-import type { SearchEverywhereItem } from "./domain";
+import type { ActionSearchItem } from "./domain";
 
-type SearchEverywhereItemsInput = {
+type ActionSearchItemsInput = {
   open: boolean;
   scope: CatalogScope;
   connections: readonly ConnectionProfile[];
@@ -37,7 +37,7 @@ type SearchEverywhereItemsInput = {
 };
 
 /** Builds the searchable command/catalog projection without leaking query cache ownership to AppShell. */
-export function useSearchEverywhereItems({
+export function useActionSearchItems({
   open,
   scope,
   connections,
@@ -45,7 +45,7 @@ export function useSearchEverywhereItems({
   documents,
   supportsSql,
   commands,
-}: SearchEverywhereItemsInput): readonly SearchEverywhereItem[] {
+}: ActionSearchItemsInput): readonly ActionSearchItem[] {
   const { t } = useI18n();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -56,7 +56,7 @@ export function useSearchEverywhereItems({
     open && scope.ready,
   );
 
-  const actions: SearchEverywhereItem[] = [
+  const actions: ActionSearchItem[] = [
     {
       id: "action:new-data-source",
       kind: "action",
@@ -113,7 +113,7 @@ export function useSearchEverywhereItems({
     },
   ];
 
-  const connectionItems: SearchEverywhereItem[] = connections.map(
+  const connectionItems: ActionSearchItem[] = connections.map(
     (connection) => ({
       id: `connection:${connection.id}`,
       kind: "connection",
@@ -138,7 +138,7 @@ export function useSearchEverywhereItems({
     }),
   );
 
-  const documentItems: SearchEverywhereItem[] = documents.map((document) => {
+  const documentItems: ActionSearchItem[] = documents.map((document) => {
     const label =
       document.kind === "sql"
         ? document.title
@@ -166,7 +166,7 @@ export function useSearchEverywhereItems({
   const connectionById = new Map(
     connections.map((connection) => [connection.id, connection]),
   );
-  const databaseObjects: SearchEverywhereItem[] = catalogTargets.flatMap(
+  const databaseObjects: ActionSearchItem[] = catalogTargets.flatMap(
     (target) => {
       const connection = connectionById.get(target.connectionId);
       if (!connection) return [];
@@ -211,7 +211,7 @@ export function useSearchEverywhereItems({
     },
   );
 
-  const settings: SearchEverywhereItem[] = (
+  const settings: ActionSearchItem[] = (
     [
       ["agent-tools", t("settings.agentTools"), false],
       ["cli", t("settings.cli"), false],

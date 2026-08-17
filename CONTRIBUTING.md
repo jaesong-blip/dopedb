@@ -18,7 +18,7 @@ immutable snapshot으로만 발행한다. 범용 DB client 기능 수, text-to-S
 범용 MCP server, hosted DB proxy, 임의 executable BI block, driver 개수는 제품
 방향이 아니다.
 개별 기능의 결정 상태는
-[`docs/DopeDB_VISUAL_REFERENCE_SPEC.md`](docs/DopeDB_VISUAL_REFERENCE_SPEC.md)의
+[`docs/PRODUCT_UI_SCOPE.md`](docs/PRODUCT_UI_SCOPE.md)의
 기능 범위 결정 표가 소유한다.
 
 ## 기본 흐름
@@ -82,10 +82,12 @@ Tailwind와 공용 React primitive가 소유하며 새 CSS는 문서화된
 vendor/reset/token/primitive 경계에서만 허용한다. `pnpm build` 후 변경한 화면을
 앱에서 직접 확인한다.
 
-DopeDB 2026.1 reference가 UI/UX 정본이다. 변경한 scenario는
-[`docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md`](docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md)의
-UI 상태와 기능 상태를 각각 갱신한다. DopeDB 자체 baseline을 승인해 패리티를
-증명하지 않으며, 아직 없는 기능은 동작하는 control처럼 만들지 않는다.
+[`docs/PRODUCT_UI_SCOPE.md`](docs/PRODUCT_UI_SCOPE.md)가 제품 UI/UX 정본이다.
+변경한 scenario는
+[`docs/UI_IMPLEMENTATION_TRACKER.md`](docs/UI_IMPLEMENTATION_TRACKER.md)의 상태와
+소유 경계를 갱신한다. 제3자 제품 화면이나 기능 목록을 구현 기준으로 삼지 않으며,
+DopeDB 자체 baseline은 내부 회귀 증거로만 사용한다. 아직 없는 기능은 동작하는
+control처럼 만들지 않는다.
 
 ## 정식 릴리스
 

@@ -1,4 +1,4 @@
-// DopeDB-style Welcome document. Only commands with a real application owner
+// Welcome document. Only commands with a real application owner
 // appear here; provider setup and Agent actions stay in their tool windows.
 import { useI18n } from "../../lib/i18n";
 import { Button } from "../../design-system/components/Button";
@@ -8,12 +8,12 @@ export default function Onboarding({
   connectionName,
   onNewConnection,
   onNewQuery,
-  onSearchEverywhere,
+  onActionSearch,
 }: {
   connectionName?: string;
   onNewConnection: () => void;
   onNewQuery?: () => void;
-  onSearchEverywhere: (returnFocus?: HTMLElement | null) => void;
+  onActionSearch: (returnFocus?: HTMLElement | null) => void;
 }) {
   const { t } = useI18n();
   const connected = Boolean(connectionName);
@@ -34,9 +34,9 @@ export default function Onboarding({
     },
     {
       id: "search-everywhere",
-      label: t("ide.action.searchEverywhere"),
+      label: t("ide.action.actionSearch"),
       shortcut: "Shift ×2",
-      onClick: onSearchEverywhere,
+      onClick: onActionSearch,
     },
   ] as const;
 

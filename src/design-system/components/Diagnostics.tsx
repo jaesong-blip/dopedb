@@ -1,6 +1,6 @@
 // Shared diagnostics presentation for settings and property editors. Domain
 // owners supply the issues and navigation; this primitive owns the compact
-// DopeDB-style Problems hierarchy and semantic state treatment.
+// problems hierarchy and semantic state treatment.
 import type { ReactNode } from "react";
 
 import { Icon } from "../../components/Icon";

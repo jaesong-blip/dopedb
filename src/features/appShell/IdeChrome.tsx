@@ -1,4 +1,4 @@
-// DopeDB 2026.1 desktop chrome: project context and real tool-window launchers share
+// Desktop chrome: project context and real tool-window launchers share
 // one quiet title toolbar. macOS owns its native File/Edit/View menus, so the
 // WebView must not draw a second application menu inside the window.
 import type { ReactNode, RefObject } from "react";
@@ -40,7 +40,7 @@ export function IdeTopBar({
   localHistoryOpen,
   servicesOpen,
   agentDockOpen,
-  searchEverywhereOpen,
+  actionSearchOpen,
   settingsOpen,
   workspace,
   account,
@@ -50,8 +50,8 @@ export function IdeTopBar({
   onToggleServices,
   onOpenAgent,
   agentButtonRef,
-  searchEverywhereButtonRef,
-  onSearchEverywhere,
+  actionSearchButtonRef,
+  onActionSearch,
   onSettings,
 }: {
   selected: ConnectionProfile | null;
@@ -60,7 +60,7 @@ export function IdeTopBar({
   localHistoryOpen: boolean;
   servicesOpen: boolean;
   agentDockOpen: boolean;
-  searchEverywhereOpen: boolean;
+  actionSearchOpen: boolean;
   settingsOpen: boolean;
   workspace: ReactNode;
   account: ReactNode;
@@ -70,8 +70,8 @@ export function IdeTopBar({
   onToggleServices: () => void;
   onOpenAgent: () => void;
   agentButtonRef: RefObject<HTMLButtonElement | null>;
-  searchEverywhereButtonRef: RefObject<HTMLButtonElement | null>;
-  onSearchEverywhere: (returnFocus?: HTMLElement | null) => void;
+  actionSearchButtonRef: RefObject<HTMLButtonElement | null>;
+  onActionSearch: (returnFocus?: HTMLElement | null) => void;
   onSettings: () => void;
 }) {
   const { t } = useI18n();
@@ -139,13 +139,13 @@ export function IdeTopBar({
         <>
         <div className="tw:size-8 tw:shrink-0">{account}</div>
         <IdeToolbarLauncher
-          buttonRef={searchEverywhereButtonRef}
-          active={searchEverywhereOpen}
+          buttonRef={actionSearchButtonRef}
+          active={actionSearchOpen}
           onClick={(event) => {
-            onSearchEverywhere(event.currentTarget);
+            onActionSearch(event.currentTarget);
           }}
-          title={t("ide.action.searchEverywhere")}
-          aria-label={t("ide.action.searchEverywhere")}
+          title={t("ide.action.actionSearch")}
+          aria-label={t("ide.action.actionSearch")}
         >
           <Icon name="search" />
         </IdeToolbarLauncher>

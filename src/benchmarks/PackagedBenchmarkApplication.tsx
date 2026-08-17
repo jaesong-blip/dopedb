@@ -20,9 +20,9 @@ import {
 } from "../design-system/components/Workbench";
 import { VirtualTreeRows, type VirtualTreeRow } from "../design-system/components/VirtualTreeRows";
 import {
-  indexSearchEverywhereItems,
-  searchEverywhereItems,
-  type SearchEverywhereItem,
+  indexActionSearchItems,
+  searchActionItems,
+  type ActionSearchItem,
 } from "../features/actionSearch/domain";
 import type {
   AcpConversationProjection,
@@ -347,7 +347,7 @@ function ExplorerSearchScenario() {
       setVisibleCount(5_000);
     });
     await samples("search-everywhere", 10, (index) => {
-      const result = searchEverywhereItems(
+      const result = searchActionItems(
         fixture.index,
         `object-${4_990 + index}`,
       );
@@ -377,7 +377,7 @@ function ExplorerSearchScenario() {
 }
 
 function explorerFixture() {
-  const items: SearchEverywhereItem[] = [];
+  const items: ActionSearchItem[] = [];
   const rows: VirtualTreeRow[] = [];
   for (let index = 0; index < 5_000; index += 1) {
     const connection = index % 20;
@@ -400,7 +400,7 @@ function explorerFixture() {
       ),
     });
   }
-  return { rows, index: indexSearchEverywhereItems(items) };
+  return { rows, index: indexActionSearchItems(items) };
 }
 
 function QueryResultScenario() {

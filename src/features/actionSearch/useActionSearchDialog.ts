@@ -5,10 +5,10 @@ import {
   useState,
 } from "react";
 
-import type { SearchEverywhereCloseReason } from "./SearchEverywhere";
+import type { ActionSearchCloseReason } from "./ActionSearch";
 
-/** Owns Search Everywhere focus restoration and the global double-Shift command. */
-export function useSearchEverywhereDialog() {
+/** Owns Action Search focus restoration and the global double-Shift command. */
+export function useActionSearchDialog() {
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
@@ -27,7 +27,7 @@ export function useSearchEverywhereDialog() {
     setOpen(true);
   }, []);
 
-  const close = useCallback((reason: SearchEverywhereCloseReason) => {
+  const close = useCallback((reason: ActionSearchCloseReason) => {
     restoreFocusRef.current = reason === "dismiss";
     setOpen(false);
   }, []);

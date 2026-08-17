@@ -59,7 +59,7 @@ OS / architecture / WebView:
 - macOS VoiceOver와 Windows Narrator
 - 10 KiB, 100 KiB, 1 MiB SQL fixture
 - 30열 이상·50,000행 이상을 탐색할 수 있는 격리 데이터
-- DopeDB 2026.1의 version/build/hash가 고정된 동일 시나리오 reference
+- 검증할 DopeDB build와 같은 scenario의 내부 before/after evidence
 
 ### A1. 안정 업데이트 — #48
 
@@ -77,9 +77,9 @@ OS / architecture / WebView:
 4. Settings > Agent Tools에서 설치, 재시작 후 상태 확인, 제거를 듣고 수행한다.
 5. 상태가 색이나 아이콘만으로 전달되지 않는지 확인한다.
 
-### A3. DopeDB reference와 interaction polish — #111, #112
+### A3. 제품 UI interaction polish — #111, #112
 
-같은 viewport와 상태에서 DopeDB reference와 DopeDB를 나란히 검수한다.
+같은 viewport와 상태에서 변경 전후 DopeDB를 나란히 검수한다.
 
 - title toolbar, document tab, tool window 전환
 - Explorer expand, search, refresh, 폭 resize

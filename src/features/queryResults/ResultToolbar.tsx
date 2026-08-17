@@ -1,5 +1,5 @@
 // Compact export/copy controls for any result grid. Workbench surfaces use the
-// DopeDB command grammar of Copy + one CSV format menu; inline metadata keeps
+// product command grammar of Copy + one CSV format menu; inline metadata keeps
 // the explicit text actions. Every action operates on the full result rows.
 import { useEffect, useRef, useState } from "react";
 

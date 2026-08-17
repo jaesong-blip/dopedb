@@ -12,13 +12,13 @@ import { Button } from "../../design-system/components/Button";
 import { CommandMenuItem } from "../../design-system/components/CommandMenu";
 import { useI18n } from "../../lib/i18n";
 import {
-  indexSearchEverywhereItems,
-  searchEverywhereItems,
-  type SearchEverywhereItem,
-  type SearchEverywhereKind,
+  indexActionSearchItems,
+  searchActionItems,
+  type ActionSearchItem,
+  type ActionSearchKind,
 } from "./domain";
 
-const kindIcon: Record<SearchEverywhereKind, IconName> = {
+const kindIcon: Record<ActionSearchKind, IconName> = {
   action: "target",
   connection: "database",
   document: "list",
@@ -27,7 +27,7 @@ const kindIcon: Record<SearchEverywhereKind, IconName> = {
 };
 
 const kindLabelKey: Record<
-  SearchEverywhereKind,
+  ActionSearchKind,
   | "ide.search.category.action"
   | "ide.search.category.connection"
   | "ide.search.category.document"
@@ -41,7 +41,7 @@ const kindLabelKey: Record<
   setting: "ide.search.category.setting",
 };
 
-type SearchEverywhereScope =
+type ActionSearchScope =
   | "all"
   | "database"
   | "document"
@@ -55,7 +55,7 @@ const searchScopeTabs = [
   { id: "action", labelKey: "ide.search.scope.action" },
   { id: "setting", labelKey: "ide.search.scope.setting" },
 ] as const satisfies ReadonlyArray<{
-  id: SearchEverywhereScope;
+  id: ActionSearchScope;
   labelKey:
     | "ide.search.scope.all"
     | "ide.search.scope.database"
@@ -64,11 +64,11 @@ const searchScopeTabs = [
   | "ide.search.scope.setting";
 }>;
 
-export type SearchEverywhereCloseReason = "dismiss" | "selection";
+export type ActionSearchCloseReason = "dismiss" | "selection";
 
 function belongsToScope(
-  kind: SearchEverywhereKind,
-  scope: SearchEverywhereScope,
+  kind: ActionSearchKind,
+  scope: ActionSearchScope,
 ) {
   if (scope === "all") return true;
   if (scope === "database") {
@@ -77,20 +77,20 @@ function belongsToScope(
   return kind === scope;
 }
 
-export default function SearchEverywhere({
+export default function ActionSearch({
   items,
   onClose,
 }: {
-  items: readonly SearchEverywhereItem[];
-  onClose: (reason: SearchEverywhereCloseReason) => void;
+  items: readonly ActionSearchItem[];
+  onClose: (reason: ActionSearchCloseReason) => void;
 }) {
   const { t } = useI18n();
   const [query, setQuery] = useState("");
-  const [scope, setScope] = useState<SearchEverywhereScope>("all");
+  const [scope, setScope] = useState<ActionSearchScope>("all");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const index = useMemo(
-    () => indexSearchEverywhereItems(items),
+    () => indexActionSearchItems(items),
     [items],
   );
   const scopedIndex = useMemo(
@@ -115,7 +115,7 @@ export default function SearchEverywhere({
   const visibleItems = useMemo(
     () =>
       hasQuery
-        ? searchEverywhereItems(
+        ? searchActionItems(
             commandMode ? actionIndex : scopedIndex,
             searchableQuery,
             12,
@@ -140,7 +140,7 @@ export default function SearchEverywhere({
     );
   }, [visibleItems.length]);
 
-  async function choose(item: SearchEverywhereItem) {
+  async function choose(item: ActionSearchItem) {
     if (item.disabled) return;
     onClose("selection");
     await item.run();
@@ -150,7 +150,7 @@ export default function SearchEverywhere({
     onClose("dismiss");
   }
 
-  function selectScope(nextScope: SearchEverywhereScope) {
+  function selectScope(nextScope: ActionSearchScope) {
     setScope(nextScope);
     setActiveIndex(0);
   }
@@ -195,7 +195,7 @@ export default function SearchEverywhere({
       <section
         className="tw:flex tw:max-h-full tw:w-[min(672px,100%)] tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-strong tw:bg-popover tw:text-popover-foreground tw:shadow-popover"
         role="dialog"
-        aria-label={t("ide.action.searchEverywhere")}
+        aria-label={t("ide.action.actionSearch")}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div

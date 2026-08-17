@@ -1,6 +1,6 @@
 // Canonical dense tool-window primitives shared by explorer, assistant, and
 // provider surfaces. Consumers provide content and actions, while this module
-// owns the repeated DopeDB-style spacing and interaction contract.
+// owns the repeated compact spacing and interaction contract.
 import type {
   ButtonHTMLAttributes,
   FormHTMLAttributes,

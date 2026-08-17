@@ -2,7 +2,7 @@
 // Sticky header + row numbers + null styling. All interactivity is opt-in via callbacks
 // so plain read-only callers (SQL, document, and Analysis Article results) render unchanged:
 //   - onSort     → clickable headers that cycle asc/desc/none (arrow on the sorted col)
-//   - onFilter   → DopeDB-style value/count popup from a header filter action
+//   - onFilter   → compact value/count popup from a header filter action
 //   - onSelectRow/onCellClick → row highlight + click-to-open a cell in the side viewer
 //   - startIndex → row numbers continue across pages (rows 101-200, not 1-100 again)
 // Columns are drag-resizable: first drag snapshots every rendered width so only the

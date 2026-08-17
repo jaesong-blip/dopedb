@@ -1,6 +1,6 @@
 // Public catalog of provider adapters that can complete discovery, read-only
 // import, and managed credential issuance today. Undecided providers do not get
-// placeholders or capability claims; DQ-18 owns any future expansion.
+// placeholders or capability claims; PD-18 owns any future expansion.
 
 export const providerKinds = [
   "gcpCloudSql",

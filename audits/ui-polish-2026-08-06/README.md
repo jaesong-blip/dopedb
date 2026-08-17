@@ -1,178 +1,90 @@
-# Explorer scope badge audit
+# UI polish regression evidence
 
-This audit records one bounded #111/#112 comparison. It does not declare full
-DopeDB parity.
+This directory preserves one bounded DopeDB before/after regression set. It is
+not a product-comparison archive and does not establish packaged-runtime parity.
+The captures use a deterministic PostgreSQL catalog fixture and the same browser
+projection so layout and accessible text changes remain reviewable.
 
-## Evidence
+## Evidence index
 
-- Before: [`01-explorer-scope-before.png`](./01-explorer-scope-before.png)
-- DopeDB 2026.1 reference:
-  [`../DopeDB-design-analysis-2026-07-08/06-database-explorer-screenshot-section.png`](../DopeDB-design-analysis-2026-07-08/06-database-explorer-screenshot-section.png)
-- After: [`02-explorer-scope-after.png`](./02-explorer-scope-after.png)
-- Canonical icon-command focus tooltip:
-  [`03-erd-tooltip-focus-after.png`](./03-erd-tooltip-focus-after.png)
-- Data Sources horizontal category tabs before correction:
-  [`04-data-sources-tabs-before.png`](./04-data-sources-tabs-before.png)
-- Data Sources desktop rail after correction:
-  [`05-data-sources-rail-after.png`](./05-data-sources-rail-after.png)
-- Data Sources compact projection after correction:
-  [`06-data-sources-compact-after.png`](./06-data-sources-compact-after.png)
-- Settings wide rail before correction:
-  [`07-settings-rail-before.png`](./07-settings-rail-before.png)
-- Settings desktop rail after correction:
-  [`08-settings-rail-after.png`](./08-settings-rail-after.png)
-- Settings compact projection after correction:
-  [`09-settings-compact-after.png`](./09-settings-compact-after.png)
-- Search Everywhere oversized modal before correction:
-  [`10-search-everywhere-before.png`](./10-search-everywhere-before.png)
-- Search Everywhere compact blank state after correction:
-  [`11-search-everywhere-after.png`](./11-search-everywhere-after.png)
-- Search Everywhere `/` action mode after correction:
-  [`12-search-everywhere-actions-after.png`](./12-search-everywhere-actions-after.png)
-- Search Everywhere compact projection after correction:
-  [`13-search-everywhere-compact-after.png`](./13-search-everywhere-compact-after.png)
-- AI Chat verbose empty state before correction:
-  [`14-agent-empty-before.png`](./14-agent-empty-before.png)
-- AI Chat compact capability state after correction:
-  [`15-agent-empty-after.png`](./15-agent-empty-after.png)
-- AI Chat compact-window projection after correction:
-  [`16-agent-empty-compact-after.png`](./16-agent-empty-compact-after.png)
-- Welcome document with oversized guidance before correction:
-  [`17-welcome-before.png`](./17-welcome-before.png)
-- Welcome document command list after correction:
-  [`18-welcome-after.png`](./18-welcome-after.png)
-- Welcome compact-window projection after correction:
-  [`19-welcome-compact-after.png`](./19-welcome-compact-after.png)
-- Agent selection at 360px before modal focus containment:
-  [`20-agent-selection-360-before.png`](./20-agent-selection-360-before.png)
-- Agent selection at 360px with keyboard focus after correction:
-  [`21-agent-selection-360-focus-after.png`](./21-agent-selection-360-focus-after.png)
+- Explorer scope before: [`01-explorer-scope-before.png`](./01-explorer-scope-before.png)
+- Explorer scope after: [`02-explorer-scope-after.png`](./02-explorer-scope-after.png)
+- Focus tooltip: [`03-erd-tooltip-focus-after.png`](./03-erd-tooltip-focus-after.png)
+- Connection categories before: [`04-data-sources-tabs-before.png`](./04-data-sources-tabs-before.png)
+- Connection categories after: [`05-data-sources-rail-after.png`](./05-data-sources-rail-after.png)
+- Compact connection editor: [`06-data-sources-compact-after.png`](./06-data-sources-compact-after.png)
+- Settings rail before: [`07-settings-rail-before.png`](./07-settings-rail-before.png)
+- Settings rail after: [`08-settings-rail-after.png`](./08-settings-rail-after.png)
+- Compact settings: [`09-settings-compact-after.png`](./09-settings-compact-after.png)
+- Action Search before: [`10-action-search-before.png`](./10-action-search-before.png)
+- Action Search blank state: [`11-action-search-after.png`](./11-action-search-after.png)
+- Action Search command mode: [`12-action-search-actions-after.png`](./12-action-search-actions-after.png)
+- Compact Action Search: [`13-action-search-compact-after.png`](./13-action-search-compact-after.png)
+- Agent empty state before: [`14-agent-empty-before.png`](./14-agent-empty-before.png)
+- Agent empty state after: [`15-agent-empty-after.png`](./15-agent-empty-after.png)
+- Compact Agent surface: [`16-agent-empty-compact-after.png`](./16-agent-empty-compact-after.png)
+- Welcome before: [`17-welcome-before.png`](./17-welcome-before.png)
+- Welcome after: [`18-welcome-after.png`](./18-welcome-after.png)
+- Compact Welcome: [`19-welcome-compact-after.png`](./19-welcome-compact-after.png)
+- Agent selector before focus containment: [`20-agent-selection-360-before.png`](./20-agent-selection-360-before.png)
+- Agent selector with focus containment: [`21-agent-selection-360-focus-after.png`](./21-agent-selection-360-focus-after.png)
 
-The DopeDB captures use the same `1393×862` browser projection and deterministic
-PostgreSQL catalog fixture. Browser projection verifies layout and accessible text,
-not Tauri runtime behavior or platform rendering.
+## Accepted corrections
 
-## Gap and correction
+### Explorer scope
 
-The reference keeps the selected and available introspection counts together on the
-data-source row. DopeDB already did this for multi-schema catalogs, but collapsed a
-single-schema catalog to the ambiguous label `1`. The trigger now always renders
-`selected of total`, including `1 of 1`, and opens the existing persisted schema
-checklist. No new feature or inactive control was added.
+The data-source row always shows `selected of total`, including `1 of 1`, and
+opens the persisted schema checklist shared by Explorer and query scope. The
+badge stays compact and its accessible name remains `Introspection scope` /
+`인트로스펙션 범위`.
 
-## Acceptance
+### Connection editor and Settings
 
-- The data-source row exposes both selected and total namespace counts in every
-  non-empty catalog.
-- The count remains a compact tree badge and does not add another row suffix.
-- The button keeps the accessible name `Introspection scope` / `인트로스펙션 범위`.
-- The menu continues to edit the same persisted filter used by Explorer and query
-  scope.
+Desktop dialogs use a compact navigation rail and a separate detail surface;
+compact windows retain text navigation and keep the footer action inside the
+viewport. Only implemented connection, cloud, driver, and setting sections are
+shown. Arrow keys plus Home/End move through the desktop navigation.
 
-The wider shell, data editor, Agent, popup and compact-platform scenarios remain
-open until the same before/reference/after and packaged macOS/Windows evidence exists.
+### Shared icon command
 
-## Data Sources 2026.1.4 recheck
+Icon commands use the shared `Button` and portal tooltip. Hover and keyboard
+focus expose the same label, `Escape` dismisses the tooltip without moving focus,
+and `pnpm check:ui-primitives` prevents unnamed icon-only controls.
 
-An isolated official DopeDB 2026.1.4 (`DB-261.26222.86`) process was opened
-with a clean empty project. Its native Data Sources and Drivers window measured
-`980×737` before the macOS capture shadow; the application content uses a roughly
-`42px` vertical category rail followed by a roughly `250px` catalog list. The
-temporary reference capture has SHA-256
-`0487e71353fcf36a7876b5d8bd4f50bfda8ff8df7ecc89b25f9a77eedb241852`
-and is intentionally not copied into the repository.
+### Action Search
 
-This contradicts the earlier horizontal-category interpretation recorded in the
-tracker. The correction keeps only DopeDB's already implemented Data Sources,
-Clouds, and Drivers categories; it does not add DopeDB-only categories or a
-disabled placeholder. The category title now appears once instead of repeating
-above the list. Arrow keys and Home/End move and activate desktop rail tabs;
-compact dialogs keep the existing text SegmentedControl and source selector.
+Action Search is a bounded non-modal surface. Its blank state contains scope tabs
+and a focused input without dimming the workbench or rendering an empty result
+area. Only Database, Documents, Actions, and Settings are exposed because each
+has a real result and command owner; `/` searches the action catalog. Keyboard
+selection, roving tabs, Escape dismissal, and launcher focus restoration are part
+of the contract.
 
-## Settings 2026.1.4 recheck
+### Agent empty state
 
-The same isolated DopeDB process exposed a native Settings window measuring
-`982×722`, with a roughly `202px` navigation rail and an 8px search gutter. Its
-temporary reference capture has SHA-256
-`6fa4a3f912c16c5aa6677db144271239351ab3768e929b1be6a9fbd2d0e9872d` and is
-not copied into the repository. The previous DopeDB capture shows the obsolete
-`945×700` frame and `300px` rail; the after capture records the corrected compact
-hierarchy, 24px navigation rows, and flat breadcrumb surface. The compact capture
-confirms the same searchable navigation remains scrollable above the document body
-and that the footer action stays inside the viewport.
+The empty transcript contains only the product's real capabilities: SQL work,
+schema/selection inspection, and explicit approval before changes. The composer
+and adapter picker stay visible in compact windows. No editor-completion or
+inactive integration control is implied.
 
-## Icon-command primitive check
+### Welcome document
 
-ERD, Documents, Schema, Dashboard, Job and Schema Diff still had 13 raw
-`.btn.icon-only` commands. They now use the shared `Button`, which removes the
-native `title` from the control and presents the same portal tooltip on hover and
-keyboard focus. The ERD capture records the focused state. An interaction check also
-confirmed `Escape` dismisses the tooltip and leaves the command focused. The static
-`pnpm check:ui-primitives` rule prevents a raw icon-only button or a statically unnamed
-`Button iconOnly` from entering the source tree again.
+The connected Welcome document exposes New Query, New Connection, and Action
+Search. The disconnected state provides one first-choice sentence and removes
+commands that cannot run. The center remains a command surface rather than a
+marketing page.
 
-## Search Everywhere 2026.1.4 recheck
+### Modal focus containment
 
-The isolated DopeDB 2026.1.4 window exposed a roughly `672px` Search Everywhere
-popup at `top=190px` in a `1400×929` logical viewport. The blank popup contains a
-category row and a focused 32px search row without dimming the application or
-expanding an empty result area. The temporary reference capture has SHA-256
-`ee86a84e871c96122a0329d4cd38a0dd912fcdb1d6e69557a59d90ac7c22512d` and is not
-copied into the repository.
+The startup Agent selector moves focus to the first requested control, loops Tab
+and Shift+Tab inside the topmost dialog, redirects programmatic background focus,
+and restores its launcher on close. The compact capture records the focused
+checkbox and a body/footer that remain inside a `360×640` viewport.
 
-The correction replaces the former `760×620` dimmed modal and initial 40-item list
-with the measured popup geometry. Only categories backed by real DopeDB results are
-shown: Database, Documents, Actions, and Settings. `/` searches the existing action
-catalog; DopeDB-only Files, Code, and Text categories are not represented by labels
-or placeholders. Desktop and compact captures verify the blank and action states.
-Playwright also verified scoped filtering, Arrow selection, roving tab
-Arrow/Home/End, Escape dismissal, and focus restoration to the toolbar launcher.
+## Evidence limits
 
-## AI Chat empty-state 2026.1.4 recheck
-
-The isolated DopeDB 2026.1.4 window exposed a blank AI Chat with a flat header,
-three terse capability lines, a 108px composer, and the Agent picker below it. It
-did not place a large title or explanatory paragraph in the transcript. The
-temporary `1400×929` reference capture has SHA-256
-`bc1b88e156dd6c4d3c259dee68bf4e95755cd10ee92a23baf482f6ea66f9fe69` and is not
-copied into the repository.
-
-DopeDB keeps the previously verified independent 600px preferred width from the
-user's detailed reference. Only the empty transcript changed: it now presents
-three real DopeDB capabilities—SQL work, schema/selection inspection, and explicit
-approval before changes. DopeDB's editor-completion features were not copied and
-no inactive link or control was added. The hidden heading preserves an accessible
-name without spending steady-state visible text. The `560×700` capture confirms the
-same three-line hierarchy while the composer and Agent picker remain visible. At
-`1400×929`, the browser projection measured the right surface at `596px`, the
-composer at `570×108px`, and no horizontal document overflow.
-
-## Welcome 2026.1.4 recheck
-
-The isolated DopeDB `1400×929` central surface used a small command list without
-a logo, visible page title, or explanatory cards. Its temporary reference capture
-has SHA-256
-`0b860bc2de60a0e4ece901527fbc3a081d76855073465e5eaeeb2c86cfaeaea4` and is not
-copied into the repository.
-
-DopeDB's previous document was structurally real but still devoted the center to a
-large mark, heading, lead, three guidance sections, and a footer. The connected
-document now exposes only commands with real owners: New Query Console, New Data
-Source, and Search Everywhere. The disconnected projection adds one first-choice
-sentence and omits the unavailable query command instead of disabling it. DopeDB's
-Recent Files, Navigation Bar, Go to File, and drop-file affordances remain absent
-because those IDE features are outside the product scope. The compact capture checks
-that the same command list remains reachable without introducing another mobile
-navigation surface.
-
-## Modal keyboard containment
-
-The 360px startup Agent selector fit visually before this check, but opening it left
-keyboard focus on Search Everywhere behind the `aria-modal` surface. The shared
-modal now moves focus to the first requested work control, loops Tab and Shift+Tab
-between Close, the two Agent checkboxes, Later, and Save, redirects programmatic
-background focus into the topmost dialog, and restores the launcher after close.
-The after capture records keyboard focus on the Codex checkbox and keeps the full
-body and footer inside a `360×640` viewport. This browser projection verifies DOM
-focus behavior and accessible names; packaged macOS and Windows screen-reader
-behavior remains an explicit #95 gate.
+These browser captures verify DOM layout and accessible text only. Packaged
+macOS and Windows rendering, screen-reader output, native chrome, connection
+runtime behavior, large-grid performance, popup continuity, and scroll retention
+remain separate manual validation responsibilities in
+[`docs/LIVE_VALIDATION_RUNBOOK.md`](../../docs/LIVE_VALIDATION_RUNBOOK.md).

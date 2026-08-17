@@ -260,7 +260,7 @@ function ShellLayoutContent({ model, commands }: Props) {
         }
         servicesOpen={servicesVisible}
         agentDockOpen={agent.open}
-        searchEverywhereOpen={search.open}
+        actionSearchOpen={search.open}
         settingsOpen={workspace.settingsOpen}
         account={
           <WorkspaceAccount
@@ -276,8 +276,8 @@ function ShellLayoutContent({ model, commands }: Props) {
         onToggleServices={commands.services.toggle}
         onOpenAgent={commands.agent.open}
         agentButtonRef={agent.buttonRef}
-        searchEverywhereButtonRef={search.buttonRef}
-        onSearchEverywhere={commands.search.open}
+        actionSearchButtonRef={search.buttonRef}
+        onActionSearch={commands.search.open}
         onSettings={commands.workspace.settings}
         workspace={
           <WorkspaceSwitcher

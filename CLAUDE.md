@@ -60,8 +60,8 @@ server로 포지셔닝하지 않는다. Rust desktop shell, keychain 저장, rea
 승인, 감사, 넓은 driver 지원은 필요한 기본기이지 차별점이 아니다. 시장 약속과
 공개 claim의 정본은 `docs/PRODUCT_POSITIONING.md`가 소유한다.
 
-DopeDB에는 세 개의 제품 축이 있다. 기능을 넣을지는 DopeDB이나 경쟁 제품의
-기능 목록이 아니라 이 축으로 판단한다.
+DopeDB에는 세 개의 제품 축이 있다. 기능을 넣을지는 이 축과 검증된 사용자
+수요로 판단한다.
 
 **1. workspace가 공유 접근을 소유하고 구성원이 자격 증명을 소유한다.** 제품의
 단위는 한 사람의 컴퓨터가 아니라 팀 workspace다. 연결 정체성, provider resource,
@@ -76,10 +76,10 @@ credential store에 남고, managed 접근은 최소 권한의 구성원별 단�
 
 **2. 연결은 간단하게 유지한다.** 데이터베이스에 닿는 일은 모든 사용자가 처음
 하는 일이고 포기하는 지점이다. 동작하는 최소 입력, 실제 기본값, engine별로
-검증된 경로 하나를 우선한다. DopeDB에 property tab이 있다는 이유로 그 표면을
-그대로 가져오지 않는다. 옵션을 하나 늘리려면 첫 실행이 길어지는 비용을 이겨야
-한다. OS가 이미 소유한 메커니즘은 form으로 다시 만들지 않고 위임한다. SSH
-터널은 `~/.ssh/config`의 Host 별칭만 받고 시스템 `ssh`를 띄우므로 키,
+검증된 경로 하나를 우선한다. property tab과 옵션을 하나 늘리려면 첫 실행이
+길어지는 비용을 이겨야 한다. OS가 이미 소유한 메커니즘은 form으로 다시 만들지
+않고 위임한다. SSH 터널은 `~/.ssh/config`의 Host 별칭만 받고 시스템 `ssh`를
+띄우므로 키,
 passphrase, agent, ProxyJump는 앱 밖에 남는다.
 
 **3. Agent는 정확한 grant 안에서 일하고 화면은 관찰·승인·복구한다.**
@@ -124,18 +124,17 @@ result fragment만 공유하고, public article은 승인된 immutable snapshot�
 발행하며 query를 실행하지 않는다. 임의 executable block, hosted DB proxy,
 추측한 cross-database join은 금지한다.
 
-각 기능의 결정 상태는 `docs/DopeDB_VISUAL_REFERENCE_SPEC.md`의 기능 범위
+각 기능의 결정 상태는 `docs/PRODUCT_UI_SCOPE.md`의 기능 범위
 결정 표가 소유한다. `AI가 대체`와 `범위 밖`으로 정한 기능은 트래커의
 우선순위와 무관하게 구현하지 않고 label, icon, disabled placeholder도 만들지
 않는다. 결정을 뒤집을 때는 그 표를 먼저 고친다.
 
-DopeDB 2026.1은 위 판단을 통과한 기능의 UI/UX clean-room 정본이다. 화면
-구조, 밀도, 상호작용은 DopeDB을 따르되 기능 목록까지 따르지는 않는다.
-Tailwind v4와 DopeDB semantic token은 그 화면을 구현하는 수단이며 별도 시각
-방향이 아니다. UI/UX 차이와 기능 부재는
-`docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md`에서 별도 상태로 관리한다.
-DopeDB 자체 screenshot baseline 통과를 DopeDB 패리티 완료로 해석하지 않고,
-enabled control에는 실제 command와 state owner가 있어야 한다.
+`docs/PRODUCT_UI_SCOPE.md`는 제품 UI 구조, 밀도, 상호작용의 정본이다. 제3자
+제품의 화면, 기능 목록, 명칭, 코드와 자산은 구현 기준이 아니다. Tailwind v4와
+DopeDB semantic token으로 제품 소유 계약을 구현하고 UI 상태와 기능 부재는
+`docs/UI_IMPLEMENTATION_TRACKER.md`에서 관리한다. DopeDB screenshot은 내부
+회귀 증거일 뿐 packaged runtime이나 기능 완료를 대신하지 않으며, enabled
+control에는 실제 command와 state owner가 있어야 한다.
 
 ## 아키텍처
 

@@ -56,7 +56,7 @@ function pushNamed(
 }
 
 /**
- * Finds the parameter shapes commonly used in DopeDB query consoles while
+ * Finds the parameter shapes supported by DopeDB query documents while
  * ignoring quoted strings, identifiers, comments, and PostgreSQL dollar quotes.
  *
  * Supported shapes:
@@ -197,7 +197,7 @@ export function uniqueSqlParameters(parameters: SqlParameter[]) {
 }
 
 /**
- * DopeDB user parameters are SQL fragments, not string-only values. The
+ * DopeDB query parameters are SQL fragments, not string-only values. The
  * materialized SQL still travels through DopeDB's authoritative classifier,
  * immutable proposal, approval, and execution path.
  */

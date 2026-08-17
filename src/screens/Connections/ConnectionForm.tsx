@@ -1,4 +1,4 @@
-// DopeDB-style Data Sources and Drivers editor. Feature controllers own the
+// Compact connection and driver editor. Feature controllers own the
 // workflow; this screen only composes grouped presentation models.
 import {
   ModalBackdrop,

@@ -354,14 +354,14 @@ if (!/\blazy\s*\(/.test(workbenchContent) || !/\bSuspense\b/.test(workbenchConte
 }
 
 // AppShell is a composition root, not the owner of connection/query workflows
-// or Search Everywhere catalog assembly. Its two large presentation children
+// or Action Search catalog assembly. Its two large presentation children
 // receive grouped model/command contracts rather than rebuilding scalar bags.
 const appShellPath = "src/features/appShell/AppShell.tsx";
 const shellLayoutPath = "src/features/appShell/ShellLayout.tsx";
 const workbenchControllerPath =
   "src/features/appShell/useAppShellWorkbenchController.ts";
 const searchItemsPath =
-  "src/features/actionSearch/useSearchEverywhereItems.ts";
+  "src/features/actionSearch/useActionSearchItems.ts";
 const appShellSource = read(appShellPath);
 for (const [filePath, limit] of [
   [appShellPath, 520],
@@ -380,7 +380,7 @@ for (const [pattern, responsibility] of [
   [/tauriAdapter/, "direct Tauri adapter ownership"],
   [/\bdatabaseCatalogQuery\b|\bdriversQuery\b/, "catalog query assembly"],
   [/\buseConnectionProfiles\b|\buseWorkbenchDocuments\b|\buseSafetySettings\b/, "connection/workbench state ownership"],
-  [/\buseCachedCatalogOverviews\b|\bfilterCatalogOverview\b/, "Search Everywhere catalog ownership"],
+  [/\buseCachedCatalogOverviews\b|\bfilterCatalogOverview\b/, "Action Search catalog ownership"],
 ]) {
   if (pattern.test(appShellSource)) {
     failures.push(`${appShellPath}: composition root regained ${responsibility}`);
@@ -420,8 +420,8 @@ for (const component of ["ShellLayout", "WorkbenchContent"]) {
 }
 for (const token of [
   "useAppShellWorkbenchController",
-  "useSearchEverywhereItems",
-  "useSearchEverywhereDialog",
+  "useActionSearchItems",
+  "useActionSearchDialog",
 ]) {
   if (!appShellSource.includes(token)) {
     failures.push(`${appShellPath}: bounded shell controller marker lost (${token})`);

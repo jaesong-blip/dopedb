@@ -1,19 +1,19 @@
 # DopeDB UI 디자인 시스템
 
-DopeDB의 UI/UX는 사용자가 제공한 DopeDB 2026.1 macOS reference를
-clean-room 정본으로 한다. app chrome, tool window, document tab, toolbar,
-data editor, query console, Services와 status bar의 구조·밀도·상호작용을
-DopeDB 기준에 맞춘다. DopeDB의 안전 승인·감사 기능은 같은 UI 문법 안에서
-확장한다.
+DopeDB의 UI/UX는 제품 작업 흐름, 접근성, 지원 플랫폼 동작을 정본으로 한다.
+app chrome, tool window, document tab, toolbar, data editor, query console,
+Services와 status bar는 이 문서의 제품 소유 구조·밀도·상호작용을 따른다.
+안전 승인·감사 기능도 같은 UI 문법 안에서 확장한다.
 
 DopeDB는 Tailwind CSS v4를 화면 배치의 기본 도구로 사용한다. Tailwind는 별도
 디자인 언어가 아니라 `--ds-*` 역할 토큰과 앱 정본 primitive를 사용하는 얇은
 utility 계층이다. 기존 CSS는 기능 단위로 제거하며 vendor widget처럼 CSS가
 구조적으로 더 알맞은 경계만 유지한다.
 
-영역별 UI/UX 패리티와 기능 패리티는
-[`docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md`](../../docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md)에
-분리해 기록한다. 기존 DopeDB screenshot baseline은 디자인 정본이 아니다.
+영역별 UI와 기능 상태는
+[`docs/UI_IMPLEMENTATION_TRACKER.md`](../../docs/UI_IMPLEMENTATION_TRACKER.md)에
+기록한다. DopeDB screenshot baseline은 내부 회귀 증거일 뿐 디자인 정본이나
+packaged runtime 증거가 아니다.
 
 ## 정본
 
@@ -74,19 +74,19 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며 vendor widget�
 - title toolbar 중앙에는 현재 주요 tool window의 직접 launcher만 둔다.
   보조 tool window와 document 생성 action은 끝단의 실제 `ToolbarMenu`에
   배치하고, 구현되지 않은 Files/VCS를 모양만 있는 launcher로 만들지 않는다.
-  DopeDB 기준 위치에 없는 DopeDB 전용 Analysis Article도 직접 launcher로
+  Analysis Article도 별도 직접 launcher로
   승격하지 않고 Environment의 `Analyses` folder와 More menu가 소유한다.
 - generic `새 연결` 진입은 특정 engine form을 임의 선택하지 않고 검색 가능한
   provider/driver `CommandMenu`를 즉시 연다. engine/provider preset이 명시된
   진입만 해당 속성 form을 바로 표시한다. 실제 생성하지 않는 demo나 지원하지
   않는 provider resource를 선택지 설명으로 약속하지 않는다.
-- Data Sources and Drivers dialog는 DopeDB 2026.1.4 실앱에서 다시 측정한
+- Data Sources and Drivers dialog는 제품 계약의
   42px 세로 category rail과 250px catalog list로 책임을 분리한다. rail에는
   실제 화면이 있는 Data Sources, Clouds, Drivers만 두며 label은 hover와
   keyboard focus tooltip로 제공한다. data source와 driver는 각각 하나의
   검색 가능한 목록만 가지며, driver detail은 backend
   catalog가 반환한 이름, version, 설치 상태, 지원 connection method와
-  capability만 표시한다. `+` popup의 provider group은 DopeDB 용어인
+  capability만 표시한다. `+` popup의 provider group은
   `Data Source from Cloud Provider`를 사용한다. Clouds category는 실제
   credential inventory를 열고
   로그인·권한·조회 실패를 그대로 드러내며, 존재하지 않는 cloud resource
@@ -128,7 +128,7 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며 vendor widget�
   map을 만들지 않는다.
   검색 input은 view option이 열었을 때만 하나만 표시하며 connection subtree에
   검색 input을 중복하지 않는다. backend disconnect lifecycle이 없는 동안
-  DopeDB의 Deactivate를 모양만 있는 action으로 추가하지 않는다.
+  소유자 없는 Deactivate를 모양만 있는 action으로 추가하지 않는다.
 - 색상보다 `muted`, `selection`, `border`를 먼저 사용한다.
 - 일반 surface는 평평하게 유지한다. 그림자는 popover, dialog, toast처럼 떠 있는
   surface에만 사용한다.
@@ -206,8 +206,7 @@ color를 거부한다.
 
 ## Radius와 elevation
 
-DopeDB 2026.1의 compact control과 둥근 outer tool-window geometry를 역할별
-scale로 표현한다.
+compact control과 둥근 outer tool-window geometry를 역할별 scale로 표현한다.
 
 - 작은 내부 요소: `--ds-radius-xs` (4px)
 - button/input: `--ds-radius-sm` (6px)
@@ -241,7 +240,7 @@ Elevation은 세 단계만 허용한다.
   `ControlButton`, `ControlLink`, field/input/select/textarea 밀도를 함께 소유한다.
   외부 관리 콘솔로 이동하는 action도 화면에서 button utility를 복사하지 않고
   `ControlLink`를 사용한다.
-- `IdeTitleToolbar`, `IdeStatusBarSurface`: DopeDB title/status chrome의
+- `IdeTitleToolbar`, `IdeStatusBarSurface`: title/status chrome의
   고정 높이와 좌·중앙·우 slot. feature shell은 command와 state만 제공한다.
 - `IdeToolbarLauncher`: title toolbar의 32px launcher와 중립적인 open/pressed
   상태. tool window가 열렸다는 이유만으로 primary 파랑을 사용하지 않는다.
@@ -278,14 +277,14 @@ Elevation은 세 단계만 허용한다.
   노출하지 않고 호출자가 제공한 안전한 fallback과 명시적 retry만 표시하며,
   이후 진단 수집은 별도 observer가 소유한다.
 - `ProviderTargetLabel`: Explorer, connection picker, workbench가 공유하는
-  provider target feature composition. 현재는 DQ-28의 Neon branch identity만
+  provider target feature composition. 현재는 PD-28의 Neon branch identity만
   허용하며, 긴 ID는 mono ellipsis와 tooltip으로 보존하고 provider state는
   semantic status dot으로 표시한다. 화면마다 별도 branch badge를 만들지 않는다.
 - `ToolbarMenu` trigger도 `custom`/`variant` data contract가 label, icon,
   tree badge, grid header 밀도를 소유한다. feature가 trigger별 class map을
   만들거나 전역 `.btn`을 섞지 않는다.
 - `ToolWindowHeader`: Database Explorer, Agent, provider 패널의 고정 헤더와
-  우측 action 슬롯. `divider={false}`는 DopeDB AI Chat처럼 header와 본문이
+  우측 action 슬롯. `divider={false}`는 Agent surface처럼 header와 본문이
   하나의 평면을 이루는 tool window에서만 하단 divider를 제거한다.
 - `ToolWindowSideSurface`: Explorer와 Local History의 데스크톱
   left-anchor frame과 compact full-sheet/open state. feature CSS나 부모
@@ -298,8 +297,8 @@ Elevation은 세 단계만 허용한다.
 - `ToolWindowComposer`, `ToolWindowComposerDock`, `ToolWindowComposerInput`,
   `ToolWindowComposerContext`: AI Chat의 multiline 입력면, 내부 context row와
   외부 Agent/model row. 입력면의 `expanded` 상태는 실제 확대·복원 action과
-  연결되고 `busy` 상태는 Agent가 응답·승인을 기다리는 동안 DopeDB의
-  활성 작업 경계를 유지한다. 화면별 textarea 크기 CSS를 만들지 않는다.
+  연결되고 `busy` 상태는 Agent가 응답·승인을 기다리는 동안 활성 작업 경계를
+  유지한다. 화면별 textarea 크기 CSS를 만들지 않는다.
 - `AgentProviderMark`: AI Chat과 Agent 설치 흐름에서 Claude와 Codex를 구분하는
   16px 단색 브랜드 마크. Iconify Simple Icons의 `claude`와 `openai` 정본을
   로컬 번들로 사용하고 feature별 임시 SVG나 상태색 대용 브랜드색을 만들지 않는다.
@@ -324,7 +323,7 @@ Elevation은 세 단계만 허용한다.
 - `Field`, `PropertyRow`, `TextInput`, `TextAreaInput`, `SelectInput`,
   `InlineSelect`, `CheckboxField`: label, focus, disabled 상태를 함께 소유하는 dense form
   control. `PropertyRow`는 Data Sources General처럼 100px label과 control을
-  가로로 맞추고 compact dialog에서는 세로로 접는다. DopeDB property
+  가로로 맞추고 compact dialog에서는 세로로 접는다. property
   field는 `density="compact"`의 32px control을 사용하며 feature가 별도
   input class를 만들지 않는다. `InlineSelect`는 General 상단의 Connection
   type·Driver처럼 label과 값이 한 줄에 놓이는 실제 선택 속성을 소유한다.
@@ -339,7 +338,7 @@ Elevation은 세 단계만 허용한다.
 - `SegmentedControl`: 속성 편집기의 소수 상호 배타 선택을 위한 compact
   radiogroup, keyboard focus와 semantic selection treatment.
 - `EnvironmentBadge`: dev/staging/prod 의미색과 대문자 표기를 한곳에서 소유.
-- `TreeSectionButton`, `TreeRowActions`, `TreeSearch`, `VirtualTreeRows`: DopeDB 객체 트리의
+- `TreeSectionButton`, `TreeRowActions`, `TreeSearch`, `VirtualTreeRows`: 객체 트리의
   일반 문장형 hierarchy row, keyboard toggle, dense object search와 대형 leaf
   row windowing. `TreeSectionButton`의 `selected`는 현재 Project Environment나
   resource folder를 같은 tree selection 문법으로 표시하고 `trailing`은
@@ -361,9 +360,9 @@ Elevation은 세 단계만 허용한다.
   만들지 않는다.
 - `CommandMenu`, `CommandMenuGroup`, `CommandMenuItem`: 검색 입력, 분류,
   설명이 필요한 생성·선택 command popup. `CommandMenuItem`의
-  `aria-selected`는 Search Everywhere와 같은 listbox의 공용 선택 row
+  `aria-selected`는 Action Search와 같은 listbox의 공용 선택 row
   treatment를 소유한다.
-- Search Everywhere는 `1400×929`에서 약 `672px` 폭, `top=190px`의
+- Action Search는 672px 이하의
   transparent-dismiss popup으로 투영한다. 빈 질의는 결과 영역을
   늘리지 않고, 실제 검색 가능한 Database·Documents·Actions·Settings
   범위만 `Button` tab으로 표시한다. `/`는 실제 action catalog를
@@ -379,9 +378,9 @@ Elevation은 세 단계만 허용한다.
   programmatic focus를 다시 포함한다. 닫힐 때는 아직 존재하는 원래 trigger로
   focus를 복구한다. 첫 작업 control을 명시해야 하는 feature만
   `data-modal-initial-focus`를 사용한다.
-  `size="settings"`는 DopeDB 2026.1.4 실앱에서 재측정한 982×722 설정 dialog를,
+  `size="settings"`는 제품 계약의 982×722 설정 dialog를,
   `size="dataSources"`는
-  DopeDB 2026.1.4 실앱에서 재측정한 980×731 frame을 compact full-height fallback과 함께
+  제품 계약의 980×731 frame을 compact full-height fallback과 함께
   소유한다. Data Sources의 `Problems`는 catalog 하단, `Test Connection`은
   detail action bar, `Cancel/Apply/OK`는 `ModalFooter`에 두며 한 footer에
   섞지 않는다.
@@ -426,16 +425,14 @@ Elevation은 세 단계만 허용한다.
   데이터 소스 선택에 필요한 한 줄만 허용하며 범위 밖 IDE command나 비활성
   placeholder는 표시하지 않는다.
 
-DopeDB 참조에서 추출한 chrome 높이, panel gutter, 화면별 비교 순서와 기능
-결정 대기 목록은
-[`docs/DopeDB_VISUAL_REFERENCE_SPEC.md`](../../docs/DopeDB_VISUAL_REFERENCE_SPEC.md)를
-따른다. 이 값은 DopeDB 자체 screenshot baseline이 아니라 같은 논리 viewport의
-DopeDB 관찰에서 가져온 역할 계약이다.
+chrome 높이, panel gutter, 화면별 검수 순서와 기능 결정은
+[`docs/PRODUCT_UI_SCOPE.md`](../../docs/PRODUCT_UI_SCOPE.md)를 따른다. 이 값은
+DopeDB의 실제 작업 흐름과 접근성, supported viewport를 위한 제품 소유 계약이다.
 - Explorer와 Local History는 같은 왼쪽 anchor를 쓰되 서로 다른 저장 폭을
   가진다. AI Chat도 오른쪽 anchor 폭을 별도로 저장해 한 tool window의 수동
   resize가 다른 종류의 기본 비율을 훼손하지 않게 한다.
-  DopeDB `1152×768` 동일 상태 capture의 Explorer/center/AI Chat 3분할에 맞춰
-  Explorer와 AI Chat의 desktop 기본 폭은 396px이다. 사용자 제공
+  supported desktop viewport의 Explorer/center/Agent 3분할에 맞춰 Explorer와
+  Agent의 desktop 기본 폭은 396px이다. 검수된
   `1385×918` AI Chat 상세 참조처럼 약 595px까지 넓힌 값도
   `agentDockWidth`에 독립 저장한다.
   상태는 desktop 선호 폭을 소유하고 shell projection만 현재 viewport에 맞춰
@@ -454,7 +451,7 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   query lifecycle에 속하지 않는 열린 문서는 Services tree에 투영하지 않는다.
 - tabular Result는 `WorkbenchToolbar`에 현재 grid 표시, 실제 전체 셀 검색,
   복사·CSV·JSON action을 놓고 `DataGrid` 아래 고정 footer에
-  visible/filtered row count와 duration을 표시한다. DopeDB에 보인다는 이유만으로
+  visible/filtered row count와 duration을 표시한다. 다른 제품에 보인다는 이유만으로
   transaction, DDL, edit action을 handler 없이 추가하지 않는다.
 - AI Chat composer는 큰 multiline surface, 내부 context chip/action row,
   외부 Agent/model context row의 세 층을 사용한다. 첨부 chip과 popup은
@@ -483,9 +480,9 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   같은 생성 form을 중복하지 않는다. Dashboard, Funnel Analysis, Agent Report는
   별도 navigation이나 screen을 갖지 않는다.
 - 이 hierarchy의 Project prominence와 header action locality는 공개 Orca의
-  `SidebarHeader`·`ProjectHeaderActions`·`WorktreeList`를 clean-room 정보 구조
-  참고로 삼되, 행 높이, surface, icon, selection은 DopeDB tool-window와 이
-  문서의 semantic primitive가 계속 소유한다. Orca의 Agent/worktree 행은 DopeDB
+  `SidebarHeader`·`ProjectHeaderActions`·`WorktreeList`의 정보 구조를 재사용하되,
+  행 높이, surface, icon, selection은 이 문서의 semantic primitive가 소유한다.
+  Agent/worktree 행은 DopeDB
   resource tree로 가져오지 않는다.
 - AI Chat의 scope control은 `Project / Environment` 하나만 표시한다. 하위 DB
   checkbox나 current-database-only mode를 다시 만들지 않으며, 새 ACP session은
@@ -501,7 +498,7 @@ DopeDB 관찰에서 가져온 역할 계약이다.
 - Explain과 Services 오류는 결과 영역 안에 별도 rounded card를 만들지 않는다.
   `ResultMeta`와 divider 기반의 평평한 workbench row를 사용하고 SQL/error
   원문만 monospace scroll surface로 표시한다.
-- SQL toolbar의 실행은 채움 primary button이 아니라 DopeDB command 문법의
+- SQL toolbar의 실행은 채움 primary button이 아니라 compact command 문법의
   평평한 icon action과 semantic success glyph를 사용한다. manual transaction이
   구현되기 전에는 `Tx: Auto`에 가짜 menu chevron이나 commit/rollback action을
   붙이지 않는다.
@@ -512,7 +509,7 @@ DopeDB 관찰에서 가져온 역할 계약이다.
 - `ResultWorkbenchToolbar`, `ResultWorkbenchFooter`: materialized/streaming
   결과가 공유하는 grid mode, 전체 셀 검색, 실제 export action과 행·duration
   상태. workbench export는 별도 CSV/JSON text button을 나열하지 않고
-  DopeDB command 문법의 `CSV` format menu 하나로 투영하며, inline metadata
+  `CSV` format menu 하나로 투영하며, inline metadata
   표현만 명시적 text action을 유지한다. 두 표현은 같은 export handler를
   공유한다. 실행 SQL 문맥은 document/session/result tab이 소유하므로 result
   command row에 SQL snippet을 반복하지 않는다. `ResultWorkbenchFooter`는
@@ -530,10 +527,10 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   scrollbar 계약을 사용하며 floating status footer가 있는 grid는 scroll
   bottom inset을 명시해 마지막 행과 keyboard focus가 footer 아래에 가리지 않게
   한다.
-  `dataGridGeometry.ts`가 clean-room 기준의 28px header/row, 28px row-number
+  `dataGridGeometry.ts`가 제품 기준의 28px header/row, 28px row-number
   column, 144px default data column을 소유하며 일반·가상 renderer는 이 값을
   중복 선언하지 않는다. identifier/value/row number는 `font-mono`를 사용하고
-  DopeDB 기준에 없는 강한 zebra 배경을 추가하지 않는다.
+  강한 zebra 배경을 추가하지 않는다.
   header와 row-number/frozen boundary만 구조적 세로선을 유지하며 body data
   cell은 기본 vertical border를 그리지 않는다.
   두 grid의 셀 선택은 공용 anchor/focus 좌표 계약을 사용한다. Shift+click과
@@ -541,11 +538,11 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   tab으로 구분한 텍스트를 만든다. 선택 배경과 focus ring도 기존
   `selection`/`ring` semantic token만 사용한다.
 - SQL table data editor는 command toolbar 바로 아래에 `WHERE`와 `ORDER BY`
-  expression field를 둔다. 넓은 main에서는 DopeDB 정본의 경계 비율인
+  expression field를 둔다. 넓은 main에서는 제품 계약의 경계 비율인
   `1.75fr / 1fr`(`약 64% / 36%`)를 사용하고, 480px 이하 main container에서는
   같은 폭으로 되돌린다. Enter 또는 field action으로 실제 server query를
   다시 실행하고 Escape는 적용되지 않은 draft를 되돌린다.
-  refresh는 DopeDB command 순서처럼 toolbar 왼쪽의 첫 실제 action으로 두고,
+  refresh는 toolbar 왼쪽의 첫 실제 action으로 두고,
   삭제는 row 제거 의미의 minus glyph를 사용한다. 이미 구현된 relation DDL과
   현재 page export는 `TableToolbar`의 직접 `DDL`, `CSV` command로 투영한다.
   relation DDL은 Explorer row hover action으로 중복하지 않고 Explorer command
@@ -757,8 +754,8 @@ React primitive로 승격한다.
 
 좁은 창에서 툴바 전체를 여러 줄로 쌓지 않는다. 덜 자주 쓰는 명령은
 `ToolbarMenu`로 이동하고, icon-only shortcut은 접근 가능한 이름과 tooltip을
-  유지한다. 이 구조는 DopeDB data editor와 query console에서 확인한 action
-  locality와 고정된 끝단 control을 현재 workbench에 맞게 표현한 것이다.
+  유지한다. 이 구조는 action locality와 고정된 끝단 control을 현재 workbench에
+  맞게 표현한 것이다.
 
 toolbar의 command overflow menu는 반드시 portal 기반 `ToolbarMenu`를 사용한다.
 
@@ -825,7 +822,5 @@ Tauri 최소 창 크기에서는 explorer와 main을 세로로 고정 분할하�
 
 참고 기준:
 
-- [`docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md`](../../docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md)
-- [DopeDB tool windows](https://www.DopeDB.com/help/DopeDB/tool-windows.html)
-- [DopeDB query consoles](https://www.DopeDB.com/help/DopeDB/query-consoles.html)
-- [DopeDB Services tool window](https://www.DopeDB.com/help/DopeDB/services-tool-window.html)
+- [`docs/PRODUCT_UI_SCOPE.md`](../../docs/PRODUCT_UI_SCOPE.md)
+- [`docs/UI_IMPLEMENTATION_TRACKER.md`](../../docs/UI_IMPLEMENTATION_TRACKER.md)

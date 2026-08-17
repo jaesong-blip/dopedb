@@ -19,7 +19,7 @@ export type GridExpressionIssue =
   | "unbalanced"
   | "clauseBoundary";
 
-// DopeDB accepts SQL-dialect fragments in its WHERE and ORDER BY fields. These
+// The data editor accepts SQL-dialect fragments in its WHERE and ORDER BY fields. These
 // fragments still pass through the backend read-only proposal gate, but we also keep
 // them inside their generated clause: comments, statement separators and clause
 // escapes must not be able to swallow the mandatory LIMIT or append a second query.

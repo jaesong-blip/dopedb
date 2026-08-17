@@ -459,8 +459,8 @@ function collectEvidence(graphOutput, issueInput) {
     { path: "AGENTS.md", line: canonicalLine("AGENTS.md", /^\*\*2\./), label: "간단한 연결 제품 축" },
     { path: "AGENTS.md", line: canonicalLine("AGENTS.md", /^\*\*3\./), label: "정확한 Agent grant 제품 축" },
     {
-      path: "docs/DopeDB_VISUAL_REFERENCE_SPEC.md",
-      line: canonicalLine("docs/DopeDB_VISUAL_REFERENCE_SPEC.md", /기능 범위 결정/),
+      path: "docs/PRODUCT_UI_SCOPE.md",
+      line: canonicalLine("docs/PRODUCT_UI_SCOPE.md", /기능 범위 결정/),
       label: "기능 범위 결정 정본",
     },
     {
@@ -475,15 +475,15 @@ function collectEvidence(graphOutput, issueInput) {
     ...issueInput.comments.map((comment) => comment.body),
     graphOutput,
   ].join("\n");
-  const scopeIds = [...new Set(issueText.match(/DQ-\d+/g) ?? [])].slice(0, 6);
+  const scopeIds = [...new Set(issueText.match(/PD-\d+/g) ?? [])].slice(0, 6);
   for (const scopeId of scopeIds) {
     const line = matchingLine(
-      "docs/DopeDB_VISUAL_REFERENCE_SPEC.md",
+      "docs/PRODUCT_UI_SCOPE.md",
       new RegExp(`(?:^|\\|\\s*)${scopeId.replace("-", "\\-")}(?:\\s*\\||\\b)`),
     );
     if (!line) continue;
     candidates.push({
-      path: "docs/DopeDB_VISUAL_REFERENCE_SPEC.md",
+      path: "docs/PRODUCT_UI_SCOPE.md",
       line,
       label: `${scopeId} 기능 범위 결정`,
     });
@@ -531,7 +531,7 @@ SECURITY BOUNDARY:
 
 REVIEW STANDARD:
 1. Compare the proposal with the actual local code evidence and canonical Product direction.
-2. docs/DopeDB_VISUAL_REFERENCE_SPEC.md owns per-feature scope. A decided no/out-of-scope/unresolved item cannot be recommended for implementation.
+2. docs/PRODUCT_UI_SCOPE.md owns per-feature scope. A decided no/out-of-scope/unresolved item cannot be recommended for implementation.
 3. Identify concrete contradictions immediately, but do not reject ambiguous wording without evidence.
 4. Cite only supplied evidence IDs. Never invent a path, line, behavior, issue number, or execution result.
 5. Treat OTHER_OPEN_ISSUES as duplicate hints only; use duplicate_candidate only when title/scope is clearly equivalent.

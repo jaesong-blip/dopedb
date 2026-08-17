@@ -1,4 +1,4 @@
-// DopeDB-style Database Explorer sidebar: connection tree, DDL modal, schema-group
+// Database Explorer sidebar: connection tree, DDL modal, schema-group
 // drag-and-drop. Split out of the old Connections/index.tsx (see ConnectionForm.tsx
 // for the connection create/edit form that used to live alongside it).
 import {
@@ -114,7 +114,7 @@ function environmentAnalysisTone(
   return "neutral";
 }
 
-// DopeDB-style Database Explorer: connections in the sidebar, the selected one
+// Database Explorer: connections in the sidebar, the selected one
 // expanded to reveal its tables. Clicking a table opens its data in the main area.
 export function DatabaseExplorer({
   connections,

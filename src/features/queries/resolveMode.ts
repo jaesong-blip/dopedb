@@ -120,7 +120,7 @@ function lastMatch(
 
 /**
  * Resolve the default namespace used by editor completion at the current caret.
- * Execution remains authoritative in Rust; this mirrors DopeDB's code-resolution
+ * Execution remains authoritative in Rust; this preserves the code-resolution
  * distinction without treating a UI mode as an execution-policy bypass.
  */
 export function resolveSqlNamespaceAtCaret({

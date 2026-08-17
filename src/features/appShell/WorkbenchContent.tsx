@@ -102,7 +102,7 @@ type WorkbenchContentCommands = {
     rename: (id: string, title: string) => void;
     close: (id: string) => void;
     newQuery: () => void;
-    searchEverywhere: (returnFocus?: HTMLElement | null) => void;
+    actionSearch: (returnFocus?: HTMLElement | null) => void;
     openAgentTask: (
       connectionId: string,
       environmentId?: string,
@@ -246,7 +246,7 @@ function WorkbenchContentResolved({ model, commands }: Props) {
     return withSettings(
       <Onboarding
         onNewConnection={() => commands.connections.new()}
-        onSearchEverywhere={commands.documents.searchEverywhere}
+        onActionSearch={commands.documents.actionSearch}
       />,
     );
   }
@@ -304,7 +304,7 @@ function WorkbenchContentResolved({ model, commands }: Props) {
             connectionName={selected.name || selected.database}
             onNewConnection={() => commands.connections.new()}
             onNewQuery={commands.documents.newQuery}
-            onSearchEverywhere={commands.documents.searchEverywhere}
+            onActionSearch={commands.documents.actionSearch}
           />
         ) : activeDocument.kind === "data" ? (
           effectiveSafety ? (

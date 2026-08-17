@@ -1,13 +1,13 @@
-export type SearchEverywhereKind =
+export type ActionSearchKind =
   | "action"
   | "connection"
   | "document"
   | "databaseObject"
   | "setting";
 
-export type SearchEverywhereItem = Readonly<{
+export type ActionSearchItem = Readonly<{
   id: string;
-  kind: SearchEverywhereKind;
+  kind: ActionSearchKind;
   label: string;
   detail?: string;
   keywords?: readonly string[];
@@ -20,18 +20,18 @@ function normalized(value: string) {
   return value.trim().toLocaleLowerCase().normalize("NFKC");
 }
 
-export type SearchEverywhereIndex = ReadonlyArray<
+export type ActionSearchIndex = ReadonlyArray<
   Readonly<{
-    item: SearchEverywhereItem;
+    item: ActionSearchItem;
     label: string;
     detail: string;
     keywords: string;
   }>
 >;
 
-export function indexSearchEverywhereItems(
-  items: readonly SearchEverywhereItem[],
-): SearchEverywhereIndex {
+export function indexActionSearchItems(
+  items: readonly ActionSearchItem[],
+): ActionSearchIndex {
   return items.map((item) => ({
     item,
     label: normalized(item.label),
@@ -41,7 +41,7 @@ export function indexSearchEverywhereItems(
 }
 
 function score(
-  item: SearchEverywhereIndex[number],
+  item: ActionSearchIndex[number],
   query: string,
 ) {
   const { label, detail, keywords } = item;
@@ -54,13 +54,13 @@ function score(
   return Number.POSITIVE_INFINITY;
 }
 
-export function searchEverywhereItems(
-  index: SearchEverywhereIndex,
+export function searchActionItems(
+  index: ActionSearchIndex,
   rawQuery: string,
   limit = 40,
 ) {
   const query = normalized(rawQuery);
-  const buckets: Array<SearchEverywhereItem[]> = [[], [], [], [], []];
+  const buckets: Array<ActionSearchItem[]> = [[], [], [], [], []];
   for (const entry of index) {
     const itemScore = score(entry, query);
     if (!Number.isFinite(itemScore)) continue;

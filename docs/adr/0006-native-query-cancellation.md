@@ -35,7 +35,7 @@ immutable operation identity, 300초 timeout과 connection retirement fallback�
 
 이 결정은 native cancellation이 영구히 불가능하다는 뜻이 아니다. driver가
 connection-bound cancel handle과 결과 의미를 공개하고 아래 재개 조건을 만족할 때
-한 engine씩 DQ-29를 먼저 변경한다.
+한 engine씩 PD-29를 먼저 변경한다.
 
 ## 권한과 비밀 경계
 

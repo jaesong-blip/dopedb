@@ -2,7 +2,7 @@
 
 이 문서는 #112의 전면 UI 정리에서 화면별로 무엇을 계속 보이고, 어떤 선과 색을
 허용하는지 기록한다. 기능 범위는
-[`DopeDB_VISUAL_REFERENCE_SPEC.md`](./DopeDB_VISUAL_REFERENCE_SPEC.md)의
+[`PRODUCT_UI_SCOPE.md`](./PRODUCT_UI_SCOPE.md)의
 결정 표가 우선하며, 이 inventory는 제외·미결 기능의 control을 추가하는 근거가
 아니다.
 
@@ -10,10 +10,9 @@
 
 - 정적 source audit와 DopeDB `1393×862` browser projection으로 text, line,
   palette owner를 확인한다.
-- browser projection은 Tauri runtime 동작이나 DopeDB parity의 증거가 아니다.
-- DopeDB 판정은 2026.1의 같은 viewport·같은 상태 reference가 있을 때만
-  `wrong` / `partial` / `missing`을 갱신한다. 현재 설치된 다른 DopeDB 버전은
-  보조 관찰로만 사용한다.
+- browser projection은 Tauri runtime 동작이나 packaged 검수의 증거가 아니다.
+- 같은 DopeDB scenario의 viewport·상태와 accessibility tree를 사용해
+  `complete` / `partial` / `missing`을 갱신한다.
 - macOS·Windows packaged App의 font rendering, focus, native chrome은 별도
   수동 검수 항목으로 남긴다.
 
@@ -48,12 +47,12 @@
 - `pnpm check:ui-palette`가 scoped palette 소비자 이탈과 feature TSX/CSS의 raw
   color 재도입을 build에서 차단한다.
 - Explorer의 단일 namespace badge가 `1`로 축약되어 선택/전체 의미를 잃던
-  gap은 같은 `1393×862` fixture의 before/after와 2026.1 reference를
+  gap은 같은 `1393×862` fixture의 before/after를
   [`audits/ui-polish-2026-08-06`](../audits/ui-polish-2026-08-06/README.md)에
   기록하고 `1 of 1`로 교정했다.
 - 빈 AI Chat은 큰 제목과 설명 문단을 제거하고 실제 SQL·탐색·승인 capability
-  세 줄만 남겼다. `1400×929` DopeDB 2026.1.4 빈 transcript와 같은 구조로
-  다시 대조하되 DopeDB의 IDE 전용 capability는 추가하지 않았다.
+  세 줄만 남겼다. `1400×929` 검수 viewport에서도 composer와 picker를 유지하며
+  editor 전용 capability는 추가하지 않았다.
 - Welcome 문서는 logo·큰 제목·반복 설명 구획을 제거하고 실제 새 쿼리·새
   연결·전체 검색 command만 남겼다. 연결 전에는 첫 데이터 소스 선택에 필요한
   한 줄만 표시하며 Files/VCS command는 기능 범위 결정에 따라 추가하지 않았다.
@@ -61,10 +60,10 @@
   trigger 복구를 소유한다. 360px Agent 선택 modal은 첫 checkbox와 semantic
   focus ring을 사용하고 body/footer를 같은 viewport 안에 유지한다.
 
-## 아직 parity 완료 증거가 아닌 항목
+## 아직 완료 증거가 아닌 항목
 
-- Explorer scope badge, Agent 빈 transcript, Welcome 외 shell·data editor·Agent 실행 상태 등 기준 시나리오의 DopeDB
-  2026.1/DopeDB 같은 state·viewport before/reference/after capture
+- Explorer scope badge, Agent 빈 transcript, Welcome 외 shell·data editor·Agent
+  실행 상태 등 기준 시나리오의 같은 state·viewport before/after capture
 - 30개 이상 column, 긴 NULL/text/numeric data에서 line 없는 grid의 실제 비교
 - macOS·Windows packaged App의 compact tooltip/focus/text rendering
 - popup, tab, resize, loading 전환의 60fps continuity와 selection/scroll 보존 기록

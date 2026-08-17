@@ -1,5 +1,5 @@
 /*
- * DopeDB design tokens, extracted from the DopeDB clean-room reference.
+ * DopeDB product-owned design tokens.
  *
  * The visual contract is monochrome and quiet: neutral surfaces carry the app
  * chrome, while color is reserved for focus and meaningful database state.
@@ -83,12 +83,12 @@
   --ds-z-modal: 50;
   --ds-z-toast: 1000;
 
-  /* DopeDB keeps ordinary surfaces flat; only floating surfaces receive elevation. */
+  /* Ordinary surfaces stay flat; only floating surfaces receive elevation. */
   --ds-shadow-control: 0 1px 2px rgb(0 0 0 / 0.18);
   --ds-shadow-panel: none;
   --ds-shadow-popover: 0 10px 24px rgb(0 0 0 / 0.18);
 
-  /* Compact DopeDB control sizes. */
+  /* Compact workbench control sizes. */
   --ds-control-xs: 24px;
   --ds-control-sm: 28px;
   --ds-control-md: 32px;
@@ -117,7 +117,7 @@
   --ds-line: var(--ds-border-width) solid var(--ds-border-subtle);
 
   /*
-   * Canonical DopeDB-derived dark roles. The aliases below keep DopeDB's existing
+   * Canonical dark roles. The aliases below keep DopeDB's existing
    * semantic API while preserving the surface/foreground pair contract.
    */
   --ds-background: #191a1c;
@@ -178,7 +178,7 @@
   --ds-hover: var(--ds-muted);
   --ds-hover-strong: var(--ds-selection);
 
-  /* Status colors keep DopeDB's state-only use of color. */
+  /* Status colors keep state-only use of color. */
   --ds-info: #60a5fa;
   --ds-positive: #86efac;
   --ds-positive-soft: color-mix(in srgb, var(--ds-positive) 10%, transparent);
@@ -210,7 +210,7 @@
   color: var(--ds-text);
 }
 
-/* The explorer has its own DopeDB-style tree surface role. */
+/* The explorer has its own dense tree surface role. */
 .sidebar {
   --ds-surface-0: var(--ds-worktree-sidebar);
   --ds-surface-1: #252629;
