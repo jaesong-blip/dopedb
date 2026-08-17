@@ -162,6 +162,12 @@ export function connectionProfileFlags(form: ConnectionProfile) {
   const isSharedTemplate = form.workspaceAccess !== "local";
   const supportsSqlSessionOptions =
     form.engine === "postgres" || form.engine === "mysql";
+  const canDiscoverDatabases =
+    !isSqlite &&
+    !isSharedTemplate &&
+    (form.engine === "postgres" ||
+      form.engine === "mysql" ||
+      form.engine === "mongodb");
   return {
     isSqlite,
     isMongo,
@@ -169,6 +175,7 @@ export function connectionProfileFlags(form: ConnectionProfile) {
     canEditConnection:
       !isSharedTemplate || form.workspaceAccess === "manage",
     supportsSqlSessionOptions,
+    canDiscoverDatabases,
     supportsStartupScript: supportsSqlSessionOptions,
     keepAliveEnabled:
       CONNECTION_KEEP_ALIVE_SECONDS_PARAMETER in form.extraParams,

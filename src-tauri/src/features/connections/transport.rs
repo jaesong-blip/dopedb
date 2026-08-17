@@ -4,6 +4,7 @@ use tauri::State;
 use zeroize::Zeroizing;
 
 use crate::error::AppResult;
+use crate::features::catalog::DatabaseSummary;
 use crate::kernel::identity::ConnectionId;
 use crate::model::ConnectionProfile;
 use crate::state::AppState;
@@ -123,5 +124,18 @@ pub async fn test_connection_profile(
             profile,
             password: password.map(Zeroizing::new),
         })
+        .await
+}
+
+#[tauri::command]
+pub async fn discover_connection_profile_databases(
+    state: State<'_, AppState>,
+    profile: ConnectionProfile,
+    password: Option<String>,
+) -> AppResult<Vec<DatabaseSummary>> {
+    state
+        .services
+        .connections
+        .discover_profile_databases(profile, password.map(Zeroizing::new))
         .await
 }

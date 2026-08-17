@@ -6,6 +6,7 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use crate::error::AppResult;
+use crate::features::catalog::DatabaseSummary;
 use crate::kernel::identity::ConnectionId;
 use crate::kernel::TerminalAuthority;
 use crate::model::ConnectionProfile;
@@ -109,4 +110,10 @@ pub(crate) trait AdHocConnectionPort: Clone + Send + Sync + 'static {
         profile: &ConnectionProfile,
         password: Zeroizing<String>,
     ) -> impl Future<Output = AppResult<()>> + Send;
+
+    fn discover_databases(
+        &self,
+        profile: &ConnectionProfile,
+        password: Zeroizing<String>,
+    ) -> impl Future<Output = AppResult<Vec<DatabaseSummary>>> + Send;
 }

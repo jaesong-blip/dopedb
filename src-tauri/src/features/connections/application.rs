@@ -9,6 +9,7 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use crate::error::{AppError, AppResult};
+use crate::features::catalog::DatabaseSummary;
 use crate::kernel::identity::ConnectionId;
 use crate::kernel::TerminalAuthority;
 use crate::model::{ConnectionProfile, WorkspaceConnectionAccess, WorkspaceCredentialMode};
@@ -305,6 +306,38 @@ where
             ));
         }
         self.tester.test(&profile, password).await
+    }
+
+    /// Discover selectable databases from an unsaved, local profile. This is a
+    /// bounded read only: the result is never persisted and grants no authority
+    /// beyond the one connection made for this request.
+    pub(crate) async fn discover_profile_databases(
+        &self,
+        profile: ConnectionProfile,
+        password: Option<Zeroizing<String>>,
+    ) -> AppResult<Vec<DatabaseSummary>> {
+        if profile.workspace_access != WorkspaceConnectionAccess::Local
+            || profile.credential_mode != WorkspaceCredentialMode::Local
+        {
+            return Err(AppError::Blocked {
+                reason:
+                    "shared connections must discover databases through workspace authorization"
+                        .into(),
+            });
+        }
+        if profile.engine == crate::model::Engine::Sqlite {
+            return Err(AppError::Config(
+                "SQLite files have one configured database scope".into(),
+            ));
+        }
+        self.drivers.validate(&profile)?;
+        let password = password.unwrap_or_default();
+        if password.len() > MAX_CONNECTION_CREDENTIAL_BYTES {
+            return Err(AppError::Config(
+                "connection credential exceeds the size limit".into(),
+            ));
+        }
+        self.tester.discover_databases(&profile, password).await
     }
 
     pub(crate) async fn list_agent_summaries(&self) -> AppResult<Vec<AgentConnectionSummary>> {

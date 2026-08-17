@@ -1,5 +1,7 @@
 // Owns Connection profile validation and save/test/delete lifecycle commands;
 // editable draft mechanics stay in the profile state model.
+import { useState } from "react";
+
 import type { DiagnosticItem } from "../../design-system/components/Diagnostics";
 import type { FieldValidation } from "../../design-system/components/FormControls";
 import type { PanelTab } from "../../design-system/components/PanelTabs";
@@ -35,6 +37,7 @@ import {
 } from "./options";
 import {
   deleteConnection,
+  discoverConnectionProfileDatabases,
   testConnection,
   testConnectionProfile,
   upsertConnection,
@@ -69,6 +72,10 @@ export function useConnectionProfileController({
   const { form, identity, credentials, tabs: tabState, url, status } =
     profileState;
   const { isSharedTemplate, isMongo } = form.flags;
+  const [databaseDiscovery, setDatabaseDiscovery] = useState<{
+    pending: boolean;
+    databases: string[];
+  }>({ pending: false, databases: [] });
   const driverCatalog = catalog.model.driverCatalog;
   const diagnosticProfile = isSharedTemplate
     ? { ...form.value, extraParams: {} }
@@ -370,6 +377,26 @@ export function useConnectionProfileController({
     }
   }
 
+  async function discoverDatabases() {
+    if (!form.flags.canDiscoverDatabases || databaseDiscovery.pending) return;
+    setDatabaseDiscovery((current) => ({
+      pending: true,
+      databases: current.databases,
+    }));
+    try {
+      const discovered = await discoverConnectionProfileDatabases(
+        form.value,
+        credentials.password || undefined,
+      );
+      setDatabaseDiscovery({
+        pending: false,
+        databases: discovered.map((database) => database.name),
+      });
+    } catch {
+      setDatabaseDiscovery({ pending: false, databases: [] });
+    }
+  }
+
   return {
     view: {
       form: form.value,
@@ -405,6 +432,10 @@ export function useConnectionProfileController({
         setTimedConnectionOptionValue: form.setTimedConnectionOptionValue,
         pickDatabaseFile: form.pickDatabaseFile,
         pickExtraParameterFile: form.pickExtraParameterFile,
+      },
+      databaseDiscovery: {
+        ...databaseDiscovery,
+        discover: discoverDatabases,
       },
       validation,
     },

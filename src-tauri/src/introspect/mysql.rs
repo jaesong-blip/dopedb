@@ -67,7 +67,8 @@ WHERE table_schema = DATABASE()
 // Intentionally relation-only: the workspace tree must not read columns,
 // constraints, indexes, routines, or triggers before the user needs them.
 const OVERVIEW_SQL: &str = r#"
-SELECT table_name, table_type, CAST(table_rows AS SIGNED) AS estimate,
+SELECT table_name AS table_name, table_type AS table_type,
+       CAST(table_rows AS SIGNED) AS estimate,
        NULLIF(table_comment, '') AS table_comment
 FROM information_schema.tables
 WHERE table_schema = DATABASE()

@@ -1,5 +1,6 @@
 // The only frontend owner of saved-connection Tauri command names. Screens depend on
 // these typed functions and never invoke the connection transport directly.
+import type { DatabaseSummary } from "../../ipc/types";
 import { invoke } from "../../ipc/core";
 
 import type {
@@ -51,6 +52,16 @@ export function testConnectionProfile(
   password?: string,
 ): Promise<void> {
   return invoke("test_connection_profile", { profile, password });
+}
+
+export function discoverConnectionProfileDatabases(
+  profile: ConnectionProfile,
+  password?: string,
+): Promise<DatabaseSummary[]> {
+  return invoke("discover_connection_profile_databases", {
+    profile,
+    password,
+  });
 }
 
 /** Native picker for SQLite and certificate paths; null means user cancellation. */

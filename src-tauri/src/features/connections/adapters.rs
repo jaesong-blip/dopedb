@@ -11,6 +11,8 @@ use crate::connection::{
 };
 use crate::driver;
 use crate::error::AppResult;
+use crate::features::catalog::DatabaseSummary;
+use crate::introspect;
 use crate::kernel::identity::ConnectionId;
 use crate::kernel::TerminalAuthority;
 use crate::model::ConnectionProfile;
@@ -241,6 +243,57 @@ impl AdHocConnectionPort for SystemAdHocConnection {
             }
         };
         let result = live.test().await;
+        live.close().await;
+        if let Some(tunnel) = transport.tunnel {
+            tunnel.close().await;
+        }
+        result
+    }
+
+    async fn discover_databases(
+        &self,
+        profile: &ConnectionProfile,
+        password: Zeroizing<String>,
+    ) -> AppResult<Vec<DatabaseSummary>> {
+        let configured = profile.database.clone();
+        let mut target = profile.clone();
+        if target.database.trim().is_empty() {
+            target.database = match target.engine {
+                crate::model::Engine::Postgres => "postgres".into(),
+                crate::model::Engine::Mongodb => "admin".into(),
+                _ => String::new(),
+            };
+        }
+        let transport = connection::ssh::open(&target, &target).await?;
+        let live = match driver::connect(
+            &transport.profile,
+            password.as_str(),
+            AD_HOC_CONNECTION_TEST_ACCESS,
+        )
+        .await
+        {
+            Ok(live) => live,
+            Err(error) => {
+                if let Some(tunnel) = transport.tunnel {
+                    tunnel.close().await;
+                }
+                return Err(error);
+            }
+        };
+        let result = introspect::databases(&live, &configured)
+            .await
+            .map(|databases| {
+                if target.engine == crate::model::Engine::Mongodb {
+                    databases
+                        .into_iter()
+                        .filter(|database| {
+                            !matches!(database.name.as_str(), "admin" | "config" | "local")
+                        })
+                        .collect()
+                } else {
+                    databases
+                }
+            });
         live.close().await;
         if let Some(tunnel) = transport.tunnel {
             tunnel.close().await;

@@ -2,6 +2,7 @@
 // workspace-dialog view models without owning runtime queries or mutations.
 import { Icon } from "../../components/Icon";
 import InfoTip from "../../components/InfoTip";
+import { useEffect, useRef } from "react";
 import { Button } from "../../design-system/components/Button";
 import {
   CheckboxField,
@@ -30,15 +31,37 @@ export function ConnectionGeneralTab({
   busy: boolean;
 }) {
   const { t } = useI18n();
-  const { form, set, flags, credentials, url, options, validation } = profile;
+  const databaseInputRef = useRef<HTMLInputElement>(null);
+  const {
+    form,
+    set,
+    flags,
+    credentials,
+    url,
+    options,
+    databaseDiscovery,
+    validation,
+  } = profile;
   const {
     isSharedTemplate,
     isSqlite,
     isMongo,
     canEditConnection,
+    canDiscoverDatabases,
     srv,
     sqlSslModes,
   } = flags;
+
+  useEffect(() => {
+    if (databaseDiscovery.databases.length === 0) return;
+    const input = databaseInputRef.current;
+    input?.focus();
+    try {
+      input?.showPicker?.();
+    } catch {
+      // Some WebViews require a direct user gesture; focus still exposes the list.
+    }
+  }, [databaseDiscovery.databases]);
 
   return (
     <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[840px] tw:gap-4">
@@ -143,9 +166,16 @@ export function ConnectionGeneralTab({
           >
             <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:items-center tw:gap-2">
               <TextInput
+                ref={databaseInputRef}
                 id="connection-database"
                 density="compact"
                 value={form.database}
+                list={
+                  canDiscoverDatabases &&
+                  databaseDiscovery.databases.length > 0
+                    ? "connection-database-options"
+                    : undefined
+                }
                 aria-invalid={
                   validation.database?.tone === "danger" || undefined
                 }
@@ -212,29 +242,6 @@ export function ConnectionGeneralTab({
                 ) : null}
               </div>
             </div>
-          </PropertyRow>
-
-          <PropertyRow
-            label={t("connections.database")}
-            htmlFor="connection-database"
-            validation={validation.database}
-            hint={
-              isMongo ? (
-                <InfoTip label={t("connections.databaseRequiredHint")} />
-              ) : null
-            }
-          >
-            <TextInput
-              id="connection-database"
-              density="compact"
-              value={form.database}
-              disabled={!canEditConnection}
-              required={isMongo}
-              aria-invalid={
-                validation.database?.tone === "danger" || undefined
-              }
-              onChange={(event) => set("database", event.target.value)}
-            />
           </PropertyRow>
 
           {isMongo && !isSharedTemplate ? (
@@ -350,6 +357,49 @@ export function ConnectionGeneralTab({
               </PropertyRow>
             </>
           )}
+
+          <PropertyRow
+            label={t("connections.database")}
+            htmlFor="connection-database"
+            validation={validation.database}
+            hint={
+              isMongo ? (
+                <InfoTip label={t("connections.databaseRequiredHint")} />
+              ) : null
+            }
+          >
+            <div className="tw:grid tw:gap-1.5">
+              <TextInput
+                ref={databaseInputRef}
+                id="connection-database"
+                density="compact"
+                value={form.database}
+                list={
+                  canDiscoverDatabases &&
+                  databaseDiscovery.databases.length > 0
+                    ? "connection-database-options"
+                    : undefined
+                }
+                disabled={!canEditConnection}
+                required={isMongo}
+                aria-invalid={
+                  validation.database?.tone === "danger" || undefined
+                }
+                onChange={(event) => set("database", event.target.value)}
+                onFocus={() => void databaseDiscovery.discover()}
+              />
+              {canDiscoverDatabases &&
+              databaseDiscovery.databases.length > 0 ? (
+                <datalist id="connection-database-options">
+                  {databaseDiscovery.databases.map((database) => (
+                    <option key={database} value={database}>
+                      {database}
+                    </option>
+                  ))}
+                </datalist>
+              ) : null}
+            </div>
+          </PropertyRow>
         </section>
       )}
     </div>
