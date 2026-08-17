@@ -222,10 +222,20 @@ fn probe_environment_key_allowed(key: &OsStr, case_insensitive: bool) -> bool {
 
 fn decode_output(output: Output) -> Result<String, String> {
     if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
-    } else {
-        Err(format!("command failed with status {}", output.status))
+        return Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned());
     }
+    // A version probe writes its diagnosis to stderr, so an exit status alone
+    // leaves `detection_error` unable to say what actually broke. Windows
+    // consoles emit that text in the OEM code page, so forward it only when it
+    // is valid UTF-8 rather than showing a lossy decode as the reason.
+    let detail = String::from_utf8(output.stderr)
+        .map(|text| text.trim().to_owned())
+        .unwrap_or_default();
+    Err(if detail.is_empty() {
+        format!("command failed with status {}", output.status)
+    } else {
+        format!("command failed with status {}: {detail}", output.status)
+    })
 }
 
 fn quiet_command(program: impl AsRef<OsStr>) -> std::process::Command {

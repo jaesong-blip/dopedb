@@ -864,16 +864,41 @@ pub(crate) async fn assert_process_boundary() {
             character.is_control()
                 || matches!(character, '"' | '&' | '|' | '<' | '>' | '^' | '%' | '!')
         }));
-        let script = format!(
-            "start \"\" /B \"{}\" 127.0.0.1 -n 30 >NUL & echo ready>\"{}\" & \"{}\" 127.0.0.1 -n 30 >NUL",
-            ping_path.display(),
-            marker,
-            ping_path.display(),
-        );
+        // `Command` quotes every argument for the MSVC parser, which escapes an
+        // embedded quote as `\"`. cmd.exe does not understand that escape, so a
+        // single script string with quoted paths reaches the shell malformed and
+        // the fixture never launches. Passing the script as separate arguments
+        // leaves Rust only plain quotes to add, which cmd.exe does read, so a
+        // temp directory containing a space still resolves.
+        let ping = ping_path.display().to_string();
+        let argv = [
+            "/D",
+            "/S",
+            "/C",
+            "start",
+            "/B",
+            ping.as_str(),
+            "127.0.0.1",
+            "-n",
+            "30",
+            ">NUL",
+            "&",
+            "echo",
+            "ready>",
+            marker.as_ref(),
+            "&",
+            ping.as_str(),
+            "127.0.0.1",
+            "-n",
+            "30",
+            ">NUL",
+        ]
+        .map(str::to_owned)
+        .to_vec();
         let command = ProvisioningCliCommand::new(
             LocalProvider::GcpCloudSql,
             executable,
-            vec!["/D".into(), "/S".into(), "/C".into(), script],
+            argv,
             vec![ProvisioningCliEnvironment::SafePath],
             ProvisioningCliOutputSchema::Empty,
             Duration::from_secs(10),

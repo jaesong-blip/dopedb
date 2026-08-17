@@ -39,6 +39,7 @@ pub(crate) fn executable_search_path(first: Option<&Path>) -> OsString {
             directories.push(home.join("AppData/Local/Microsoft/WindowsApps"));
             directories.push(home.join("AppData/Roaming/npm"));
             directories.push(home.join("AppData/Local/pnpm"));
+            directories.push(home.join("AppData/Local/Volta/bin"));
         }
     }
     #[cfg(windows)]
@@ -48,10 +49,41 @@ pub(crate) fn executable_search_path(first: Option<&Path>) -> OsString {
     if let Some(path) = std::env::var_os("PATH") {
         directories.extend(std::env::split_paths(&path));
     }
+    directories.extend(node_runtime_directories());
 
     let mut seen = BTreeSet::new();
     directories.retain(|directory| directory.is_absolute() && seen.insert(path_key(directory)));
     std::env::join_paths(&directories).unwrap_or_default()
+}
+
+/// npm and pnpm install `claude` and `codex` as shims that re-exec `node`, so a
+/// search path that finds the shim but not the Node runtime fails after launch.
+/// These come last, leaving an inherited PATH free to pick the active runtime.
+#[cfg(windows)]
+fn node_runtime_directories() -> Vec<PathBuf> {
+    let mut directories = Vec::new();
+    for variable in ["ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"] {
+        if let Some(root) = non_empty_var(variable) {
+            directories.push(PathBuf::from(root).join("nodejs"));
+        }
+    }
+    // nvm-windows keeps the selected runtime behind this symlink directory.
+    if let Some(symlink) = non_empty_var("NVM_SYMLINK") {
+        directories.push(PathBuf::from(symlink));
+    }
+    directories
+}
+
+/// Unix package managers place `node` in the shared bin directories already
+/// listed above, and shebang shims resolve it through the same search path.
+#[cfg(not(windows))]
+fn node_runtime_directories() -> Vec<PathBuf> {
+    Vec::new()
+}
+
+#[cfg(windows)]
+fn non_empty_var(name: &str) -> Option<OsString> {
+    std::env::var_os(name).filter(|value| !value.is_empty())
 }
 
 pub(crate) fn find_executable(binary: &str) -> Option<PathBuf> {

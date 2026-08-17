@@ -44,6 +44,11 @@ export default defineConfig(({ command }) => {
       port: 1420,
       strictPort: true,
       host: false,
+      // Cargo writes this workspace's artifacts to the repository root, and
+      // Windows locks a linking DLL, so watching them fails the dev server.
+      watch: {
+        ignored: ["**/target/**"],
+      },
     },
     build: {
       target: "esnext",

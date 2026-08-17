@@ -969,7 +969,9 @@ describe("provider credential Tauri adapter", () => {
     );
     expect(workspaceRevocationGatesSource).toContain("workspaceProviderResource.capabilityManifest");
     expect(desktopSharedConnectionSource).not.toContain("SHARED_CONNECTION_WRITE_BLOCKED");
-    expect(managedAccessTargetRouteSource).toContain(
+    // The contract is the authorization call and its scope, not the checkout's
+    // line endings, which arrive as CRLF on a Windows working tree.
+    expect(managedAccessTargetRouteSource.replace(/\r\n/g, "\n")).toContain(
       'authorizeWorkspaceConnection(\n    request,\n    workspaceId,\n    connectionId,\n    "manage",',
     );
     expect(managedAccessTargetRouteSource).toContain("loadProviderProvisioningTarget");
