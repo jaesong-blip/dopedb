@@ -59,7 +59,8 @@ ORDER BY table_name, index_name, seq_in_index
 
 // table_type is 'BASE TABLE' or 'VIEW'; estimate is meaningful only for base tables.
 const EST_SQL: &str = r#"
-SELECT table_name, table_type, CAST(table_rows AS SIGNED) AS estimate, table_comment
+SELECT table_name AS table_name, table_type AS table_type,
+       CAST(table_rows AS SIGNED) AS estimate, table_comment AS table_comment
 FROM information_schema.tables
 WHERE table_schema = DATABASE()
 "#;

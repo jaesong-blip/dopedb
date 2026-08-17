@@ -64,10 +64,8 @@ pub(crate) async fn databases(conn: &Live, configured: &str) -> AppResult<Vec<Da
 }
 
 fn database_summaries(mut names: Vec<String>, configured: &str) -> Vec<DatabaseSummary> {
-    names.retain(|name| {
-        !name.is_empty() && name.len() <= 255 && !name.chars().any(char::is_control)
-    });
-    if !names.iter().any(|name| name == configured) {
+    names.retain(|name| valid_database_name(name));
+    if valid_database_name(configured) && !names.iter().any(|name| name == configured) {
         names.push(configured.to_owned());
     }
     names.sort();
@@ -79,6 +77,10 @@ fn database_summaries(mut names: Vec<String>, configured: &str) -> Vec<DatabaseS
             name,
         })
         .collect()
+}
+
+fn valid_database_name(name: &str) -> bool {
+    !name.is_empty() && name.len() <= 255 && !name.chars().any(char::is_control)
 }
 
 /// The CREATE-TABLE DDL for one table, read through the read-only pool.

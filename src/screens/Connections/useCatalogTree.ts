@@ -30,6 +30,14 @@ export function databaseCatalogKey(
   return `${connectionId}\u0000${database}`;
 }
 
+function isDatabaseTargetName(database: string) {
+  return (
+    database.length > 0 &&
+    new TextEncoder().encode(database).length <= 255 &&
+    ![...database].some((character) => /\p{Cc}/u.test(character))
+  );
+}
+
 type DatabaseTarget = {
   connectionId: string;
   database: string;
@@ -76,12 +84,14 @@ export function useCatalogTree(
   const targets = useMemo(
     () =>
       connectionIds.flatMap((connectionId) =>
-        (databasesByConnection[connectionId] ?? []).map(
-          (database): DatabaseTarget => ({
-            connectionId,
-            database: database.name,
-            isDefault: database.isDefault,
-          }),
+        (databasesByConnection[connectionId] ?? []).flatMap((database) =>
+          isDatabaseTargetName(database.name)
+            ? [{
+                connectionId,
+                database: database.name,
+                isDefault: database.isDefault,
+              } satisfies DatabaseTarget]
+            : [],
         ),
       ),
     [connectionIds, databasesByConnection],
