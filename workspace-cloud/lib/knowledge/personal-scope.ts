@@ -181,7 +181,7 @@ export async function ensurePersonalKnowledgeScope(input: {
      ), ensured_project AS MATERIALIZED (
        INSERT INTO "workspace_control"."knowledge_project"
          ("id", "organization_id", "name", "revision", "updated_at")
-       SELECT project."id", organization."id", project."name", project."revision", now()
+       SELECT project."id", organization."organization_id", project."name", project."revision", now()
        FROM requested_project project
        CROSS JOIN active_profile organization
        WHERE NOT EXISTS (SELECT 1 FROM requested_identity_conflict)

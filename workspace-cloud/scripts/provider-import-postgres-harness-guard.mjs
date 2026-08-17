@@ -14,10 +14,11 @@ export const PROVIDER_IMPORT_POSTGRES_HARNESS_SOURCE_LIMITS = Object.freeze({
   "lib/provider-import-postgres-harness/analysis-member-removal-scenarios.ts": 370,
   "lib/provider-import-postgres-harness/sync-scenarios.ts": 200,
   "lib/provider-import-postgres-harness/provider-operation-scenarios.ts": 600,
+  "lib/provider-import-postgres-harness/personal-knowledge-scenarios.ts": 80,
   "lib/provider-import-postgres-harness/workspace-lifecycle-scenarios.ts": 320,
 });
 
-export const PROVIDER_IMPORT_POSTGRES_HARNESS_TOTAL_LINE_LIMIT = 4_150;
+export const PROVIDER_IMPORT_POSTGRES_HARNESS_TOTAL_LINE_LIMIT = 4_230;
 export const PROVIDER_POSTGRES_HARNESS_CONFIG_PATH =
   "vitest.provider-harness.config.ts";
 
