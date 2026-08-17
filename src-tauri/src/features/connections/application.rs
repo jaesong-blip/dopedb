@@ -299,12 +299,25 @@ where
                 reason: "shared connections must be tested through workspace authorization".into(),
             });
         }
-        let password = password.unwrap_or_default();
-        if password.len() > MAX_CONNECTION_CREDENTIAL_BYTES {
+        let supplied = password.filter(|password| !password.is_empty());
+        if supplied
+            .as_ref()
+            .is_some_and(|value| value.len() > MAX_CONNECTION_CREDENTIAL_BYTES)
+        {
             return Err(AppError::Config(
                 "connection credential exceeds the size limit".into(),
             ));
         }
+        // A saved profile keeps its secret in the OS credential store and the editor
+        // sends an empty password field for it, so an empty input means "use the
+        // stored credential" rather than "authenticate without one" — otherwise
+        // `upsert` and `test_profile` disagree about the same connection. A local
+        // profile with no stored reference still resolves to an empty string, which
+        // keeps socket/trust authentication working.
+        let password = match supplied {
+            Some(value) => value,
+            None => self.credentials.fetch_profile(&profile)?,
+        };
         self.tester.test(&profile, password).await
     }
 
