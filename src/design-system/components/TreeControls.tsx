@@ -1,7 +1,7 @@
 // Dense tree controls shared by Database Explorer-style tool windows. These
 // primitives own keyboard toggling and search chrome so feature trees only
 // provide domain labels and results.
-import type { ReactNode } from "react";
+import type { KeyboardEventHandler, ReactNode } from "react";
 
 import { Icon, type IconName } from "../../components/Icon";
 
@@ -77,6 +77,7 @@ export function TreeSearch({
   onChange,
   autoFocus = false,
   onEscape,
+  onKeyDown,
 }: {
   value: string;
   placeholder: string;
@@ -84,6 +85,7 @@ export function TreeSearch({
   onChange: (value: string) => void;
   autoFocus?: boolean;
   onEscape?: () => void;
+  onKeyDown?: KeyboardEventHandler<HTMLInputElement>;
 }) {
   return (
     <label className="tw:relative tw:block tw:min-w-0">
@@ -99,9 +101,12 @@ export function TreeSearch({
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key !== "Escape" || !onEscape) return;
-          event.preventDefault();
-          onEscape();
+          if (event.key === "Escape" && onEscape) {
+            event.preventDefault();
+            onEscape();
+            return;
+          }
+          onKeyDown?.(event);
         }}
       />
       {value ? (

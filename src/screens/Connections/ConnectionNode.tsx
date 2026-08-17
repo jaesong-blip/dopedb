@@ -30,6 +30,7 @@ import { useI18n } from "../../lib/i18n";
 import type { SchemaConnectionGroup } from "../../lib/schemaDiff";
 import { SchemaDiffBadge } from "./schemaDiffPresentation";
 import CatalogTree from "./CatalogTree";
+import type { CatalogTreeSearchResult } from "./CatalogTree";
 import type { DropTarget } from "../../features/catalogExplorer/catalogDomain";
 import {
   nextSchemaScopeSelection,
@@ -69,6 +70,11 @@ type Props = {
   detailErrorsByDatabase: Record<string, string>;
   treeScrollElement: HTMLDivElement | null;
   filter: string;
+  activeSearchResultKey?: string | null;
+  onSearchResultsChange?: (
+    catalogKey: string,
+    results: CatalogTreeSearchResult[],
+  ) => void;
   groupByConnectionId: Map<string, SchemaConnectionGroup>;
   catalogs: Record<string, Catalog>;
   collapsedSections: Set<string>;
@@ -436,6 +442,8 @@ export default function ConnectionNode(props: Props) {
                 initiallyOpen={database.isDefault}
                 scrollElement={props.treeScrollElement}
                 filter={props.filter}
+                activeSearchResultKey={props.activeSearchResultKey}
+                onSearchResultsChange={props.onSearchResultsChange}
                 showRowCounts={props.showRowCounts}
                 groupByConnectionId={
                   database.isDefault
@@ -479,10 +487,15 @@ export default function ConnectionNode(props: Props) {
             accessIssue={accessIssue}
             selected={props.selected}
             selectedTableKey={props.selectedTableKey}
+            overview={props.overview}
+            fullCatalog={props.fullCatalog}
             error={props.error}
+            detailError={props.detailError}
             initiallyOpen
             scrollElement={props.treeScrollElement}
             filter={props.filter}
+            activeSearchResultKey={props.activeSearchResultKey}
+            onSearchResultsChange={props.onSearchResultsChange}
             showRowCounts={props.showRowCounts}
             groupByConnectionId={props.groupByConnectionId}
             catalogs={props.catalogs}

@@ -2,6 +2,7 @@
 // drag-and-drop. Split out of the old Connections/index.tsx (see ConnectionForm.tsx
 // for the connection create/edit form that used to live alongside it).
 import {
+  useCallback,
   useEffect,
   useEffectEvent,
   useMemo,
@@ -95,6 +96,7 @@ import { deleteWorkspaceConnection } from "../../features/workspaces/tauriAdapte
 import { useToast } from "../../components/Toast";
 import { useI18n } from "../../lib/i18n";
 import ConnectionNode from "./ConnectionNode";
+import type { CatalogTreeSearchResult } from "./CatalogTree";
 import DdlModal from "./DdlModal";
 import { useCatalogTree } from "./useCatalogTree";
 
@@ -212,6 +214,12 @@ export function DatabaseExplorer({
   });
   const [globalFilter, setGlobalFilter] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchResultsByCatalog, setSearchResultsByCatalog] = useState<
+    Record<string, CatalogTreeSearchResult[]>
+  >({});
+  const [activeSearchResultKey, setActiveSearchResultKey] = useState<
+    string | null
+  >(null);
   const [projectSetupOpen, setProjectSetupOpen] = useState(false);
   const [environmentSetupProjectId, setEnvironmentSetupProjectId] =
     useState<string | null>(null);
@@ -509,6 +517,64 @@ export function DatabaseExplorer({
     setGlobalFilter(value);
   }
 
+  const onSearchResultsChange = useCallback(
+    (catalogKey: string, results: CatalogTreeSearchResult[]) => {
+      setSearchResultsByCatalog((current) => {
+        if (results.length === 0) {
+          if (!(catalogKey in current)) return current;
+          const next = { ...current };
+          delete next[catalogKey];
+          return next;
+        }
+        if (
+          current[catalogKey]?.length === results.length &&
+          current[catalogKey]?.every((result, index) =>
+            result.key === results[index]?.key,
+          )
+        ) {
+          return current;
+        }
+        return { ...current, [catalogKey]: results };
+      });
+    },
+    [],
+  );
+
+  const searchResults = useMemo(
+    () => Object.values(searchResultsByCatalog).flat(),
+    [searchResultsByCatalog],
+  );
+  const navigableSearchResults = useMemo(
+    () => searchResults.filter((result) => result.kind === "relation"),
+    [searchResults],
+  );
+  const activeSearchResult = activeSearchResultKey
+    ? searchResults.find((result) => result.key === activeSearchResultKey)
+    : undefined;
+
+  useEffect(() => {
+    if (globalFilter) return;
+    setSearchResultsByCatalog({});
+    setActiveSearchResultKey(null);
+  }, [globalFilter]);
+
+  function moveSearchResult(direction: 1 | -1) {
+    if (navigableSearchResults.length === 0) return;
+    const currentIndex = activeSearchResultKey
+      ? navigableSearchResults.findIndex(
+          (result) => result.key === activeSearchResultKey,
+        )
+      : -1;
+    const nextIndex =
+      (currentIndex + direction + navigableSearchResults.length) %
+      navigableSearchResults.length;
+    setActiveSearchResultKey(navigableSearchResults[nextIndex]?.key ?? null);
+  }
+
+  function openExplorerSearch() {
+    setSearchOpen(true);
+  }
+
   const openSelectedConnection = useEffectEvent((id: string) => {
     commands.openConnection(id);
     ensureGroupLoaded(id);
@@ -706,6 +772,8 @@ export function DatabaseExplorer({
         detailErrorsByDatabase={detailErrsByDatabase}
         treeScrollElement={treeScrollElement}
         filter={globalFilter}
+        activeSearchResultKey={activeSearchResultKey}
+        onSearchResultsChange={onSearchResultsChange}
         groupByConnectionId={groupByConnectionId}
         catalogs={catalogs}
         collapsedSections={collapsedSections}
@@ -1348,7 +1416,7 @@ export function DatabaseExplorer({
           <ToolbarMenuItem
             icon="search"
             disabled={connections.length === 0}
-            onClick={() => setSearchOpen(true)}
+            onClick={openExplorerSearch}
           >
             {t("connections.filterTables")}
           </ToolbarMenuItem>
@@ -1379,11 +1447,50 @@ export function DatabaseExplorer({
               onChange={updateGlobalFilter}
               autoFocus
               onEscape={() => {
-                setGlobalFilter("");
+                if (globalFilter) {
+                  setGlobalFilter("");
+                  return;
+                }
                 setSearchOpen(false);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  moveSearchResult(1);
+                }
+                if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  moveSearchResult(-1);
+                }
+                if (
+                  event.key === "Enter" &&
+                  activeSearchResult?.kind === "relation" &&
+                  activeSearchResult.table
+                ) {
+                  event.preventDefault();
+                  const connection = connections.find(
+                    (candidate) => candidate.id === activeSearchResult.connectionId,
+                  );
+                  if (connection) {
+                    onOpenTable(
+                      { ...connection, database: activeSearchResult.database },
+                      activeSearchResult.table,
+                    );
+                  }
+                }
               }}
             />
           </div>
+          {globalFilter ? (
+            <span
+              className="tw:shrink-0 tw:px-1 tw:text-2xs tw:text-muted-foreground"
+              aria-live="polite"
+            >
+              {t("connections.filterResultCount", {
+                count: searchResults.length,
+              })}
+            </span>
+          ) : null}
         </ToolWindowSearchRow>
       ) : null}
 

@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useEffectEvent,
   useMemo,
@@ -61,6 +62,11 @@ type Props = {
   initiallyOpen?: boolean;
   scrollElement: HTMLDivElement | null;
   filter: string;
+  activeSearchResultKey?: string | null;
+  onSearchResultsChange?: (
+    catalogKey: string,
+    results: CatalogTreeSearchResult[],
+  ) => void;
   showRowCounts: boolean;
   groupByConnectionId: Map<string, SchemaConnectionGroup>;
   catalogs: Record<string, Catalog>;
@@ -83,6 +89,15 @@ type SchemaContents = {
   tables: CatalogTable[];
   views: CatalogTable[];
   objectsByKind: Map<string, CatalogObject[]>;
+};
+
+export type CatalogTreeSearchResult = {
+  key: string;
+  rowKey: string;
+  kind: "relation" | "object";
+  connectionId: string;
+  database: string;
+  table?: CatalogTable;
 };
 
 export default function CatalogTree(props: Props) {
@@ -114,6 +129,7 @@ export default function CatalogTree(props: Props) {
     catalogs,
     collapsedSections,
     objectSectionsOpen,
+    onSearchResultsChange,
   } = props;
   const {
     unfilteredCatalog,
@@ -222,6 +238,17 @@ export default function CatalogTree(props: Props) {
   ]);
   const databaseSectionKey = (section: string) =>
     `${connection.database}\u0000${section}`;
+  const catalogKey = `${connection.id}\u0000${connection.database}`;
+
+  const tableSearchResultKey = useCallback(
+    (table: CatalogTable) => `${catalogKey}\u0000relation\u0000${tableKey(table)}`,
+    [catalogKey],
+  );
+  const objectSearchResultKey = useCallback(
+    (object: CatalogObject, index: number) =>
+      `${catalogKey}\u0000object\u0000${object.schema ?? ""}\u0000${object.kind}\u0000${object.name}\u0000${object.detail ?? index}`,
+    [catalogKey],
+  );
 
   const revealSelection = useEffectEvent(() => {
     if (
@@ -528,8 +555,14 @@ export default function CatalogTree(props: Props) {
     return (
       <div className="tw:flex tw:flex-col tw:gap-px" key={key}>
         <div
-          className="ds-object-row tw:group tw:relative tw:gap-1 tw:rounded-xs tw:select-none tw:text-ui"
+          className="ds-object-row tw:group tw:relative tw:gap-1 tw:rounded-xs tw:select-none tw:text-ui tw:data-[search-active=true]:bg-selection tw:data-[search-active=true]:text-selection-foreground"
           data-table-key={key}
+          data-explorer-search-result={
+            normalizedFilter ? tableSearchResultKey(table) : undefined
+          }
+          data-search-active={
+            activeSearchResult?.key === tableSearchResultKey(table) || undefined
+          }
           data-diff={tone ?? "none"}
           aria-selected={selected && selectedTableKey === key}
           title={
@@ -641,10 +674,16 @@ export default function CatalogTree(props: Props) {
           : catalogObjectLabel(object);
     return (
       <div
-        className="ds-object-row tw:cursor-default tw:gap-1 tw:rounded-xs tw:text-ui"
+        className="ds-object-row tw:cursor-default tw:gap-1 tw:rounded-xs tw:text-ui tw:data-[search-active=true]:bg-selection tw:data-[search-active=true]:text-selection-foreground"
         key={`${object.schema ?? ""}:${object.kind}:${object.name}:${
           object.detail ?? index
         }`}
+        data-explorer-search-result={
+          normalizedFilter ? objectSearchResultKey(object, index) : undefined
+        }
+        data-search-active={
+          activeSearchResult?.key === objectSearchResultKey(object, index) || undefined
+        }
         title={[
           catalogObjectLabel(object),
           object.parent
@@ -687,13 +726,66 @@ export default function CatalogTree(props: Props) {
     };
   }
 
-  function tableRowKey(table: CatalogTable) {
-    return `${connection.database}:table:${tableKey(table)}`;
-  }
+  const tableRowKey = useCallback(
+    (table: CatalogTable) => `${connection.database}:table:${tableKey(table)}`,
+    [connection.database],
+  );
+  const objectRowKey = useCallback(
+    (object: CatalogObject, index: number) =>
+      `${connection.database}:object:${object.schema ?? ""}:${object.kind}:${object.name}:${object.detail ?? index}`,
+    [connection.database],
+  );
 
-  function objectRowKey(object: CatalogObject, index: number) {
-    return `${connection.database}:object:${object.schema ?? ""}:${object.kind}:${object.name}:${object.detail ?? index}`;
-  }
+  const searchResults = useMemo<CatalogTreeSearchResult[]>(() => {
+    if (!normalizedFilter) return [];
+    return [
+      ...ordered.map((table) => ({
+        key: tableSearchResultKey(table),
+        rowKey: tableRowKey(table),
+        kind: "relation" as const,
+        connectionId: connection.id,
+        database: connection.database,
+        table,
+      })),
+      ...filteredObjects.map((object, index) => ({
+        key: objectSearchResultKey(object, index),
+        rowKey: objectRowKey(object, index),
+        kind: "object" as const,
+        connectionId: connection.id,
+        database: connection.database,
+      })),
+    ];
+  }, [connection.database, connection.id, filteredObjects, normalizedFilter, objectRowKey, objectSearchResultKey, ordered, tableRowKey, tableSearchResultKey]);
+
+  useEffect(() => {
+    onSearchResultsChange?.(catalogKey, searchResults);
+  }, [catalogKey, onSearchResultsChange, searchResults]);
+
+  useEffect(
+    () => () => onSearchResultsChange?.(catalogKey, []),
+    [catalogKey, onSearchResultsChange],
+  );
+
+  const activeSearchResult = props.activeSearchResultKey
+    ? searchResults.find((result) => result.key === props.activeSearchResultKey)
+    : undefined;
+
+  useEffect(() => {
+    if (!activeSearchResult) return;
+    let innerFrame = 0;
+    const outerFrame = requestAnimationFrame(() => {
+      innerFrame = requestAnimationFrame(() => {
+        const result = treeRef.current?.querySelector<HTMLElement>(
+          `[data-explorer-search-result="${CSS.escape(activeSearchResult.key)}"]`,
+        );
+        result?.scrollIntoView({ block: "nearest" });
+      });
+    });
+    return () => {
+      cancelAnimationFrame(outerFrame);
+      if (innerFrame) cancelAnimationFrame(innerFrame);
+    };
+  }, [activeSearchResult]);
 
   function buildDatabaseRows(): VirtualTreeRow[] {
     const rows: VirtualTreeRow[] = [];
@@ -974,9 +1066,9 @@ export default function CatalogTree(props: Props) {
                 rows={databaseRows}
                 scrollElement={props.scrollElement}
                 pinnedKey={
-                  selectedTableKey
+                  activeSearchResult?.rowKey ?? (selectedTableKey
                     ? `${connection.database}:table:${selectedTableKey}`
-                    : null
+                    : null)
                 }
               />
             ) : null}
