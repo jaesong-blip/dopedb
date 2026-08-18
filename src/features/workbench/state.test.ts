@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import {
   connectionId,
   retrySqlDocumentConflict,
@@ -47,6 +49,7 @@ import {
   demoSqliteConnection,
   findDemoSqliteConnection,
 } from "../connections/presets";
+import { AnalysisSnapshotParameterField } from "../analysisArticles/AnalysisArticleVisualization";
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -483,5 +486,22 @@ describe("workbench state ownership", () => {
 
     const demo = demoSqliteConnection("/tmp/demos/dopedb-demo-v1.sqlite");
     expect(findDemoSqliteConnection([demo], demo.database)).toBe(demo);
+
+    const snapshotParameter = renderToStaticMarkup(
+      createElement(AnalysisSnapshotParameterField, {
+        parameter: {
+          id: "include-archived",
+          label: "Include archived",
+          type: "boolean",
+          required: true,
+          defaultValue: false,
+          options: [],
+        },
+        value: true,
+      }),
+    );
+    expect(snapshotParameter).toContain("Include archived");
+    expect(snapshotParameter).toContain("true");
+    expect(snapshotParameter).not.toMatch(/<(?:input|select|textarea)\b/);
   });
 });

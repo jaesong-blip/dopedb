@@ -148,6 +148,19 @@ export function AnalysisPublicationPanel({
     () => mergeAnalysisFragments(preview?.snapshot.blocks.flatMap((block) => block.fragments) ?? []),
     [preview],
   );
+  const previewParameterValues = useMemo(() => {
+    if (!preview) return {};
+    const selected = new Set(request.parameterIds);
+    const parameters = article.definition.parameters.filter((parameter) =>
+      selected.has(parameter.id),
+    );
+    return Object.fromEntries(
+      parameters.flatMap((parameter, index) => {
+        const snapshot = preview.snapshot.parameters[index];
+        return snapshot ? [[parameter.id, snapshot.value]] : [];
+      }),
+    );
+  }, [article.definition.parameters, preview, request.parameterIds]);
 
   if (article.state !== "live" || !article.liveRunId) {
     return (
@@ -292,8 +305,8 @@ export function AnalysisPublicationPanel({
           <AnalysisArticleVisualization
             definition={previewDefinition}
             data={previewData}
-            parameterValues={{}}
-            onParameterChange={() => undefined}
+            parameterValues={previewParameterValues}
+            mode="snapshot"
           />
         </section>
       ) : null}

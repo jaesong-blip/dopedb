@@ -35,7 +35,7 @@
     },
     "src/features/workbench/state.test.ts": {
       "tests": 4,
-      "protects": "Workbench document identity, save ownership, SQL resolve context, mutually exclusive AppShell route transitions, first-connection Test/engine/Demo contracts, durable Knowledge sync progress projection, and app-lifetime updater single-flight, retry, progress, relaunch, and resource cleanup"
+      "protects": "Workbench document identity, save ownership, SQL resolve context, mutually exclusive AppShell route transitions, first-connection Test/engine/Demo contracts, immutable Analysis snapshot controls, durable Knowledge sync progress projection, and app-lifetime updater single-flight, retry, progress, relaunch, and resource cleanup"
     },
     "src/features/workspaces/authPolicy.test.ts": {
       "tests": 3,
@@ -81,7 +81,7 @@
     },
     "src-tauri/src/safety/l2_enforce.rs": {
       "tests": 4,
-      "protects": "Result caps, truncation, column presence, and numeric precision"
+      "protects": "Result caps, truncation, column presence, numeric precision, and the EXPLAIN-preview opt-out before database access"
     },
     "src-tauri/src/safety/l4_gate.rs": {
       "tests": 7,

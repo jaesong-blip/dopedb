@@ -28,6 +28,21 @@ pub async fn preview(
     classification: &Classification,
     settings: &SafetySettings,
 ) -> AppResult<PreviewReport> {
+    if !settings.explain_preview
+        && matches!(classification.kind, QueryKind::Read | QueryKind::Write)
+    {
+        return Ok(PreviewReport {
+            mode: PreviewMode::Skipped,
+            estimated_rows: None,
+            exact_rows: None,
+            plan: None,
+            note: Some(
+                "EXPLAIN preview is disabled in Safety settings; no database plan was requested."
+                    .into(),
+            ),
+        });
+    }
+
     match classification.kind {
         QueryKind::Read => {
             let (estimated_rows, plan) = explain(pool, sql, namespace).await;

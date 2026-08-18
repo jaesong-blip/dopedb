@@ -32,6 +32,7 @@ const PLOT_HEIGHT = VIEW_HEIGHT - PAD_TOP - PAD_BOTTOM;
 const MAX_CHART_ROWS = 160;
 
 type ArticleParameterValues = Record<string, AnalysisParameterValue>;
+export type AnalysisArticleVisualizationMode = "interactive" | "snapshot";
 
 function configString(block: AnalysisBlock, key: string): string | null {
   const value = block.config[key];
@@ -563,11 +564,31 @@ function ParameterField({ parameter, value, onChange }: {
   );
 }
 
-function ControlBlock({ block, definition, values, onParameterChange }: {
+export function AnalysisSnapshotParameterField({
+  parameter,
+  value,
+}: {
+  parameter: AnalysisParameter;
+  value: AnalysisParameterValue;
+}) {
+  return (
+    <div className="tw:grid tw:gap-0.5">
+      <span className="tw:text-xs tw:text-muted-foreground">
+        {parameter.label}
+      </span>
+      <span className="tw:min-h-control-sm tw:rounded-sm tw:border tw:border-border-subtle tw:bg-muted tw:px-2 tw:py-1 tw:font-mono tw:text-sm">
+        {textValue(value)}
+      </span>
+    </div>
+  );
+}
+
+function ControlBlock({ block, definition, values, mode, onParameterChange }: {
   block: AnalysisBlock;
   definition: AnalysisArticleDefinition;
   values: ArticleParameterValues;
-  onParameterChange: (id: string, value: AnalysisParameterValue) => void;
+  mode: AnalysisArticleVisualizationMode;
+  onParameterChange?: (id: string, value: AnalysisParameterValue) => void;
 }) {
   const ids = configStrings(block, "parameterIds");
   const parameters = ids.flatMap((id) => {
@@ -576,14 +597,25 @@ function ControlBlock({ block, definition, values, onParameterChange }: {
   });
   return (
     <div className="tw:grid tw:grid-cols-[repeat(auto-fit,minmax(160px,1fr))] tw:gap-3">
-      {parameters.map((parameter) => (
-        <ParameterField
-          key={parameter.id}
-          parameter={parameter}
-          value={values[parameter.id] ?? parameter.defaultValue}
-          onChange={(value) => onParameterChange(parameter.id, value)}
-        />
-      ))}
+      {parameters.map((parameter) => {
+        const value = values[parameter.id] ?? parameter.defaultValue;
+        return mode === "snapshot" ? (
+          <AnalysisSnapshotParameterField
+            key={parameter.id}
+            parameter={parameter}
+            value={value}
+          />
+        ) : (
+          <ParameterField
+            key={parameter.id}
+            parameter={parameter}
+            value={value}
+            onChange={(nextValue) =>
+              onParameterChange?.(parameter.id, nextValue)
+            }
+          />
+        );
+      })}
     </div>
   );
 }
@@ -662,13 +694,19 @@ export function AnalysisArticleVisualization({
   definition,
   data,
   parameterValues,
+  mode,
   onParameterChange,
 }: {
   definition: AnalysisArticleDefinition;
   data: ReadonlyMap<string, AnalysisBlockData>;
   parameterValues: ArticleParameterValues;
-  onParameterChange: (id: string, value: AnalysisParameterValue) => void;
-}) {
+} & (
+  | {
+      mode: "interactive";
+      onParameterChange: (id: string, value: AnalysisParameterValue) => void;
+    }
+  | { mode: "snapshot"; onParameterChange?: never }
+)) {
   const { t } = useI18n();
   const richTextLabels = {
     copied: t("agent.acpCopied"),
@@ -702,6 +740,7 @@ export function AnalysisArticleVisualization({
                 block={block}
                 definition={definition}
                 values={parameterValues}
+                mode={mode}
                 onParameterChange={onParameterChange}
               />
             ) : (

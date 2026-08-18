@@ -506,6 +506,61 @@ mod tests {
         assert_eq!(ordered.row_count, 2);
         assert_eq!(ordered.rows[0][0], serde_json::json!(2));
         assert_eq!(ordered.rows[1][0], serde_json::json!(5));
+
+        let classification = crate::model::Classification {
+            kind: crate::model::QueryKind::Read,
+            risk: crate::model::RiskLevel::Low,
+            statement_count: 1,
+            no_where: false,
+            tables: vec!["t".into()],
+            notes: vec![],
+            rollback_safe: false,
+        };
+        let enabled = crate::safety::preview(
+            PoolRef::Sqlite(&pool),
+            "SELECT id FROM t",
+            None,
+            &classification,
+            &crate::model::SafetySettings::default(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(enabled.mode, crate::model::PreviewMode::Explain);
+        assert!(enabled.plan.is_some());
+
+        // A closed pool proves the disabled path returns before any EXPLAIN request.
+        pool.close().await;
+        let settings = crate::model::SafetySettings {
+            explain_preview: false,
+            ..crate::model::SafetySettings::default()
+        };
+        for kind in [
+            crate::model::QueryKind::Read,
+            crate::model::QueryKind::Write,
+        ] {
+            let skipped = crate::safety::preview(
+                PoolRef::Sqlite(&pool),
+                "SELECT id FROM t",
+                None,
+                &crate::model::Classification {
+                    kind,
+                    rollback_safe: matches!(kind, crate::model::QueryKind::Write),
+                    ..classification.clone()
+                },
+                &settings,
+            )
+            .await
+            .unwrap();
+            assert_eq!(skipped.mode, crate::model::PreviewMode::Skipped);
+            assert_eq!(skipped.estimated_rows, None);
+            assert_eq!(skipped.plan, None);
+            assert_eq!(
+                skipped.note.as_deref(),
+                Some(
+                    "EXPLAIN preview is disabled in Safety settings; no database plan was requested."
+                )
+            );
+        }
     }
 
     #[tokio::test]

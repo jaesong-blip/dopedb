@@ -524,6 +524,7 @@ function ArticleView({
         definition={article.definition}
         data={data}
         parameterValues={parameterValues}
+        mode="interactive"
         onParameterChange={onParameterChange}
       />
       {article.definition.claims.length > 0 ? (
