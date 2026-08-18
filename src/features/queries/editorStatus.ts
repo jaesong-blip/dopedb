@@ -28,6 +28,23 @@ export interface SqlExecutionStatus {
   label: string;
 }
 
+export function sqlRunSourceFromSelection(
+  value: string,
+  from: number,
+  to: number,
+): SqlRunSource | undefined {
+  if (from === to) return undefined;
+  const raw = value.slice(from, to);
+  const sql = raw.trim();
+  const leadingWhitespace = raw.length - raw.trimStart().length;
+  const trailingWhitespace = raw.length - raw.trimEnd().length;
+  return {
+    sql,
+    from: from + leadingWhitespace,
+    to: to - trailingWhitespace,
+  };
+}
+
 export function sqlExecutionMarkerPosition(
   value: string,
   status: SqlExecutionStatus | null | undefined,

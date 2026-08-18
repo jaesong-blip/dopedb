@@ -13,7 +13,10 @@ import {
   materializeSqlParameters,
 } from "../query/sqlParameters";
 import { resolveSqlNamespaceAtCaret } from "../queries/resolveMode";
-import { sqlExecutionMarkerPosition } from "../queries/editorStatus";
+import {
+  sqlExecutionMarkerPosition,
+  sqlRunSourceFromSelection,
+} from "../queries/editorStatus";
 import {
   canFallbackFromCombinedRead,
   initialSqlRunPath,
@@ -96,6 +99,18 @@ function storedDocument(id = "doc-1"): SqlDocument {
 
 describe("workbench state ownership", () => {
   it("restores persisted SQL without removing the connection welcome document", () => {
+    const selectedDraft = "SELECT 1;\n  SELECT 2;  \nSELECT 3;";
+    const selectedStart = selectedDraft.indexOf("  SELECT 2;");
+    const selectedEnd = selectedDraft.indexOf("\nSELECT 3;");
+    expect(
+      sqlRunSourceFromSelection(selectedDraft, selectedStart, selectedEnd),
+    ).toEqual({
+      sql: "SELECT 2;",
+      from: selectedStart + 2,
+      to: selectedEnd - 2,
+    });
+    expect(sqlRunSourceFromSelection(selectedDraft, 0, 0)).toBeUndefined();
+
     expect(queryResultPhase(undefined, new Error("offline"))).toBe("coldError");
     expect(queryResultPhase(undefined, null)).toBe("coldLoading");
     expect(queryResultPhase([], new Error("offline"))).toBe("staleError");

@@ -18,7 +18,7 @@ import {
   autocompletion,
   type CompletionSource,
 } from "@codemirror/autocomplete";
-import { type EditorState, type Extension } from "@codemirror/state";
+import { Prec, type EditorState, type Extension } from "@codemirror/state";
 import {
   Decoration,
   EditorView,
@@ -31,6 +31,7 @@ import type { ConnectionEngine } from "../features/connections/domain";
 import {
   SQL_EDITOR_INDENT_SIZE,
   sqlExecutionMarkerPosition,
+  sqlRunSourceFromSelection,
   type SqlCursorPosition,
   type SqlExecutionStatus,
   type SqlRunSource,
@@ -96,16 +97,11 @@ function cursorPosition(state: EditorState): SqlCursorPosition {
 
 function selectedRunSource(state: EditorState): SqlRunSource | undefined {
   const selection = state.selection.main;
-  if (selection.empty) return undefined;
-  const raw = state.sliceDoc(selection.from, selection.to);
-  const sql = raw.trim();
-  const leadingWhitespace = raw.length - raw.trimStart().length;
-  const trailingWhitespace = raw.length - raw.trimEnd().length;
-  return {
-    sql,
-    from: selection.from + leadingWhitespace,
-    to: selection.to - trailingWhitespace,
-  };
+  return sqlRunSourceFromSelection(
+    state.doc.toString(),
+    selection.from,
+    selection.to,
+  );
 }
 
 class SqlExecutionWidget extends WidgetType {
@@ -221,16 +217,18 @@ export default function SqlViewer({
     }
     if (onRun) {
       ext.push(
-        keymap.of([
-          {
-            key: "Mod-Enter",
-            run: (view) => {
-              // Run just the selection when there is one; otherwise the whole draft.
-              onRun(selectedRunSource(view.state));
-              return true;
+        Prec.highest(
+          keymap.of([
+            {
+              key: "Mod-Enter",
+              run: (view) => {
+                // Run just the selection when there is one; otherwise the whole draft.
+                onRun(selectedRunSource(view.state));
+                return true;
+              },
             },
-          },
-        ]),
+          ]),
+        ),
       );
     }
     if (onBlur) {
