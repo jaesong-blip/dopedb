@@ -10,6 +10,7 @@ import {
   findDependencyPath,
 } from "./architecture/dependency-graph.mjs";
 import { collectFrontendDependencyCycleDiagnostics } from "./architecture/frontend-dependency-cycles.mjs";
+import { collectI18nOwnershipDiagnostics } from "./architecture/i18n-ownership-guards.mjs";
 import { collectProviderOwnershipDiagnostics } from "./architecture/provider-ownership.mjs";
 import { collectQueryCentralIpcDiagnostics } from "./architecture/query-central-ipc-ownership.mjs";
 import { collectQueryFrontendOwnershipDiagnostics } from "./architecture/query-frontend-ownership.mjs";
@@ -175,6 +176,7 @@ for (const workflow of walk(".github/workflows").filter((file) => /\.ya?ml$/.tes
 failures.push(...collectDependencyParserSelfDiagnostics());
 for (const collect of [
   collectProviderOwnershipDiagnostics,
+  collectI18nOwnershipDiagnostics,
   collectRepositoryIdentityDiagnostics,
   collectQueryProductionModuleDiagnostics,
   collectQueryTestModuleDiagnostics,

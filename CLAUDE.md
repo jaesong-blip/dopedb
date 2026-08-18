@@ -186,7 +186,10 @@ control에는 실제 command와 state owner가 있어야 한다.
   `useEffect`와 `invoke`로 직접 fetch하지 않는다.
 - 기능 IPC는 frontend `features/<feature>/tauriAdapter.ts`, Rust
   `features/<feature>/transport.rs`에 둔다. 직렬화 형태와 필드 순서를 맞춘다.
-- 번역은 `en`과 `ko`를 함께 추가하고 `namespace.camelCaseKey`를 사용한다.
+- 번역은 `en`과 `ko`를 함께 추가하고 기본적으로 `namespace.camelCaseKey`를
+  사용한다. 제한된 feature/state/enum family를 나타내는 안정적인 semantic
+  subnamespace는 허용하지만, 깊이와 관계없이 en/ko key를 정확히 맞추고 typed
+  `t()` lookup을 사용한다. 런타임에 임의의 동적 key를 조합하지 않는다.
 - Rust 모듈은 파일 상단에 `//!` 설명을 둔다.
 - 45줄이 넘는 TS/TSX 화면·컴포넌트·lib 파일은 import 앞에 역할을 설명하는
   짧은 주석을 둔다.

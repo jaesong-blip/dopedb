@@ -88,7 +88,7 @@ export default function RowEditor({
       let rationale: string;
       if (isEdit) {
         if (!changedColumns.length) {
-          setError("No changes to save.");
+          setError(t("rowEditor.noChanges"));
           return;
         }
         const pkValues: Record<string, string | null> = {};

@@ -34,6 +34,7 @@ import {
 
 const IDENTIFIER = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const PARAMETER_TOKEN = /\{\{([A-Za-z][A-Za-z0-9_-]{0,63})\}\}/g;
+type Translate = ReturnType<typeof useI18n>["t"];
 
 function humanize(value: string): string {
   return value.replace(/_/g, " ");
@@ -384,7 +385,7 @@ export function AnalysisDataContractEditor({
       ...definition,
       queries: [...definition.queries, {
         id,
-        title: "Read query",
+        title: t("analysis.builderSeed.queryTitle"),
         connectionRole: connections[0]?.role ?? "primary",
         sql: "SELECT 1 AS value",
         parameterIds: [],
@@ -1067,6 +1068,7 @@ function blockNeedsSource(kind: AnalysisBlockKind): boolean {
 function defaultBlock(
   definition: AnalysisArticleDefinition,
   kind: AnalysisBlockKind,
+  t: Translate,
   preferredNodeId?: string,
 ): AnalysisBlock | null {
   const nodes = availableNodes(definition);
@@ -1082,15 +1084,15 @@ function defaultBlock(
     if (!metric) return null;
     return { id, kind, title: metric.label, sourceNodeId: metric.sourceNodeId, width: 4, config: { metricId: metric.id, comparisonColumn: null, sparklineColumn: null, sampleCountColumn: null } };
   }
-  if (kind === "heading") return { id, kind, title: "", sourceNodeId: null, width: 12, config: { level: 2, text: "Section heading" } };
-  if (kind === "markdown") return { id, kind, title: "", sourceNodeId: null, width: 12, config: { markdown: "Write the analysis context and interpretation." } };
-  if (kind === "callout") return { id, kind, title: "", sourceNodeId: null, width: 12, config: { tone: "info", markdown: "Important context for this result." } };
+  if (kind === "heading") return { id, kind, title: "", sourceNodeId: null, width: 12, config: { level: 2, text: t("analysis.builderSeed.headingText") } };
+  if (kind === "markdown") return { id, kind, title: "", sourceNodeId: null, width: 12, config: { markdown: t("analysis.builderSeed.markdownText") } };
+  if (kind === "callout") return { id, kind, title: "", sourceNodeId: null, width: 12, config: { tone: "info", markdown: t("analysis.builderSeed.calloutText") } };
   if (kind === "divider") return { id, kind, title: "", sourceNodeId: null, width: 12, config: {} };
   if (["time_series", "bar", "area", "scatter"].includes(kind)) return { id, kind, title: humanize(kind), sourceNodeId: node!.id, width: 8, config: { xColumn: time, yColumns: [numbers[0] ?? first], seriesColumn: null, stacked: false, format: { ...defaultNumberFormat } } };
-  if (kind === "table") return { id, kind, title: "Table", sourceNodeId: node!.id, width: 12, config: { columns: node!.columns.slice(0, 12).map((column) => column.name), pageSize: 50 } };
-  if (kind === "funnel") return { id, kind, title: "Funnel", sourceNodeId: node!.id, width: 8, config: { stageColumn: dimension, valueColumn: numbers[0] ?? first, rateColumn: numbers[1] ?? null, format: { ...defaultNumberFormat } } };
-  if (kind === "retention_cohort") return { id, kind, title: "Retention cohort", sourceNodeId: node!.id, width: 12, config: { cohortColumn: dimension, periodColumn: time, valueColumn: numbers[0] ?? first, format: { style: "percent", decimals: 1, currency: null } } };
-  if (kind === "heatmap") return { id, kind, title: "Heatmap", sourceNodeId: node!.id, width: 12, config: { xColumn: time, yColumn: dimension, valueColumn: numbers[0] ?? first, format: { ...defaultNumberFormat } } };
+  if (kind === "table") return { id, kind, title: t("analysis.builderSeed.tableTitle"), sourceNodeId: node!.id, width: 12, config: { columns: node!.columns.slice(0, 12).map((column) => column.name), pageSize: 50 } };
+  if (kind === "funnel") return { id, kind, title: t("analysis.builderSeed.funnelTitle"), sourceNodeId: node!.id, width: 8, config: { stageColumn: dimension, valueColumn: numbers[0] ?? first, rateColumn: numbers[1] ?? null, format: { ...defaultNumberFormat } } };
+  if (kind === "retention_cohort") return { id, kind, title: t("analysis.builderSeed.retentionTitle"), sourceNodeId: node!.id, width: 12, config: { cohortColumn: dimension, periodColumn: time, valueColumn: numbers[0] ?? first, format: { style: "percent", decimals: 1, currency: null } } };
+  if (kind === "heatmap") return { id, kind, title: t("analysis.builderSeed.heatmapTitle"), sourceNodeId: node!.id, width: 12, config: { xColumn: time, yColumn: dimension, valueColumn: numbers[0] ?? first, format: { ...defaultNumberFormat } } };
   const required = kind === "date_range_control" ? 2 : 1;
   if (definition.parameters.length < required) return null;
   return { id, kind, title: humanize(kind), sourceNodeId: null, width: kind === "date_range_control" ? 6 : 4, config: { parameterIds: definition.parameters.slice(0, required).map((parameter) => parameter.id) } };
@@ -1112,8 +1114,8 @@ function BlockConfigEditor({
   const format = (config.format && typeof config.format === "object" && !Array.isArray(config.format)
     ? config.format : defaultNumberFormat) as AnalysisNumberFormat;
   if (block.kind === "heading") return <FormGrid><Field label={t("analysis.builderHeadingLevel")}><SelectInput value={configNumber(config, "level", 2)} onChange={(event) => patch({ level: Number(event.target.value) })}><option value="1">H1</option><option value="2">H2</option><option value="3">H3</option></SelectInput></Field><Field label={t("analysis.builderText")}><TextInput value={configString(config, "text")} onChange={(event) => patch({ text: event.target.value })} /></Field></FormGrid>;
-  if (block.kind === "markdown") return <Field label="Markdown"><TextAreaInput value={configString(config, "markdown")} onChange={(event) => patch({ markdown: event.target.value })} /></Field>;
-  if (block.kind === "callout") return <div className="tw:grid tw:gap-3"><Field label={t("analysis.builderTone")}><SelectInput value={configString(config, "tone")} onChange={(event) => patch({ tone: event.target.value })}>{["info", "success", "warning", "danger"].map((tone) => <option value={tone} key={tone}>{tone}</option>)}</SelectInput></Field><Field label="Markdown"><TextAreaInput value={configString(config, "markdown")} onChange={(event) => patch({ markdown: event.target.value })} /></Field></div>;
+  if (block.kind === "markdown") return <Field label={t("analysis.builderMarkdown")}><TextAreaInput value={configString(config, "markdown")} onChange={(event) => patch({ markdown: event.target.value })} /></Field>;
+  if (block.kind === "callout") return <div className="tw:grid tw:gap-3"><Field label={t("analysis.builderTone")}><SelectInput value={configString(config, "tone")} onChange={(event) => patch({ tone: event.target.value })}>{["info", "success", "warning", "danger"].map((tone) => <option value={tone} key={tone}>{tone}</option>)}</SelectInput></Field><Field label={t("analysis.builderMarkdown")}><TextAreaInput value={configString(config, "markdown")} onChange={(event) => patch({ markdown: event.target.value })} /></Field></div>;
   if (block.kind === "divider") return <p className="tw:m-0 tw:text-xs tw:text-muted-foreground">{t("analysis.builderDividerBody")}</p>;
   if (block.kind === "metric") {
     return (
@@ -1169,7 +1171,7 @@ export function AnalysisLayoutEditor({
     if (metric) onChange({ ...definition, metrics: [...definition.metrics, metric] });
   };
   const addBlock = () => {
-    const block = defaultBlock(definition, newBlockKind);
+    const block = defaultBlock(definition, newBlockKind, t);
     if (block) onChange({ ...definition, blocks: [...definition.blocks, block] });
   };
   return (
@@ -1196,7 +1198,7 @@ export function AnalysisLayoutEditor({
         })}</div>}
       </Section>
 
-      <Section title={t("analysis.builderArticleBlocks")} description={t("analysis.builderArticleBlocksBody")} action={<div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2"><SelectInput density="compact" value={newBlockKind} onChange={(event) => setNewBlockKind(event.target.value as AnalysisBlockKind)}>{analysisBlockKinds.map((kind) => <option value={kind} key={kind}>{humanize(kind)}</option>)}</SelectInput><Button size="compact" disabled={!defaultBlock(definition, newBlockKind)} onClick={addBlock}><Icon name="plus" /> {t("analysis.builderAddBlock")}</Button></div>}>
+      <Section title={t("analysis.builderArticleBlocks")} description={t("analysis.builderArticleBlocksBody")} action={<div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2"><SelectInput density="compact" value={newBlockKind} onChange={(event) => setNewBlockKind(event.target.value as AnalysisBlockKind)}>{analysisBlockKinds.map((kind) => <option value={kind} key={kind}>{humanize(kind)}</option>)}</SelectInput><Button size="compact" disabled={!defaultBlock(definition, newBlockKind, t)} onClick={addBlock}><Icon name="plus" /> {t("analysis.builderAddBlock")}</Button></div>}>
         <div className="tw:grid tw:grid-cols-12 tw:gap-2 tw:rounded-md tw:border tw:border-dashed tw:border-border-subtle tw:bg-muted/30 tw:p-3" aria-label={t("analysis.builderLayoutPreview")}>
           {definition.blocks.map((block) => <div className="tw:min-w-0 tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:px-2 tw:py-3" style={{ gridColumn: `span ${Math.max(1, Math.min(12, block.width))}` }} key={block.id}><strong className="tw:block tw:truncate tw:text-xs">{block.title || humanize(block.kind)}</strong><small className="tw:block tw:truncate tw:font-mono tw:text-2xs tw:text-muted-foreground">{humanize(block.kind)} · {block.width}/12</small></div>)}
         </div>
@@ -1210,6 +1212,7 @@ export function AnalysisLayoutEditor({
               const base = defaultBlock(
                 { ...definition, blocks: definition.blocks.filter((candidate) => candidate.id !== block.id) },
                 block.kind,
+                t,
                 sourceNodeId,
               );
               onChange({ ...definition, blocks: replaceAt(definition.blocks, index, { ...(base ?? block), id: block.id, title: block.title, width: block.width, sourceNodeId }) });
