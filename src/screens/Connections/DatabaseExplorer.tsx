@@ -586,10 +586,6 @@ export function DatabaseExplorer({
     () => Object.values(searchResultsByCatalog).flat(),
     [searchResultsByCatalog],
   );
-  const navigableSearchResults = useMemo(
-    () => searchResults.filter((result) => result.kind === "relation"),
-    [searchResults],
-  );
   const activeSearchResult = activeSearchResultKey
     ? searchResults.find((result) => result.key === activeSearchResultKey)
     : undefined;
@@ -601,16 +597,16 @@ export function DatabaseExplorer({
   }, [globalFilter]);
 
   function moveSearchResult(direction: 1 | -1) {
-    if (navigableSearchResults.length === 0) return;
+    if (searchResults.length === 0) return;
     const currentIndex = activeSearchResultKey
-      ? navigableSearchResults.findIndex(
+      ? searchResults.findIndex(
           (result) => result.key === activeSearchResultKey,
         )
       : -1;
     const nextIndex =
-      (currentIndex + direction + navigableSearchResults.length) %
-      navigableSearchResults.length;
-    setActiveSearchResultKey(navigableSearchResults[nextIndex]?.key ?? null);
+      (currentIndex + direction + searchResults.length) %
+      searchResults.length;
+    setActiveSearchResultKey(searchResults[nextIndex]?.key ?? null);
   }
 
   function openExplorerSearch() {
@@ -1566,6 +1562,19 @@ export function DatabaseExplorer({
         >
           <Icon name="refresh" />
         </Button>
+        <Button
+          iconOnly
+          size="xs"
+          variant="ghost"
+          active={searchOpen}
+          disabled={connections.length === 0}
+          onClick={openExplorerSearch}
+          title={t("connections.searchLoadedObjects")}
+          aria-label={t("connections.searchLoadedObjects")}
+          aria-pressed={searchOpen}
+        >
+          <Icon name="search" />
+        </Button>
         <ToolbarMenu
           icon="view"
           label={t("connections.viewOptions")}
@@ -1628,7 +1637,7 @@ export function DatabaseExplorer({
           <div className="tw:min-w-0 tw:flex-1">
             <TreeSearch
               value={globalFilter}
-              placeholder={t("connections.filterTables")}
+              placeholder={t("connections.filterLoadedObjectsPlaceholder")}
               clearLabel={t("common.close")}
               onChange={updateGlobalFilter}
               autoFocus
@@ -1648,20 +1657,27 @@ export function DatabaseExplorer({
                   event.preventDefault();
                   moveSearchResult(-1);
                 }
-                if (
-                  event.key === "Enter" &&
-                  activeSearchResult?.kind === "relation" &&
-                  activeSearchResult.table
-                ) {
+                if (event.key === "Enter" && activeSearchResult) {
                   event.preventDefault();
-                  const connection = connections.find(
-                    (candidate) => candidate.id === activeSearchResult.connectionId,
-                  );
-                  if (connection) {
-                    onOpenTable(
-                      { ...connection, database: activeSearchResult.database },
-                      activeSearchResult.table,
+                  if (
+                    activeSearchResult.kind === "relation" &&
+                    activeSearchResult.table
+                  ) {
+                    const connection = connections.find(
+                      (candidate) =>
+                        candidate.id === activeSearchResult.connectionId,
                     );
+                    if (connection) {
+                      onOpenTable(
+                        {
+                          ...connection,
+                          database: activeSearchResult.database,
+                        },
+                        activeSearchResult.table,
+                      );
+                    }
+                  } else {
+                    treeKeyboard.focusKey(activeSearchResult.treeKey);
                   }
                 }
               }}

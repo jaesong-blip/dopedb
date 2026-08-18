@@ -208,6 +208,9 @@ export const connectionsCatalog = defineCatalog(
     "connections.expandMetadata": "Expand metadata for {table}",
     "connections.compareSchemaStructure": "Compare Schema Structure",
     "connections.filterTables": "Filter database objects...",
+    "connections.searchLoadedObjects": "Search loaded Explorer objects",
+    "connections.filterLoadedObjectsPlaceholder":
+      "Search loaded tables, views, and objects",
     "connections.filterResultCount": "{count} objects",
     "connections.functions": "Functions ({count})",
     "connections.host": "Host",
@@ -234,7 +237,8 @@ export const connectionsCatalog = defineCatalog(
     "connections.noSchemasDiscovered": "No schemas were discovered for this data source.",
     "connections.noParameters": "No advanced parameters.",
     "connections.noTables": "No tables.",
-    "connections.noTablesMatch": 'No database objects match "{filter}".',
+    "connections.noTablesMatch":
+      'No loaded Explorer objects match "{filter}".',
     "connections.objectOn": "on",
     "connections.objectNamePattern": "Object name pattern",
     "connections.objectNamePatternHint":
@@ -540,6 +544,9 @@ export const connectionsCatalog = defineCatalog(
     "connections.expandMetadata": "{table} 메타데이터 펼치기",
     "connections.compareSchemaStructure": "스키마 구조 비교",
     "connections.filterTables": "데이터베이스 객체 필터...",
+    "connections.searchLoadedObjects": "적재된 Explorer 객체 검색",
+    "connections.filterLoadedObjectsPlaceholder":
+      "적재된 테이블, 뷰, 객체 검색",
     "connections.filterResultCount": "객체 {count}개",
     "connections.functions": "함수 ({count})",
     "connections.host": "호스트",
@@ -566,7 +573,8 @@ export const connectionsCatalog = defineCatalog(
     "connections.noSchemasDiscovered": "이 데이터 소스에서 스키마를 찾지 못했습니다.",
     "connections.noParameters": "고급 매개변수가 없습니다.",
     "connections.noTables": "테이블이 없습니다.",
-    "connections.noTablesMatch": '"{filter}"에 맞는 데이터베이스 객체가 없습니다.',
+    "connections.noTablesMatch":
+      '적재된 Explorer 객체 중 "{filter}"와 일치하는 항목이 없습니다.',
     "connections.objectOn": "대상",
     "connections.objectNamePattern": "객체 이름 패턴",
     "connections.objectNamePatternHint":

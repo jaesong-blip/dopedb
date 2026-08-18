@@ -1,4 +1,5 @@
 import type {
+  Catalog,
   CatalogObject,
   CatalogObjectKind,
   CatalogTable,
@@ -124,4 +125,34 @@ export function objectMatchesFilter(
     .join(" ")
     .toLowerCase()
     .includes(filter);
+}
+
+export function filterLoadedCatalogObjects(
+  catalog: Catalog | undefined,
+  filter: string,
+) {
+  const normalizedFilter = filter.trim().toLowerCase();
+  if (!catalog) {
+    return {
+      normalizedFilter,
+      tables: [] as CatalogTable[],
+      objects: [] as CatalogObject[],
+    };
+  }
+  if (!normalizedFilter) {
+    return {
+      normalizedFilter,
+      tables: catalog.tables,
+      objects: catalog.objects,
+    };
+  }
+  return {
+    normalizedFilter,
+    tables: catalog.tables.filter((table) =>
+      tableMatchesFilter(table, normalizedFilter),
+    ),
+    objects: catalog.objects.filter((object) =>
+      objectMatchesFilter(object, normalizedFilter),
+    ),
+  };
 }

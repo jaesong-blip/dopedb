@@ -56,6 +56,8 @@ import {
   treeKeyboardMoveTarget,
   virtualTreeFocusIndex,
 } from "../../design-system/treeKeyboard";
+import { filterLoadedCatalogObjects } from "../catalogExplorer/catalogDomain";
+import type { Catalog, CatalogObject, CatalogTable } from "../../ipc/types";
 import {
   modalMouseDownShouldReachNativeDragRegion,
   ModalTitleBar,
@@ -566,6 +568,35 @@ describe("workbench state ownership", () => {
         "table:4999",
       ),
     ).toBe(5_000);
+
+    const loadedCatalog: Catalog = {
+      tables: Array.from({ length: 5_000 }, (_, index) => ({
+        schema: "public",
+        name: `table_${index}`,
+      }) as CatalogTable),
+      objects: [{
+        schema: "audit",
+        name: "recent_orders",
+        kind: "materialized_view",
+        parent: "orders",
+      } as CatalogObject],
+    };
+    const loadedRelationMatches = filterLoadedCatalogObjects(
+      loadedCatalog,
+      "TABLE_4999",
+    );
+    expect(loadedRelationMatches.tables.map((table) => table.name)).toEqual([
+      "table_4999",
+    ]);
+    expect(loadedRelationMatches.objects).toEqual([]);
+    const loadedObjectMatches = filterLoadedCatalogObjects(
+      loadedCatalog,
+      "orders",
+    );
+    expect(loadedObjectMatches.tables).toEqual([]);
+    expect(loadedObjectMatches.objects.map((object) => object.name)).toEqual([
+      "recent_orders",
+    ]);
 
     const modalTitleBar = renderToStaticMarkup(
       createElement(ModalTitleBar, {

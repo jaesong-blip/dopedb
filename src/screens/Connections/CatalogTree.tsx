@@ -42,7 +42,7 @@ import {
 import { catalogFromOverview } from "./catalogOverview";
 import {
   catalogObjectLabel,
-  objectMatchesFilter,
+  filterLoadedCatalogObjects,
   SQL_OBJECT_SECTIONS,
   supportedObjectKinds,
   tableMatchesFilter,
@@ -96,6 +96,7 @@ type SchemaContents = {
 export type CatalogTreeSearchResult = {
   key: string;
   rowKey: string;
+  treeKey: string;
   kind: "relation" | "object";
   connectionId: string;
   database: string;
@@ -158,21 +159,11 @@ export default function CatalogTree(props: Props) {
       groupByConnectionId,
       catalogs,
     );
-    const nextNormalizedFilter = filter.trim().toLocaleLowerCase();
-    const nextFilteredTables = nextCatalog
-      ? nextNormalizedFilter
-        ? nextCatalog.tables.filter((table) =>
-            tableMatchesFilter(table, nextNormalizedFilter),
-          )
-        : nextCatalog.tables
-      : [];
-    const nextFilteredObjects = nextCatalog
-      ? nextNormalizedFilter
-        ? (nextCatalog.objects ?? []).filter((object) =>
-            objectMatchesFilter(object, nextNormalizedFilter),
-          )
-        : (nextCatalog.objects ?? [])
-      : [];
+    const {
+      normalizedFilter: nextNormalizedFilter,
+      tables: nextFilteredTables,
+      objects: nextFilteredObjects,
+    } = filterLoadedCatalogObjects(nextCatalog, filter);
     const nextOrdered = orderTablesBySchemaDiff(
       nextFilteredTables,
       nextDiff,
@@ -746,15 +737,23 @@ export default function CatalogTree(props: Props) {
   );
   const databaseTreeKey =
     `connection:${connection.id}:database:${connection.database}`;
-  const treeKey = (key: string) => `${databaseTreeKey}:${key}`;
-  const tableTreeKey = (table: CatalogTable) =>
-    treeKey(`relation:${tableKey(table)}`);
-  const objectTreeKey = (object: CatalogObject, index: number) =>
-    treeKey(
-      `object:${object.schema ?? ""}:${object.kind}:${object.name}:${
-        object.detail ?? index
-      }`,
-    );
+  const treeKey = useCallback(
+    (key: string) => `${databaseTreeKey}:${key}`,
+    [databaseTreeKey],
+  );
+  const tableTreeKey = useCallback(
+    (table: CatalogTable) => treeKey(`relation:${tableKey(table)}`),
+    [treeKey],
+  );
+  const objectTreeKey = useCallback(
+    (object: CatalogObject, index: number) =>
+      treeKey(
+        `object:${object.schema ?? ""}:${object.kind}:${object.name}:${
+          object.detail ?? index
+        }`,
+      ),
+    [treeKey],
+  );
 
   const searchResults = useMemo<CatalogTreeSearchResult[]>(() => {
     if (!normalizedFilter) return [];
@@ -762,6 +761,7 @@ export default function CatalogTree(props: Props) {
       ...ordered.map((table) => ({
         key: tableSearchResultKey(table),
         rowKey: tableRowKey(table),
+        treeKey: tableTreeKey(table),
         kind: "relation" as const,
         connectionId: connection.id,
         database: connection.database,
@@ -770,12 +770,25 @@ export default function CatalogTree(props: Props) {
       ...filteredObjects.map((object, index) => ({
         key: objectSearchResultKey(object, index),
         rowKey: objectRowKey(object, index),
+        treeKey: objectTreeKey(object, index),
         kind: "object" as const,
         connectionId: connection.id,
         database: connection.database,
       })),
     ];
-  }, [connection.database, connection.id, filteredObjects, normalizedFilter, objectRowKey, objectSearchResultKey, ordered, tableRowKey, tableSearchResultKey]);
+  }, [
+    connection.database,
+    connection.id,
+    filteredObjects,
+    normalizedFilter,
+    objectRowKey,
+    objectSearchResultKey,
+    objectTreeKey,
+    ordered,
+    tableRowKey,
+    tableSearchResultKey,
+    tableTreeKey,
+  ]);
 
   useEffect(() => {
     onSearchResultsChange?.(catalogKey, searchResults);

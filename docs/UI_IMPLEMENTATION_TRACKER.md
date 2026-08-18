@@ -19,7 +19,7 @@ runtime과 성능 수치로 수행한다.
 | App shell/chrome | `complete` | `features/appShell`, design-system chrome primitives | packaged macOS·Windows에서 keyboard launcher와 compact window를 정기 확인 |
 | Action Search | `complete` | `features/actionSearch` | cached catalog scope, `/` action mode, focus 복구와 bounded top-k를 유지 |
 | Welcome document | `complete` | `screens/Onboarding` | 연결 전/후 실제 command 집합이 달라지는지 packaged smoke에서 확인 |
-| Database Explorer | `complete` | `screens/Connections/DatabaseExplorer`, `features/catalogExplorer` | 대형 catalog의 selection/scroll 보존과 accessibility tree 확인 |
+| Database Explorer | `complete` | `screens/Connections/DatabaseExplorer`, `features/catalogExplorer` | loaded-only 객체 검색과 대형 catalog의 selection/scroll 보존을 packaged smoke에서 유지 |
 | Connection editor | `complete` | `features/connections/useConnectionEditorController` | 지원 engine별 최소 입력·Test·Apply/OK 실제 연결 검수 |
 | Provider account access | `complete` | `workspace-cloud/features/providerAccess`, provider application modules | 실제 계정 OAuth/CLI 실패·recovery 및 revoke 검수 |
 | SQL editor/query workflow | `complete` | `features/queries`, `screens/Sql`, Rust query application | 10 KiB/100 KiB/1 MiB 입력과 cancel/transaction packaged 검수 |

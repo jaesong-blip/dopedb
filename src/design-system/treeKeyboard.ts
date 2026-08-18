@@ -236,5 +236,5 @@ export function useTreeKeyboardNavigation(
     [focusKey, rootRef],
   );
 
-  return { onFocusCapture, onKeyDown, restoreFocus };
+  return { focusKey, onFocusCapture, onKeyDown, restoreFocus };
 }
