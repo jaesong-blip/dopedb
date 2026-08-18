@@ -6,6 +6,7 @@ const root = process.cwd();
 const sourceRoot = path.join(root, "src");
 const failures = [];
 let canonicalIconButtons = 0;
+let canonicalConfirmIconButtons = 0;
 
 async function sourceFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -53,14 +54,24 @@ function inspectElement(file, opening) {
     return;
   }
 
-  if (tag !== "Button") return;
+  if (tag !== "Button" && tag !== "ConfirmButton") return;
   const iconOnly = attribute(attributes, "iconOnly");
   if (!iconOnly || iconOnly.type !== "JSXAttribute" || iconOnly.value) return;
-  canonicalIconButtons += 1;
-  if (!attribute(attributes, "title") && !attribute(attributes, "aria-label")) {
+  const requiredNames =
+    tag === "ConfirmButton" ? ["label"] : ["title", "aria-label"];
+  const accessibleNames = requiredNames
+    .map((name) => attribute(attributes, name))
+    .filter(Boolean);
+  if (tag === "ConfirmButton") canonicalConfirmIconButtons += 1;
+  else canonicalIconButtons += 1;
+  if (accessibleNames.length === 0) {
     failures.push(
-      `${location(file, opening)} iconOnly Button needs title or aria-label`,
+      `${location(file, opening)} iconOnly ${tag} needs ${requiredNames.join(" or ")}`,
     );
+    return;
+  }
+  if (accessibleNames.some((name) => staticString(name)?.trim() === "")) {
+    failures.push(`${location(file, opening)} iconOnly ${tag} name is empty`);
   }
 }
 
@@ -94,5 +105,5 @@ if (failures.length > 0) {
 }
 
 console.log(
-  `UI primitive ownership ok: ${canonicalIconButtons} statically named icon buttons`,
+  `UI primitive ownership ok: ${canonicalIconButtons} Button and ${canonicalConfirmIconButtons} ConfirmButton icon actions are statically named`,
 );

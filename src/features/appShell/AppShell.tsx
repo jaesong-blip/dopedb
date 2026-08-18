@@ -110,7 +110,10 @@ function Shell() {
   const manualTransactions = useWorkspaceManualTransactions(connections.items);
   const {
     width: sidebarWidth,
+    minimum: sidebarMinimum,
+    maximum: sidebarMaximum,
     startDrag: startSidebarDrag,
+    resize: resizeSidebar,
     reset: resetSidebarWidth,
   } = useSidebarWidth(
     toolWindows.localHistoryOpen ? "localHistory" : "databaseExplorer",
@@ -384,6 +387,8 @@ function Shell() {
           services: {
             open: toolWindows.servicesOpen,
             height: toolWindows.servicesHeight,
+            minimumHeight: toolWindows.servicesMinimumHeight,
+            maximumHeight: toolWindows.servicesMaximumHeight,
             store: queryServices.store,
           },
           agent: {
@@ -404,6 +409,8 @@ function Shell() {
             compact: compactShell,
             mobileExplorerOpen,
             sidebarWidth,
+            sidebarMinimum,
+            sidebarMaximum,
             mainRef,
           },
           search: {
@@ -448,6 +455,7 @@ function Shell() {
             toggle: toggleServices,
             close: toolWindows.closeServices,
             startResize: toolWindows.startServicesResize,
+            resize: toolWindows.resizeServicesHeight,
             resetHeight: toolWindows.resetServicesHeight,
           },
           agent: {
@@ -472,6 +480,7 @@ function Shell() {
           },
           viewport: {
             startSidebarDrag,
+            resizeSidebar,
             resetSidebar: resetSidebarWidth,
           },
           search: { open: search.show },

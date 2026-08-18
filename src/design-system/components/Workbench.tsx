@@ -78,13 +78,15 @@ export function WorkbenchDivider() {
   );
 }
 
+type WorkbenchButtonProps<T = ButtonProps> = T extends ButtonProps
+  ? Omit<T, "size"> & { size?: "md" | "xs" }
+  : never;
+
 export function WorkbenchButton({
   size = "md",
   variant = "ghost",
   ...props
-}: Omit<ButtonProps, "size"> & {
-  size?: "md" | "xs";
-}) {
+}: WorkbenchButtonProps) {
   return (
     <Button
       size={size === "xs" ? "xs" : "compact"}

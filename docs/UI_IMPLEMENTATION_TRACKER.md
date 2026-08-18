@@ -40,6 +40,7 @@ runtime과 성능 수치로 수행한다.
 | static Tailwind v4 utility | `complete` | build와 source guard |
 | modal focus containment/trigger 복구 | `complete` | browser interaction smoke와 공용 primitive |
 | popup/menu viewport collision | `complete` | 공용 popup/menu primitive |
+| grid composite keyboard/resize separator | `complete` | 공용 roving helper, `ResizeSeparator`, packaged interaction smoke |
 | grouped AppShell presentation contract | `complete` | `pnpm check:architecture` |
 | generic UI의 feature/adapter 비의존 | `complete` | transitive architecture guard |
 | critical test 예산 | `complete` | `pnpm check:test-budget` |

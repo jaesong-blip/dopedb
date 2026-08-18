@@ -1,6 +1,7 @@
 import type { ReactNode, RefObject } from "react";
 
 import { Icon } from "../../components/Icon";
+import { ResizeSeparator } from "../../design-system/components/ResizeSeparator";
 import type { CatalogTable } from "../../ipc/types";
 import { useI18n } from "../../lib/i18n";
 import type { SchemaConnectionGroup } from "../../lib/schemaDiff";
@@ -62,6 +63,8 @@ type ShellLayoutModel = {
   services: {
     open: boolean;
     height: number;
+    minimumHeight: number;
+    maximumHeight: number;
     store: QueryServiceStore;
   };
   agent: {
@@ -82,6 +85,8 @@ type ShellLayoutModel = {
     compact: boolean;
     mobileExplorerOpen: boolean;
     sidebarWidth: number;
+    sidebarMinimum: number;
+    sidebarMaximum: number;
     mainRef: RefObject<HTMLElement | null>;
   };
   search: {
@@ -129,6 +134,7 @@ type ShellLayoutCommands = {
       preventDefault(): void;
       clientY: number;
     }) => void;
+    resize: (height: number) => void;
     resetHeight: () => void;
   };
   agent: {
@@ -159,6 +165,7 @@ type ShellLayoutCommands = {
       preventDefault(): void;
       clientX: number;
     }) => void;
+    resizeSidebar: (width: number) => void;
     resetSidebar: () => void;
   };
   search: {
@@ -377,12 +384,18 @@ function ShellLayoutContent({ model, commands }: Props) {
         tabIndex={viewport.mobileExplorerOpen ? 0 : -1}
         onClick={commands.explorer.dismissMobile}
       />
-      <div
+      <ResizeSeparator
         className="tw:col-start-2 tw:row-start-2 tw:ml-[var(--ds-active-offset)] tw:cursor-col-resize tw:bg-transparent tw:hover:bg-muted tw:active:bg-muted tw:max-[561px]:hidden"
         hidden={!leftToolWindowVisible}
-        title={t("app.dragResize")}
+        label={t("app.dragResize")}
+        orientation="vertical"
+        value={viewport.sidebarWidth}
+        minimum={viewport.sidebarMinimum}
+        maximum={viewport.sidebarMaximum}
+        step={12}
+        onChange={commands.viewport.resizeSidebar}
+        onReset={commands.viewport.resetSidebar}
         onMouseDown={commands.viewport.startSidebarDrag}
-        onDoubleClick={commands.viewport.resetSidebar}
       />
       <main
         ref={viewport.mainRef}
@@ -441,6 +454,10 @@ function ShellLayoutContent({ model, commands }: Props) {
           onActivateDocument={commands.workbench.activateDocument}
           onClose={commands.services.close}
           onStartResize={commands.services.startResize}
+          height={services.height}
+          minimumHeight={services.minimumHeight}
+          maximumHeight={services.maximumHeight}
+          onHeightChange={commands.services.resize}
           onResetHeight={commands.services.resetHeight}
           compact={viewport.compact}
         />

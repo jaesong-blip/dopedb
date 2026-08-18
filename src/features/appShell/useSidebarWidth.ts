@@ -80,7 +80,8 @@ export function useSidebarWidth(kind: SidebarKind) {
     minimum(kind),
     Math.floor(viewportWidth * VIEWPORT_RATIO),
   );
-  const width = Math.min(widths[kind], viewportMaximum);
+  const maximum = Math.min(MAX, viewportMaximum);
+  const width = Math.min(widths[kind], maximum);
 
   const startDrag = useCallback(
     (event: { preventDefault(): void; clientX: number }) => {
@@ -117,6 +118,21 @@ export function useSidebarWidth(kind: SidebarKind) {
     setWidths((current) => ({ ...current, [kind]: nextWidth }));
     localStorage.setItem(storageKey(kind), String(nextWidth));
   }, [kind]);
+  const resize = useCallback(
+    (nextWidth: number) => {
+      const bounded = Math.min(maximum, Math.max(minimum(kind), nextWidth));
+      setWidths((current) => ({ ...current, [kind]: bounded }));
+      localStorage.setItem(storageKey(kind), String(bounded));
+    },
+    [kind, maximum],
+  );
 
-  return { width, startDrag, reset };
+  return {
+    width,
+    minimum: minimum(kind),
+    maximum,
+    startDrag,
+    resize,
+    reset,
+  };
 }

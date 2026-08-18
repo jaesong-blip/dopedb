@@ -258,6 +258,10 @@ Elevation은 세 단계만 허용한다.
   icon geometry, tone, active/expanded state를 semantic prop으로 소유한다.
   popup 내부 full-width action은 화면별 class를 만들지 않고
   `presentation="menuItem"`을 사용한다.
+- `ResizeSeparator`: shell sidebar, Services 높이, data-grid column이 공유하는
+  keyboard/pointer resize 경계. 실제 dimension과 min/max/now ARIA를 연결하고,
+  방향키의 bounded step, Home/End 경계 이동, double-click reset을 소유한다.
+  저장과 pointer drag lifecycle은 각 feature의 기존 state owner가 유지한다.
 - `Tooltip`: icon-only command와 compact help affordance의 portal tooltip.
   짧은 hover/focus delay, viewport collision, 위·아래 flip, `Esc` dismiss를
   소유한다. `Button iconOnly`는 `title` 또는 `aria-label`을 이 primitive에
@@ -537,6 +541,10 @@ DopeDB의 실제 작업 흐름과 접근성, supported viewport를 위한 제품
   Shift+방향키는 직사각형 범위를 확장하고, 범위 복사는 행을 줄바꿈하고 셀을
   tab으로 구분한 텍스트를 만든다. 선택 배경과 focus ring도 기존
   `selection`/`ring` semantic token만 사용한다.
+  body composite는 rowheader를 첫 열로 포함한 roving tab stop 하나를 사용한다.
+  Arrow는 같은 행·열을 이동하고 Home/End는 행 경계, Cmd/Ctrl+Home/End는 전체
+  경계, PageUp/PageDown은 viewport 한 페이지를 이동한다. 가상 renderer도 target을
+  scroll/render한 뒤 같은 row/column ARIA 좌표의 요소로 focus를 옮긴다.
 - SQL table data editor는 command toolbar 바로 아래에 `WHERE`와 `ORDER BY`
   expression field를 둔다. 넓은 main에서는 제품 계약의 경계 비율인
   `1.75fr / 1fr`(`약 64% / 36%`)를 사용하고, 480px 이하 main container에서는

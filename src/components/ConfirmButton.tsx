@@ -7,6 +7,23 @@ import {
 } from "../design-system/components/Button";
 import { useI18n } from "../lib/i18n";
 
+type ConfirmButtonBaseProps = {
+  children: ReactNode;
+  onConfirm: () => void;
+  disabled?: boolean;
+  confirmLabel?: string;
+  presentation?: ButtonProps["presentation"];
+  size?: ButtonProps["size"];
+  tone?: ButtonProps["tone"];
+  variant?: ButtonProps["variant"];
+};
+
+export type ConfirmButtonProps = ConfirmButtonBaseProps &
+  (
+    | { iconOnly: true; label: string }
+    | { iconOnly?: false; label?: string }
+  );
+
 export default function ConfirmButton({
   children,
   onConfirm,
@@ -18,16 +35,7 @@ export default function ConfirmButton({
   size = "default",
   tone = "neutral",
   variant = "default",
-}: {
-  children: ReactNode;
-  onConfirm: () => void;
-  disabled?: boolean;
-  confirmLabel?: string;
-  label?: string;
-} & Pick<
-  ButtonProps,
-  "iconOnly" | "presentation" | "size" | "tone" | "variant"
->) {
+}: ConfirmButtonProps) {
   const { t } = useI18n();
   const [armed, setArmed] = useState(false);
   const timer = useRef<number | undefined>(undefined);
@@ -35,20 +43,39 @@ export default function ConfirmButton({
   useEffect(() => () => window.clearTimeout(timer.current), []);
 
   if (!armed) {
+    const arm = () => {
+      setArmed(true);
+      timer.current = window.setTimeout(() => setArmed(false), 3000);
+    };
+    if (iconOnly) {
+      if (!label?.trim()) {
+        throw new Error("ConfirmButton iconOnly requires a non-empty label");
+      }
+      return (
+        <Button
+          disabled={disabled}
+          iconOnly
+          presentation={presentation}
+          size={size}
+          tone={tone}
+          variant={variant}
+          title={label}
+          aria-label={label}
+          onClick={arm}
+        >
+          {children}
+        </Button>
+      );
+    }
     return (
       <Button
         disabled={disabled}
-        iconOnly={iconOnly}
         presentation={presentation}
         size={size}
         tone={tone}
         variant={variant}
         title={label}
-        aria-label={label}
-        onClick={() => {
-          setArmed(true);
-          timer.current = window.setTimeout(() => setArmed(false), 3000);
-        }}
+        onClick={arm}
       >
         {children}
       </Button>

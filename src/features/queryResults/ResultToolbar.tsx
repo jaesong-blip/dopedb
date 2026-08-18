@@ -114,20 +114,28 @@ export default function ResultToolbar({
     }
     downloadJson(filenameBase, columns, rows ?? []);
   };
+  const copyTitle =
+    copyDisabled && rowSource && !disabled
+      ? t("results.copyBoundedTitle")
+      : t("results.copyTitle");
   return (
     <span
       data-presentation={presentation}
       className="tw:inline-flex tw:items-center tw:gap-1 tw:align-middle tw:data-[presentation=inline]:ml-2 tw:data-[presentation=workbench]:ml-auto"
     >
       <WorkbenchButton
-        iconOnly={presentation === "workbench"}
         size={presentation === "workbench" ? "xs" : "md"}
-        title={
-          copyDisabled && rowSource && !disabled
-            ? t("results.copyBoundedTitle")
-            : t("results.copyTitle")
-        }
-        aria-label={t("results.copyTitle")}
+        {...(presentation === "workbench"
+          ? {
+              iconOnly: true as const,
+              title: copyTitle,
+              "aria-label": t("results.copyTitle"),
+            }
+          : {
+              iconOnly: false as const,
+              title: copyTitle,
+              "aria-label": t("results.copyTitle"),
+            })}
         onClick={() =>
           navigator.clipboard
             .writeText(

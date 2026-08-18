@@ -19,6 +19,10 @@ import {
 } from "../../design-system/dataGridGeometry";
 import type { SqlStreamRowSource } from "../queries/domain";
 import { createFrameCoalescer } from "../../lib/frameCoalescer";
+import { resizeSeparatorNextValue } from "../../design-system/components/ResizeSeparator";
+import { dataGridKeyboardTarget } from "./dataGridKeyboard";
+import type { ButtonProps } from "../../design-system/components/Button";
+import type { ConfirmButtonProps } from "../../components/ConfirmButton";
 import {
   clearSqlResultPageCache,
   SQL_RESULT_CACHE_MAX_PAGES,
@@ -32,6 +36,21 @@ const offsets = Array.from(
   (_, index) =>
     DATA_GRID_ROW_NUMBER_WIDTH + index * DATA_GRID_DEFAULT_COLUMN_WIDTH,
 );
+type UnnamedIconButtonAllowed = {
+  iconOnly: true;
+  children: null;
+} extends ButtonProps
+  ? true
+  : false;
+type UnnamedConfirmIconButtonAllowed = {
+  iconOnly: true;
+  children: null;
+  onConfirm: () => void;
+} extends ConfirmButtonProps
+  ? true
+  : false;
+const unnamedIconButtonAllowed: UnnamedIconButtonAllowed = false;
+const unnamedConfirmIconButtonAllowed: UnnamedConfirmIconButtonAllowed = false;
 
 describe("DataGridVirtual window", () => {
   it("keeps a 1m by 50 grid bounded at a 360px viewport", () => {
@@ -44,6 +63,8 @@ describe("DataGridVirtual window", () => {
     const cellCount =
       (window.endRow - window.startRow) * window.visibleColumns.length;
     expect(window.startRow).toBeGreaterThan(0);
+    expect(unnamedIconButtonAllowed).toBe(false);
+    expect(unnamedConfirmIconButtonAllowed).toBe(false);
     expect(window.endRow).toBeLessThan(1_000_000);
     expect(window.visibleColumns.length).toBeLessThan(15);
     expect(cellCount).toBeLessThan(400);
@@ -120,6 +141,61 @@ describe("DataGridVirtual window", () => {
     expect(gridSelectionIncludes(selection, 0, 1)).toBe(true);
     expect(gridSelectionIncludes(selection, 1, 2)).toBe(true);
     expect(gridSelectionIncludes(selection, 0, 0)).toBe(false);
+    expect(
+      dataGridKeyboardTarget({
+        key: "ArrowRight",
+        current: { row: 3, column: 0 },
+        rowCount: 500,
+        dataColumnCount: 4,
+        pageRows: 10,
+      }),
+    ).toEqual({ row: 3, column: 1 });
+    expect(
+      dataGridKeyboardTarget({
+        key: "Home",
+        current: { row: 3, column: 2 },
+        rowCount: 500,
+        dataColumnCount: 4,
+        pageRows: 10,
+      }),
+    ).toEqual({ row: 3, column: 0 });
+    expect(
+      dataGridKeyboardTarget({
+        key: "End",
+        metaKey: true,
+        current: { row: 3, column: 2 },
+        rowCount: 500,
+        dataColumnCount: 4,
+        pageRows: 10,
+      }),
+    ).toEqual({ row: 499, column: 4 });
+    expect(
+      dataGridKeyboardTarget({
+        key: "PageDown",
+        current: { row: 3, column: 2 },
+        rowCount: 500,
+        dataColumnCount: 4,
+        pageRows: 10,
+      }),
+    ).toEqual({ row: 13, column: 2 });
+    expect(
+      resizeSeparatorNextValue({
+        key: "ArrowLeft",
+        value: 52,
+        minimum: 50,
+        maximum: 1_200,
+        step: 8,
+      }),
+    ).toBe(50);
+    expect(
+      resizeSeparatorNextValue({
+        key: "End",
+        value: 144,
+        minimum: 50,
+        maximum: 1_200,
+        step: 8,
+      }),
+    ).toBe(1_200);
     expect(
       gridSelectionClipboardText(
         selection,

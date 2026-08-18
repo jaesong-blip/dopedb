@@ -5,13 +5,12 @@ import { forwardRef } from "react";
 
 import { Tooltip } from "./Tooltip";
 
-export type ButtonProps = Omit<
+type ButtonBaseProps = Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,
-  "className" | "type"
+  "aria-label" | "className" | "title" | "type"
 > & {
   active?: boolean;
   collapse?: "never" | "compact" | "narrow";
-  iconOnly?: boolean;
   presentation?: "button" | "menuItem";
   size?: "default" | "compact" | "xs";
   tone?: "danger" | "neutral" | "primary" | "success";
@@ -19,6 +18,20 @@ export type ButtonProps = Omit<
   type?: "button" | "submit" | "reset";
   children: ReactNode;
 };
+
+type IconButtonAccessibleName =
+  | { "aria-label": string; title?: string }
+  | { "aria-label"?: string; title: string };
+
+export type ButtonProps = ButtonBaseProps &
+  (
+    | ({ iconOnly: true } & IconButtonAccessibleName)
+    | {
+        iconOnly?: false;
+        "aria-label"?: string;
+        title?: string;
+      }
+  );
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   {
@@ -38,17 +51,20 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   ref,
 ) {
   const tooltipLabel =
-    typeof title === "string" && title.trim().length > 0
-      ? title
-      : typeof ariaLabel === "string" && ariaLabel.trim().length > 0
-        ? ariaLabel
+    typeof ariaLabel === "string" && ariaLabel.trim().length > 0
+      ? ariaLabel
+      : typeof title === "string" && title.trim().length > 0
+        ? title
         : null;
+  if (iconOnly && !tooltipLabel) {
+    throw new Error("Button iconOnly requires a non-empty title or aria-label");
+  }
   const button = (
     <button
       ref={ref}
       type={type}
       title={iconOnly ? undefined : title}
-      aria-label={ariaLabel ?? (iconOnly ? tooltipLabel ?? undefined : undefined)}
+      aria-label={iconOnly ? tooltipLabel ?? undefined : ariaLabel}
       data-active={active}
       data-collapse={collapse}
       data-icon-only={iconOnly}

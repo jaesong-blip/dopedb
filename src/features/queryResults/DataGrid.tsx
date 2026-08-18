@@ -20,12 +20,15 @@ import type { GridSort } from "../../lib/sqlBuild";
 import type { SqlStreamRowSource } from "../queries/domain";
 import {
   DATA_GRID_DEFAULT_COLUMN_WIDTH,
+  DATA_GRID_HEADER_HEIGHT,
+  DATA_GRID_ROW_HEIGHT,
   DATA_GRID_ROW_NUMBER_WIDTH,
 } from "../../design-system/dataGridGeometry";
 import {
   DataGridViewport,
   type DataGridSurface,
 } from "../../design-system/components/DataGridViewport";
+import { ResizeSeparator } from "../../design-system/components/ResizeSeparator";
 import { Icon } from "../../components/Icon";
 import DataGridColumnFilterMenu from "./DataGridColumnFilterMenu";
 import DataGridVirtual from "./DataGridVirtual";
@@ -37,6 +40,10 @@ import {
   singleGridCell,
   type GridCellSelection,
 } from "./dataGridSelection";
+import {
+  dataGridKeyboardTarget,
+  type DataGridFocus,
+} from "./dataGridKeyboard";
 
 function cell(v: unknown): string {
   if (v === null || v === undefined) return "NULL";
@@ -137,6 +144,9 @@ function DataGridTable({
   const [widths, setWidths] = useState<Record<number, number>>({});
   // Selected cell (click to select, ⌘C to copy, Esc to clear). Independent of onCellClick.
   const [sel, setSel] = useState<GridCellSelection | null>(null);
+  const [focus, setFocus] = useState<DataGridFocus>({ row: 0, column: 0 });
+  const focusRequestedRef = useRef(false);
+  const viewportRef = useRef<HTMLDivElement>(null);
   const tableRef = useRef<HTMLTableElement>(null);
   const sig = result.columns.join(" ");
   useEffect(() => {
@@ -146,7 +156,17 @@ function DataGridTable({
     // Sort/filter/pagination swap the rows without changing columns — a selection is
     // coordinates into rows, so any new result object invalidates it.
     setSel(null);
+    setFocus({ row: 0, column: 0 });
   }, [result]);
+  useEffect(() => {
+    if (!focusRequestedRef.current) return;
+    focusRequestedRef.current = false;
+    const target = tableRef.current?.querySelector<HTMLElement>(
+      `[data-grid-focus="${focus.row}:${focus.column}"]`,
+    );
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [focus]);
   const resized = Object.keys(widths).length > 0;
   const columnWidths = [
     widths[0] ?? DATA_GRID_ROW_NUMBER_WIDTH,
@@ -216,6 +236,8 @@ function DataGridTable({
 
   // Click and Enter (see below) both land here so keyboard nav opens the same viewer a click does.
   function selectCell(i: number, j: number, extend: boolean) {
+    focusRequestedRef.current = true;
+    setFocus({ row: i, column: j + 1 });
     if (extend && sel) {
       setSel(extendGridSelection(sel, i, j));
       return;
@@ -248,53 +270,62 @@ function DataGridTable({
       return;
     }
     if (
-      (e.key === "ArrowUp" ||
-        e.key === "ArrowDown" ||
-        e.key === "ArrowLeft" ||
-        e.key === "ArrowRight") &&
-      result.rows.length > 0
+      focus.column === 0 &&
+      (e.key === "Enter" || e.key === " ") &&
+      onSelectRow
     ) {
       e.preventDefault();
-      const cur = sel?.focus ?? { row: 0, col: 0 };
-      const row = !sel
-        ? 0
-        : e.key === "ArrowUp"
-          ? Math.max(0, cur.row - 1)
-          : e.key === "ArrowDown"
-            ? Math.min(result.rows.length - 1, cur.row + 1)
-            : cur.row;
-      const col =
-        e.key === "ArrowLeft"
-          ? Math.max(0, cur.col - 1)
-          : e.key === "ArrowRight"
-            ? Math.min(result.columns.length - 1, cur.col + 1)
-            : cur.col;
-      setSel(
-        e.shiftKey && sel
-          ? extendGridSelection(sel, row, col)
-          : singleGridCell(row, col),
-      );
-      const nextCell = tableRef.current?.querySelector<HTMLTableCellElement>(
-        `tbody tr:nth-child(${row + 1}) td:nth-child(${col + 2})`,
-      );
-      nextCell?.focus({ preventScroll: true });
-      nextCell?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      onSelectRow(focus.row);
       return;
     }
-    if (e.key === "Enter" && sel) {
-      selectCell(sel.focus.row, sel.focus.col, false);
+    if (e.key === "Enter" && focus.column > 0) {
+      e.preventDefault();
+      selectCell(focus.row, focus.column - 1, false);
+      return;
+    }
+    const target = dataGridKeyboardTarget({
+      key: e.key,
+      ctrlKey: e.ctrlKey,
+      metaKey: e.metaKey,
+      current: focus,
+      rowCount: result.rows.length,
+      dataColumnCount: result.columns.length,
+      pageRows: Math.max(
+        1,
+        Math.floor(
+          ((viewportRef.current?.clientHeight ?? 280) -
+            DATA_GRID_HEADER_HEIGHT) /
+            DATA_GRID_ROW_HEIGHT,
+        ),
+      ),
+    });
+    if (!target) return;
+    e.preventDefault();
+    focusRequestedRef.current = true;
+    setFocus(target);
+    if (target.column > 0) {
+      const dataColumn = target.column - 1;
+      setSel(
+        e.shiftKey && sel
+          ? extendGridSelection(sel, target.row, dataColumn)
+          : singleGridCell(target.row, dataColumn),
+      );
     }
   }
 
   return (
     <DataGridViewport
+      ref={viewportRef}
       surface={surface}
       footerInset={footerInset}
-      tabIndex={0}
+      tabIndex={result.rows.length === 0 ? 0 : undefined}
       onKeyDown={onKeyDown}
     >
       <table
         ref={tableRef}
+        role="grid"
+        aria-rowcount={Math.max(result.rowCount, startIndex + result.rows.length) + 1}
+        aria-colcount={result.columns.length + 1}
         className="tw:table-fixed tw:border-separate tw:border-spacing-0 tw:bg-background tw:font-mono tw:text-ui tw:[&_td]:box-border tw:[&_td]:max-w-none tw:[&_td]:overflow-hidden tw:[&_td]:border-b tw:[&_td]:border-border-subtle tw:[&_td]:px-2 tw:[&_td]:py-1 tw:[&_td]:leading-ui tw:[&_td]:text-left tw:[&_td]:text-ellipsis tw:[&_td]:whitespace-nowrap tw:[&_th]:box-border tw:[&_th]:max-w-none tw:[&_th]:overflow-hidden tw:[&_th]:border-r tw:[&_th]:border-b tw:[&_th]:border-border-subtle tw:[&_th]:px-2 tw:[&_th]:py-px tw:[&_th]:leading-ui tw:[&_th]:text-left tw:[&_th]:text-ellipsis tw:[&_th]:whitespace-nowrap tw:[&_thead_th]:sticky tw:[&_thead_th]:top-0 tw:[&_thead_th]:z-[var(--ds-z-raised)] tw:[&_thead_th]:h-control-sm tw:[&_thead_th]:bg-card"
         style={{ tableLayout: "fixed", width: totalW }}
       >
@@ -305,13 +336,19 @@ function DataGridTable({
           ))}
         </colgroup>
         <thead>
-          <tr>
-            <th className="tw:left-0 tw:z-[calc(var(--ds-z-raised)+1)] tw:text-right tw:text-muted-foreground">
+          <tr role="row" aria-rowindex={1}>
+            <th
+              role="columnheader"
+              aria-colindex={1}
+              className="tw:left-0 tw:z-[calc(var(--ds-z-raised)+1)] tw:text-right tw:text-muted-foreground"
+            >
               #
             </th>
             {result.columns.map((c, j) => (
               <th
                 key={c}
+                role="columnheader"
+                aria-colindex={j + 2}
                 aria-sort={
                   onSort
                     ? sort?.col === c
@@ -371,16 +408,19 @@ function DataGridTable({
                     />
                   ) : null}
                 </span>
-                <span
+                <ResizeSeparator
                   data-grid-resize-handle
                   className="tw:absolute tw:top-0 tw:right-0 tw:z-[var(--ds-z-sticky)] tw:h-full tw:w-2 tw:cursor-col-resize tw:hover:bg-primary/55 tw:active:bg-primary/55"
-                  title={t("grid.resizeHint")}
+                  label={`${c}: ${t("grid.resizeHint")}`}
+                  orientation="vertical"
+                  value={columnWidths[j + 1]}
+                  minimum={50}
+                  maximum={1200}
+                  onChange={(width) =>
+                    setWidths((current) => ({ ...current, [j + 1]: width }))
+                  }
+                  onReset={() => setWidths({})}
                   onMouseDown={(e) => startResize(e, j + 1)}
-                  onClick={(e) => e.stopPropagation()}
-                  onDoubleClick={(e) => {
-                    e.stopPropagation();
-                    setWidths({});
-                  }}
                 />
               </th>
             ))}
@@ -390,32 +430,33 @@ function DataGridTable({
           {result.rows.map((row, i) => (
             <tr
               key={i}
+              role="row"
+              aria-rowindex={startIndex + i + 2}
               data-selected={selectedRow === i}
               className="tw:group tw:[contain-intrinsic-size:0_var(--ds-control-sm)] tw:[content-visibility:auto] tw:hover:[&>td]:bg-muted tw:data-[selected=true]:[&>td]:bg-selection"
             >
               <td
                 data-interactive={onSelectRow ? "true" : undefined}
-                className="tw:sticky tw:left-0 tw:z-[var(--ds-z-base)] tw:border-r tw:bg-card tw:text-right tw:text-muted-foreground tw:data-[interactive=true]:cursor-pointer"
-                role={onSelectRow ? "button" : undefined}
-                tabIndex={onSelectRow ? 0 : undefined}
-                onClick={onSelectRow ? () => onSelectRow(i) : undefined}
-                onKeyDown={
-                  onSelectRow
-                    ? (e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          onSelectRow(i);
-                        }
-                      }
-                    : undefined
-                }
+                data-focused={focus.row === i && focus.column === 0}
+                data-grid-focus={`${i}:0`}
+                className="tw:sticky tw:left-0 tw:z-[var(--ds-z-base)] tw:border-r tw:bg-card tw:text-right tw:text-muted-foreground tw:data-[interactive=true]:cursor-pointer tw:data-[focused=true]:shadow-[inset_0_0_0_var(--ds-border-width-strong)_var(--ds-ring)]"
+                role="rowheader"
+                aria-colindex={1}
+                aria-selected={selectedRow === i}
+                tabIndex={focus.row === i && focus.column === 0 ? 0 : -1}
+                onFocus={() => setFocus({ row: i, column: 0 })}
+                onClick={() => {
+                  focusRequestedRef.current = true;
+                  setFocus({ row: i, column: 0 });
+                  onSelectRow?.(i);
+                }}
               >
                 {startIndex + i + 1}
               </td>
               {row.map((v, j) => {
                 const text = cell(v);
                 const isSel = gridSelectionIncludes(sel, i, j);
-                const isFocus = sel?.focus.row === i && sel.focus.col === j;
+                const isFocus = focus.row === i && focus.column === j + 1;
                 return (
                   <td
                     key={j}
@@ -424,6 +465,7 @@ function DataGridTable({
                     data-interactive={interactive}
                     data-selected={isSel}
                     data-focused={isFocus}
+                    data-grid-focus={`${i}:${j + 1}`}
                     className="tw:max-w-[480px] tw:overflow-hidden tw:bg-background tw:text-ellipsis tw:data-[null=true]:text-muted-foreground tw:data-[null=true]:italic tw:data-[numeric=true]:text-right tw:data-[numeric=true]:tabular-nums tw:data-[interactive=true]:cursor-pointer tw:data-[selected=true]:!bg-selection tw:data-[focused=true]:shadow-[inset_0_0_0_var(--ds-border-width-strong)_var(--ds-ring)]"
                     // Compact fixed columns can truncate any value.
                     title={
@@ -433,8 +475,11 @@ function DataGridTable({
                     }
                     // Roving tabindex: only the selected cell is a tab stop; arrows move it (onKeyDown above).
                     tabIndex={isFocus ? 0 : -1}
+                    role="gridcell"
+                    aria-colindex={j + 2}
                     aria-selected={isSel}
                     data-grid-value
+                    onFocus={() => setFocus({ row: i, column: j + 1 })}
                     onClick={(event: ReactMouseEvent) =>
                       selectCell(i, j, event.shiftKey)
                     }

@@ -255,6 +255,16 @@ export function useToolWindowLayout() {
       return next;
     });
   }, []);
+  const resizeServicesHeight = useCallback((height: number) => {
+    setLayout((current) => {
+      const next = {
+        ...current,
+        servicesHeight: clampServicesHeight(height),
+      };
+      storeLayout(next);
+      return next;
+    });
+  }, []);
 
   return {
     databaseExplorerOpen:
@@ -265,6 +275,8 @@ export function useToolWindowLayout() {
       layout.leftToolWindow === "localHistory",
     servicesOpen: layout.servicesOpen,
     servicesHeight: layout.servicesHeight,
+    servicesMinimumHeight: MIN_SERVICES_HEIGHT,
+    servicesMaximumHeight: clampServicesHeight(MAX_SERVICES_HEIGHT),
     showDatabaseExplorer,
     toggleDatabaseExplorer,
     showLocalHistory,
@@ -274,6 +286,7 @@ export function useToolWindowLayout() {
     closeServices,
     toggleServices,
     startServicesResize,
+    resizeServicesHeight,
     resetServicesHeight,
   };
 }

@@ -33,10 +33,15 @@ import {
   DataGridViewport,
   type DataGridSurface,
 } from "../../design-system/components/DataGridViewport";
+import { ResizeSeparator } from "../../design-system/components/ResizeSeparator";
 import {
   createFrameCoalescer,
   type FrameCoalescer,
 } from "../../lib/frameCoalescer";
+import {
+  dataGridKeyboardTarget,
+  type DataGridFocus,
+} from "./dataGridKeyboard";
 
 const OVERSCAN = 4;
 
@@ -119,6 +124,8 @@ export default function DataGridVirtual(props: Props) {
     height: 320,
   });
   const [selection, setSelection] = useState<GridCellSelection | null>(null);
+  const [focus, setFocus] = useState<DataGridFocus>({ row: 0, column: 0 });
+  const focusRequestedRef = useRef(false);
   const [widths, setWidths] = useState<Record<number, number>>({});
   const interactive = !!props.onCellClick || !!props.onSelectRow;
   const rowCount = props.rowSource?.rowCount ?? props.result.rows.length;
@@ -178,16 +185,14 @@ export default function DataGridVirtual(props: Props) {
       }
     };
   }, []);
-  useEffect(() => setSelection(null), [columnSelectionKey]);
+  useEffect(() => {
+    setSelection(null);
+    setFocus({ row: 0, column: 0 });
+  }, [columnSelectionKey]);
 
-  const select = (row: number, col: number, extend = false) => {
-    setSelection((current) =>
-      extend && current
-        ? extendGridSelection(current, row, col)
-        : singleGridCell(row, col),
-    );
-  };
   const activate = (row: number, col: number, extend = false) => {
+    focusRequestedRef.current = true;
+    setFocus({ row, column: col + 1 });
     if (extend && selection) {
       setSelection(extendGridSelection(selection, row, col));
       return;
@@ -197,13 +202,29 @@ export default function DataGridVirtual(props: Props) {
     props.onCellClick?.(rowAt(row)?.[col], row, props.result.columns[col]);
   };
   useEffect(() => {
-    if (!selection) return;
+    if (!focusRequestedRef.current) return;
     const cell = scrollRef.current?.querySelector<HTMLElement>(
-      `[data-grid-cell="${selection.focus.row}:${selection.focus.col}"]`,
+      `[data-grid-focus="${focus.row}:${focus.column}"]`,
     );
+    if (!cell) return;
+    focusRequestedRef.current = false;
     cell?.focus({ preventScroll: true });
     cell?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [selection, startRow, endRow, visibleColumnWindowKey]);
+  }, [focus, startRow, endRow, visibleColumnWindowKey]);
+  useEffect(() => {
+    const activeElement = document.activeElement;
+    if (activeElement && scrollRef.current?.contains(activeElement)) return;
+    const focusColumnVisible =
+      focus.column === 0 || visibleColumns.includes(focus.column - 1);
+    if (
+      focus.row >= startRow &&
+      focus.row < endRow &&
+      focusColumnVisible
+    ) {
+      return;
+    }
+    setFocus({ row: Math.min(Math.max(0, startRow), Math.max(0, rowCount - 1)), column: 0 });
+  }, [endRow, focus, rowCount, startRow, visibleColumns]);
   const move = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") return setSelection(null);
     if (
@@ -218,31 +239,60 @@ export default function DataGridVirtual(props: Props) {
       );
       return;
     }
-    if (event.key === "Enter" && selection) {
+    if (
+      focus.column === 0 &&
+      (event.key === "Enter" || event.key === " ") &&
+      props.onSelectRow
+    ) {
       event.preventDefault();
-      activate(selection.focus.row, selection.focus.col);
+      props.onSelectRow(focus.row);
       return;
     }
-    if (!/^Arrow(Up|Down|Left|Right)$/.test(event.key) || !rowCount) return;
+    if (event.key === "Enter" && focus.column > 0) {
+      event.preventDefault();
+      activate(focus.row, focus.column - 1);
+      return;
+    }
+    const target = dataGridKeyboardTarget({
+      key: event.key,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      current: focus,
+      rowCount,
+      dataColumnCount: props.result.columns.length,
+      pageRows: Math.max(
+        1,
+        Math.floor(
+          (scroll.height - DATA_GRID_HEADER_HEIGHT) / DATA_GRID_ROW_HEIGHT,
+        ),
+      ),
+    });
+    if (!target) return;
     event.preventDefault();
-    const current = selection?.focus ?? { row: 0, col: 0 };
-    const row = !selection
-      ? 0
-      : event.key === "ArrowUp"
-        ? Math.max(0, current.row - 1)
-        : event.key === "ArrowDown"
-          ? Math.min(rowCount - 1, current.row + 1)
-          : current.row;
-    const col =
-      event.key === "ArrowLeft"
-        ? Math.max(0, current.col - 1)
-        : event.key === "ArrowRight"
-          ? Math.min(props.result.columns.length - 1, current.col + 1)
-          : current.col;
-    select(row, col, event.shiftKey);
+    focusRequestedRef.current = true;
+    setFocus(target);
+    if (target.column > 0) {
+      const dataColumn = target.column - 1;
+      setSelection((current) =>
+        event.shiftKey && current
+          ? extendGridSelection(current, target.row, dataColumn)
+          : singleGridCell(target.row, dataColumn),
+      );
+    }
     scrollRef.current?.scrollTo({
-      top: Math.max(0, row * DATA_GRID_ROW_HEIGHT - DATA_GRID_ROW_HEIGHT),
-      left: Math.max(0, offsets[col] - DATA_GRID_ROW_NUMBER_WIDTH),
+      top: Math.max(
+        0,
+        DATA_GRID_HEADER_HEIGHT +
+          target.row * DATA_GRID_ROW_HEIGHT -
+          DATA_GRID_ROW_HEIGHT,
+      ),
+      left:
+        target.column === 0
+          ? 0
+          : Math.max(
+              0,
+              offsets[target.column - 1] - DATA_GRID_ROW_NUMBER_WIDTH,
+            ),
     });
   };
   const resize = (event: ReactMouseEvent, index: number) => {
@@ -278,9 +328,9 @@ export default function DataGridVirtual(props: Props) {
       virtual
       footerInset={props.footerInset}
       role="grid"
-      aria-rowcount={rowCount + 1}
+      aria-rowcount={Math.max(props.result.rowCount, props.startIndex + rowCount) + 1}
       aria-colcount={props.result.columns.length + 1}
-      tabIndex={0}
+      tabIndex={rowCount === 0 ? 0 : undefined}
       onKeyDown={move}
       onScroll={(event) =>
         scrollCoalescerRef.current?.push({
@@ -380,21 +430,25 @@ export default function DataGridVirtual(props: Props) {
                     />
                   ) : null}
                 </span>
-                <span
+                <ResizeSeparator
                   data-grid-resize-handle
                   className="tw:absolute tw:top-0 tw:right-0 tw:z-[var(--ds-z-sticky)] tw:h-full tw:w-2 tw:cursor-col-resize tw:hover:bg-primary/55 tw:active:bg-primary/55"
-                  title={t("grid.resizeHint")}
-                  onMouseDown={(event) => resize(event, index)}
-                  onClick={(event) => event.stopPropagation()}
-                  onDoubleClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
+                  label={`${name}: ${t("grid.resizeHint")}`}
+                  orientation="vertical"
+                  value={columnWidths[index]}
+                  minimum={72}
+                  maximum={1200}
+                  onChange={(width) =>
+                    setWidths((current) => ({ ...current, [index]: width }))
+                  }
+                  onReset={() =>
                     setWidths((current) => {
                       const next = { ...current };
                       delete next[index];
                       return next;
-                    });
-                  }}
+                    })
+                  }
+                  onMouseDown={(event) => resize(event, index)}
                 />
               </div>
             );
@@ -409,7 +463,7 @@ export default function DataGridVirtual(props: Props) {
             data-selected={props.selectedRow === rowIndex}
             className="tw:group tw:absolute tw:top-0 tw:left-0 tw:right-0 tw:h-control-sm"
             role="row"
-            aria-rowindex={rowIndex + 2}
+            aria-rowindex={props.startIndex + rowIndex + 2}
             style={{
               transform: `translateY(${
                 DATA_GRID_HEADER_HEIGHT + rowIndex * DATA_GRID_ROW_HEIGHT
@@ -419,11 +473,20 @@ export default function DataGridVirtual(props: Props) {
             <div
               data-grid-box
               data-interactive={props.onSelectRow ? "true" : undefined}
-              className="tw:left-0 tw:z-[var(--ds-z-base)] tw:border-r tw:!bg-card tw:text-right tw:text-muted-foreground tw:group-data-[selected=true]:!bg-selection tw:data-[interactive=true]:cursor-pointer"
+              data-focused={focus.row === rowIndex && focus.column === 0}
+              data-grid-focus={`${rowIndex}:0`}
+              className="tw:left-0 tw:z-[var(--ds-z-base)] tw:border-r tw:!bg-card tw:text-right tw:text-muted-foreground tw:group-data-[selected=true]:!bg-selection tw:data-[interactive=true]:cursor-pointer tw:data-[focused=true]:shadow-[inset_0_0_0_var(--ds-border-width-strong)_var(--ds-ring)]"
               role="rowheader"
               aria-colindex={1}
+              aria-selected={props.selectedRow === rowIndex}
+              tabIndex={focus.row === rowIndex && focus.column === 0 ? 0 : -1}
               style={{ width: DATA_GRID_ROW_NUMBER_WIDTH }}
-              onClick={() => props.onSelectRow?.(rowIndex)}
+              onFocus={() => setFocus({ row: rowIndex, column: 0 })}
+              onClick={() => {
+                focusRequestedRef.current = true;
+                setFocus({ row: rowIndex, column: 0 });
+                props.onSelectRow?.(rowIndex);
+              }}
             >
               {props.startIndex + rowIndex + 1}
             </div>
@@ -437,12 +500,12 @@ export default function DataGridVirtual(props: Props) {
                 columnIndex,
               );
               const focused =
-                selection?.focus.row === rowIndex &&
-                selection.focus.col === columnIndex;
+                focus.row === rowIndex && focus.column === columnIndex + 1;
               return (
                 <div
                   key={columnIndex}
                   data-grid-cell={`${rowIndex}:${columnIndex}`}
+                  data-grid-focus={`${rowIndex}:${columnIndex + 1}`}
                   data-grid-box
                   data-null={value === null}
                   data-loading={loading}
@@ -463,6 +526,9 @@ export default function DataGridVirtual(props: Props) {
                   }}
                   onClick={(event) =>
                     activate(rowIndex, columnIndex, event.shiftKey)
+                  }
+                  onFocus={() =>
+                    setFocus({ row: rowIndex, column: columnIndex + 1 })
                   }
                 >
                   {text}

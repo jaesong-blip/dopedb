@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Icon } from "../../components/Icon";
 import { StatusDot } from "../../design-system/components/Status";
+import { ResizeSeparator } from "../../design-system/components/ResizeSeparator";
 import {
   ToolWindowHeader,
   ToolWindowHideButton,
@@ -39,6 +40,10 @@ export default function QueryServicesToolWindow({
   onActivateDocument,
   onClose,
   onStartResize,
+  height,
+  minimumHeight,
+  maximumHeight,
+  onHeightChange,
   onResetHeight,
   compact = false,
 }: {
@@ -49,6 +54,10 @@ export default function QueryServicesToolWindow({
   onActivateDocument: (id: string) => void;
   onClose: () => void;
   onStartResize: (event: { preventDefault(): void; clientY: number }) => void;
+  height: number;
+  minimumHeight: number;
+  maximumHeight: number;
+  onHeightChange: (height: number) => void;
   onResetHeight: () => void;
   compact?: boolean;
 }) {
@@ -115,12 +124,18 @@ export default function QueryServicesToolWindow({
       data-compact={compact}
       aria-label={t("services.title")}
     >
-      <div
+      <ResizeSeparator
         data-services-resize-handle
         className="tw:absolute tw:-top-1 tw:right-0 tw:left-0 tw:z-[var(--ds-z-raised)] tw:h-2 tw:cursor-row-resize tw:hover:bg-ring/30 tw:active:bg-ring/30"
-        title={t("app.dragResize")}
+        label={t("app.dragResize")}
+        orientation="horizontal"
+        value={height}
+        minimum={minimumHeight}
+        maximum={maximumHeight}
+        step={12}
+        onChange={onHeightChange}
+        onReset={onResetHeight}
         onMouseDown={onStartResize}
-        onDoubleClick={onResetHeight}
       />
       <ToolWindowHeader
         title={t("services.title")}
