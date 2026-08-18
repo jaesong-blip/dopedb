@@ -36,6 +36,17 @@ import {
   type AppUpdateResource,
   type AppUpdaterDownloadEvent,
 } from "../updater/controller";
+import {
+  connectionDiagnosticBlocksTest,
+  diagnoseConnection,
+} from "../connections/diagnostics";
+import type { DriverDescriptor } from "../connections/domain";
+import { switchConnectionSource } from "../connections/connectionEditorModel";
+import {
+  blankConnection,
+  demoSqliteConnection,
+  findDemoSqliteConnection,
+} from "../connections/presets";
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -394,5 +405,83 @@ describe("workbench state ownership", () => {
       resolveMode: "playground",
       content: "SELECT * FROM events;",
     });
+
+    const postgresDriver: DriverDescriptor = {
+      id: "sqlx-postgres",
+      name: "PostgreSQL",
+      engine: "postgres",
+      version: "1",
+      installMode: "bundled",
+      installState: "installed",
+      supportedProviders: ["auto", "generic"],
+      capabilities: ["sql"],
+      recommended: true,
+    };
+    const nameless = { ...blankConnection(), database: "app" };
+    const namelessDiagnostics = diagnoseConnection(
+      nameless,
+      [],
+      [postgresDriver],
+      false,
+      false,
+    );
+    expect(namelessDiagnostics.map(({ code }) => code)).toEqual([
+      "nameRequired",
+    ]);
+    expect(namelessDiagnostics.some(connectionDiagnosticBlocksTest)).toBe(
+      false,
+    );
+    expect(
+      namelessDiagnostics.some(({ tone }) => tone === "danger"),
+    ).toBe(true);
+
+    const mongo = switchConnectionSource(
+      {
+        ...nameless,
+        driverId: postgresDriver.id,
+        extraParams: {
+          "dopedb.timeZone": "UTC",
+          "dopedb.keepAliveSeconds": "30",
+          "dopedb.startupScript": "SET application_name = 'dopedb'",
+          sslrootcert: "/tmp/ca.pem",
+        },
+        schemaGroup: "public",
+      },
+      "mongodb",
+      "generic",
+    );
+    expect(mongo).toMatchObject({
+      engine: "mongodb",
+      provider: "generic",
+      driverId: null,
+      port: 27017,
+      sslmode: "prefer",
+      schemaGroup: null,
+      username: "",
+      extraParams: {},
+    });
+    const mongoDiagnostics = diagnoseConnection(
+      { ...mongo, database: "app" },
+      [],
+      [
+        {
+          ...postgresDriver,
+          id: "mongodb",
+          name: "MongoDB",
+          engine: "mongodb",
+          supportedProviders: ["generic"],
+        },
+      ],
+      false,
+      false,
+    );
+    expect(
+      mongoDiagnostics.some(
+        ({ fieldId }) => fieldId === "connection-username",
+      ),
+    ).toBe(false);
+
+    const demo = demoSqliteConnection("/tmp/demos/dopedb-demo-v1.sqlite");
+    expect(findDemoSqliteConnection([demo], demo.database)).toBe(demo);
   });
 });

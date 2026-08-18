@@ -14,7 +14,10 @@ import {
   CONNECTION_STARTUP_SCRIPT_PARAMETER,
   CONNECTION_TIME_ZONE_PARAMETER,
 } from "./options";
-import { connectionDefaultSslMode } from "./presets";
+import {
+  CONNECTION_DEFAULT_PORTS,
+  connectionDefaultSslMode,
+} from "./presets";
 import type { ConnectionProfile, DriverDescriptor } from "./domain";
 
 export type ConnectionEditorView = "dataSources" | "clouds" | "drivers";
@@ -214,4 +217,24 @@ export function clearIncompatibleSourceParameters(
     for (const key of MONGO_TLS_PARAMETERS) delete extraParams[key];
   }
   return extraParams;
+}
+
+export function switchConnectionSource(
+  current: ConnectionProfile,
+  engine: Engine,
+  provider: Provider,
+): ConnectionProfile {
+  return {
+    ...current,
+    engine,
+    provider,
+    extraParams: clearIncompatibleSourceParameters(current, engine),
+    sslmode: sslModeForEngine(engine, current.sslmode),
+    driverId: null,
+    port:
+      current.port === CONNECTION_DEFAULT_PORTS[current.engine]
+        ? CONNECTION_DEFAULT_PORTS[engine]
+        : current.port,
+    schemaGroup: isDocumentEngine(engine) ? null : current.schemaGroup,
+  };
 }

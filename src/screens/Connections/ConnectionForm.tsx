@@ -89,6 +89,7 @@ export function ConnectionForm(props: ConnectionEditorProps) {
               {catalog.navigation.view === "dataSources" ? (
                 <ConnectionProfilePanel
                   profile={profile}
+                  sources={catalog.sources}
                   drivers={catalog.drivers}
                   schema={schema}
                   problems={dialogs.problems}

@@ -84,3 +84,13 @@ export function isDemoSqliteConnection(
       .endsWith(DEMO_SQLITE_PATH_SUFFIX)
   );
 }
+
+export function findDemoSqliteConnection(
+  connections: readonly ConnectionProfile[],
+  path: string,
+): ConnectionProfile | undefined {
+  return connections.find(
+    (connection) =>
+      connection.engine === "sqlite" && connection.database === path,
+  );
+}

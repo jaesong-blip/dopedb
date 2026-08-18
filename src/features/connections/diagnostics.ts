@@ -45,6 +45,12 @@ export type ConnectionDiagnostic = {
   fieldId: string | null;
 };
 
+export function connectionDiagnosticBlocksTest(
+  diagnostic: ConnectionDiagnostic,
+): boolean {
+  return diagnostic.tone === "danger" && diagnostic.code !== "nameRequired";
+}
+
 function issue(
   code: ConnectionDiagnosticCode,
   tone: ConnectionDiagnostic["tone"],

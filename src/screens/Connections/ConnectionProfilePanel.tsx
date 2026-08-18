@@ -17,6 +17,7 @@ import { ConnectionSecurityTab } from "./ConnectionSecurityTab";
 
 export function ConnectionProfilePanel({
   profile,
+  sources,
   drivers,
   schema,
   problems,
@@ -24,6 +25,7 @@ export function ConnectionProfilePanel({
   commands,
 }: {
   profile: ConnectionEditorController["profile"];
+  sources: ConnectionEditorController["catalog"]["sources"];
   drivers: ConnectionEditorController["catalog"]["drivers"];
   schema: ConnectionEditorController["schema"];
   problems: ConnectionEditorController["dialogs"]["problems"];
@@ -104,6 +106,7 @@ export function ConnectionProfilePanel({
         {!problems.open && profile.tabs.active === "general" ? (
           <ConnectionGeneralTab
             profile={profile}
+            sources={sources}
             drivers={drivers}
             workspaceDialog={workspaceDialog}
             busy={commands.busy}
@@ -130,7 +133,7 @@ export function ConnectionProfilePanel({
         <button
           type="button"
           className="tw:cursor-pointer tw:border-0 tw:bg-transparent tw:p-0 tw:font-sans tw:text-sm tw:font-medium tw:text-info tw:disabled:cursor-default tw:disabled:text-muted-foreground"
-          disabled={commands.busy || problems.hasBlocking}
+          disabled={commands.busy || problems.hasTestBlocking}
           onClick={() => void commands.test()}
         >
           {commands.running === "test"

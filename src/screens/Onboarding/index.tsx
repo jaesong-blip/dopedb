@@ -6,11 +6,15 @@ import { ProductAnalyticsConsentPrompt } from "../../features/productAnalytics/C
 
 export default function Onboarding({
   connectionName,
+  creatingDemo = false,
+  onCreateDemoDatabase,
   onNewConnection,
   onNewQuery,
   onActionSearch,
 }: {
   connectionName?: string;
+  creatingDemo?: boolean;
+  onCreateDemoDatabase?: () => void;
   onNewConnection: () => void;
   onNewQuery?: () => void;
   onActionSearch: (returnFocus?: HTMLElement | null) => void;
@@ -32,6 +36,18 @@ export default function Onboarding({
       label: t("connections.new"),
       onClick: onNewConnection,
     },
+    ...(!connected && onCreateDemoDatabase
+      ? [
+          {
+            id: "create-demo-sqlite",
+            label: creatingDemo
+              ? t("connections.demoCreating")
+              : t("connections.demoSqlite"),
+            disabled: creatingDemo,
+            onClick: onCreateDemoDatabase,
+          },
+        ]
+      : []),
     {
       id: "search-everywhere",
       label: t("ide.action.actionSearch"),
@@ -58,6 +74,7 @@ export default function Onboarding({
                 presentation="menuItem"
                 size="compact"
                 variant="ghost"
+                disabled={"disabled" in command && command.disabled}
                 onClick={(event) => {
                   event.currentTarget.focus({ preventScroll: true });
                   command.onClick(event.currentTarget);

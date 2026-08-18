@@ -28,6 +28,7 @@ import {
 } from "../connections/tauriAdapter";
 import {
   demoSqliteConnection,
+  findDemoSqliteConnection,
   type ConnectionLaunchPreset,
 } from "../connections/presets";
 import type { KnowledgeEnvironmentView } from "../knowledge/domain";
@@ -360,10 +361,7 @@ export function useAppShellWorkbenchController({
     setCreatingDemo(true);
     try {
       const path = await createDemoSqlite();
-      const existing = connections.find(
-        (connection) =>
-          connection.engine === "sqlite" && connection.database === path,
-      );
+      const existing = findDemoSqliteConnection(connections, path);
       const saved =
         existing ?? (await upsertConnection(demoSqliteConnection(path)));
       if (!existing) await refresh();

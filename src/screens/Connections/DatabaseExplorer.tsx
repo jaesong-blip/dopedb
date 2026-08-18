@@ -1523,7 +1523,7 @@ export function DatabaseExplorer({
         ) : null}
         {knowledgeProjects.data?.map(renderProject)}
 
-        {connections.length === 0 && !knowledgeEnabled ? (
+        {connections.length === 0 ? (
           <div className="tw:grid tw:gap-5 tw:p-3">
             <ToolWindowSection title={t("connections.createDataSource")}>
               {renderLaunchButton("PostgreSQL", {

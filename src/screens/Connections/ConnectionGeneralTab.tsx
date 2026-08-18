@@ -21,11 +21,13 @@ type Controller = ConnectionEditorController;
 
 export function ConnectionGeneralTab({
   profile,
+  sources,
   drivers,
   workspaceDialog,
   busy,
 }: {
   profile: Controller["profile"];
+  sources: Controller["catalog"]["sources"];
   drivers: Controller["catalog"]["drivers"];
   workspaceDialog: Controller["dialogs"]["workspace"];
   busy: boolean;
@@ -67,6 +69,29 @@ export function ConnectionGeneralTab({
     <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[840px] tw:gap-4">
       <section className="tw:grid tw:gap-1.5">
         <div className="tw:flex tw:min-h-control-md tw:flex-wrap tw:items-center tw:gap-x-6 tw:gap-y-1 tw:text-sm tw:text-foreground">
+          {profile.identity.isNew && !isSharedTemplate ? (
+            <label className="tw:inline-flex tw:min-w-0 tw:items-center tw:gap-1.5">
+              <span>{t("connections.engine")}:</span>
+              <InlineSelect
+                value={form.engine}
+                aria-label={t("connections.engine")}
+                disabled={busy}
+                onChange={(event) => {
+                  const source = sources.available.find(
+                    (candidate) => candidate.engine === event.target.value,
+                  );
+                  if (source) sources.selectAddSource(source);
+                }}
+              >
+                {sources.available.map((source) => (
+                  <option key={source.engine} value={source.engine}>
+                    {source.label}
+                  </option>
+                ))}
+              </InlineSelect>
+            </label>
+          ) : null}
+
           {!isSharedTemplate ? (
             <label className="tw:inline-flex tw:min-w-0 tw:items-center tw:gap-1.5">
               <span>{t("connections.connectionType")}:</span>

@@ -23,6 +23,7 @@ import {
 } from "./connectionTestFailure";
 import { formatConnectionUrl, parseConnectionUrl } from "./connectionUrl";
 import {
+  connectionDiagnosticBlocksTest,
   diagnoseConnection,
   type ConnectionDiagnosticCode,
 } from "./diagnostics";
@@ -104,6 +105,8 @@ export function useConnectionProfileController({
   const hasBlockingProblems =
     connectionUrlInvalid ||
     diagnostics.some((diagnostic) => diagnostic.tone === "danger");
+  const hasTestBlockingProblems =
+    connectionUrlInvalid || diagnostics.some(connectionDiagnosticBlocksTest);
   const problemItems: DiagnosticItem[] = diagnostics.map((diagnostic) => ({
     id: diagnostic.id,
     tone: diagnostic.tone,
@@ -349,7 +352,7 @@ export function useConnectionProfileController({
   }
 
   async function test() {
-    if (hasBlockingProblems) {
+    if (hasTestBlockingProblems) {
       dialogs.problems.setOpen(true);
       return;
     }
@@ -464,6 +467,7 @@ export function useConnectionProfileController({
     problems: {
       items: problemItems,
       hasBlocking: hasBlockingProblems,
+      hasTestBlocking: hasTestBlockingProblems,
       openDiagnostic,
     },
     commands: {

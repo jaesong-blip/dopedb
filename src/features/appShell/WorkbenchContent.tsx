@@ -249,6 +249,8 @@ function WorkbenchContentResolved({ model, commands }: Props) {
   if (connection.items.length === 0) {
     return withSettings(
       <Onboarding
+        creatingDemo={connection.creatingDemo}
+        onCreateDemoDatabase={commands.connections.createDemo}
         onNewConnection={() => commands.connections.new()}
         onActionSearch={commands.documents.actionSearch}
       />,

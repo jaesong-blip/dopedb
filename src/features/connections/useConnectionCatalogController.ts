@@ -10,18 +10,14 @@ import { useI18n } from "../../lib/i18n";
 import { driversQuery } from "../../lib/queries";
 import type { ProviderKind } from "../providers/domain";
 import {
-  clearIncompatibleSourceParameters,
   compatibleDrivers,
   STANDARD_CONNECTION_SOURCES,
-  sslModeForEngine,
+  switchConnectionSource,
   type ConnectionEditorView,
   type StandardConnectionSource,
 } from "./connectionEditorModel";
 import type { ConnectionProfile, DriverDescriptor } from "./domain";
-import {
-  CONNECTION_DEFAULT_PORTS,
-  type ConnectionLaunchPreset,
-} from "./presets";
+import type { ConnectionLaunchPreset } from "./presets";
 import { installDriver } from "./tauriAdapter";
 import type { ConnectionProfileState } from "./useConnectionProfileState";
 
@@ -192,19 +188,9 @@ export function useConnectionCatalogController({
     demoMatches;
 
   function selectSource(engine: Engine, provider: Provider = "auto") {
-    form.setValue((current) => ({
-      ...current,
-      engine,
-      provider,
-      extraParams: clearIncompatibleSourceParameters(current, engine),
-      sslmode: sslModeForEngine(engine, current.sslmode),
-      driverId: null,
-      port:
-        current.port === CONNECTION_DEFAULT_PORTS[current.engine]
-          ? CONNECTION_DEFAULT_PORTS[engine]
-          : current.port,
-      schemaGroup: isDocumentEngine(engine) ? null : current.schemaGroup,
-    }));
+    form.setValue((current) =>
+      switchConnectionSource(current, engine, provider),
+    );
     if (tabs.active === "schemas" && isDocumentEngine(engine)) {
       tabs.setActive("general");
     }
@@ -285,6 +271,7 @@ export function useConnectionCatalogController({
         setSearchOpen: setCatalogSearchOpen,
       },
       sources: {
+        available: STANDARD_CONNECTION_SOURCES,
         connections,
         visibleConnections,
         search: sourceSearch,
