@@ -186,10 +186,6 @@ const PtySurface = forwardRef<PtySurfaceHandle, PtySurfaceProps>(
             fontSize: 12,
             letterSpacing: 0,
             lineHeight: 1.35,
-            linkHandler: {
-              activate: () => undefined,
-              allowNonHttpProtocols: false,
-            },
             minimumContrastRatio: 4.5,
             rightClickSelectsWord: true,
             screenReaderMode: true,
@@ -199,6 +195,9 @@ const PtySurface = forwardRef<PtySurfaceHandle, PtySurfaceProps>(
             theme: resolvePtyTheme(style),
             windowOptions: {},
           });
+          // Terminal output is untrusted. Consume OSC-8 before any PTY output
+          // reaches xterm so hyperlink text stays visible but intentionally inert.
+          disposables.push(terminal.parser.registerOscHandler(8, () => true));
           const fit = new XtermFitAddon();
           terminal.loadAddon(fit);
           terminal.open(hostRef.current);

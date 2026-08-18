@@ -14,6 +14,7 @@ import { collectProviderOwnershipDiagnostics } from "./architecture/provider-own
 import { collectQueryCentralIpcDiagnostics } from "./architecture/query-central-ipc-ownership.mjs";
 import { collectQueryFrontendOwnershipDiagnostics } from "./architecture/query-frontend-ownership.mjs";
 import { collectRepositoryIdentityDiagnostics } from "./architecture/repository-identity-guards.mjs";
+import { collectTerminalSecurityDiagnostics } from "./architecture/terminal-security-guards.mjs";
 import {
   collectQueryCentralCommandDiagnostics,
   collectQueryProductionModuleDiagnostics,
@@ -182,6 +183,7 @@ for (const collect of [
   collectQueryTauriCommandDiagnostics,
   collectQueryRuntimeOwnershipDiagnostics,
   collectPoisonMutexDiagnostics,
+  collectTerminalSecurityDiagnostics,
   collectWorkspaceCloudHttpDiagnostics,
 ]) failures.push(...collect(context));
 failures.push(...collectRemovedQueryRuntimeDiagnostics(rustSource));
