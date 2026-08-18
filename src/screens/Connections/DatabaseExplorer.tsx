@@ -95,6 +95,7 @@ import WorkspaceConnectionDialog from "../../features/workspaces/components/Work
 import { deleteWorkspaceConnection } from "../../features/workspaces/tauriAdapter";
 import { useToast } from "../../components/Toast";
 import { useI18n } from "../../lib/i18n";
+import { queryResultPhase } from "../../lib/queryResultPhase";
 import ConnectionNode from "./ConnectionNode";
 import type { CatalogTreeSearchResult } from "./CatalogTree";
 import DdlModal from "./DdlModal";
@@ -112,6 +113,31 @@ function environmentAnalysisTone(
   if (article.state === "live") return "success";
   if (article.state === "review") return "warning";
   return "neutral";
+}
+
+function TreeLoadFailure({
+  message,
+  detail,
+  retryLabel,
+  onRetry,
+}: {
+  message: string;
+  detail: string;
+  retryLabel: string;
+  onRetry: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="tw:flex tw:min-h-control-sm tw:w-full tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-1.5 tw:border-0 tw:bg-transparent tw:px-2 tw:py-1 tw:text-left tw:font-sans tw:text-xs tw:text-danger tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
+      onClick={onRetry}
+      title={`${message}: ${detail}`}
+    >
+      <Icon name="alert" className="tw:shrink-0" />
+      <span className="tw:min-w-0 tw:flex-1 tw:truncate">{message}</span>
+      <span className="tw:shrink-0">{retryLabel}</span>
+    </button>
+  );
 }
 
 // Database Explorer: connections in the sidebar, the selected one
@@ -194,6 +220,10 @@ export function DatabaseExplorer({
     enabled: knowledgeEnabled,
     retry: false,
   });
+  const knowledgeSourcesPhase = queryResultPhase(
+    knowledgeSources.data,
+    knowledgeSources.error,
+  );
   const projectEnvironmentIds = useMemo(
     () =>
       (knowledgeProjects.data ?? []).flatMap((project) =>
@@ -948,6 +978,11 @@ export function DatabaseExplorer({
     const sourceKey = `${environment.id}:sources`;
     const analysisKey = `${environment.id}:analyses`;
     const environmentIndex = projectEnvironmentIds.indexOf(environment.id);
+    const bindingQuery = environmentConnectionQueries[environmentIndex];
+    const bindingPhase = queryResultPhase(
+      bindingQuery?.data,
+      bindingQuery?.error,
+    );
     const bindings = environmentConnectionsById.get(environment.id) ?? [];
     const environmentSources = (knowledgeSources.data ?? []).filter(
       (source) => source.projectEnvironmentId === environment.id,
@@ -996,11 +1031,19 @@ export function DatabaseExplorer({
         </TreeSectionButton>
         {databaseExpanded ? (
           <div className="tw:grid tw:border-l tw:border-border-subtle tw:pl-1">
-            {environmentConnectionQueries[environmentIndex]?.isPending ? (
+            {bindingPhase === "coldError" || bindingPhase === "staleError" ? (
+              <TreeLoadFailure
+                message={t("connections.environmentDatabaseLoadFailed")}
+                detail={errMessage(bindingQuery.error)}
+                retryLabel={t("app.retry")}
+                onRetry={() => void bindingQuery.refetch()}
+              />
+            ) : null}
+            {bindingPhase === "coldLoading" ? (
               <div className="tw:min-h-control-sm tw:px-2 tw:py-1 tw:text-xs">
                 <LoadingLabel>{t("common.loading")}</LoadingLabel>
               </div>
-            ) : bindings.length > 0 ? (
+            ) : bindingQuery?.data === undefined ? null : bindings.length > 0 ? (
               bindings.map((binding) => {
                 const connection = binding.connectionId
                   ? connections.find(
@@ -1057,11 +1100,19 @@ export function DatabaseExplorer({
         </TreeSectionButton>
         {sourceExpanded ? (
           <div className="tw:grid tw:border-l tw:border-border-subtle tw:pl-1">
-            {knowledgeSources.isPending ? (
+            {knowledgeSourcesPhase === "coldError" || knowledgeSourcesPhase === "staleError" ? (
+              <TreeLoadFailure
+                message={t("connections.environmentSourceLoadFailed")}
+                detail={errMessage(knowledgeSources.error)}
+                retryLabel={t("app.retry")}
+                onRetry={() => void knowledgeSources.refetch()}
+              />
+            ) : null}
+            {knowledgeSourcesPhase === "coldLoading" ? (
               <div className="tw:min-h-control-sm tw:px-2 tw:py-1 tw:text-xs">
                 <LoadingLabel>{t("common.loading")}</LoadingLabel>
               </div>
-            ) : environmentSources.length > 0 ? (
+            ) : knowledgeSources.data === undefined ? null : environmentSources.length > 0 ? (
               environmentSources.map((source) => (
                 <button
                   key={source.sourceId}

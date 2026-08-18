@@ -52,6 +52,7 @@ import {
 import { AnalysisSnapshotParameterField } from "../analysisArticles/AnalysisArticleVisualization";
 import { actionSearchShortcutTargetIsEditable } from "../actionSearch/useActionSearchDialog";
 import { tabFocusTargetIndex } from "../../design-system/tabKeyboard";
+import { queryResultPhase } from "../../lib/queryResultPhase";
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -85,6 +86,11 @@ function storedDocument(id = "doc-1"): SqlDocument {
 
 describe("workbench state ownership", () => {
   it("restores persisted SQL without removing the connection welcome document", () => {
+    expect(queryResultPhase(undefined, new Error("offline"))).toBe("coldError");
+    expect(queryResultPhase(undefined, null)).toBe("coldLoading");
+    expect(queryResultPhase([], new Error("offline"))).toBe("staleError");
+    expect(queryResultPhase([], null)).toBe("loaded");
+
     const welcome = stableDocument("db-1", "welcome");
     const initialized = workbenchReducer(emptyWorkbenchState, {
       type: "initialize",

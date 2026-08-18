@@ -20,6 +20,10 @@ import { Icon } from "../../components/Icon";
 import ResultToolbar from "../../features/queryResults/ResultToolbar";
 import { Button } from "../../design-system/components/Button";
 import {
+  InlineNotice,
+  LoadingLabel,
+} from "../../design-system/components/Status";
+import {
   WorkbenchDivider,
   WorkbenchContainedBody,
   ResultMeta,
@@ -37,6 +41,7 @@ import { catalogQuery, useCatalogScope } from "../../lib/queries";
 import { documentsToGrid } from "../../lib/documentGrid";
 import { stamp } from "../../lib/export";
 import { useI18n } from "../../lib/i18n";
+import { queryResultPhase } from "../../lib/queryResultPhase";
 import { useQueryRun } from "../../lib/useQueryRun";
 
 type Op = "find" | "aggregate" | "count";
@@ -74,6 +79,8 @@ export default function Documents({
     () => catalog.data?.tables ?? [],
     [catalog.data?.tables],
   );
+  const catalogHasData = catalog.data !== undefined;
+  const catalogPhase = queryResultPhase(catalog.data, catalog.error);
 
   const [collection, setCollection] = useState("");
   useEffect(() => {
@@ -255,12 +262,18 @@ export default function Documents({
           label={t("documents.collection")}
           icon="database"
           value={collection}
-          disabled={running || tables.length === 0}
+          disabled={running || !catalogHasData || tables.length === 0}
           onChange={setCollection}
         >
-          {tables.length === 0 && (
+          {catalogPhase === "coldError" || catalogPhase === "coldLoading" ? (
+            <option value="">
+              {catalogPhase === "coldError"
+                ? t("documents.collectionsUnavailable")
+                : t("documents.loadingCollections")}
+            </option>
+          ) : tables.length === 0 ? (
             <option value="">{t("documents.noCollections")}</option>
-          )}
+          ) : null}
           {tables.map((table) => (
             <option key={table.name} value={table.name}>
               {table.name}
@@ -270,6 +283,29 @@ export default function Documents({
       </WorkbenchToolbar>
 
       <WorkbenchContainedBody>
+        {catalogPhase === "coldError" || catalogPhase === "staleError" ? (
+          <InlineNotice
+            tone={catalogPhase === "staleError" ? "warning" : "danger"}
+            icon="alert"
+            role={catalogPhase === "staleError" ? "status" : "alert"}
+            action={(
+              <Button size="compact" onClick={() => void catalog.refetch()}>
+                {t("app.retry")}
+              </Button>
+            )}
+          >
+            {t(
+              catalogPhase === "staleError"
+                ? "documents.catalogRefreshFailed"
+                : "documents.catalogLoadFailed",
+              { error: errMessage(catalog.error) },
+            )}
+          </InlineNotice>
+        ) : catalogPhase === "coldLoading" ? (
+          <div className="tw:border-b tw:border-border-subtle tw:px-3 tw:py-2 tw:text-xs">
+            <LoadingLabel>{t("documents.loadingCollections")}</LoadingLabel>
+          </div>
+        ) : null}
         <div
           data-result={Boolean(result)}
           data-workbench-scroll-owner="document-controls"

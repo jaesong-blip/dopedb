@@ -50,6 +50,9 @@ export default function MongoTableData({
   const countQuery = useQuery(documentCountQuery(connection.id, table.name));
   const documentPage = rowsQuery.data ?? null;
   const total = countQuery.data ?? null;
+  const countError = countQuery.error
+    ? t("tables.countUnavailable", { error: errMessage(countQuery.error) })
+    : null;
   const busy = rowsQuery.isFetching;
   const error = rowsQuery.error ? errMessage(rowsQuery.error) : null;
   const fallbackColumns = useMemo(
@@ -173,6 +176,7 @@ export default function MongoTableData({
                 })
               : t("tables.rowRange", { from, to }),
             documentPage.truncated ? t("tables.truncated") : null,
+            countError,
             `${documentPage.durationMs} ms`,
           ]
             .filter(Boolean)
@@ -180,6 +184,7 @@ export default function MongoTableData({
         >
           {t("ide.queryRows", { count: rows })}
           {documentPage.truncated ? ` · ${t("tables.truncated")}` : ""}
+          {countError ? ` · ${t("tables.countUnavailableShort")}` : ""}
         </DataGridStatusPill>
       ) : null}
     </WorkbenchPane>

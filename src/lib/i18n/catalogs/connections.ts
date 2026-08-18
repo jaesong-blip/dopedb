@@ -92,6 +92,10 @@ export const connectionsCatalog = defineCatalog(
     "connections.environmentAddSource": "Add data source…",
     "connections.environmentAnalysisLoadFailed":
       "Could not load analyses",
+    "connections.environmentDatabaseLoadFailed":
+      "Could not load Environment databases",
+    "connections.environmentSourceLoadFailed":
+      "Could not load Environment data sources",
     "connections.environmentAnalyses": "Analyses",
     "connections.environmentDatabases": "Databases",
     "connections.environmentDatabaseUnavailable":
@@ -421,6 +425,10 @@ export const connectionsCatalog = defineCatalog(
     "connections.environmentAddSource": "데이터 소스 추가…",
     "connections.environmentAnalysisLoadFailed":
       "분석을 불러오지 못했습니다",
+    "connections.environmentDatabaseLoadFailed":
+      "환경 데이터베이스를 불러오지 못했습니다",
+    "connections.environmentSourceLoadFailed":
+      "환경 데이터 소스를 불러오지 못했습니다",
     "connections.environmentAnalyses": "분석",
     "connections.environmentDatabases": "데이터베이스",
     "connections.environmentDatabaseUnavailable":

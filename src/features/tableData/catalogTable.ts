@@ -75,5 +75,5 @@ export function useCatalogTableMetadata(
   const snapshotQuery = requested.database
     ? selectedSnapshotQuery
     : defaultSnapshotQuery;
-  return { table, snapshotQuery };
+  return { table, catalogQuery: catalogQueryResult, snapshotQuery };
 }

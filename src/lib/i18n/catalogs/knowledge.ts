@@ -17,6 +17,10 @@ export const knowledgeCatalog = defineCatalog(
     "knowledge.sourceProvider": "Source provider",
     "knowledge.localFolder": "Local Folder",
     "knowledge.loadingRepositories": "Loading GitHub repositories…",
+    "knowledge.repositoriesLoadFailed":
+      "GitHub repositories could not be loaded. {error}",
+    "knowledge.repositoriesRefreshFailed":
+      "The loaded GitHub repositories are still available, but they could not be refreshed. {error}",
     "knowledge.refresh": "Refresh",
     "knowledge.repository": "Repository",
     "knowledge.branchRef": "Branch or ref",
@@ -48,7 +52,16 @@ export const knowledgeCatalog = defineCatalog(
     "knowledge.selected": "Selected",
     "knowledge.reviewBinding": "Review binding",
     "knowledge.loadingDatabases": "Loading Environment databases…",
+    "knowledge.databaseBindingsLoadFailed":
+      "Environment database bindings could not be loaded. {error}",
+    "knowledge.databaseBindingsRefreshFailed":
+      "The loaded Environment database bindings are still shown, but they could not be refreshed. {error}",
     "knowledge.emptyDatabases": "No database is bound to this Environment.",
+    "knowledge.loadingConnections": "Loading available connections…",
+    "knowledge.connectionsLoadFailed":
+      "Available connections could not be loaded. {error}",
+    "knowledge.connectionsRefreshFailed":
+      "The loaded connections are still available, but they could not be refreshed. {error}",
     "knowledge.bindingMeta": "{name} · {role} · revision {revision}",
     "knowledge.reconfirm": "Reconfirm",
     "knowledge.pinned": "Pinned",
@@ -56,6 +69,8 @@ export const knowledgeCatalog = defineCatalog(
     "knowledge.sources": "Sources",
     "knowledge.refreshSources": "Refresh sources",
     "knowledge.loadingSources": "Loading sources…",
+    "knowledge.projectsLoadFailed": "Knowledge Projects could not be loaded. {error}",
+    "knowledge.sourcesLoadFailed": "Knowledge sources could not be loaded. {error}",
     "knowledge.emptySources": "No source is connected to this Environment yet.",
     "knowledge.sourceBrowseMode": "Exact-commit GitHub source browsing · graph indexing is off",
     "knowledge.restoreLocalFolder": "Choose the folder again on this device to restore access.",
@@ -109,6 +124,10 @@ export const knowledgeCatalog = defineCatalog(
     "knowledge.sourceProvider": "소스 공급자",
     "knowledge.localFolder": "로컬 폴더",
     "knowledge.loadingRepositories": "GitHub 저장소 불러오는 중…",
+    "knowledge.repositoriesLoadFailed":
+      "GitHub 저장소를 불러오지 못했습니다. {error}",
+    "knowledge.repositoriesRefreshFailed":
+      "불러온 GitHub 저장소를 계속 사용할 수 있지만 새로고침하지 못했습니다. {error}",
     "knowledge.refresh": "새로고침",
     "knowledge.repository": "저장소",
     "knowledge.branchRef": "브랜치 또는 ref",
@@ -140,7 +159,16 @@ export const knowledgeCatalog = defineCatalog(
     "knowledge.selected": "선택됨",
     "knowledge.reviewBinding": "바인딩 검토",
     "knowledge.loadingDatabases": "환경 데이터베이스 불러오는 중…",
+    "knowledge.databaseBindingsLoadFailed":
+      "환경 데이터베이스 바인딩을 불러오지 못했습니다. {error}",
+    "knowledge.databaseBindingsRefreshFailed":
+      "불러온 환경 데이터베이스 바인딩을 계속 표시하지만 새로고침하지 못했습니다. {error}",
     "knowledge.emptyDatabases": "이 환경에 연결된 데이터베이스가 없습니다.",
+    "knowledge.loadingConnections": "사용 가능한 연결 불러오는 중…",
+    "knowledge.connectionsLoadFailed":
+      "사용 가능한 연결을 불러오지 못했습니다. {error}",
+    "knowledge.connectionsRefreshFailed":
+      "불러온 연결을 계속 사용할 수 있지만 새로고침하지 못했습니다. {error}",
     "knowledge.bindingMeta": "{name} · {role} · 리비전 {revision}",
     "knowledge.reconfirm": "재확인",
     "knowledge.pinned": "고정됨",
@@ -148,6 +176,8 @@ export const knowledgeCatalog = defineCatalog(
     "knowledge.sources": "소스",
     "knowledge.refreshSources": "소스 새로고침",
     "knowledge.loadingSources": "소스 불러오는 중…",
+    "knowledge.projectsLoadFailed": "Knowledge 프로젝트를 불러오지 못했습니다. {error}",
+    "knowledge.sourcesLoadFailed": "Knowledge 소스를 불러오지 못했습니다. {error}",
     "knowledge.emptySources": "이 환경에 연결된 소스가 아직 없습니다.",
     "knowledge.sourceBrowseMode": "정확한 커밋의 GitHub 원문 탐색 · 그래프 인덱싱 꺼짐",
     "knowledge.restoreLocalFolder": "이 기기에서 폴더를 다시 선택해 접근을 복구하세요.",

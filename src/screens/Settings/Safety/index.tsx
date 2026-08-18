@@ -11,7 +11,10 @@ import {
   TextInput,
 } from "../../../design-system/components/FormControls";
 import { SettingsGroup } from "../../../design-system/components/Settings";
-import { StatusBadge } from "../../../design-system/components/Status";
+import {
+  InlineNotice,
+  StatusBadge,
+} from "../../../design-system/components/Status";
 import {
   connectionCanEnterWritePath,
   effectiveSafetySettings,
@@ -24,6 +27,7 @@ import {
   safetyQueryKeys,
   safetySettingsQuery,
 } from "../../../features/safetySettings/queries";
+import { queryResultPhase } from "../../../lib/queryResultPhase";
 
 const TOGGLES: { key: keyof SafetySettings; label: I18nKey; hint: I18nKey }[] = [
   { key: "allowWrites", label: "safety.allowWrites", hint: "safety.allowWritesHint" },
@@ -60,18 +64,32 @@ export default function Safety({
   const toast = useToast();
   const queryClient = useQueryClient();
   const safetyQuery = useQuery(safetySettingsQuery(connectionId));
+  const safetyPhase = queryResultPhase(safetyQuery.data, safetyQuery.error);
 
   useEffect(() => {
     setSettings(safetyQuery.data ?? null);
   }, [connectionId, safetyQuery.data]);
 
   if (!settings) {
+    if (safetyPhase === "coldError" && safetyQuery.error) {
+      return (
+        <InlineNotice
+          tone="danger"
+          icon="alert"
+          role="alert"
+          action={(
+            <Button size="compact" onClick={() => void safetyQuery.refetch()}>
+              {t("app.retry")}
+            </Button>
+          )}
+        >
+          {t("safety.loadFailed", { error: errMessage(safetyQuery.error) })}
+        </InlineNotice>
+      );
+    }
     return (
-      <div
-        role={safetyQuery.error ? "alert" : "status"}
-        className="tw:p-4 tw:text-muted-foreground"
-      >
-        {safetyQuery.error ? errMessage(safetyQuery.error) : t("safety.loading")}
+      <div role="status" className="tw:p-4 tw:text-muted-foreground">
+        {t("safety.loading")}
       </div>
     );
   }
@@ -114,6 +132,20 @@ export default function Safety({
 
   return (
     <div className="tw:flex tw:w-full tw:max-w-[880px] tw:flex-col tw:gap-4 tw:max-[640px]:max-w-none">
+      {safetyPhase === "staleError" && safetyQuery.error ? (
+        <InlineNotice
+          tone="warning"
+          icon="alert"
+          role="status"
+          action={(
+            <Button size="compact" onClick={() => void safetyQuery.refetch()}>
+              {t("app.retry")}
+            </Button>
+          )}
+        >
+          {t("safety.refreshFailed", { error: errMessage(safetyQuery.error) })}
+        </InlineNotice>
+      ) : null}
       <div className="tw:flex tw:items-center tw:justify-between tw:gap-3 tw:max-[860px]:flex-col tw:max-[860px]:items-start">
         <div className="tw:inline-flex tw:items-center tw:gap-2 tw:max-[640px]:flex-col tw:max-[640px]:items-start">
           <h2>{t("safety.title")}</h2>

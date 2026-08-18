@@ -6,9 +6,15 @@ export const documentsCatalog = defineCatalog(
     "documents.cancel": "Cancel query",
     "documents.cancelled": "Query cancelled.",
     "documents.collection": "Collection",
+    "documents.collectionsUnavailable": "Collections unavailable",
+    "documents.catalogLoadFailed":
+      "Collections could not be loaded. {error}",
+    "documents.catalogRefreshFailed":
+      "The loaded collections are still available, but they could not be refreshed. {error}",
     "documents.docCount": "{count} documents",
     "documents.filter": "Filter (JSON)",
     "documents.limit": "Limit",
+    "documents.loadingCollections": "Loading collections…",
     "documents.noCollections": "No collections",
     "documents.noDocuments": "No documents returned.",
     "documents.operation": "Operation",
@@ -24,9 +30,15 @@ export const documentsCatalog = defineCatalog(
     "documents.cancel": "쿼리 취소",
     "documents.cancelled": "쿼리가 취소되었습니다.",
     "documents.collection": "컬렉션",
+    "documents.collectionsUnavailable": "컬렉션을 사용할 수 없음",
+    "documents.catalogLoadFailed":
+      "컬렉션을 불러오지 못했습니다. {error}",
+    "documents.catalogRefreshFailed":
+      "불러온 컬렉션을 계속 사용할 수 있지만 새로고침하지 못했습니다. {error}",
     "documents.docCount": "{count}개 문서",
     "documents.filter": "필터 (JSON)",
     "documents.limit": "제한",
+    "documents.loadingCollections": "컬렉션 불러오는 중…",
     "documents.noCollections": "컬렉션 없음",
     "documents.noDocuments": "반환된 문서가 없습니다.",
     "documents.operation": "작업",

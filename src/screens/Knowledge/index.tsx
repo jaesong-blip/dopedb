@@ -20,6 +20,7 @@ import {
 } from "../../design-system/components/Status";
 import { errMessage } from "../../ipc/types";
 import { useI18n } from "../../lib/i18n";
+import { queryResultPhase } from "../../lib/queryResultPhase";
 import { useCatalogScope } from "../../lib/queries";
 import { captureProductEvent } from "../../features/productAnalytics/client";
 import type {
@@ -177,6 +178,8 @@ export default function Knowledge({
     queryFn: listKnowledgeSources,
     enabled: personalAuthResolved,
   });
+  const projectsPhase = queryResultPhase(projects.data, projects.error);
+  const sourcesPhase = queryResultPhase(sources.data, sources.error);
   const sourceRows = sources.data;
   const sourceSyncProgress = useQuery(
     knowledgeSyncProgressQuery(
@@ -200,6 +203,14 @@ export default function Knowledge({
     retry: false,
   });
   const connections = useQuery(connectionsQuery(catalogScope.key));
+  const repositoryPhase = queryResultPhase(
+    repositories.data,
+    repositories.error,
+  );
+  const connectionsPhase = queryResultPhase(
+    connections.data,
+    connections.error,
+  );
   const [projectId, setProjectId] = useState("");
   const [environmentId, setEnvironmentId] = useState("");
   const [provider, setProvider] = useState<"github" | "local_folder">("github");
@@ -248,6 +259,10 @@ export default function Knowledge({
     queryFn: () => listKnowledgeEnvironmentConnections(environmentId),
     enabled: Boolean(environmentId),
   });
+  const environmentConnectionsPhase = queryResultPhase(
+    environmentConnections.data,
+    environmentConnections.error,
+  );
   const mappingsKey = knowledgeQueryKeys.mappings(
     environmentId,
     catalogScope.key,
@@ -733,7 +748,34 @@ export default function Knowledge({
     onError: (error) => setActionError(errMessage(error)),
   });
   const pending = connectGithub.isPending || connectLocal.isPending;
-  const sourceLoadError = projects.error ?? sources.error;
+  const sourceLoadFailure = projects.error
+    ? {
+        hasData: projectsPhase === "staleError",
+        message: t("knowledge.projectsLoadFailed", {
+          error: errMessage(projects.error),
+        }),
+        retry: () => projects.refetch(),
+      }
+    : sources.error
+      ? {
+          hasData: sourcesPhase === "staleError",
+          message: t("knowledge.sourcesLoadFailed", {
+            error: errMessage(sources.error),
+          }),
+          retry: () => sources.refetch(),
+        }
+      : view === "databases" && connections.error
+        ? {
+            hasData: connectionsPhase === "staleError",
+            message: t(
+              connectionsPhase === "staleError"
+                ? "knowledge.connectionsRefreshFailed"
+                : "knowledge.connectionsLoadFailed",
+              { error: errMessage(connections.error) },
+            ),
+            retry: () => connections.refetch(),
+          }
+      : null;
   if (view === "analyses" && selectedProject && selectedEnvironment) {
     return (
       <AnalysisArticles
@@ -790,9 +832,18 @@ export default function Knowledge({
         ) : null}
       </header>
 
-      {sourceLoadError ? (
-        <InlineNotice tone="danger" icon="alert" role="alert">
-          {errMessage(sourceLoadError)}
+      {sourceLoadFailure ? (
+        <InlineNotice
+          tone={sourceLoadFailure.hasData ? "warning" : "danger"}
+          icon="alert"
+          role={sourceLoadFailure.hasData ? "status" : "alert"}
+          action={(
+            <Button size="compact" onClick={() => void sourceLoadFailure.retry()}>
+              {t("knowledge.retry")}
+            </Button>
+          )}
+        >
+          {sourceLoadFailure.message}
         </InlineNotice>
       ) : null}
       {actionError ? (
@@ -847,9 +898,41 @@ export default function Knowledge({
                   {t("workspace.login")}
                 </Button>
               </div>
-            ) : repositories.isPending ? (
+            ) : repositoryPhase === "coldLoading" ? (
               <LoadingLabel>{t("knowledge.loadingRepositories")}</LoadingLabel>
-            ) : repositories.error || (repositories.data?.length ?? 0) === 0 ? (
+            ) : repositoryPhase === "coldError" && repositories.error ? (
+              <InlineNotice
+                tone="danger"
+                icon="alert"
+                role="alert"
+                action={(
+                  <Button size="compact" onClick={() => void repositories.refetch()}>
+                    {t("knowledge.retry")}
+                  </Button>
+                )}
+              >
+                {t("knowledge.repositoriesLoadFailed", {
+                  error: errMessage(repositories.error),
+                })}
+              </InlineNotice>
+            ) : (repositories.data?.length ?? 0) === 0 ? (
+              <>
+              {repositories.error ? (
+                <InlineNotice
+                  tone="warning"
+                  icon="alert"
+                  role="status"
+                  action={(
+                    <Button size="compact" onClick={() => void repositories.refetch()}>
+                      {t("knowledge.retry")}
+                    </Button>
+                  )}
+                >
+                  {t("knowledge.repositoriesRefreshFailed", {
+                    error: errMessage(repositories.error),
+                  })}
+                </InlineNotice>
+              ) : null}
               <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-3">
                 <span className="tw:text-sm tw:text-muted-foreground">{t("knowledge.githubAccessHint")}</span>
                 <Button onClick={async () => {
@@ -862,8 +945,25 @@ export default function Knowledge({
                 }}>{t("knowledge.githubAccessAction")}</Button>
                 <Button variant="ghost" onClick={() => void repositories.refetch()}><Icon name="refresh" />{t("knowledge.refresh")}</Button>
               </div>
+              </>
             ) : (
               <>
+                {repositories.error ? (
+                  <InlineNotice
+                    tone="warning"
+                    icon="alert"
+                    role="status"
+                    action={(
+                      <Button size="compact" onClick={() => void repositories.refetch()}>
+                        {t("knowledge.retry")}
+                      </Button>
+                    )}
+                  >
+                    {t("knowledge.repositoriesRefreshFailed", {
+                      error: errMessage(repositories.error),
+                    })}
+                  </InlineNotice>
+                ) : null}
                 <div className="tw:grid tw:grid-cols-2 tw:gap-3 tw:@max-[620px]:grid-cols-1">
                   <Field label={t("knowledge.repository")}>
                     <SelectInput value={repositoryId} onChange={(event) => {
@@ -1006,6 +1106,10 @@ export default function Knowledge({
               </Button>
             ) : null}
           </div>
+          {connectionsPhase === "coldLoading" ? (
+            <LoadingLabel>{t("knowledge.loadingConnections")}</LoadingLabel>
+          ) : connections.data !== undefined ? (
+            <>
           <div className="tw:grid tw:grid-cols-[minmax(0,1.2fr)_minmax(0,.7fr)_minmax(0,1fr)_auto] tw:items-end tw:gap-2 tw:@max-[760px]:grid-cols-2 tw:@max-[520px]:grid-cols-1">
             <Field label={t("knowledge.databaseConnection")}>
               <SelectInput value={connectionId} onChange={(event) => {
@@ -1067,11 +1171,46 @@ export default function Knowledge({
                 ))}
             </div>
           ) : null}
-          {environmentConnections.isPending ? (
+            </>
+          ) : null}
+          {environmentConnectionsPhase === "coldLoading" ? (
             <LoadingLabel>{t("knowledge.loadingDatabases")}</LoadingLabel>
-          ) : (environmentConnections.data?.length ?? 0) === 0 ? (
-            <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">{t("knowledge.emptyDatabases")}</p>
-          ) : (
+          ) : environmentConnectionsPhase === "coldError" && environmentConnections.error ? (
+            <InlineNotice
+              tone="danger"
+              icon="alert"
+              role="alert"
+              action={(
+                <Button size="compact" onClick={() => void environmentConnections.refetch()}>
+                  {t("knowledge.retry")}
+                </Button>
+              )}
+            >
+              {t("knowledge.databaseBindingsLoadFailed", {
+                error: errMessage(environmentConnections.error),
+              })}
+            </InlineNotice>
+          ) : environmentConnections.data !== undefined ? (
+            <>
+            {environmentConnectionsPhase === "staleError" && environmentConnections.error ? (
+              <InlineNotice
+                tone="warning"
+                icon="alert"
+                role="status"
+                action={(
+                  <Button size="compact" onClick={() => void environmentConnections.refetch()}>
+                    {t("knowledge.retry")}
+                  </Button>
+                )}
+              >
+                {t("knowledge.databaseBindingsRefreshFailed", {
+                  error: errMessage(environmentConnections.error),
+                })}
+              </InlineNotice>
+            ) : null}
+            {environmentConnections.data.length === 0 ? (
+              <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">{t("knowledge.emptyDatabases")}</p>
+            ) : (
             <div className="tw:grid tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle">
               {environmentConnections.data?.map((binding) => (
                 <div key={binding.id} className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:items-center tw:gap-3 tw:border-b tw:border-border-subtle tw:px-3 tw:py-2 tw:last:border-b-0">
@@ -1086,7 +1225,9 @@ export default function Knowledge({
                 </div>
               ))}
             </div>
-          )}
+            )}
+            </>
+          ) : null}
         </section>
       ) : null}
 
@@ -1096,7 +1237,7 @@ export default function Knowledge({
           <h2 className="tw:m-0 tw:text-base tw:font-semibold">{t("knowledge.sources")}</h2>
           <Button iconOnly size="compact" variant="ghost" title={t("knowledge.refreshSources")} onClick={() => void sources.refetch()}><Icon name="refresh" /></Button>
         </div>
-        {sources.isPending ? <LoadingLabel>{t("knowledge.loadingSources")}</LoadingLabel> : selectedEnvironmentSources.length === 0 ? (
+        {sourcesPhase === "coldLoading" ? <LoadingLabel>{t("knowledge.loadingSources")}</LoadingLabel> : sourcesPhase === "coldError" ? null : selectedEnvironmentSources.length === 0 ? (
           <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">{t("knowledge.emptySources")}</p>
         ) : (
           <div className="tw:grid tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle">

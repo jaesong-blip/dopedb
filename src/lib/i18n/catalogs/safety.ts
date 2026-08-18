@@ -20,6 +20,7 @@ export const safetyCatalog = defineCatalog(
     "safety.guardrails": "Guardrails",
     "safety.limits": "Limits",
     "safety.loading": "Loading safety settings...",
+    "safety.loadFailed": "Safety settings could not be loaded. {error}",
     "safety.maxRows": "Max rows",
     "safety.maxRowsHint": "Row cap applied to read result sets.",
     "safety.memberLocalReadOnlyHint":
@@ -61,6 +62,8 @@ export const safetyCatalog = defineCatalog(
     "safety.monitoringWorking": "Applying...",
     "safety.openConnectionOptions": "Open Data Source Options",
     "safety.saved": "Safety settings saved",
+    "safety.refreshFailed":
+      "The saved safety settings are still shown, but they could not be refreshed. {error}",
     "safety.sharedWritesHint":
       "A workspace administrator controls this DB policy. When enabled, it remains effective for members with an Editor, Admin, or Owner role and a use grant; short-lived credentials rotate automatically.",
     "safety.title": "Safety settings",
@@ -82,6 +85,7 @@ export const safetyCatalog = defineCatalog(
     "safety.guardrails": "가드레일",
     "safety.limits": "제한값",
     "safety.loading": "안전 설정을 불러오는 중...",
+    "safety.loadFailed": "안전 설정을 불러오지 못했습니다. {error}",
     "safety.maxRows": "최대 행 수",
     "safety.maxRowsHint": "읽기 결과 집합에 적용되는 행 수 제한입니다.",
     "safety.memberLocalReadOnlyHint":
@@ -123,6 +127,8 @@ export const safetyCatalog = defineCatalog(
     "safety.monitoringWorking": "적용 중...",
     "safety.openConnectionOptions": "데이터 소스 옵션 열기",
     "safety.saved": "안전 설정이 저장되었습니다",
+    "safety.refreshFailed":
+      "저장된 안전 설정을 계속 표시하지만 새로고침하지 못했습니다. {error}",
     "safety.sharedWritesHint":
       "이 DB 정책은 워크스페이스 관리자가 정합니다. 쓰기를 허용하면 사용 권한이 있는 에디터·관리자·소유자에게 역할이 유지되는 동안 적용되고 단기 자격증명은 자동 회전합니다.",
     "safety.title": "안전 설정",

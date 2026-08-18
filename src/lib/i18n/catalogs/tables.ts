@@ -7,6 +7,10 @@ export const tablesCatalog = defineCatalog(
     "tables.activeFiltersPlural": "{count} filters",
     "tables.applyExpression": "Apply {label}",
     "tables.catalogRequired": "Schema metadata is still loading. Try again in a moment.",
+    "tables.catalogLoadFailed":
+      "Schema metadata could not be loaded, so row editing remains disabled. {error}",
+    "tables.catalogLoadFailedShort":
+      "Schema metadata could not be loaded - row editing disabled",
     "tables.changeSetRolledBack":
       "The staged transaction was rolled back. Reload rows before retrying.",
     "tables.clear": "Clear",
@@ -17,6 +21,8 @@ export const tablesCatalog = defineCatalog(
     "tables.columnPolicyCompact": "compact",
     "tables.columnPolicyHint":
       "Wide cells are truncated in the grid; click a cell to inspect the full value.",
+    "tables.countUnavailable": "Document count unavailable. {error}",
+    "tables.countUnavailableShort": "count unavailable",
     "tables.copyJson": "Copy JSON",
     "tables.copyRow": "Row copied",
     "tables.copyTsv": "Copy TSV",
@@ -88,6 +94,10 @@ export const tablesCatalog = defineCatalog(
     "tables.activeFiltersPlural": "필터 {count}개",
     "tables.applyExpression": "{label} 적용",
     "tables.catalogRequired": "스키마 메타데이터를 불러오는 중입니다. 잠시 후 다시 시도하세요.",
+    "tables.catalogLoadFailed":
+      "스키마 메타데이터를 불러오지 못해 행 편집이 비활성화되었습니다. {error}",
+    "tables.catalogLoadFailedShort":
+      "스키마 메타데이터를 불러오지 못함 - 행 편집 비활성화",
     "tables.changeSetRolledBack":
       "변경 트랜잭션이 롤백되었습니다. 행을 새로고침한 뒤 다시 시도하세요.",
     "tables.clear": "초기화",
@@ -98,6 +108,8 @@ export const tablesCatalog = defineCatalog(
     "tables.columnPolicyCompact": "compact",
     "tables.columnPolicyHint":
       "긴 셀은 그리드에서 줄여 표시합니다. 전체 값은 셀을 클릭해 확인하세요.",
+    "tables.countUnavailable": "문서 수를 확인할 수 없습니다. {error}",
+    "tables.countUnavailableShort": "문서 수 확인 불가",
     "tables.copyJson": "JSON 복사",
     "tables.copyRow": "행이 복사되었습니다",
     "tables.copyTsv": "TSV 복사",

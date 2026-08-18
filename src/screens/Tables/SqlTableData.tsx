@@ -25,6 +25,8 @@ import type { RowEditorSubmission } from "../../components/RowEditor";
 import JobPanel from "../../features/jobs/JobPanel";
 import Skeleton from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
+import { Button } from "../../design-system/components/Button";
+import { InlineNotice } from "../../design-system/components/Status";
 import DdlModal from "../Connections/DdlModal";
 import {
   DataGridStatusPill,
@@ -35,6 +37,7 @@ import {
 import { tableCountQuery, tableRowsQuery } from "../../lib/queries";
 import { tableKey } from "../../lib/tableRef";
 import { useI18n } from "../../lib/i18n";
+import { queryResultPhase } from "../../lib/queryResultPhase";
 import {
   buildDelete,
   cellToInput,
@@ -66,7 +69,7 @@ export default function SqlTableData({
   const [ddlOpen, setDdlOpen] = useState(false);
   const [catalogEnabled, setCatalogEnabled] = useState(false);
   const engine = connection.engine;
-  const { table, snapshotQuery } = useCatalogTableMetadata(
+  const { table, catalogQuery, snapshotQuery } = useCatalogTableMetadata(
     connection.id,
     requestedTable,
     catalogEnabled,
@@ -165,7 +168,9 @@ export default function SqlTableData({
   // Row editing needs a PK we can match on. No PK, or a PK whose rendered cell value can't
   // round-trip to a literal (binary/json/array/composite), both disable it — same as noPk.
   const nonScalarPk = hasNonScalarPk(table);
-  const canEdit = pkColumns(table).length > 0 && !nonScalarPk;
+  const catalogPhase = queryResultPhase(catalogQuery.data, catalogQuery.error);
+  const catalogReady = catalogQuery.data !== undefined;
+  const canEdit = catalogReady && pkColumns(table).length > 0 && !nonScalarPk;
   const activeFilters =
     Object.values(appliedFilters).filter((v) => v.trim()).length +
     (appliedWhereExpression.trim() ? 1 : 0);
@@ -392,9 +397,13 @@ export default function SqlTableData({
     void refreshRowsAndCount();
   }
 
-  const noEditTitle = nonScalarPk
-    ? t("tables.nonScalarPk")
-    : t("tables.noTablePk");
+  const noEditTitle = catalogQuery.error
+    ? t("tables.catalogLoadFailedShort")
+    : !catalogReady
+      ? t("tables.catalogRequired")
+      : nonScalarPk
+        ? t("tables.nonScalarPk")
+        : t("tables.noTablePk");
   const panelOpen = reviewing || !!editor || !!cellSel || !!pendingDelete;
 
   return (
@@ -481,6 +490,23 @@ export default function SqlTableData({
             {err}
           </div>
         )}
+
+        {catalogEnabled && (catalogPhase === "coldError" || catalogPhase === "staleError") && catalogQuery.error ? (
+          <InlineNotice
+            tone={catalogPhase === "coldError" ? "danger" : "warning"}
+            icon="alert"
+            role={catalogPhase === "coldError" ? "alert" : "status"}
+            action={(
+              <Button size="compact" onClick={() => void catalogQuery.refetch()}>
+                {t("app.retry")}
+              </Button>
+            )}
+          >
+            {t("tables.catalogLoadFailed", {
+              error: errMessage(catalogQuery.error),
+            })}
+          </InlineNotice>
+        ) : null}
 
         {/* Dim (not blank) the stale grid while paging/sorting/filtering re-queries. */}
         <div
