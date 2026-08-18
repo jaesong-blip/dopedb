@@ -1,7 +1,6 @@
 // Settings shell for agent tools, command-line, safety, language, and updates.
 // Kept outside the data tabs so navigation remains focused on the selected database.
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Update } from "@tauri-apps/plugin-updater";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import type { SafetySettings } from "../../ipc/types";
 import { Icon } from "../../components/Icon";
@@ -20,6 +19,10 @@ import {
 import { TreeSearch } from "../../design-system/components/TreeControls";
 import { useI18n } from "../../lib/i18n";
 import type { SettingsSection } from "../../features/settings/domain";
+import {
+  appUpdaterProgress,
+  type AppUpdaterSnapshot,
+} from "../../features/updater/controller";
 import AdvancedSettings from "./Advanced";
 import AgentTools from "./AgentTools";
 import CliSettings from "./Cli";
@@ -37,8 +40,9 @@ export default function Settings({
   onSafetySaved,
   refreshSafety,
   initialSection,
-  availableUpdate,
-  onUpdateChecked,
+  updater,
+  onUpdateRefresh,
+  onUpdateInstall,
 }: {
   connection: ConnectionProfile | null;
   onClose: () => void;
@@ -47,8 +51,9 @@ export default function Settings({
   // Re-loads the App's per-connection safety so Safety edits apply without reselecting.
   refreshSafety: () => void;
   initialSection?: SettingsSection;
-  availableUpdate?: Update | null;
-  onUpdateChecked?: (update: Update | null) => void;
+  updater: AppUpdaterSnapshot;
+  onUpdateRefresh: () => Promise<void>;
+  onUpdateInstall: () => Promise<void>;
 }) {
   const { lang, setLang, t } = useI18n();
   const [section, setSection] = useState<SettingsSection>(
@@ -175,6 +180,21 @@ export default function Settings({
   const activeEntry =
     settingsEntries.find((entry) => entry.id === section) ??
     settingsEntries[0];
+  const updateProgress = appUpdaterProgress(updater);
+  const updateNavigationStatus =
+    updater.phase === "downloading" && updateProgress !== null
+      ? `${updateProgress}%`
+      : updater.phase === "installing"
+        ? t("updates.installing")
+        : updater.phase === "checking"
+          ? t("updates.checking")
+          : updater.phase === "error"
+            ? t("updates.error")
+            : updater.phase === "ready"
+              ? t("updates.relaunching")
+              : updater.phase === "available"
+                ? t("updates.available")
+                : null;
 
   return (
     <ModalBackdrop>
@@ -237,7 +257,7 @@ export default function Settings({
                           key={entry.id}
                           type="button"
                           data-active={section === entry.id}
-                          className="tw:min-h-[var(--ds-tree-row-height)] tw:cursor-pointer tw:rounded-none tw:border-0 tw:bg-transparent tw:pr-3 tw:pl-12 tw:font-sans tw:text-left tw:text-ui tw:text-foreground tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:disabled:cursor-default tw:disabled:opacity-50 tw:not-disabled:hover:bg-muted"
+                          className="tw:flex tw:min-h-[var(--ds-tree-row-height)] tw:cursor-pointer tw:items-center tw:justify-between tw:gap-2 tw:rounded-none tw:border-0 tw:bg-transparent tw:pr-3 tw:pl-12 tw:font-sans tw:text-left tw:text-ui tw:text-foreground tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:disabled:cursor-default tw:disabled:opacity-50 tw:not-disabled:hover:bg-muted"
                           onClick={() => setSection(entry.id)}
                           disabled={entry.disabled}
                           title={
@@ -246,7 +266,14 @@ export default function Settings({
                               : undefined
                           }
                         >
-                          {entry.label}
+                          <span className="tw:min-w-0 tw:truncate">
+                            {entry.label}
+                          </span>
+                          {entry.id === "updates" && updateNavigationStatus ? (
+                            <span className="tw:shrink-0 tw:text-xs tw:text-muted-foreground">
+                              {updateNavigationStatus}
+                            </span>
+                          ) : null}
                         </button>
                       ))}
                     </section>
@@ -285,8 +312,9 @@ export default function Settings({
                 {section === "privacy" && <PrivacySettings />}
                 {section === "updates" && (
                   <Updates
-                    initialUpdate={availableUpdate}
-                    onChecked={onUpdateChecked}
+                    snapshot={updater}
+                    onRefresh={onUpdateRefresh}
+                    onInstall={onUpdateInstall}
                   />
                 )}
                 {section === "language" && (

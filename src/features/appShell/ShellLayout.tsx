@@ -1,5 +1,4 @@
 import type { ReactNode, RefObject } from "react";
-import type { Update } from "@tauri-apps/plugin-updater";
 
 import { Icon } from "../../components/Icon";
 import type { CatalogTable } from "../../ipc/types";
@@ -23,6 +22,10 @@ import QueryServicesToolWindow from "../queryServices/QueryServicesToolWindow";
 import type { QueryServiceStore } from "../queryServices/store";
 import { defaultSqlNamespace } from "../queries/namespace";
 import type { WorkspaceManualTransaction } from "../queries/useWorkspaceManualTransactions";
+import {
+  appUpdaterProgress,
+  type AppUpdaterSnapshot,
+} from "../updater/controller";
 import type { WorkbenchDocument } from "../workbench/domain";
 import WorkspaceAccount from "../workspaces/components/WorkspaceAccount";
 import WorkspaceSwitcher from "../workspaces/components/WorkspaceSwitcher";
@@ -40,7 +43,7 @@ type ShellLayoutModel = {
     supportsSql: boolean;
     writeEnabled: boolean;
     settingsOpen: boolean;
-    availableUpdate: Update | null;
+    updater: AppUpdaterSnapshot;
     creatingDemo: boolean;
   };
   explorer: {
@@ -188,8 +191,27 @@ function ShellLayoutContent({ model, commands }: Props) {
     viewport,
     search,
   } = model;
+  const updateProgress = appUpdaterProgress(workspace.updater);
   const showUpdateBadge =
-    !!workspace.availableUpdate && !workspace.settingsOpen;
+    workspace.updater.phase !== "idle" &&
+    workspace.updater.phase !== "current" &&
+    !workspace.settingsOpen;
+  const updateBadgeLabel =
+    workspace.updater.phase === "available"
+      ? t("updates.badge", {
+          version: workspace.updater.availableVersion ?? "",
+        })
+      : workspace.updater.phase === "checking"
+        ? t("updates.checking")
+        : workspace.updater.phase === "downloading"
+          ? updateProgress === null
+            ? t("updates.downloading")
+            : t("updates.downloadingPercent", { progress: updateProgress })
+          : workspace.updater.phase === "installing"
+            ? t("updates.installing")
+            : workspace.updater.phase === "ready"
+              ? t("updates.relaunching")
+              : t("updates.error");
   const databaseExplorerVisible = explorer.databaseOpen;
   const environmentDetailOpen = explorer.knowledgeFocus !== null;
   const localHistoryVisible =
@@ -375,15 +397,13 @@ function ShellLayoutContent({ model, commands }: Props) {
             <button
               className="ds-attention-badge ds-tone-trust"
               onClick={commands.workspace.openUpdateSettings}
-              title={t("updates.badgeTitle")}
-              aria-label={t("updates.badgeTitle")}
+              title={`${t("updates.badgeTitle")}: ${updateBadgeLabel}`}
+              aria-label={`${t("updates.badgeTitle")}: ${updateBadgeLabel}`}
             >
-              <Icon name="download" />
-              <span>
-                {t("updates.badge", {
-                  version: workspace.availableUpdate?.version ?? "",
-                })}
-              </span>
+              <Icon
+                name={workspace.updater.phase === "error" ? "alert" : "download"}
+              />
+              <span>{updateBadgeLabel}</span>
             </button>
           </div>
         )}

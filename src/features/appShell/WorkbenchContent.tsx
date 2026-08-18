@@ -1,4 +1,3 @@
-import type { Update } from "@tauri-apps/plugin-updater";
 import { lazy, Suspense, type ReactNode } from "react";
 
 import { Icon } from "../../components/Icon";
@@ -19,6 +18,7 @@ import type { SqlResolveMode } from "../queries/resolveMode";
 import { effectiveSafetySettings } from "../safetySettings/policy";
 import type { SettingsSection } from "../settings/domain";
 import type { SqlDocument } from "../sqlDocuments/domain";
+import type { AppUpdaterSnapshot } from "../updater/controller";
 import type { WorkbenchDocument } from "../workbench/domain";
 import ConnectionPicker from "./ConnectionPicker";
 import type { EditingConnection } from "./useAppShellWorkbenchController";
@@ -73,7 +73,7 @@ type WorkbenchContentModel = {
     activeId: string | null;
     initialAuditOpen: boolean;
   };
-  update: { available: Update | null };
+  update: { snapshot: AppUpdaterSnapshot };
 };
 
 type WorkbenchContentCommands = {
@@ -122,7 +122,10 @@ type WorkbenchContentCommands = {
     updateSession: (session: QueryServiceSession) => void;
     show: (sessionId: string) => void;
   };
-  update: { checked: (update: Update | null) => void };
+  update: {
+    refresh: () => Promise<void>;
+    install: () => Promise<void>;
+  };
 };
 
 type Props = {
@@ -163,8 +166,9 @@ function WorkbenchContentResolved({ model, commands }: Props) {
       refreshSafety={commands.safety.refresh}
       onSafetySaved={commands.safety.accept}
       onEditConnection={commands.connections.edit}
-      availableUpdate={update.available}
-      onUpdateChecked={commands.update.checked}
+      updater={update.snapshot}
+      onUpdateRefresh={commands.update.refresh}
+      onUpdateInstall={commands.update.install}
       onClose={commands.route.closeSettings}
     />
   ) : null;

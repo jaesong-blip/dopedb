@@ -27,9 +27,9 @@ import {
   useOperationActivity,
 } from "../../lib/operationActivity";
 import { useCatalogScope } from "../../lib/queries";
+import { useAppUpdater } from "../updater/useAppUpdater";
 import ShellLayout from "./ShellLayout";
 import WorkbenchContent from "./WorkbenchContent";
-import { useAvailableUpdate } from "./useAvailableUpdate";
 import { useOperationNudge } from "./useOperationNudge";
 import { useResponsiveShell } from "./useResponsiveShell";
 import { useSidebarWidth } from "./useSidebarWidth";
@@ -115,7 +115,7 @@ function Shell() {
   } = useSidebarWidth(
     toolWindows.localHistoryOpen ? "localHistory" : "databaseExplorer",
   );
-  const { availableUpdate, sync: syncAvailableUpdate } = useAvailableUpdate();
+  const updater = useAppUpdater();
   const [explorerRevealRequest, setExplorerRevealRequest] = useState(0);
   const [agentComposerRequest, setAgentComposerRequest] =
     useState<AgentComposerRequest | null>(null);
@@ -321,7 +321,7 @@ function Shell() {
           safetyError: safety.error,
         },
         workbench: documents,
-        update: { available: availableUpdate },
+        update: { snapshot: updater.snapshot },
       }}
       commands={{
         route: {
@@ -346,7 +346,10 @@ function Shell() {
             toolWindows.showServices();
           },
         },
-        update: { checked: syncAvailableUpdate },
+        update: {
+          refresh: updater.refresh,
+          install: updater.install,
+        },
       }}
     />
   );
@@ -362,7 +365,7 @@ function Shell() {
             supportsSql: connections.supportsSql,
             writeEnabled: safety.writeEnabled,
             settingsOpen: route.settingsOpen,
-            availableUpdate,
+            updater: updater.snapshot,
             creatingDemo: connections.creatingDemo,
           },
           explorer: {

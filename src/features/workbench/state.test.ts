@@ -31,6 +31,21 @@ import {
   knowledgeSyncOverallPercent,
   knowledgeSyncRemainingFiles,
 } from "../knowledge/syncProgress";
+import {
+  AppUpdaterController,
+  type AppUpdateResource,
+  type AppUpdaterDownloadEvent,
+} from "../updater/controller";
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
 
 function storedDocument(id = "doc-1"): SqlDocument {
   return {
@@ -73,7 +88,7 @@ describe("workbench state ownership", () => {
     expect(restored.activeDocumentId).toContain(":sql:doc-1");
   });
 
-  it("keeps one document instance and moves only the active pointer", () => {
+  it("keeps one document instance and moves only the active pointer", async () => {
     const query = queryDocument("db-1", "sql");
     const first = workbenchReducer(emptyWorkbenchState, {
       type: "activate",
@@ -154,6 +169,91 @@ describe("workbench state ownership", () => {
         completedFiles: progress.totalFiles,
       }),
     ).toBe(99);
+
+    const firstDownload = deferred<void>();
+    const retryDownload = deferred<void>();
+    const relaunch = deferred<void>();
+    const downloadCallbacks: Array<
+      ((event: AppUpdaterDownloadEvent) => void) | undefined
+    > = [];
+    let checkCalls = 0;
+    let downloadCalls = 0;
+    let closeCalls = 0;
+    let relaunchCalls = 0;
+    const update: AppUpdateResource = {
+      version: "0.3.55",
+      body: "Release notes",
+      downloadAndInstall(callback) {
+        downloadCallbacks.push(callback);
+        const operation = downloadCalls === 0 ? firstDownload : retryDownload;
+        downloadCalls += 1;
+        return operation.promise;
+      },
+      async close() {
+        closeCalls += 1;
+      },
+    };
+    const updater = new AppUpdaterController({
+      async currentVersion() {
+        return "0.3.54";
+      },
+      async check() {
+        checkCalls += 1;
+        return update;
+      },
+      async relaunch() {
+        relaunchCalls += 1;
+        return relaunch.promise;
+      },
+      errorMessage: (error) => String(error),
+    });
+
+    const firstCheck = updater.refresh();
+    expect(updater.refresh()).toBe(firstCheck);
+    await firstCheck;
+    expect(checkCalls).toBe(1);
+    expect(updater.getSnapshot()).toMatchObject({
+      phase: "available",
+      currentVersion: "0.3.54",
+      availableVersion: "0.3.55",
+    });
+
+    const stopObserving = updater.subscribe(() => undefined);
+    const failedInstall = updater.install();
+    expect(updater.install()).toBe(failedInstall);
+    downloadCallbacks[0]?.({
+      event: "Started",
+      data: { contentLength: 1_000 },
+    });
+    downloadCallbacks[0]?.({
+      event: "Progress",
+      data: { chunkLength: 400 },
+    });
+    expect(updater.getSnapshot()).toMatchObject({
+      phase: "downloading",
+      downloadedBytes: 400,
+      totalBytes: 1_000,
+    });
+    stopObserving();
+    expect(updater.getSnapshot().downloadedBytes).toBe(400);
+    firstDownload.reject(new Error("network"));
+    await failedInstall;
+    expect(updater.getSnapshot().phase).toBe("error");
+    expect(closeCalls).toBe(0);
+
+    const retriedInstall = updater.install();
+    expect(updater.install()).toBe(retriedInstall);
+    retryDownload.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(updater.getSnapshot().phase).toBe("ready");
+    expect(relaunchCalls).toBe(1);
+    expect(closeCalls).toBe(0);
+    relaunch.resolve();
+    await retriedInstall;
+    expect(downloadCalls).toBe(2);
+    expect(closeCalls).toBe(1);
+    updater.dispose();
   });
 
   it("creates the welcome fallback when the last SQL tab closes", () => {

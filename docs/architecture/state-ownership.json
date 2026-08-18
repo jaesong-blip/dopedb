@@ -98,6 +98,16 @@
       ]
     },
     {
+      "name": "appUpdaterLifecycle",
+      "owner": "src/features/updater/controller.ts",
+      "dispatcher": "src/features/updater/useAppUpdater.ts",
+      "writerTokens": [
+        "export class AppUpdaterController",
+        "private publish("
+      ],
+      "forbiddenWriterTokens": []
+    },
+    {
       "name": "cloudProviderAccessFlow",
       "owner": "workspace-cloud/features/providerAccess/state.ts",
       "dispatcher": "workspace-cloud/features/providerAccess/state.ts",
