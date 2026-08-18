@@ -145,9 +145,15 @@ change that table first and the screen second.
 ## GitHub identity
 
 The workstation normally keeps `jaesong-blip` active, while this repository is
-owned by `json-choi`. Before committing, run `pnpm repo:identity`. For a single
-owner-attributed GitHub or push command, use `pnpm gh:owner -- gh ...` or
-`pnpm gh:owner -- git push ...`; never run raw `gh auth switch`. If the wrapper
+owned by `json-choi`. Preserve the actual contributor's configured Git author
+identity: agents must never set repository-local or global `user.name` / `user.email`
+or attribute another worker's commit to `json-choi`. Only when the repository owner
+explicitly requests an owner-authored direct-`main` commit may that one command use
+`pnpm repo:owner-identity -- git commit ...`; stable-release automation uses the same
+one-shot boundary for its annotated tag. For a single owner-attributed GitHub or push
+command, use `pnpm gh:owner -- gh ...` or `pnpm gh:owner -- git push ...`; never run
+raw `gh auth switch`. Contributors and PR workers must not use either owner wrapper;
+they commit and push with their own Git and GitHub identities. If the GitHub wrapper
 was interrupted, confirm it is no longer running and use `pnpm gh:restore`.
 
 ## Issue execution gate

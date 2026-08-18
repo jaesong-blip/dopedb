@@ -13,6 +13,7 @@ import { collectFrontendDependencyCycleDiagnostics } from "./architecture/fronte
 import { collectProviderOwnershipDiagnostics } from "./architecture/provider-ownership.mjs";
 import { collectQueryCentralIpcDiagnostics } from "./architecture/query-central-ipc-ownership.mjs";
 import { collectQueryFrontendOwnershipDiagnostics } from "./architecture/query-frontend-ownership.mjs";
+import { collectRepositoryIdentityDiagnostics } from "./architecture/repository-identity-guards.mjs";
 import {
   collectQueryCentralCommandDiagnostics,
   collectQueryProductionModuleDiagnostics,
@@ -172,6 +173,7 @@ for (const workflow of walk(".github/workflows").filter((file) => /\.ya?ml$/.tes
 failures.push(...collectDependencyParserSelfDiagnostics());
 for (const collect of [
   collectProviderOwnershipDiagnostics,
+  collectRepositoryIdentityDiagnostics,
   collectQueryProductionModuleDiagnostics,
   collectQueryTestModuleDiagnostics,
   collectQuerySharedCoreDiagnostics,

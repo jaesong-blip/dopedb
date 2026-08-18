@@ -28,10 +28,14 @@ immutable snapshot으로만 발행한다. 범용 DB client 기능 수, text-to-S
    때나 사용자가 요청할 때만 만든다.
 3. 변경 범위에 맞춰 `pnpm build`, `pnpm test`, `pnpm test:rust` 중 필요한
    검증을 실행한다.
-4. 커밋할 때는 `pnpm repo:identity`와
-   [`docs/commit.md`](docs/commit.md)를 사용한다.
-5. push를 요청받았고 `jaesong-blip`이 활성 계정이면
-   `pnpm gh:owner -- git push origin main`을 사용한다.
+4. 커밋은 실제 기여자의 기존 Git identity와
+   [`docs/commit.md`](docs/commit.md)를 사용한다. Agent와 저장소 스크립트는
+   contributor의 `user.name`·`user.email`을 덮어쓰지 않는다. 저장소 소유자가
+   명시적으로 요청한 direct-`main` 소유자 커밋만
+   `pnpm repo:owner-identity -- git commit ...`을 사용한다.
+5. Contributor와 PR worker는 자신의 GitHub 계정으로 branch를 push하며 두 owner
+   wrapper를 사용하지 않는다. 저장소 소유자가 명시적으로 요청한 direct-`main`
+   push만 `pnpm gh:owner -- git push origin main`을 사용한다.
 
 ## 이슈 실행 경계
 

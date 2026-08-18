@@ -1,5 +1,14 @@
 # 커밋 메시지
 
+커밋 author는 실제 기여자의 기존 Git identity를 보존한다. 저장소 지침이나 Agent가
+contributor의 `user.name` 또는 `user.email`을 `json-choi`로 덮어쓰면 안 된다.
+저장소 소유자가 명시적으로 요청한 direct-`main` 소유자 커밋만 다음 일회성
+wrapper를 사용한다. 이 wrapper는 Git config를 변경하지 않는다.
+
+```sh
+pnpm repo:owner-identity -- git commit ...
+```
+
 한국어 Conventional Commits 형식을 사용한다.
 
 ```text

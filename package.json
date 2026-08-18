@@ -44,7 +44,7 @@
     "scheduler:cloudflare:build": "pnpm --dir workspace-scheduler-cloudflare build",
     "scheduler:cloudflare:test": "pnpm --dir workspace-scheduler-cloudflare test",
     "scheduler:cloudflare:deploy": "pnpm --dir workspace-scheduler-cloudflare deploy",
-    "repo:identity": "bash scripts/configure-repository-identity.sh",
+    "repo:owner-identity": "bash scripts/with-repository-owner-identity.sh",
     "gh:owner": "bash scripts/with-gh-owner.sh",
     "gh:restore": "bash scripts/with-gh-owner.sh --restore",
     "build:sidecars": "bash scripts/build-sidecars.sh",

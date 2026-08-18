@@ -16,6 +16,14 @@ Settings → Command line에서 사용자가 명시적으로 열 때만 표시�
 `docs/commit.md`를 따른다. 작업 전에는 `git status`를 확인하고 다른 변경을
 보존한다.
 
+커밋 작성자는 실제 기여자의 기존 Git identity를 보존한다. Agent는 저장소나 전역
+`user.name`·`user.email`을 바꾸거나 다른 작업자의 커밋을 `json-choi`로 기록하지
+않는다. 저장소 소유자가 명시적으로 요청한 direct-`main` 소유자 커밋에만
+`pnpm repo:owner-identity -- git commit ...`을 한 번 사용하고, owner-only GitHub
+작업과 push는 별도 `pnpm gh:owner` 경계를 사용한다. Contributor와 PR worker는
+두 owner wrapper를 사용하지 않고 자신의 Git·GitHub identity로 commit과 branch
+push를 수행한다.
+
 이슈를 근거로 작업할 때는 immutable GitHub author ID가 `77596321`
 (`json-choi`) 또는 `231148561` (`jaesong-blip`)인 이슈만 구현 대기열에 넣는다.
 로그인 이름, assignee, milestone, project priority, transfer, 라벨, 검토 댓글은 이

@@ -94,8 +94,7 @@ if [[ "$(node scripts/release/generate-release-notes.mjs mode)" == "active" ]]; 
 fi
 node scripts/release/generate-release-notes.mjs "${notes_args[@]}"
 
-pnpm repo:identity
-git tag -a "$tag" -m "DopeDB $version" "$head_sha"
+pnpm repo:owner-identity -- git tag -a "$tag" -m "DopeDB $version" "$head_sha"
 
 if ! pnpm gh:owner -- git push origin "refs/tags/$tag"; then
   fail "tag push failed; inspect local and remote $tag before retrying"

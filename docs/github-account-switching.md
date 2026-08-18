@@ -6,12 +6,22 @@ represent the same human operator and both use the direct-`main` workflow.
 Do not create a work branch or additional worktree unless the user explicitly
 requests one.
 
-Every commit must use the repository-local `json-choi` identity. Configure a
-new checkout, or repair a changed local Git configuration, with:
+Git commit authorship and the GitHub CLI actor are separate. Every contributor,
+including an AI worker acting for that contributor, keeps their existing Git
+`user.name` and `user.email`. Repository instructions and scripts must never
+rewrite another contributor's commit to `json-choi`.
+
+Only when the repository owner explicitly requests an owner-authored direct-`main`
+commit may that one command use the owner identity:
 
 ```sh
-pnpm repo:identity
+pnpm repo:owner-identity -- git commit ...
 ```
+
+The wrapper injects author and committer environment variables for that command
+only, requires `main`, and never changes repository-local or global Git config.
+Stable-release automation uses the same one-shot boundary to create its annotated
+owner tag. Contributors and PR workers do not use this wrapper.
 
 An operation that GitHub must attribute to the repository owner temporarily
 uses `json-choi` only through the repository wrapper:
@@ -20,6 +30,9 @@ uses `json-choi` only through the repository wrapper:
 pnpm gh:owner -- gh issue edit 123 --add-label security
 pnpm gh:owner -- git push origin main
 ```
+
+Contributors and PR workers never use either owner wrapper. They keep their own
+Git identity and push their branch with their own authenticated GitHub account.
 
 The wrapper:
 
