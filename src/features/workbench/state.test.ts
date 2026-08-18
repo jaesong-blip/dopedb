@@ -56,6 +56,10 @@ import {
   treeKeyboardMoveTarget,
   virtualTreeFocusIndex,
 } from "../../design-system/treeKeyboard";
+import {
+  modalMouseDownShouldReachNativeDragRegion,
+  ModalTitleBar,
+} from "../../design-system/components/Modal";
 import { queryResultPhase } from "../../lib/queryResultPhase";
 
 function deferred<T>() {
@@ -562,5 +566,36 @@ describe("workbench state ownership", () => {
         "table:4999",
       ),
     ).toBe(5_000);
+
+    const modalTitleBar = renderToStaticMarkup(
+      createElement(ModalTitleBar, {
+        title: "Data Sources",
+        titleId: "data-sources-title",
+        closeLabel: "Close",
+        onClose: () => undefined,
+      }),
+    );
+    expect(modalTitleBar).toContain('data-tauri-drag-region="deep"');
+    expect(modalTitleBar).toContain('data-tauri-drag-region="false"');
+    expect(modalTitleBar).not.toContain('role="presentation"');
+    const dragTarget = (value: string | null) => ({
+      getAttribute: (name: string) =>
+        name === "data-tauri-drag-region" ? value : null,
+    }) as unknown as EventTarget;
+    expect(
+      modalMouseDownShouldReachNativeDragRegion([
+        dragTarget(null),
+        dragTarget("deep"),
+      ]),
+    ).toBe(true);
+    expect(
+      modalMouseDownShouldReachNativeDragRegion([
+        dragTarget("false"),
+        dragTarget("deep"),
+      ]),
+    ).toBe(false);
+    expect(
+      modalMouseDownShouldReachNativeDragRegion([dragTarget(null)]),
+    ).toBe(false);
   });
 });

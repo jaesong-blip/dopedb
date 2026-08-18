@@ -45,6 +45,25 @@ function isTopmostModal(surface: HTMLElement) {
   return modals.item(modals.length - 1) === surface;
 }
 
+export function modalMouseDownShouldReachNativeDragRegion(
+  composedPath: readonly EventTarget[],
+) {
+  for (const target of composedPath) {
+    if (
+      typeof target !== "object" ||
+      target === null ||
+      !("getAttribute" in target) ||
+      typeof target.getAttribute !== "function"
+    ) {
+      continue;
+    }
+    const dragRegion = target.getAttribute("data-tauri-drag-region");
+    if (dragRegion === null) continue;
+    return dragRegion === "deep";
+  }
+  return false;
+}
+
 export function useModalBehavior({
   surfaceRef,
   onRequestClose,
@@ -211,7 +230,15 @@ export const ModalSurface = forwardRef<
       data-fill={fill}
       tabIndex={tabIndex ?? -1}
       className="ds-panel tw:flex tw:max-h-[calc(100dvh-(var(--ds-space-4)*2))] tw:w-[min(640px,100%)] tw:flex-col tw:overflow-hidden tw:p-0 tw:shadow-popover tw:[container-type:inline-size] tw:data-[fill=true]:h-[min(760px,calc(100dvh-(var(--ds-space-4)*2)))] tw:data-[size=dataSources]:h-[min(731px,calc(100dvh-(var(--ds-space-4)*2)))] tw:data-[size=dataSources]:w-[min(980px,100%)] tw:data-[size=settings]:h-[min(722px,calc(100dvh-(var(--ds-space-4)*2)))] tw:data-[size=settings]:w-[min(982px,100%)] tw:data-[size=wide]:w-[min(1120px,100%)] tw:max-[640px]:max-h-[calc(100dvh-(var(--ds-space-2)*2))] tw:max-[640px]:data-[fill=true]:h-[calc(100dvh-(var(--ds-space-2)*2))] tw:max-[640px]:data-[size=dataSources]:h-[calc(100dvh-(var(--ds-space-2)*2))] tw:max-[640px]:data-[size=settings]:h-[calc(100dvh-(var(--ds-space-2)*2))]"
-      onMouseDown={(event) => event.stopPropagation()}
+      onMouseDown={(event) => {
+        if (
+          !modalMouseDownShouldReachNativeDragRegion(
+            event.nativeEvent.composedPath(),
+          )
+        ) {
+          event.stopPropagation();
+        }
+      }}
       onKeyDown={onKeyDown}
       {...props}
     >
@@ -234,7 +261,10 @@ export function ModalTitleBar({
   closeDisabled?: boolean;
 }) {
   return (
-    <header className="tw:grid tw:h-[30px] tw:min-h-[30px] tw:shrink-0 tw:grid-cols-[28px_minmax(0,1fr)_28px] tw:items-center tw:border-b tw:border-border-subtle tw:bg-card tw:px-1">
+    <header
+      className="tw:grid tw:h-[30px] tw:min-h-[30px] tw:shrink-0 tw:select-none tw:grid-cols-[28px_minmax(0,1fr)_28px] tw:items-center tw:border-b tw:border-border-subtle tw:bg-card tw:px-1"
+      data-tauri-drag-region="deep"
+    >
       <span aria-hidden="true" />
       <h1
         id={titleId}
@@ -250,6 +280,7 @@ export function ModalTitleBar({
         disabled={closeDisabled}
         title={closeLabel}
         aria-label={closeLabel}
+        data-tauri-drag-region="false"
       >
         <Icon name="close" />
       </Button>

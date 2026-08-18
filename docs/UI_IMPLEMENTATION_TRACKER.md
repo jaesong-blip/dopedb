@@ -38,7 +38,7 @@ runtime과 성능 수치로 수행한다.
 | semantic token과 raw color 차단 | `complete` | `pnpm check:ui-palette` |
 | 공용 icon command/accessible name | `complete` | `pnpm check:ui-primitives` |
 | static Tailwind v4 utility | `complete` | build와 source guard |
-| modal focus containment/trigger 복구 | `complete` | browser interaction smoke와 공용 primitive |
+| modal focus containment/trigger 복구·title drag | `complete` | browser interaction smoke, 공용 primitive와 native mouse drag |
 | popup/menu viewport collision | `complete` | 공용 popup/menu primitive |
 | grid composite keyboard/resize separator | `complete` | 공용 roving helper, `ResizeSeparator`, packaged interaction smoke |
 | grouped AppShell presentation contract | `complete` | `pnpm check:architecture` |

@@ -400,6 +400,11 @@ Elevation은 세 단계만 허용한다.
   `dismissible={false}`와 disabled title close action으로 명시한다. 첫 작업
   control을 명시해야 하는 feature만
   `data-modal-initial-focus`를 사용한다.
+  `ModalTitleBar`의 빈 영역과 제목은 공용 Tauri deep drag region으로 현재 앱
+  창을 이동하고 close button은 명시적인 non-drag region으로 남긴다. 전체
+  backdrop이나 modal body에 drag region을 확장하지 않는다. 이 mouse 계약은
+  macOS·Windows·Linux가 공유한다. Windows touch/pen 전용 `app-region: drag`는
+  title control의 click을 가로챌 수 있으므로 현재 적용하지 않는다.
   `size="settings"`는 제품 계약의 982×722 설정 dialog를,
   `size="dataSources"`는
   제품 계약의 980×731 frame을 compact full-height fallback과 함께
