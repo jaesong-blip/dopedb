@@ -91,11 +91,8 @@ export function ProjectSetupDialog({
     >
       <ModalSurface
         aria-labelledby={PROJECT_SETUP_TITLE_ID}
-        onKeyDown={(event) => {
-          if (event.key !== "Escape" || createProject.isPending) return;
-          event.preventDefault();
-          onClose();
-        }}
+        onRequestClose={onClose}
+        dismissible={!createProject.isPending}
       >
         <form
           className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col"
@@ -117,6 +114,7 @@ export function ProjectSetupDialog({
             onClose={() => {
               if (!createProject.isPending) onClose();
             }}
+            closeDisabled={createProject.isPending}
           />
           <div className="tw:grid tw:min-h-0 tw:flex-1 tw:content-start tw:gap-5 tw:overflow-y-auto tw:p-5 tw:max-[640px]:p-4">
             <p className="tw:m-0 tw:text-sm tw:leading-relaxed tw:text-muted-foreground">

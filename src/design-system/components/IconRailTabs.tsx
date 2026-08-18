@@ -3,6 +3,7 @@
 import type { KeyboardEvent, ReactNode } from "react";
 
 import { Button } from "./Button";
+import { moveTabFocus } from "../tabKeyboard";
 
 export type IconRailTab<T extends string> = {
   id: T;
@@ -15,27 +16,7 @@ function moveRailFocus(
   event: KeyboardEvent<HTMLButtonElement>,
   direction: "end" | "next" | "previous" | "start",
 ) {
-  const rail = event.currentTarget.closest('[role="tablist"]');
-  if (!rail) return;
-
-  const tabs = Array.from(
-    rail.querySelectorAll<HTMLButtonElement>('[role="tab"]:not(:disabled)'),
-  );
-  if (tabs.length === 0) return;
-
-  const current = tabs.indexOf(event.currentTarget);
-  const target =
-    direction === "start"
-      ? tabs[0]
-      : direction === "end"
-        ? tabs[tabs.length - 1]
-        : direction === "next"
-          ? tabs[(current + 1 + tabs.length) % tabs.length]
-          : tabs[(current - 1 + tabs.length) % tabs.length];
-
-  event.preventDefault();
-  target?.focus();
-  target?.click();
+  moveTabFocus(event, direction);
 }
 
 export function IconRailTabs<T extends string>({

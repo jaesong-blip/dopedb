@@ -1,30 +1,28 @@
 // Flat IDE tab primitives shared by workbench document strips. Active tabs sit
 // inside the strip instead of turning the entire rectangular segment blue.
 import type {
-  KeyboardEventHandler,
   MouseEventHandler,
   ReactNode,
   Ref,
 } from "react";
+import { moveHorizontalTabFocus } from "../tabKeyboard";
 
 export function IdeTabStrip({
   label,
   children,
   actions,
-  onKeyDown,
 }: {
   label: string;
   children: ReactNode;
   actions?: ReactNode;
-  onKeyDown?: KeyboardEventHandler<HTMLDivElement>;
 }) {
   return (
     <div className="tw:flex tw:h-document-tab tw:min-h-document-tab tw:min-w-0 tw:items-stretch tw:border-b tw:border-border-subtle tw:bg-background">
       <div
         className="ds-control-row tw:flex tw:min-w-0 tw:flex-1 tw:items-stretch tw:overflow-x-auto tw:[scrollbar-width:none] tw:[&::-webkit-scrollbar]:hidden"
         role="tablist"
+        aria-orientation="horizontal"
         aria-label={label}
-        onKeyDown={onKeyDown}
       >
         {children}
       </div>
@@ -71,6 +69,7 @@ export function IdeTab({
           role="tab"
           aria-selected={active}
           tabIndex={tabIndex}
+          onKeyDown={moveHorizontalTabFocus}
           onClick={onActivate}
           onDoubleClick={onDoubleClick}
           title={title}
@@ -102,6 +101,7 @@ export function IdeToolTabStrip({
       <div
         className="tw:flex tw:min-w-0 tw:flex-1 tw:items-center tw:gap-1 tw:overflow-x-auto tw:[scrollbar-width:none] tw:[&::-webkit-scrollbar]:hidden"
         role="tablist"
+        aria-orientation="horizontal"
         aria-label={label}
       >
         {children}
@@ -114,11 +114,13 @@ export function IdeToolTabStrip({
 export function IdeToolTab({
   active,
   size = "compact",
+  disabled = false,
   children,
   onClick,
 }: {
   active: boolean;
   size?: "compact" | "document";
+  disabled?: boolean;
   children: ReactNode;
   onClick: () => void;
 }) {
@@ -127,10 +129,13 @@ export function IdeToolTab({
       type="button"
       role="tab"
       aria-selected={active}
+      tabIndex={active ? 0 : -1}
+      disabled={disabled}
       data-active={active}
       data-size={size}
       className="tw:flex tw:h-control-md tw:min-w-[88px] tw:max-w-[min(42vw,420px)] tw:cursor-pointer tw:items-center tw:gap-1.5 tw:overflow-hidden tw:rounded-sm tw:border tw:border-transparent tw:bg-transparent tw:px-3 tw:font-sans tw:text-sm tw:text-ellipsis tw:whitespace-nowrap tw:text-muted-foreground tw:data-[size=document]:min-w-[120px] tw:data-[active=true]:border-selection tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:hover:bg-muted tw:hover:text-foreground"
       onClick={onClick}
+      onKeyDown={moveHorizontalTabFocus}
     >
       {children}
     </button>

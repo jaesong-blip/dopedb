@@ -663,7 +663,7 @@ export default function WorkspaceAccount({
             <ProviderCredentialDialog
               key={user.id}
               onClose={() => setProviderCredentialsOpen(false)}
-              returnFocus={() => triggerRef.current?.focus()}
+              returnFocusRef={triggerRef}
             />
           ) : null}
         </>

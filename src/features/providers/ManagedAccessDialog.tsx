@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Icon } from "../../components/Icon";
@@ -105,12 +111,6 @@ function planTone(plan: ProviderProvisioningPlan): StatusTone {
   return "neutral";
 }
 
-function focusFirst(container: HTMLElement | null) {
-  container?.querySelector<HTMLElement>(
-    "button:not([disabled]), input:not([disabled]), select:not([disabled])",
-  )?.focus();
-}
-
 export function ManagedAccessLauncher({
   connectionId,
   provider,
@@ -139,7 +139,7 @@ export function ManagedAccessLauncher({
           connectionId={connectionId}
           initialProvider={provider}
           onClose={() => setOpen(false)}
-          returnFocus={() => triggerRef.current?.focus()}
+          returnFocusRef={triggerRef}
         />
       ) : null}
     </>
@@ -150,12 +150,12 @@ export function ManagedAccessDialog({
   connectionId,
   initialProvider,
   onClose,
-  returnFocus,
+  returnFocusRef,
 }: {
   connectionId: string;
   initialProvider?: ProviderKind;
   onClose: () => void;
-  returnFocus: () => void;
+  returnFocusRef?: RefObject<HTMLElement | null>;
 }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
@@ -179,10 +179,6 @@ export function ManagedAccessDialog({
     | null
   >(null);
   const [failed, setFailed] = useState(false);
-  const dialogRef = useRef<HTMLElement>(null);
-  const pendingRef = useRef(pending);
-  const closeRef = useRef({ onClose, returnFocus });
-  closeRef.current = { onClose, returnFocus };
 
   const selectedStatus = useMemo(
     () => statuses.data?.find((status) => status.provider === provider) ?? null,
@@ -194,41 +190,9 @@ export function ManagedAccessDialog({
   );
 
   const close = () => {
+    if (pending !== null) return;
     onClose();
-    window.requestAnimationFrame(returnFocus);
   };
-
-  useEffect(() => {
-    pendingRef.current = pending;
-  }, [pending]);
-
-  useEffect(() => {
-    focusFirst(dialogRef.current);
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && pendingRef.current === null) {
-        event.preventDefault();
-        closeRef.current.onClose();
-        window.requestAnimationFrame(closeRef.current.returnFocus);
-        return;
-      }
-      if (event.key !== "Tab") return;
-      const controls = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
-        "button:not([disabled]), input:not([disabled]), select:not([disabled])",
-      ) ?? []);
-      const first = controls[0];
-      const last = controls[controls.length - 1];
-      if (!first || !last) return;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
 
   useEffect(() => {
     if (!plan || plan.operationState !== "executing") return;
@@ -394,18 +358,21 @@ export function ManagedAccessDialog({
   return (
     <ModalBackdrop onMouseDown={pending === null ? close : undefined}>
       <ModalSurface
-        ref={dialogRef}
         size="wide"
         fill
         aria-labelledby="managed-access-title"
         aria-describedby="managed-access-description"
         aria-busy={pending !== null}
+        onRequestClose={close}
+        dismissible={pending === null}
+        returnFocusRef={returnFocusRef}
       >
         <ModalTitleBar
           title={t("managedAccess.title")}
           titleId="managed-access-title"
           closeLabel={t("managedAccess.close")}
           onClose={close}
+          closeDisabled={pending !== null}
         />
         <div className="tw:grid tw:min-h-0 tw:flex-1 tw:grid-cols-[220px_minmax(0,1fr)] tw:@max-[700px]:grid-cols-1">
           <aside className="tw:min-h-0 tw:overflow-y-auto tw:border-r tw:border-border-subtle tw:bg-card tw:p-2 tw:@max-[700px]:max-h-44 tw:@max-[700px]:border-r-0 tw:@max-[700px]:border-b">

@@ -5,7 +5,12 @@ import {
   forwardRef,
   type ButtonHTMLAttributes,
   type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
 } from "react";
+
+export type CommandMenuDismissReason = "escape" | "outside" | "selection";
 
 export const CommandMenu = forwardRef<
   HTMLDivElement,
@@ -16,6 +21,8 @@ export const CommandMenu = forwardRef<
     searchPlaceholder: string;
     searchValue: string;
     onSearchChange: (value: string) => void;
+    onDismiss: (reason: CommandMenuDismissReason) => void;
+    returnFocusRef: RefObject<HTMLElement | null>;
     children: ReactNode;
   }
 >(function CommandMenu(
@@ -26,17 +33,54 @@ export const CommandMenu = forwardRef<
     searchPlaceholder,
     searchValue,
     onSearchChange,
+    onDismiss,
+    returnFocusRef,
     children,
   },
   ref,
 ) {
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const closeOutside = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !surfaceRef.current?.contains(event.target) &&
+        !returnFocusRef.current?.contains(event.target)
+      ) {
+        onDismiss("outside");
+      }
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    return () => document.removeEventListener("pointerdown", closeOutside);
+  }, [onDismiss, returnFocusRef]);
+
+  function setRefs(node: HTMLDivElement | null) {
+    surfaceRef.current = node;
+    if (typeof ref === "function") ref(node);
+    else if (ref) ref.current = node;
+  }
+
   return (
     <div
-      ref={ref}
+      ref={setRefs}
       id={id}
       role="dialog"
       aria-label={label}
       className="tw:absolute tw:top-[calc(100%+var(--ds-popover-offset))] tw:left-0 tw:z-[var(--ds-z-popover)] tw:flex tw:max-h-[min(440px,calc(100dvh-var(--ds-space-6)))] tw:w-[min(320px,calc(100vw-var(--ds-space-6)))] tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-strong tw:bg-popover tw:text-popover-foreground tw:shadow-popover"
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        event.stopPropagation();
+        onDismiss("escape");
+        window.requestAnimationFrame(() =>
+          returnFocusRef.current?.focus({ preventScroll: true }),
+        );
+      }}
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest("button:not(:disabled)")) {
+          onDismiss("selection");
+        }
+      }}
     >
       <div className="tw:border-b tw:border-border-subtle tw:p-2">
         <input

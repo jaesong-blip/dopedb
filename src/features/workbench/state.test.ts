@@ -50,6 +50,8 @@ import {
   findDemoSqliteConnection,
 } from "../connections/presets";
 import { AnalysisSnapshotParameterField } from "../analysisArticles/AnalysisArticleVisualization";
+import { actionSearchShortcutTargetIsEditable } from "../actionSearch/useActionSearchDialog";
+import { tabFocusTargetIndex } from "../../design-system/tabKeyboard";
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -503,5 +505,20 @@ describe("workbench state ownership", () => {
     expect(snapshotParameter).toContain("Include archived");
     expect(snapshotParameter).toContain("true");
     expect(snapshotParameter).not.toMatch(/<(?:input|select|textarea)\b/);
+    expect(
+      actionSearchShortcutTargetIsEditable({
+        closest: (selector: string) => selector.includes(".cm-content"),
+      } as unknown as EventTarget),
+    ).toBe(true);
+    expect(
+      actionSearchShortcutTargetIsEditable({
+        closest: () => null,
+      } as unknown as EventTarget),
+    ).toBe(false);
+    expect(tabFocusTargetIndex(0, 3, "previous")).toBe(2);
+    expect(tabFocusTargetIndex(2, 3, "next")).toBe(0);
+    expect(tabFocusTargetIndex(1, 3, "start")).toBe(0);
+    expect(tabFocusTargetIndex(1, 3, "end")).toBe(2);
+    expect(tabFocusTargetIndex(-1, 3, "next")).toBeNull();
   });
 });

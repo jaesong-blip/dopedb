@@ -23,9 +23,7 @@ export function ConnectionEditorDialogs({
               : dialogs.providerCredentials.open
           }
           onClose={dialogs.providerCredentials.close}
-          returnFocus={() =>
-            dialogs.providerCredentials.returnFocusRef.current?.focus()
-          }
+          returnFocusRef={dialogs.providerCredentials.returnFocusRef}
         />
       ) : null}
       {dialogs.workspace.mode && !profile.identity.isNew ? (

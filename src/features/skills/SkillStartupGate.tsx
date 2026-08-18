@@ -146,15 +146,15 @@ export default function SkillStartupGate() {
       <ModalSurface
         aria-labelledby="agent-startup-title"
         aria-describedby="agent-startup-description"
-        onKeyDown={(event) => {
-          if (event.key === "Escape" && busy === null) saveForLater();
-        }}
+        onRequestClose={saveForLater}
+        dismissible={busy === null}
       >
         <ModalTitleBar
           title={t("agentTools.startupTitle")}
           titleId="agent-startup-title"
           closeLabel={t("common.close")}
-          onClose={busy ? () => undefined : saveForLater}
+          onClose={saveForLater}
+          closeDisabled={busy !== null}
         />
         <div className="tw:min-h-0 tw:flex-1 tw:overflow-auto tw:px-5 tw:py-5">
           <div className="tw:flex tw:items-start tw:gap-3">

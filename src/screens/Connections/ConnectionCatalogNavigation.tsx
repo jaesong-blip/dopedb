@@ -138,6 +138,11 @@ export function ConnectionCatalogNavigation({
                       )}
                       searchValue={addMenu.search}
                       onSearchChange={addMenu.setSearch}
+                      returnFocusRef={addMenu.buttonRef}
+                      onDismiss={() => {
+                        addMenu.setOpen(false);
+                        addMenu.setSearch("");
+                      }}
                     >
                       {sources.filteredDatabaseSources.length > 0 ? (
                         <CommandMenuGroup

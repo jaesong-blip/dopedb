@@ -1679,7 +1679,7 @@ export function DatabaseExplorer({
         <ProviderCredentialDialog
           initialProvider={providerCredentialsOpen}
           onClose={() => setProviderCredentialsOpen(null)}
-          returnFocus={() => providerReturnFocusRef.current?.focus()}
+          returnFocusRef={providerReturnFocusRef}
         />
       ) : null}
     </ToolWindowSideSurface>

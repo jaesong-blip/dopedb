@@ -1,9 +1,7 @@
 // Secure workspace connection flow: publishes only a redacted local template or
 // binds a member-local credential to a synchronized template.
 import {
-  useEffect,
   useMemo,
-  useRef,
   useState,
   type RefObject,
 } from "react";
@@ -82,49 +80,7 @@ export default function WorkspaceConnectionDialog({
   );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-  const dialogRef = useRef<HTMLFormElement>(null);
-  const initialFocusRef = useRef<HTMLElement | null>(null);
-  const cancelRef = useRef<HTMLButtonElement>(null);
   const selectedTargetValue = targetValue || targets[0]?.value || "";
-
-  useEffect(() => {
-    const trigger = document.activeElement as HTMLElement | null;
-    const returnFocus = returnFocusRef?.current ?? trigger;
-    const focusTarget = initialFocusRef.current;
-    if (focusTarget instanceof HTMLSelectElement && focusTarget.disabled) {
-      cancelRef.current?.focus();
-    } else {
-      focusTarget?.focus();
-    }
-    return () => returnFocus?.focus?.();
-  }, [returnFocusRef]);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !pending) {
-        onClose();
-        return;
-      }
-      if (event.key !== "Tab") return;
-      const focusable = Array.from(
-        dialogRef.current?.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
-        ) ?? [],
-      );
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose, pending]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -176,9 +132,11 @@ export default function WorkspaceConnectionDialog({
         aria-labelledby="workspace-connection-title"
         aria-describedby="workspace-connection-description"
         aria-busy={pending}
+        onRequestClose={onClose}
+        dismissible={!pending}
+        returnFocusRef={returnFocusRef}
       >
         <form
-          ref={dialogRef}
           className="tw:flex tw:min-h-0 tw:flex-col tw:gap-3 tw:overflow-auto tw:p-4"
           onSubmit={submit}
         >
@@ -203,9 +161,7 @@ export default function WorkspaceConnectionDialog({
               </p>
               <Field label={t("workspace.targetWorkspace")}>
                 <SelectInput
-                  ref={(node) => {
-                    initialFocusRef.current = node;
-                  }}
+                  data-modal-initial-focus
                   value={selectedTargetValue}
                   onChange={(event) =>
                     setTargetValue(event.target.value)
@@ -245,9 +201,7 @@ export default function WorkspaceConnectionDialog({
               </p>
               <Field label={t("workspace.username")}>
                 <TextInput
-                  ref={(node) => {
-                    initialFocusRef.current = node;
-                  }}
+                  data-modal-initial-focus
                   value={username}
                   onChange={(event) =>
                     setUsername(event.target.value)
@@ -296,7 +250,6 @@ export default function WorkspaceConnectionDialog({
           ) : null}
           <footer className="ds-control-row tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2 tw:max-[520px]:[&>button]:w-full">
             <Button
-              ref={cancelRef}
               onClick={onClose}
               disabled={pending}
             >

@@ -1,5 +1,3 @@
-import { useEffect, useRef } from "react";
-
 import LazySqlViewer from "../../components/LazySqlViewer";
 import { Button } from "../../design-system/components/Button";
 import {
@@ -31,26 +29,12 @@ export default function DdlModal({
     table.schema,
     table.database,
   );
-  const closeRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    const trigger = document.activeElement as HTMLElement | null;
-    closeRef.current?.focus();
-    return () => trigger?.focus?.();
-  }, []);
-
-  useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) =>
-      event.key === "Escape" && onClose();
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [onClose]);
-
   return (
     <ModalBackdrop onMouseDown={onClose}>
       <ModalSurface
         aria-labelledby="ddl-dialog-title"
         aria-busy={text == null && !error}
+        onRequestClose={onClose}
       >
         <ModalTitleBar
           title={t("connections.ddlTitle", {
@@ -80,7 +64,7 @@ export default function DdlModal({
           >
             {copied ? t("common.copied") : t("common.copy")}
           </Button>
-          <Button ref={closeRef} onClick={onClose}>
+          <Button onClick={onClose}>
             {t("common.close")}
           </Button>
         </ModalFooter>

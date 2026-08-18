@@ -122,11 +122,8 @@ export function EnvironmentSetupDialog({
     >
       <ModalSurface
         aria-labelledby={ENVIRONMENT_SETUP_TITLE_ID}
-        onKeyDown={(event) => {
-          if (event.key !== "Escape" || createEnvironment.isPending) return;
-          event.preventDefault();
-          onClose();
-        }}
+        onRequestClose={onClose}
+        dismissible={!createEnvironment.isPending}
       >
         <form
           className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col"
@@ -147,6 +144,7 @@ export function EnvironmentSetupDialog({
             onClose={() => {
               if (!createEnvironment.isPending) onClose();
             }}
+            closeDisabled={createEnvironment.isPending}
           />
           <div className="tw:grid tw:min-h-0 tw:flex-1 tw:content-start tw:gap-4 tw:overflow-y-auto tw:p-5 tw:max-[640px]:p-4">
             <p className="tw:m-0 tw:text-sm tw:leading-relaxed tw:text-muted-foreground">

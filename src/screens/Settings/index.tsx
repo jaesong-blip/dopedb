@@ -1,6 +1,6 @@
 // Settings shell for agent tools, command-line, safety, language, and updates.
 // Kept outside the data tabs so navigation remains focused on the selected database.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import type { SafetySettings } from "../../ipc/types";
 import { Icon } from "../../components/Icon";
@@ -161,22 +161,6 @@ export default function Settings({
     onClose();
   }
 
-  // Esc closes the overlay, matching other full-screen overlays. Ref keeps the handler
-  // pinned to the latest close() (refreshSafety side-effect) without re-binding.
-  const closeRef = useRef(close);
-  closeRef.current = close;
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      // Don't hijack Escape while a field has focus — close() reloads Safety and would
-      // discard unsaved edits. Let the input's own Escape (blur/revert) win instead.
-      if ((e.target as HTMLElement)?.closest("input, textarea, select")) return;
-      closeRef.current();
-    };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-  }, []);
-
   const activeEntry =
     settingsEntries.find((entry) => entry.id === section) ??
     settingsEntries[0];
@@ -201,6 +185,15 @@ export default function Settings({
       <ModalSurface
         size="settings"
         aria-labelledby="settings-dialog-title"
+        onRequestClose={close}
+        onKeyDown={(event) => {
+          if (
+            event.key === "Escape" &&
+            (event.target as HTMLElement).closest("input, textarea, select")
+          ) {
+            event.preventDefault();
+          }
+        }}
       >
         <div
           data-settings

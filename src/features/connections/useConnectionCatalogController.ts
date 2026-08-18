@@ -68,21 +68,6 @@ export function useConnectionCatalogController({
     return () => window.cancelAnimationFrame(frame);
   }, [initial, preset]);
 
-  useEffect(() => {
-    if (!addMenuOpen) return;
-    function closeOnOutsidePointer(event: PointerEvent) {
-      if (
-        event.target instanceof Node &&
-        !addMenuAnchorRef.current?.contains(event.target)
-      ) {
-        setAddMenuOpen(false);
-      }
-    }
-    document.addEventListener("pointerdown", closeOnOutsidePointer);
-    return () =>
-      document.removeEventListener("pointerdown", closeOnOutsidePointer);
-  }, [addMenuOpen]);
-
   const drivers = compatibleDrivers(
     driverCatalog.data ?? [],
     form.value.engine,

@@ -245,12 +245,15 @@ function AdvancedShellTerminalDialog({
         size="wide"
         fill
         aria-labelledby="advanced-shell-terminal-title"
+        onRequestClose={() => void close()}
+        dismissible={!closing}
       >
         <ModalTitleBar
           title={t("terminal.title")}
           titleId="advanced-shell-terminal-title"
           closeLabel={t("terminal.close")}
           onClose={() => void close()}
+          closeDisabled={closing}
         />
         <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:bg-background">
           <div className="tw:flex tw:min-h-[42px] tw:shrink-0 tw:flex-wrap tw:items-center tw:gap-2 tw:border-b tw:border-border-subtle tw:bg-card tw:px-3">

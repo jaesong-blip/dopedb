@@ -29,6 +29,8 @@ export function ConnectionForm(props: ConnectionEditorProps) {
         size="dataSources"
         aria-labelledby="connection-editor-title"
         aria-busy={commands.busy}
+        onRequestClose={onCancel}
+        dismissible={!commands.busy}
       >
         <div
           className="tw:flex tw:h-full tw:min-h-0 tw:flex-col tw:overflow-hidden tw:bg-background"
@@ -49,15 +51,6 @@ export function ConnectionForm(props: ConnectionEditorProps) {
             ) {
               event.preventDefault();
               void commands.save(true);
-            } else if (event.key === "Escape") {
-              if (catalog.addMenu.open) {
-                event.stopPropagation();
-                catalog.addMenu.setOpen(false);
-                catalog.addMenu.setSearch("");
-                catalog.addMenu.buttonRef.current?.focus();
-              } else {
-                onCancel();
-              }
             }
           }}
         >
@@ -66,6 +59,7 @@ export function ConnectionForm(props: ConnectionEditorProps) {
             titleId="connection-editor-title"
             closeLabel={t("common.close")}
             onClose={onCancel}
+            closeDisabled={commands.busy}
           />
 
           <div className="tw:flex tw:min-h-0 tw:flex-1 tw:@max-[760px]:flex-col">

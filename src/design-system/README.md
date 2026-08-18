@@ -245,7 +245,9 @@ Elevation은 세 단계만 허용한다.
 - `IdeToolbarLauncher`: title toolbar의 32px launcher와 중립적인 open/pressed
   상태. tool window가 열렸다는 이유만으로 primary 파랑을 사용하지 않는다.
 - `IdeTabStrip`, `IdeTab`: 평평한 document strip과 strip 안쪽의 둥근 active
-  tab. 화면별 rectangular selection이나 bottom accent를 다시 만들지 않는다.
+  tab. active tab만 Tab 순서에 두고 ArrowLeft/Right/Home/End로 enabled tab을
+  이동·선택한다. 화면별 rectangular selection이나 bottom accent를 다시 만들지
+  않는다.
 - query toolbar는 정상 autosave 완료 아이콘을 상시 반복하지 않는다. 저장 중,
   미저장, conflict, 실패처럼 사용자가 알아야 하는 예외 상태만 schema selector
   뒤의 status slot에 표시하고, 실행 결과는 editor inline marker가 소유한다.
@@ -253,7 +255,7 @@ Elevation은 세 단계만 허용한다.
   둥근 selected capsule. 일반 document 전환은 40px `document`, Services처럼
   36px command row와 나란히 놓이는 tab은 `compact` density를 사용한다. 다중
   결과 tab이 가용 폭을 넘으면 strip 안에서 수평 이동하고 바깥 pane을
-  밀어내지 않는다.
+  밀어내지 않는다. horizontal roving keyboard 규칙은 `IdeTab`과 동일하다.
 - `Button`: 전역 `.btn`을 대체하는 Tailwind button primitive. variant, density,
   icon geometry, tone, active/expanded state를 semantic prop으로 소유한다.
   popup 내부 full-width action은 화면별 class를 만들지 않고
@@ -336,7 +338,8 @@ Elevation은 세 단계만 허용한다.
   `CheckboxField`의 native `indeterminate` 상태로 부분 선택을 표현한다.
 - `PanelTabs`: 데이터소스 속성·설정 패널의 ARIA tab navigation. 좁은 폭에서는
   가로로 스크롤하며 선택 변경과 viewport resize 뒤에도 active tab을 자동으로
-  노출한다.
+  노출한다. active tab만 Tab 순서에 두고 ArrowLeft/Right/Home/End 이동에서
+  disabled tab을 건너뛴다.
 - `IconRailTabs`: desktop dialog의 42px 세로 category navigation. icon-only
   tab의 selection, tooltip, roving arrow/Home/End keyboard focus를 소유한다.
 - `SegmentedControl`: 속성 편집기의 소수 상호 배타 선택을 위한 compact
@@ -365,9 +368,12 @@ Elevation은 세 단계만 허용한다.
 - `CommandMenu`, `CommandMenuGroup`, `CommandMenuItem`: 검색 입력, 분류,
   설명이 필요한 생성·선택 command popup. `CommandMenuItem`의
   `aria-selected`는 Action Search와 같은 listbox의 공용 선택 row
-  treatment를 소유한다.
-- Action Search는 672px 이하의
-  transparent-dismiss popup으로 투영한다. 빈 질의는 결과 영역을
+  treatment를 소유한다. 이 surface는 modeless anchored popup으로 유지하며,
+  Escape만 trigger focus를 복원하고 outside pointer·selection dismiss는 현재
+  작업 focus를 강제로 되돌리지 않는다.
+- Action Search는 672px 이하의 transparent-backdrop modal로 투영한다. 최상위
+  modal Escape와 focus containment를 공유하고 dismiss 뒤 opener focus를
+  복원한다. 빈 질의는 결과 영역을
   늘리지 않고, 실제 검색 가능한 Database·Documents·Actions·Settings
   범위만 `Button` tab으로 표시한다. `/`는 실제 action catalog를
   열며 Files·Code·Text 같은 범위 밖 category placeholder를 만들지
@@ -380,7 +386,10 @@ Elevation은 세 단계만 허용한다.
   `ModalSurface`는 열릴 때 `[data-modal-initial-focus]` 또는 첫 control로 focus를
   옮기고, Tab/Shift+Tab을 최상위 dialog 안에서 순환시키며, 외부로 이동한
   programmatic focus를 다시 포함한다. 닫힐 때는 아직 존재하는 원래 trigger로
-  focus를 복구한다. 첫 작업 control을 명시해야 하는 feature만
+  focus를 복구한다. Escape는 최상위 surface 하나에서만 `onRequestClose`를
+  호출하고 event를 소비한다. pending operation처럼 닫을 수 없는 상태는
+  `dismissible={false}`와 disabled title close action으로 명시한다. 첫 작업
+  control을 명시해야 하는 feature만
   `data-modal-initial-focus`를 사용한다.
   `size="settings"`는 제품 계약의 982×722 설정 dialog를,
   `size="dataSources"`는

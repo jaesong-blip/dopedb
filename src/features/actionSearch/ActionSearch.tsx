@@ -10,6 +10,7 @@ import { createPortal } from "react-dom";
 import { Icon, type IconName } from "../../components/Icon";
 import { Button } from "../../design-system/components/Button";
 import { CommandMenuItem } from "../../design-system/components/CommandMenu";
+import { useModalBehavior } from "../../design-system/components/Modal";
 import { useI18n } from "../../lib/i18n";
 import {
   indexActionSearchItems,
@@ -89,6 +90,12 @@ export default function ActionSearch({
   const [scope, setScope] = useState<ActionSearchScope>("all");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const surfaceRef = useRef<HTMLElement>(null);
+  useModalBehavior({
+    surfaceRef,
+    onRequestClose: () => onClose("dismiss"),
+    restoreFocus: false,
+  });
   const index = useMemo(
     () => indexActionSearchItems(items),
     [items],
@@ -129,10 +136,6 @@ export default function ActionSearch({
       searchableQuery,
     ],
   );
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
 
   useEffect(() => {
     setActiveIndex((current) =>
@@ -193,8 +196,10 @@ export default function ActionSearch({
       onMouseDown={closeAndRestoreFocus}
     >
       <section
+        ref={surfaceRef}
         className="tw:flex tw:max-h-full tw:w-[min(672px,100%)] tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-strong tw:bg-popover tw:text-popover-foreground tw:shadow-popover"
         role="dialog"
+        aria-modal="true"
         aria-label={t("ide.action.actionSearch")}
         onMouseDown={(event) => event.stopPropagation()}
       >
@@ -232,6 +237,7 @@ export default function ActionSearch({
             />
             <input
               ref={inputRef}
+              data-modal-initial-focus
               type="search"
               value={query}
               className="tw:h-full tw:min-w-0 tw:flex-1 tw:border-0 tw:bg-transparent tw:font-sans tw:text-sm tw:text-foreground tw:outline-none tw:placeholder:text-muted-foreground"
@@ -250,10 +256,7 @@ export default function ActionSearch({
                 setActiveIndex(0);
               }}
               onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                  event.preventDefault();
-                  closeAndRestoreFocus();
-                } else if (
+                if (
                   event.key === "ArrowDown" &&
                   visibleItems.length > 0
                 ) {

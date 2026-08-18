@@ -5,7 +5,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
-  useRef,
+  type RefObject,
   useState,
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -86,20 +86,14 @@ function supportsMemberLocal(integration: ProviderIntegrationSummary) {
   return integration.provider === "gcpCloudSql" && integration.credentialMethod === "adcWif";
 }
 
-function initialFocus(container: HTMLElement | null) {
-  container?.querySelector<HTMLElement>(
-    "button:not([disabled]), input:not([disabled]), select:not([disabled])",
-  )?.focus();
-}
-
 export function ProviderCredentialDialog({
   initialProvider,
   onClose,
-  returnFocus,
+  returnFocusRef,
 }: {
   initialProvider?: ProviderKind;
   onClose: () => void;
-  returnFocus: () => void;
+  returnFocusRef?: RefObject<HTMLElement | null>;
 }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
@@ -112,14 +106,6 @@ export function ProviderCredentialDialog({
   const [pending, setPending] = useState<"begin" | "verify" | null>(null);
   const [revoking, setRevoking] = useState<string | null>(null);
   const [actionFailed, setActionFailed] = useState(false);
-  const dialogRef = useRef<HTMLElement>(null);
-  const onCloseRef = useRef(onClose);
-  const returnFocusRef = useRef(returnFocus);
-
-  useEffect(() => {
-    onCloseRef.current = onClose;
-    returnFocusRef.current = returnFocus;
-  }, [onClose, returnFocus]);
   const memberLocalIntegrations = useMemo(
     () => integrations.data?.filter(supportsMemberLocal) ?? [],
     [integrations.data],
@@ -148,40 +134,14 @@ export function ProviderCredentialDialog({
   }, [initialProvider, memberLocalIntegrations, state.selectedIntegrationId]);
 
   const close = useCallback(() => {
+    if (pending !== null || revoking !== null) return;
     dispatch({ type: "discard" });
-    onCloseRef.current();
-    window.requestAnimationFrame(returnFocusRef.current);
-  }, []);
+    onClose();
+  }, [onClose, pending, revoking]);
 
   useEffect(() => {
-    initialFocus(dialogRef.current);
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        close();
-        return;
-      }
-      if (event.key !== "Tab") return;
-      const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
-        "button:not([disabled]), input:not([disabled]), select:not([disabled])",
-      ) ?? []);
-      if (!focusable.length) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1]!;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      dispatch({ type: "discard" });
-    };
-  }, [close]);
+    return () => dispatch({ type: "discard" });
+  }, []);
 
   async function verify(receipt: NonNullable<typeof state.receipt>) {
     setPending("verify");
@@ -254,18 +214,25 @@ export function ProviderCredentialDialog({
   const visibleStatus = state.status ?? selectedIntegration?.state ?? null;
 
   return (
-    <ModalBackdrop onMouseDown={close}>
+    <ModalBackdrop
+      onMouseDown={
+        pending === null && revoking === null ? close : undefined
+      }
+    >
       <ModalSurface
-        ref={dialogRef}
         aria-labelledby="provider-credential-title"
         aria-describedby="provider-credential-boundary"
         aria-busy={loading || pending !== null || revoking !== null}
+        onRequestClose={close}
+        dismissible={pending === null && revoking === null}
+        returnFocusRef={returnFocusRef}
       >
         <ModalTitleBar
           title={t("providerCredentials.title")}
           titleId="provider-credential-title"
           closeLabel={t("common.close")}
           onClose={close}
+          closeDisabled={pending !== null || revoking !== null}
         />
         <div className="tw:min-h-0 tw:min-w-0 tw:flex-1 tw:overflow-auto tw:bg-background tw:p-4">
           <div className="tw:border-b tw:border-border-subtle tw:pb-3">

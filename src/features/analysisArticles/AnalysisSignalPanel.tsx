@@ -521,7 +521,11 @@ function SignalEditor({
   );
   return (
     <ModalBackdrop onMouseDown={onClose}>
-      <ModalSurface size="settings" aria-labelledby="analysis-signal-editor-title">
+      <ModalSurface
+        size="settings"
+        aria-labelledby="analysis-signal-editor-title"
+        onRequestClose={onClose}
+      >
         <ModalTitleBar
           title={editing ? t("analysis.signalEditTitle") : t("analysis.signalNewTitle")}
           titleId="analysis-signal-editor-title"
