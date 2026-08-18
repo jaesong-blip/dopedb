@@ -51,12 +51,14 @@ export function useModalBehavior({
   dismissible = true,
   restoreFocus = true,
   returnFocusRef,
+  enabled = true,
 }: {
   surfaceRef: RefObject<HTMLElement | null>;
   onRequestClose?: () => void;
   dismissible?: boolean;
   restoreFocus?: boolean;
   returnFocusRef?: RefObject<HTMLElement | null>;
+  enabled?: boolean;
 }) {
   const previousFocusRef = useRef<HTMLElement | null>(
     typeof document !== "undefined" &&
@@ -66,6 +68,7 @@ export function useModalBehavior({
   );
 
   useLayoutEffect(() => {
+    if (!enabled) return;
     const surface = surfaceRef.current;
     if (!surface) return;
     const previousFocus = returnFocusRef?.current ?? previousFocusRef.current;
@@ -102,9 +105,10 @@ export function useModalBehavior({
         previousFocus.focus({ preventScroll: true });
       }
     };
-  }, [restoreFocus, returnFocusRef, surfaceRef]);
+  }, [enabled, restoreFocus, returnFocusRef, surfaceRef]);
 
   useLayoutEffect(() => {
+    if (!enabled) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       const surface = surfaceRef.current;
       if (
@@ -144,7 +148,7 @@ export function useModalBehavior({
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [dismissible, onRequestClose, surfaceRef]);
+  }, [dismissible, enabled, onRequestClose, surfaceRef]);
 }
 
 export function ModalBackdrop({

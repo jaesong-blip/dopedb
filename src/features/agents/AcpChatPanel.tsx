@@ -2,13 +2,19 @@
 // into the existing tool-window views. Session/query/effect ownership lives in
 // useAcpChatController; transcript interpretation lives in its presentation model.
 
-import type { ReactNode } from "react";
+import {
+  useLayoutEffect,
+  useRef,
+  type ReactNode,
+  type RefObject,
+} from "react";
 
 import { Icon } from "../../components/Icon";
 import ToolbarMenu, {
   ToolbarMenuItem,
 } from "../../components/ToolbarMenu";
 import { Button } from "../../design-system/components/Button";
+import { useModalBehavior } from "../../design-system/components/Modal";
 import { ProgressBar } from "../../design-system/components/Progress";
 import RenderRecoveryBoundary from "../../design-system/components/RenderRecoveryBoundary";
 import {
@@ -29,15 +35,20 @@ import {
   providerLabel,
 } from "./acpTranscriptPresentation";
 import {
+  agentDockInteraction,
+  shouldDismissAgentOverlayFromEscape,
+  type AgentDockLayout,
+} from "./layout";
+import {
   useAcpChatController,
   type AcpChatControllerInput,
-  type AgentDockLayout,
 } from "./useAcpChatController";
 
 type AcpChatPanelProps = AcpChatControllerInput & {
   onOpenArchive: () => void;
   onOpenKnowledgeAnalysis: (environmentId: string, articleId?: string) => void;
   onClose: () => void;
+  returnFocusRef: RefObject<HTMLElement | null>;
 };
 
 export default function AcpChatPanel(props: AcpChatPanelProps) {
@@ -49,6 +60,7 @@ export default function AcpChatPanel(props: AcpChatPanelProps) {
           onClose={props.onClose}
           onRetry={retry}
           overlay={props.overlay}
+          returnFocusRef={props.returnFocusRef}
         />
       )}
       onError={(error, errorInfo) =>
@@ -74,6 +86,7 @@ function AcpChatPanelContent({
   onOpenArchive,
   onOpenKnowledgeAnalysis,
   onClose,
+  returnFocusRef,
 }: AcpChatPanelProps) {
   const { t } = useI18n();
   const controller = useAcpChatController({
@@ -91,7 +104,12 @@ function AcpChatPanelContent({
   const active = session.active;
 
   return (
-    <AcpChatSurface label={t("agent.acpTitle")} layout={viewport.layout}>
+    <AcpChatSurface
+      label={t("agent.acpTitle")}
+      layout={viewport.layout}
+      onClose={onClose}
+      returnFocusRef={returnFocusRef}
+    >
       <div
         className="tw:absolute tw:inset-y-0 tw:-left-[3px] tw:z-[var(--ds-z-raised)] tw:w-[7px] tw:cursor-col-resize tw:hover:bg-ring/30 tw:active:bg-ring/30 tw:data-[layout=overlay]:hidden tw:data-[layout=compact]:hidden"
         data-layout={viewport.layout}
@@ -109,6 +127,7 @@ function AcpChatPanelContent({
             <Button
               size="compact"
               variant="ghost"
+              data-agent-focus-target="session-control"
               disabled={session.starting}
               onClick={commands.session.beginNewChat}
               title={t("agent.acpNew")}
@@ -248,17 +267,21 @@ function AcpChatPanelRecovery({
   onClose,
   onRetry,
   overlay,
+  returnFocusRef,
 }: {
   compact: boolean;
   onClose: () => void;
   onRetry: () => void;
   overlay: boolean;
+  returnFocusRef: RefObject<HTMLElement | null>;
 }) {
   const { t } = useI18n();
   return (
     <AcpChatSurface
       label={t("agent.acpTitle")}
       layout={compact ? "compact" : overlay ? "overlay" : "docked"}
+      onClose={onClose}
+      returnFocusRef={returnFocusRef}
     >
       <ToolWindowHeader
         divider={false}
@@ -281,7 +304,13 @@ function AcpChatPanelRecovery({
         <p className="tw:m-0 tw:leading-body">
           {t("agent.acpRenderFailedBody")}
         </p>
-        <Button onClick={onRetry} size="compact" variant="primary">
+        <Button
+          data-agent-focus-target="recovery"
+          data-modal-initial-focus
+          onClick={onRetry}
+          size="compact"
+          variant="primary"
+        >
           <Icon name="refresh" />
           {t("agent.acpRenderRetry")}
         </Button>
@@ -294,18 +323,76 @@ function AcpChatSurface({
   children,
   label,
   layout,
+  onClose,
+  returnFocusRef,
 }: {
   children: ReactNode;
   label: string;
   layout: AgentDockLayout;
+  onClose: () => void;
+  returnFocusRef: RefObject<HTMLElement | null>;
 }) {
+  const surfaceRef = useRef<HTMLElement>(null);
+  const interaction = agentDockInteraction(layout);
+  useModalBehavior({
+    enabled: interaction.shellInert,
+    onRequestClose: onClose,
+    returnFocusRef,
+    surfaceRef,
+  });
+
+  useLayoutEffect(() => {
+    if (layout !== "overlay") return;
+    const surface = surfaceRef.current;
+    if (!surface || surface.contains(document.activeElement)) return;
+    const preferred =
+      surface.querySelector<HTMLElement>(
+        "[data-modal-initial-focus]:not(:disabled)",
+      ) ??
+      surface.querySelector<HTMLElement>(
+        "button:not([disabled]), textarea:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex='-1'])",
+      ) ??
+      surface;
+    preferred.focus({ preventScroll: true });
+  }, [layout]);
+
+  useLayoutEffect(() => {
+    if (layout !== "overlay") return;
+    const handleEscape = (event: KeyboardEvent) => {
+      const surface = surfaceRef.current;
+      if (event.key !== "Escape" || !surface) return;
+      const focusInside =
+        event.target instanceof Node && surface.contains(event.target);
+      const nestedModal =
+        event.target instanceof Element &&
+        event.target.closest('[role="dialog"][aria-modal="true"]') !== null;
+      if (
+        !shouldDismissAgentOverlayFromEscape({
+          defaultPrevented: event.defaultPrevented,
+          focusInside,
+          nestedModal,
+        })
+      ) {
+        return;
+      }
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      onClose();
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [layout, onClose]);
+
   return (
     <aside
+      ref={surfaceRef}
       className="tw:relative tw:col-start-4 tw:row-start-2 tw:mt-0 tw:mr-1 tw:mb-1 tw:ml-0 tw:flex tw:min-w-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:data-[layout=overlay]:fixed tw:data-[layout=overlay]:inset-y-0 tw:data-[layout=overlay]:right-0 tw:data-[layout=overlay]:z-[var(--ds-z-modal)] tw:data-[layout=overlay]:m-0 tw:data-[layout=overlay]:w-[min(520px,calc(100vw_-_44px))] tw:data-[layout=overlay]:rounded-none tw:data-[layout=overlay]:shadow-popover tw:data-[layout=compact]:fixed tw:data-[layout=compact]:top-title-toolbar tw:data-[layout=compact]:right-0 tw:data-[layout=compact]:bottom-status-bar tw:data-[layout=compact]:left-0 tw:data-[layout=compact]:z-[var(--ds-z-modal)] tw:data-[layout=compact]:m-0 tw:data-[layout=compact]:w-screen tw:data-[layout=compact]:rounded-none tw:data-[layout=compact]:border-x-0"
       aria-label={label}
-      aria-modal={layout === "docked" ? undefined : true}
+      aria-modal={interaction.ariaModal}
+      data-agent-surface
       data-layout={layout}
-      role={layout === "docked" ? undefined : "dialog"}
+      role={interaction.role}
+      tabIndex={-1}
     >
       {children}
     </aside>

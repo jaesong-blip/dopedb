@@ -471,6 +471,12 @@ DopeDB의 실제 작업 흐름과 접근성, supported viewport를 위한 제품
   semantic token과 기존 button/icon 규칙으로 조합하며 feature CSS를 만들지
   않는다. session 전용 tab action menu는 활성 session이 있을 때만 표시하며
   빈 AI Chat에 disabled kebab을 남기지 않는다.
+- AI Chat의 desktop dock은 modeless tool surface다. 좁은 desktop의 오른쪽
+  overlay도 `role="dialog"`인 modeless side sheet로 유지해 background focus와
+  작업을 막지 않으며, focus가 sheet 안에 있을 때만 Escape로 닫는다. compact
+  fullscreen projection만 `aria-modal="true"`, background `inert`, 공용 topmost
+  modal focus·Tab·Escape 계약을 사용한다. 두 projection은 실제 opener를
+  복원하고, 위에 열린 nested modal의 Escape를 먼저 소비하게 한다.
 - Workspace Explorer는 `Project → Environment → Databases / Data sources /
   Analyses`를 실제 폴더 hierarchy로 표시한다. `Data sources`는 GitHub와 Local
   Folder source binding을, `Analyses`는 해당 Environment에 고정된 종합

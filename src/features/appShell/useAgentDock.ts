@@ -40,16 +40,32 @@ export function useAgentDock() {
   });
   const [width, setWidth] = useState(readAgentDockWidth);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
 
-  const show = useCallback(() => {
+  const show = useCallback((returnFocus?: HTMLElement | null) => {
+    const active =
+      returnFocus ??
+      (document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null);
+    returnFocusRef.current =
+      active && active !== document.body && active.isConnected
+        ? active
+        : buttonRef.current;
     localStorage.setItem("agentDockOpen", "1");
     setOpen(true);
   }, []);
 
   const close = useCallback(() => {
+    const target = returnFocusRef.current?.isConnected
+      ? returnFocusRef.current
+      : buttonRef.current;
     localStorage.setItem("agentDockOpen", "0");
     setOpen(false);
-    window.requestAnimationFrame(() => buttonRef.current?.focus());
+    window.requestAnimationFrame(() => {
+      target?.focus({ preventScroll: true });
+      returnFocusRef.current = null;
+    });
   }, []);
 
   const resize = useCallback((next: number) => {
@@ -58,5 +74,13 @@ export function useAgentDock() {
     localStorage.setItem("agentDockWidth", String(bounded));
   }, []);
 
-  return { open, width, buttonRef, show, close, resize };
+  return {
+    open,
+    width,
+    buttonRef,
+    returnFocusRef,
+    show,
+    close,
+    resize,
+  };
 }

@@ -152,6 +152,10 @@ function Shell() {
 
   function openOrFocusAgentDock() {
     if (!connections.selected) return;
+    const returnFocus =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     setAgentComposerRequest(null);
     if (compactShell) {
       toolWindows.closeServices();
@@ -163,7 +167,7 @@ function Shell() {
     }
     commands.route.focusToolWindow();
     setMobileExplorerOpen(false);
-    agentDock.show();
+    agentDock.show(returnFocus);
   }
 
   function openAgentTask(
@@ -171,6 +175,10 @@ function Shell() {
     environmentId?: string,
     prompt?: string,
   ) {
+    const returnFocus =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     const target = connections.items.find(
       (connection) => connection.id === connectionId,
     );
@@ -191,8 +199,7 @@ function Shell() {
     if (compactShell) toolWindows.closeServices();
     commands.route.focusToolWindow();
     setMobileExplorerOpen(false);
-    setMobileExplorerOpen(false);
-    if (!showAgentDock) agentDock.show();
+    if (!showAgentDock) agentDock.show(returnFocus);
     focusActiveAgentControl();
   }
 
@@ -397,6 +404,7 @@ function Shell() {
             overlay: agentOverlay,
             width: agentDock.width,
             buttonRef: agentDock.buttonRef,
+            returnFocusRef: agentDock.returnFocusRef,
           },
           status: {
             backgroundTasks: backgroundTasks.tasks,
@@ -496,10 +504,14 @@ function Shell() {
 
 function focusActiveAgentControl() {
   window.requestAnimationFrame(() => {
-    document
-      .querySelector<HTMLButtonElement>(
-        '[data-agent-focus-target="active-session"], [data-agent-focus-target="launcher"]',
-      )
-      ?.focus();
+    const target =
+      document.querySelector<HTMLElement>(
+        '[data-agent-focus-target="composer"]:not(:disabled)',
+      ) ??
+      document.querySelector<HTMLElement>(
+        '[data-agent-focus-target="session-control"]:not(:disabled), [data-agent-focus-target="recovery"]:not(:disabled)',
+      ) ??
+      document.querySelector<HTMLElement>("[data-agent-surface]");
+    target?.focus({ preventScroll: true });
   });
 }

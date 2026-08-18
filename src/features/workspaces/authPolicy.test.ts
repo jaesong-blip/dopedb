@@ -4,6 +4,11 @@ import capability from "../../../src-tauri/capabilities/default.json";
 import productAnalyticsGoldenSource from "../../../tests/fixtures/product-analytics-v1.json";
 import { knowledgeQueryKeys } from "../knowledge/queryKeys";
 import {
+  agentDockInteraction,
+  agentDockLayout,
+  shouldDismissAgentOverlayFromEscape,
+} from "../agents/layout";
+import {
   cancelWorkspaceResourceQueries,
   resetConnectionResourceQueries,
   refetchWorkspaceResourceQueries,
@@ -170,6 +175,40 @@ describe("workspace auth lifecycle", () => {
     );
     expect(allowedUrls).toContain("https://dopedb.dev/privacy");
     expect(allowedUrls).not.toContain("https://github.com/*");
+
+    expect(agentDockLayout(false, false)).toBe("docked");
+    expect(agentDockLayout(false, true)).toBe("overlay");
+    expect(agentDockLayout(true, true)).toBe("compact");
+    expect(agentDockInteraction("docked")).toEqual({
+      role: undefined,
+      ariaModal: undefined,
+      shellInert: false,
+    });
+    expect(agentDockInteraction("overlay")).toEqual({
+      role: "dialog",
+      ariaModal: undefined,
+      shellInert: false,
+    });
+    expect(agentDockInteraction("compact")).toEqual({
+      role: "dialog",
+      ariaModal: true,
+      shellInert: true,
+    });
+    expect(shouldDismissAgentOverlayFromEscape({
+      defaultPrevented: false,
+      focusInside: true,
+      nestedModal: false,
+    })).toBe(true);
+    expect(shouldDismissAgentOverlayFromEscape({
+      defaultPrevented: false,
+      focusInside: false,
+      nestedModal: false,
+    })).toBe(false);
+    expect(shouldDismissAgentOverlayFromEscape({
+      defaultPrevented: false,
+      focusInside: true,
+      nestedModal: true,
+    })).toBe(false);
 
     expect(sortedKeys(productAnalyticsGolden)).toEqual([
       "appVersion",

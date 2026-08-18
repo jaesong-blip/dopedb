@@ -3,6 +3,35 @@ export const AGENT_DOCK_DEFAULT_WIDTH = 396;
 export const AGENT_DOCK_MIN_WIDTH = 360;
 export const AGENT_DOCK_MAX_WIDTH = 680;
 
+export type AgentDockLayout = "compact" | "docked" | "overlay";
+
+export function agentDockLayout(
+  compact: boolean,
+  overlay: boolean,
+): AgentDockLayout {
+  return compact ? "compact" : overlay ? "overlay" : "docked";
+}
+
+export function agentDockInteraction(layout: AgentDockLayout) {
+  return {
+    role: layout === "docked" ? undefined : ("dialog" as const),
+    ariaModal: layout === "compact" ? true : undefined,
+    shellInert: layout === "compact",
+  };
+}
+
+export function shouldDismissAgentOverlayFromEscape({
+  defaultPrevented,
+  focusInside,
+  nestedModal,
+}: {
+  defaultPrevented: boolean;
+  focusInside: boolean;
+  nestedModal: boolean;
+}) {
+  return !defaultPrevented && focusInside && !nestedModal;
+}
+
 export function normalizeAgentDockWidth(requestedWidth: number): number {
   return Math.round(
     Math.min(

@@ -48,6 +48,7 @@ import type {
 } from "./domain";
 import {
   AGENT_DOCK_DEFAULT_WIDTH,
+  agentDockLayout,
   clampAgentDockWidth,
 } from "./layout";
 import {
@@ -87,8 +88,6 @@ const AGENT_SETUP_URL: Record<AgentProvider, string> = {
   codex: "https://help.openai.com/en/articles/11096431",
 };
 const AUTO_SCROLL_THRESHOLD_PX = 96;
-
-export type AgentDockLayout = "compact" | "docked" | "overlay";
 
 export type AcpChatControllerInput = {
   connection: ConnectionProfile;
@@ -822,13 +821,6 @@ export function useAcpChatController({
 }
 
 export type AcpChatController = ReturnType<typeof useAcpChatController>;
-
-function agentDockLayout(
-  compact: boolean,
-  overlay: boolean,
-): AgentDockLayout {
-  return compact ? "compact" : overlay ? "overlay" : "docked";
-}
 
 function isLiveSession(lifecycle: AcpSessionLifecycle) {
   return (

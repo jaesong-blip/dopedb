@@ -36,6 +36,14 @@ export default function AcpChatComposer({
 }: AcpChatComposerProps) {
   const { t } = useI18n();
   const active = session.active;
+  const composerDisabled =
+    session.starting ||
+    !setup.prerequisitesReady ||
+    !composer.environmentScopeReady ||
+    (active !== null &&
+      active.lifecycle !== "ready" &&
+      active.lifecycle !== "closed" &&
+      active.lifecycle !== "failed");
   return (
     <ToolWindowComposerDock>
       {active &&
@@ -78,17 +86,11 @@ export default function AcpChatComposer({
         busy={session.busy}
       >
         <ToolWindowComposerInput
+          data-agent-focus-target="composer"
+          data-modal-initial-focus={composerDisabled ? undefined : true}
           value={composer.prompt}
           maxLength={composer.maxPromptChars}
-          disabled={
-            session.starting ||
-            !setup.prerequisitesReady ||
-            !composer.environmentScopeReady ||
-            (active !== null &&
-              active.lifecycle !== "ready" &&
-              active.lifecycle !== "closed" &&
-              active.lifecycle !== "failed")
-          }
+          disabled={composerDisabled}
           placeholder={
             session.busy ? t("agent.acpWaiting") : t("agent.acpPrompt")
           }
