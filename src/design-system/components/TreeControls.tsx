@@ -4,6 +4,7 @@
 import type { KeyboardEventHandler, ReactNode } from "react";
 
 import { Icon, type IconName } from "../../components/Icon";
+import type { TreeKeyboardItem } from "../treeKeyboard";
 
 export function TreeSectionButton({
   expanded,
@@ -15,6 +16,8 @@ export function TreeSectionButton({
   danger = false,
   selected = false,
   prominence = "default",
+  treeItem,
+  treeItemContent = false,
 }: {
   expanded: boolean;
   icon: IconName;
@@ -25,6 +28,8 @@ export function TreeSectionButton({
   danger?: boolean;
   selected?: boolean;
   prominence?: "default" | "project";
+  treeItem?: TreeKeyboardItem & { level: number };
+  treeItemContent?: boolean;
 }) {
   return (
     <div
@@ -41,6 +46,15 @@ export function TreeSectionButton({
         type="button"
         className="tw:flex tw:min-w-0 tw:flex-1 tw:cursor-pointer tw:items-center tw:gap-1 tw:border-0 tw:bg-transparent tw:px-1 tw:py-[var(--ds-tree-row-padding-block)] tw:text-left tw:font-inherit tw:text-inherit tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
         aria-expanded={expanded}
+        aria-level={treeItem?.level}
+        aria-selected={treeItem ? selected : undefined}
+        data-explorer-tree-item={treeItem ? true : undefined}
+        data-explorer-tree-key={treeItem?.key}
+        data-explorer-tree-parent-key={treeItem?.parentKey ?? undefined}
+        data-tree-expander={treeItem || treeItemContent ? true : undefined}
+        data-tree-primary-action={treeItem || treeItemContent ? true : undefined}
+        role={treeItem ? "treeitem" : undefined}
+        tabIndex={treeItem || treeItemContent ? -1 : undefined}
         onClick={onToggle}
       >
         <span className="tw:grid tw:w-[var(--ds-icon-sm)] tw:shrink-0 tw:place-items-center tw:text-2xs">

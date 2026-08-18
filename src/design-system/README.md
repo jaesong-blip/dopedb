@@ -359,6 +359,15 @@ Elevation은 세 단계만 허용한다.
   Virtual이 측정한 viewport geometry를 적용하는 vendor integration 예외이며,
   색상·간격·row 외형은 계속 semantic utility가 소유한다. 데이터베이스·스키마·
   객체 폴더 이름을 uppercase category heading처럼 바꾸지 않는다.
+  Explorer의 전체 카탈로그는 하나의 `role="tree"`와 하나의 visible-item
+  순서를 사용한다. 각 row는 stable key, parent key, `aria-level`,
+  `aria-expanded`, `aria-selected`를 소유하고 roving `tabIndex`로 Tab 진입점을
+  하나만 둔다. ArrowUp/Down은 화면 순서, ArrowRight/Left는
+  펼침·자식/접힘·부모, Home/End는 처음·끝, Enter/Space는
+  row의 primary action을 실행하고 Shift+F10/ContextMenu는 실제 context action을
+  연다. 검색은 원래 펼침 상태와 focus key를
+  변경하지 않고 임시 visible set만 투영한다. 가상화 row의 이동은
+  전체 모델 순서로 대상을 계산한 뒤 해당 row를 pin·scroll·focus한다.
 - `PopupMenu`, `PopupMenuItem`, `PopupMenuCheckbox`: 평평한 popover menu
   surface와 keyboard-focus 가능한 command/check row.
 - `ToolbarMenu triggerVariant="statusBar"`와 `menuSize="tasks"`: status bar

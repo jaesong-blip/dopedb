@@ -52,6 +52,10 @@ import {
 import { AnalysisSnapshotParameterField } from "../analysisArticles/AnalysisArticleVisualization";
 import { actionSearchShortcutTargetIsEditable } from "../actionSearch/useActionSearchDialog";
 import { tabFocusTargetIndex } from "../../design-system/tabKeyboard";
+import {
+  treeKeyboardMoveTarget,
+  virtualTreeFocusIndex,
+} from "../../design-system/treeKeyboard";
 import { queryResultPhase } from "../../lib/queryResultPhase";
 
 function deferred<T>() {
@@ -526,5 +530,37 @@ describe("workbench state ownership", () => {
     expect(tabFocusTargetIndex(1, 3, "start")).toBe(0);
     expect(tabFocusTargetIndex(1, 3, "end")).toBe(2);
     expect(tabFocusTargetIndex(-1, 3, "next")).toBeNull();
+
+    const virtualTreeItems = [
+      { key: "connection", parentKey: null },
+      ...Array.from({ length: 5_000 }, (_, index) => ({
+        key: `table:${index}`,
+        parentKey: "connection",
+      })),
+    ];
+    expect(
+      treeKeyboardMoveTarget(virtualTreeItems, "connection", "ArrowRight"),
+    ).toBe("table:0");
+    expect(
+      treeKeyboardMoveTarget(virtualTreeItems, "table:2499", "ArrowDown"),
+    ).toBe("table:2500");
+    expect(
+      treeKeyboardMoveTarget(virtualTreeItems, "table:2500", "ArrowUp"),
+    ).toBe("table:2499");
+    expect(
+      treeKeyboardMoveTarget(virtualTreeItems, "table:2500", "ArrowLeft"),
+    ).toBe("connection");
+    expect(
+      treeKeyboardMoveTarget(virtualTreeItems, "table:0", "End"),
+    ).toBe("table:4999");
+    expect(
+      treeKeyboardMoveTarget(virtualTreeItems, "table:4999", "Home"),
+    ).toBe("connection");
+    expect(
+      virtualTreeFocusIndex(
+        virtualTreeItems.map((treeItem) => ({ treeItem })),
+        "table:4999",
+      ),
+    ).toBe(5_000);
   });
 });

@@ -102,6 +102,8 @@ type Props = {
   revealRequest: number;
   revealDatabase: string | null;
   revealNamespace: string | null;
+  treeParentKey: string | null;
+  treeLevel: number;
 };
 
 export default function ConnectionNode(props: Props) {
@@ -144,6 +146,7 @@ export default function ConnectionNode(props: Props) {
       ? availableSchemas.length
       : availableSchemas.filter((schema) => scopedSchemas.includes(schema))
           .length;
+  const connectionTreeKey = `connection:${connection.id}`;
 
   return (
     <div className="tw:relative">
@@ -153,28 +156,28 @@ export default function ConnectionNode(props: Props) {
         data-dragging={props.draggingId === connection.id}
         data-drop-target={isDropTarget}
         className="ds-object-row tw:group tw:relative tw:touch-none tw:select-none tw:gap-1 tw:rounded-xs tw:pr-[calc(var(--ds-control-sm)+var(--ds-space-1))] tw:text-ui tw:font-medium tw:leading-ui tw:data-[nested=true]:pl-2 tw:data-[dragging=true]:opacity-50 tw:data-[drop-target=true]:bg-muted tw:data-[drop-target=true]:ring-2 tw:data-[drop-target=true]:ring-ring"
-        role="button"
+        role="treeitem"
+        aria-expanded={props.expanded}
+        aria-level={props.treeLevel}
         aria-selected={props.selected}
         aria-label={`${connection.name || t("app.unnamed")} · ${description}`}
-        tabIndex={0}
+        data-explorer-tree-item
+        data-explorer-tree-key={connectionTreeKey}
+        data-explorer-tree-parent-key={props.treeParentKey ?? undefined}
+        data-tree-primary-action
+        tabIndex={-1}
         onPointerDown={(event) => props.onPointerDown(event, connection)}
         onPointerMove={props.onPointerMove}
         onPointerUp={props.onPointerUp}
         onPointerCancel={props.onPointerCancel}
-        onClick={() => {
+        onClick={(event) => {
+          event.currentTarget.focus({ preventScroll: true });
           if (props.suppressClickRef.current) {
             props.suppressClickRef.current = false;
             return;
           }
           if (props.selected) props.onToggleOpen();
           else props.onSelect();
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            if (props.selected) props.onToggleOpen();
-            else props.onSelect();
-          }
         }}
       >
         <span
@@ -184,6 +187,7 @@ export default function ConnectionNode(props: Props) {
               ? t("connections.collapse")
               : t("connections.expand")
           }
+          data-tree-expander
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation();
@@ -222,6 +226,7 @@ export default function ConnectionNode(props: Props) {
               triggerVariant="treeBadge"
               menuSize="scope"
               trigger={`${selectedSchemaCount} of ${availableSchemas.length}`}
+              triggerTabIndex={-1}
             >
               <div className="tw:grid tw:w-full">
                 <div className="tw:flex tw:min-h-control-md tw:items-center tw:gap-2 tw:border-b tw:border-border-subtle tw:px-2 tw:py-1">
@@ -329,6 +334,7 @@ export default function ConnectionNode(props: Props) {
         >
           <Button
             data-connection-menu-trigger
+            data-tree-context-action
             iconOnly
             size="xs"
             variant="ghost"
@@ -336,6 +342,7 @@ export default function ConnectionNode(props: Props) {
             aria-label={t("connections.connectionMenu")}
             aria-expanded={props.openMenuId === connection.id}
             aria-controls={`connection-menu-${connection.id}`}
+            tabIndex={-1}
             onClick={() =>
               props.onOpenMenu(
                 props.openMenuId === connection.id ? null : connection.id,
@@ -478,6 +485,8 @@ export default function ConnectionNode(props: Props) {
                 revealRequest={props.revealRequest}
                 revealDatabase={props.revealDatabase}
                 revealNamespace={props.revealNamespace}
+                treeParentKey={connectionTreeKey}
+                treeLevel={props.treeLevel + 1}
               />
             );
           })
@@ -524,6 +533,8 @@ export default function ConnectionNode(props: Props) {
             revealRequest={props.revealRequest}
             revealDatabase={props.revealDatabase}
             revealNamespace={props.revealNamespace}
+            treeParentKey={connectionTreeKey}
+            treeLevel={props.treeLevel + 1}
           />
         ))}
     </div>

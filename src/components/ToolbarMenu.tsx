@@ -32,6 +32,7 @@ export default function ToolbarMenu({
   pressed,
   triggerVariant = "default",
   menuSize = "default",
+  triggerTabIndex,
 }: {
   label: string;
   icon?: IconName;
@@ -42,6 +43,7 @@ export default function ToolbarMenu({
   pressed?: boolean;
   triggerVariant?: "default" | "badge" | "treeBadge" | "gridHeader" | "statusBar";
   menuSize?: "default" | "scope" | "tasks";
+  triggerTabIndex?: number;
 }) {
   const generatedId = useId();
   const menuId = `toolbar-menu-${generatedId.replace(/:/g, "")}`;
@@ -214,6 +216,7 @@ export default function ToolbarMenu({
       aria-expanded={open}
       aria-pressed={pressed}
       aria-controls={open ? menuId : undefined}
+      tabIndex={triggerTabIndex}
       onClick={() => {
         if (open) close();
         else {

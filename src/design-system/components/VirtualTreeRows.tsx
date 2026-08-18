@@ -11,6 +11,12 @@ import {
   defaultRangeExtractor,
   useVirtualizer,
 } from "@tanstack/react-virtual";
+import {
+  registerVirtualTreeItems,
+  VIRTUAL_TREE_FOCUS_EVENT,
+  virtualTreeFocusIndex,
+  type TreeKeyboardItem,
+} from "../treeKeyboard";
 
 const DEFAULT_TREE_ROW_ESTIMATE = 24;
 const DEFAULT_OVERSCAN = 8;
@@ -19,6 +25,10 @@ const VIRTUAL_TREE_THRESHOLD = 80;
 export interface VirtualTreeRow {
   key: string;
   render: () => ReactNode;
+  treeItem?: TreeKeyboardItem & {
+    level: number;
+    expanded?: boolean;
+  };
 }
 
 /**
@@ -39,6 +49,7 @@ export function VirtualTreeRows({
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [scrollMargin, setScrollMargin] = useState(0);
+  const [requestedTreeKey, setRequestedTreeKey] = useState<string | null>(null);
   const keys = useMemo(() => rows.map((row) => row.key), [rows]);
   const getItemKey = useCallback(
     (index: number) => keys[index] ?? index,
@@ -47,7 +58,14 @@ export function VirtualTreeRows({
   const rangeExtractor = useCallback(
     (range: Parameters<typeof defaultRangeExtractor>[0]) => {
       const indexes = defaultRangeExtractor(range);
-      const pinnedIndex = pinnedKey ? keys.indexOf(pinnedKey) : -1;
+      const requestedIndex = requestedTreeKey
+        ? virtualTreeFocusIndex(rows, requestedTreeKey)
+        : -1;
+      const pinnedIndex = requestedIndex >= 0
+        ? requestedIndex
+        : pinnedKey
+          ? keys.indexOf(pinnedKey)
+          : -1;
       const root = rootRef.current;
       if (root && scrollElement) {
         const rootRect = root.getBoundingClientRect();
@@ -61,7 +79,7 @@ export function VirtualTreeRows({
       if (pinnedIndex < 0 || indexes.includes(pinnedIndex)) return indexes;
       return [...indexes, pinnedIndex].sort((left, right) => left - right);
     },
-    [estimateSize, keys, pinnedKey, scrollElement],
+    [estimateSize, keys, pinnedKey, requestedTreeKey, rows, scrollElement],
   );
   const shouldVirtualize =
     rows.length > VIRTUAL_TREE_THRESHOLD && scrollElement !== null;
@@ -97,9 +115,70 @@ export function VirtualTreeRows({
     return () => observer?.disconnect();
   }, [rows.length, scrollElement, shouldVirtualize]);
 
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root || !shouldVirtualize) return;
+    return registerVirtualTreeItems(
+      root,
+      rows.flatMap((row) => row.treeItem ? [row.treeItem] : []),
+    );
+  }, [rows, shouldVirtualize]);
+
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root || !shouldVirtualize) return;
+    const requestFocus = (event: Event) => {
+      const key = (event as CustomEvent<{ key?: unknown }>).detail?.key;
+      if (typeof key === "string") setRequestedTreeKey(key);
+    };
+    root.addEventListener(VIRTUAL_TREE_FOCUS_EVENT, requestFocus);
+    return () => root.removeEventListener(VIRTUAL_TREE_FOCUS_EVENT, requestFocus);
+  }, [shouldVirtualize]);
+
+  useLayoutEffect(() => {
+    if (!requestedTreeKey || !shouldVirtualize) return;
+    const index = virtualTreeFocusIndex(rows, requestedTreeKey);
+    if (index < 0) return;
+    virtualizer.scrollToIndex(index, { align: "auto" });
+    let innerFrame = 0;
+    const outerFrame = requestAnimationFrame(() => {
+      innerFrame = requestAnimationFrame(() => {
+        const target = [...rootRef.current?.querySelectorAll<HTMLElement>(
+          "[data-explorer-tree-item]",
+        ) ?? []].find(
+          (candidate) =>
+            candidate.dataset.explorerTreeKey === requestedTreeKey,
+        );
+        if (!target) return;
+        target.tabIndex = 0;
+        target.focus({ preventScroll: true });
+      });
+    });
+    return () => {
+      cancelAnimationFrame(outerFrame);
+      if (innerFrame) cancelAnimationFrame(innerFrame);
+    };
+  }, [requestedTreeKey, rows, shouldVirtualize, virtualizer]);
+
   if (!shouldVirtualize) {
     return rows.map((row) => (
-      <Fragment key={row.key}>{row.render()}</Fragment>
+      row.treeItem ? (
+        <div
+          key={row.key}
+          role="treeitem"
+          aria-expanded={row.treeItem.expanded}
+          aria-level={row.treeItem.level}
+          aria-selected={row.treeItem.selected}
+          data-explorer-tree-item
+          data-explorer-tree-key={row.treeItem.key}
+          data-explorer-tree-parent-key={row.treeItem.parentKey ?? undefined}
+          tabIndex={-1}
+        >
+          {row.render()}
+        </div>
+      ) : (
+        <Fragment key={row.key}>{row.render()}</Fragment>
+      )
     ));
   }
 
@@ -119,7 +198,15 @@ export function VirtualTreeRows({
             data-index={virtualRow.index}
             data-virtual-tree-row
             key={row.key}
+            role={row.treeItem ? "treeitem" : undefined}
+            aria-expanded={row.treeItem?.expanded}
+            aria-level={row.treeItem?.level}
+            aria-selected={row.treeItem?.selected}
+            data-explorer-tree-item={row.treeItem ? true : undefined}
+            data-explorer-tree-key={row.treeItem?.key}
+            data-explorer-tree-parent-key={row.treeItem?.parentKey ?? undefined}
             className="tw:absolute tw:top-0 tw:left-0 tw:w-full"
+            tabIndex={row.treeItem ? -1 : undefined}
             style={{
               transform: `translateY(${virtualRow.start - scrollMargin}px)`,
             }}

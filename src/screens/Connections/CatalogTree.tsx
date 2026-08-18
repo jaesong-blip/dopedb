@@ -83,6 +83,8 @@ type Props = {
   revealRequest: number;
   revealDatabase: string | null;
   revealNamespace: string | null;
+  treeParentKey: string;
+  treeLevel: number;
 };
 
 type SchemaContents = {
@@ -491,6 +493,7 @@ export default function CatalogTree(props: Props) {
         <TreeSectionButton
           expanded={expanded}
           icon={section === "keys" ? "key" : section === "indexes" ? "list" : "columns"}
+          treeItemContent
           onToggle={() => toggleMetadataSection(table, section)}
         >
           {t(
@@ -578,6 +581,8 @@ export default function CatalogTree(props: Props) {
               type="button"
               className="tw:grid tw:size-3 tw:shrink-0 tw:cursor-pointer tw:place-items-center tw:rounded-xs tw:border-0 tw:bg-transparent tw:p-0 tw:text-2xs tw:text-muted-foreground tw:hover:text-foreground"
               aria-expanded={detailsOpen}
+              data-tree-expander
+              tabIndex={-1}
               aria-label={
                 detailsOpen
                   ? t("connections.collapseMetadata", { table: table.name })
@@ -609,6 +614,8 @@ export default function CatalogTree(props: Props) {
           <button
             type="button"
             className="tbl-name tw:min-w-[10ch] tw:flex-1 tw:cursor-pointer tw:overflow-hidden tw:border-0 tw:bg-transparent tw:p-0 tw:text-left tw:font-sans tw:text-inherit tw:text-ellipsis tw:whitespace-nowrap"
+            data-tree-primary-action
+            tabIndex={-1}
             onClick={() => props.onOpenTable(table)}
           >
             {table.schema ? table.name : tableLabel(connection.engine, table)}
@@ -717,10 +724,12 @@ export default function CatalogTree(props: Props) {
   function row(
     key: string,
     depth: 0 | 1,
+    treeItem: NonNullable<VirtualTreeRow["treeItem"]> | undefined,
     render: () => ReactNode,
   ): VirtualTreeRow {
     return {
       key,
+      treeItem,
       render: () =>
         depth === 1 ? <div className="tw:pl-3">{render()}</div> : render(),
     };
@@ -735,6 +744,17 @@ export default function CatalogTree(props: Props) {
       `${connection.database}:object:${object.schema ?? ""}:${object.kind}:${object.name}:${object.detail ?? index}`,
     [connection.database],
   );
+  const databaseTreeKey =
+    `connection:${connection.id}:database:${connection.database}`;
+  const treeKey = (key: string) => `${databaseTreeKey}:${key}`;
+  const tableTreeKey = (table: CatalogTable) =>
+    treeKey(`relation:${tableKey(table)}`);
+  const objectTreeKey = (object: CatalogObject, index: number) =>
+    treeKey(
+      `object:${object.schema ?? ""}:${object.kind}:${object.name}:${
+        object.detail ?? index
+      }`,
+    );
 
   const searchResults = useMemo<CatalogTreeSearchResult[]>(() => {
     if (!normalizedFilter) return [];
@@ -797,13 +817,21 @@ export default function CatalogTree(props: Props) {
           `${connection.id}:${collectionSectionKey}`,
         );
       if (tables.length > 0 || (!normalizedFilter && catalog)) {
+        const collectionsTreeKey = treeKey("section:collections");
         rows.push(row(
           `${connection.database}:section:collections`,
           0,
+          {
+            key: collectionsTreeKey,
+            parentKey: databaseTreeKey,
+            level: props.treeLevel + 1,
+            expanded: collectionsOpen,
+          },
           () => (
             <TreeSectionButton
               expanded={collectionsOpen}
               icon="collection"
+              treeItemContent
               onToggle={() =>
                 props.onToggleRelationSection(collectionSectionKey)
               }
@@ -814,7 +842,17 @@ export default function CatalogTree(props: Props) {
         ));
         if (collectionsOpen) {
           for (const table of tables) {
-            rows.push(row(tableRowKey(table), 1, () => renderTable(table)));
+            rows.push(row(
+              tableRowKey(table),
+              1,
+              {
+                key: tableTreeKey(table),
+                parentKey: collectionsTreeKey,
+                level: props.treeLevel + 2,
+                selected: selected && selectedTableKey === tableKey(table),
+              },
+              () => renderTable(table),
+            ));
           }
         }
       }
@@ -823,14 +861,22 @@ export default function CatalogTree(props: Props) {
         const schemaKey = schemaStateKey(schema);
         const schemaOpen =
           Boolean(normalizedFilter) || !collapsedSchemas.has(schemaKey);
+        const schemaTreeKey = treeKey(`schema:${schemaKey}`);
         rows.push(row(
           `${connection.database}:schema:${schemaKey}`,
           0,
+          {
+            key: schemaTreeKey,
+            parentKey: databaseTreeKey,
+            level: props.treeLevel + 1,
+            expanded: schemaOpen,
+          },
           () => (
             <div data-schema-key={schemaKey}>
               <TreeSectionButton
                 expanded={schemaOpen}
                 icon="folder"
+                treeItemContent
                 onToggle={() => toggleSchema(schemaKey)}
               >
                 {schema || t("connections.defaultSchema")}
@@ -845,13 +891,23 @@ export default function CatalogTree(props: Props) {
           Boolean(normalizedFilter) ||
           !collapsedSections.has(`${connection.id}:${tableSectionKey}`);
         if (contents.tables.length > 0) {
+          const tablesTreeKey = treeKey(
+            `schema:${schemaKey}:section:table`,
+          );
           rows.push(row(
             `${connection.database}:schema:${schemaKey}:section:table`,
             1,
+            {
+              key: tablesTreeKey,
+              parentKey: schemaTreeKey,
+              level: props.treeLevel + 2,
+              expanded: tablesOpen,
+            },
             () => (
               <TreeSectionButton
                 expanded={tablesOpen}
                 icon="table"
+                treeItemContent
                 onToggle={() =>
                   props.onToggleRelationSection(tableSectionKey)
                 }
@@ -862,7 +918,20 @@ export default function CatalogTree(props: Props) {
           ));
           if (tablesOpen) {
             for (const table of contents.tables) {
-              rows.push(row(tableRowKey(table), 1, () => renderTable(table)));
+              rows.push(row(
+                tableRowKey(table),
+                1,
+                {
+                  key: tableTreeKey(table),
+                  parentKey: tablesTreeKey,
+                  level: props.treeLevel + 3,
+                  expanded: isDocumentEngine(connection.engine)
+                    ? undefined
+                    : expandedTables.has(tableKey(table)),
+                  selected: selected && selectedTableKey === tableKey(table),
+                },
+                () => renderTable(table),
+              ));
             }
           }
         }
@@ -872,13 +941,23 @@ export default function CatalogTree(props: Props) {
           Boolean(normalizedFilter) ||
           !collapsedSections.has(`${connection.id}:${viewSectionKey}`);
         if (contents.views.length > 0) {
+          const viewsTreeKey = treeKey(
+            `schema:${schemaKey}:section:view`,
+          );
           rows.push(row(
             `${connection.database}:schema:${schemaKey}:section:view`,
             1,
+            {
+              key: viewsTreeKey,
+              parentKey: schemaTreeKey,
+              level: props.treeLevel + 2,
+              expanded: viewsOpen,
+            },
             () => (
               <TreeSectionButton
                 expanded={viewsOpen}
                 icon="view"
+                treeItemContent
                 onToggle={() =>
                   props.onToggleRelationSection(viewSectionKey)
                 }
@@ -889,7 +968,18 @@ export default function CatalogTree(props: Props) {
           ));
           if (viewsOpen) {
             for (const view of contents.views) {
-              rows.push(row(tableRowKey(view), 1, () => renderTable(view)));
+              rows.push(row(
+                tableRowKey(view),
+                1,
+                {
+                  key: tableTreeKey(view),
+                  parentKey: viewsTreeKey,
+                  level: props.treeLevel + 3,
+                  expanded: expandedTables.has(tableKey(view)),
+                  selected: selected && selectedTableKey === tableKey(view),
+                },
+                () => renderTable(view),
+              ));
             }
           }
         }
@@ -905,13 +995,23 @@ export default function CatalogTree(props: Props) {
             objectSectionsOpen.has(
               `${connection.id}:${objectSectionKey}`,
             );
+          const objectSectionTreeKey = treeKey(
+            `schema:${schemaKey}:section:${section.kind}`,
+          );
           rows.push(row(
             `${connection.database}:schema:${schemaKey}:section:${section.kind}`,
             1,
+            {
+              key: objectSectionTreeKey,
+              parentKey: schemaTreeKey,
+              level: props.treeLevel + 2,
+              expanded,
+            },
             () => (
               <TreeSectionButton
                 expanded={expanded}
                 icon={section.icon}
+                treeItemContent
                 onToggle={() =>
                   props.onToggleObjectSection(objectSectionKey)
                 }
@@ -925,6 +1025,11 @@ export default function CatalogTree(props: Props) {
               rows.push(row(
                 objectRowKey(object, index),
                 1,
+                {
+                  key: objectTreeKey(object, index),
+                  parentKey: objectSectionTreeKey,
+                  level: props.treeLevel + 3,
+                },
                 () => renderObject(object, section.icon, index, true),
               ));
             });
@@ -937,6 +1042,7 @@ export default function CatalogTree(props: Props) {
       rows.push(row(
         `${connection.database}:section:missing`,
         0,
+        undefined,
         () => (
           <div className="tw:mt-1 tw:px-2 tw:py-1 tw:text-xs tw:font-semibold tw:tracking-[0.04em] tw:text-danger tw:uppercase">
             {t("connections.schemaDiffMissingSection", {
@@ -949,6 +1055,11 @@ export default function CatalogTree(props: Props) {
         rows.push(row(
           `${connection.database}:missing:${tableKey(table)}`,
           0,
+          {
+            key: treeKey(`missing:${tableKey(table)}`),
+            parentKey: databaseTreeKey,
+            level: props.treeLevel + 1,
+          },
           () => renderMissingTable(table),
         ));
       }
@@ -987,6 +1098,11 @@ export default function CatalogTree(props: Props) {
         <TreeSectionButton
           expanded={databaseVisible}
           icon="database"
+          treeItem={{
+            key: databaseTreeKey,
+            parentKey: props.treeParentKey,
+            level: props.treeLevel,
+          }}
           onToggle={toggleDatabase}
         >
           {databaseDisplayName()}
@@ -1010,6 +1126,13 @@ export default function CatalogTree(props: Props) {
                     type="button"
                     className="tw:mt-1 tw:w-fit tw:cursor-pointer tw:rounded-xs tw:border tw:border-border-subtle tw:bg-card tw:px-2 tw:py-1 tw:font-sans tw:text-xs tw:text-foreground tw:hover:border-ring"
                     onClick={props.onResolveAccess}
+                    role="treeitem"
+                    aria-level={props.treeLevel + 1}
+                    data-explorer-tree-item
+                    data-explorer-tree-key={`${databaseTreeKey}:resolve-access`}
+                    data-explorer-tree-parent-key={databaseTreeKey}
+                    data-tree-primary-action
+                    tabIndex={-1}
                   >
                     {t("workspace.bindCredentialsShort")}
                   </button>
@@ -1025,6 +1148,13 @@ export default function CatalogTree(props: Props) {
                   type="button"
                   className="tw:shrink-0 tw:cursor-pointer tw:rounded-xs tw:border tw:border-border-subtle tw:bg-card tw:px-1.5 tw:py-px tw:font-sans tw:text-2xs tw:text-foreground tw:hover:border-ring"
                   onClick={props.onRetryOverview}
+                  role="treeitem"
+                  aria-level={props.treeLevel + 1}
+                  data-explorer-tree-item
+                  data-explorer-tree-key={`${databaseTreeKey}:retry-overview`}
+                  data-explorer-tree-parent-key={databaseTreeKey}
+                  data-tree-primary-action
+                  tabIndex={-1}
                 >
                   {t("common.refresh")}
                 </button>
@@ -1039,6 +1169,13 @@ export default function CatalogTree(props: Props) {
                   type="button"
                   className="tw:shrink-0 tw:cursor-pointer tw:rounded-xs tw:border tw:border-border-subtle tw:bg-card tw:px-1.5 tw:py-px tw:font-sans tw:text-2xs tw:text-foreground tw:hover:border-ring"
                   onClick={props.onRequestDetails}
+                  role="treeitem"
+                  aria-level={props.treeLevel + 1}
+                  data-explorer-tree-item
+                  data-explorer-tree-key={`${databaseTreeKey}:retry-details`}
+                  data-explorer-tree-parent-key={databaseTreeKey}
+                  data-tree-primary-action
+                  tabIndex={-1}
                 >
                   {t("common.refresh")}
                 </button>

@@ -91,6 +91,7 @@ import {
   TreeSearch,
   TreeSectionButton,
 } from "../../design-system/components/TreeControls";
+import { useTreeKeyboardNavigation } from "../../design-system/treeKeyboard";
 import WorkspaceConnectionDialog from "../../features/workspaces/components/WorkspaceConnectionDialog";
 import { deleteWorkspaceConnection } from "../../features/workspaces/tauriAdapter";
 import { useToast } from "../../components/Toast";
@@ -119,11 +120,13 @@ function TreeLoadFailure({
   message,
   detail,
   retryLabel,
+  treeItem,
   onRetry,
 }: {
   message: string;
   detail: string;
   retryLabel: string;
+  treeItem: { key: string; parentKey: string; level: number };
   onRetry: () => void;
 }) {
   return (
@@ -132,6 +135,13 @@ function TreeLoadFailure({
       className="tw:flex tw:min-h-control-sm tw:w-full tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-1.5 tw:border-0 tw:bg-transparent tw:px-2 tw:py-1 tw:text-left tw:font-sans tw:text-xs tw:text-danger tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
       onClick={onRetry}
       title={`${message}: ${detail}`}
+      role="treeitem"
+      aria-level={treeItem.level}
+      data-explorer-tree-item
+      data-explorer-tree-key={treeItem.key}
+      data-explorer-tree-parent-key={treeItem.parentKey}
+      data-tree-primary-action
+      tabIndex={-1}
     >
       <Icon name="alert" className="tw:shrink-0" />
       <span className="tw:min-w-0 tw:flex-1 tw:truncate">{message}</span>
@@ -279,6 +289,8 @@ export function DatabaseExplorer({
   } | null>(null);
   const [treeScrollElement, setTreeScrollElement] =
     useState<HTMLDivElement | null>(null);
+  const treeRootRef = useRef<HTMLDivElement>(null);
+  const treeKeyboard = useTreeKeyboardNavigation(treeRootRef);
   const [savingScopeId, setSavingScopeId] = useState<string | null>(null);
   const [localRevealRequest, setLocalRevealRequest] = useState(0);
   const [providerCredentialsOpen, setProviderCredentialsOpen] =
@@ -605,6 +617,12 @@ export function DatabaseExplorer({
     setSearchOpen(true);
   }
 
+  function closeExplorerSearch() {
+    setGlobalFilter("");
+    setSearchOpen(false);
+    treeKeyboard.restoreFocus();
+  }
+
   const openSelectedConnection = useEffectEvent((id: string) => {
     commands.openConnection(id);
     ensureGroupLoaded(id);
@@ -769,7 +787,12 @@ export function DatabaseExplorer({
     commands.toggleCollapsedSection(key);
   }
 
-  function renderConnection(connection: ConnectionProfile, nested = false) {
+  function renderConnection(
+    connection: ConnectionProfile,
+    nested = false,
+    treeParentKey: string | null = null,
+    treeLevel = 1,
+  ) {
     return (
       <ConnectionNode
         key={connection.id}
@@ -777,7 +800,7 @@ export function DatabaseExplorer({
         nested={nested}
         selected={connection.id === selectedId}
         selectedTableKey={selectedTableKey}
-        expanded={open.has(connection.id)}
+        expanded={open.has(connection.id) || globalFilter.trim().length > 0}
         draggingId={draggingId}
         dropTarget={dropTarget}
         suppressClickRef={suppressClickRef}
@@ -850,6 +873,8 @@ export function DatabaseExplorer({
         revealRequest={externalRevealRequest + localRevealRequest}
         revealDatabase={revealDatabase}
         revealNamespace={revealNamespace}
+        treeParentKey={treeParentKey}
+        treeLevel={treeLevel}
       />
     );
   }
@@ -879,6 +904,7 @@ export function DatabaseExplorer({
       { added: 0, missing: 0, changed: 0 },
     );
     const groupTotal = groupCounts.added + groupCounts.missing + groupCounts.changed;
+    const groupTreeKey = `schema-group:${group.key}`;
     return (
       <div
         key={`group-${group.key}`}
@@ -890,6 +916,12 @@ export function DatabaseExplorer({
           data-active={activeSchemaGroupKey === group.key}
           className="tw:flex tw:min-h-control-sm tw:items-center tw:gap-1 tw:px-1 tw:text-xs tw:text-muted-foreground tw:data-[active=true]:text-primary"
           title={t("connections.schemaGroupTitle", { group: group.label })}
+          role="treeitem"
+          aria-level={1}
+          aria-selected={activeSchemaGroupKey === group.key}
+          data-explorer-tree-item
+          data-explorer-tree-key={groupTreeKey}
+          tabIndex={-1}
         >
           {engine && <EngineMark engine={engine} size="tree" />}
           <span className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:font-bold tw:text-foreground">
@@ -900,6 +932,8 @@ export function DatabaseExplorer({
             className="tw:inline-flex tw:min-h-control-xs tw:min-w-0 tw:cursor-pointer tw:items-center tw:justify-center tw:gap-[2px] tw:rounded-full tw:border tw:border-border-subtle tw:bg-card tw:px-1.5 tw:font-sans tw:text-2xs tw:font-bold tw:whitespace-nowrap tw:text-muted-foreground tw:hover:border-ring tw:hover:text-primary"
             title={t("schemaDiff.openTitle")}
             aria-label={t("schemaDiff.openTitle")}
+            data-tree-primary-action
+            tabIndex={-1}
             onClick={() => {
               for (const connection of group.connections) ensureLoaded(connection.id);
               onOpenSchemaDiff(group);
@@ -932,7 +966,9 @@ export function DatabaseExplorer({
             )}
           </button>
         </div>
-        {group.connections.map((conn) => renderConnection(conn, true))}
+        {group.connections.map((conn) =>
+          renderConnection(conn, true, groupTreeKey, 2)
+        )}
       </div>
     );
   }
@@ -949,7 +985,10 @@ export function DatabaseExplorer({
     });
   }
 
-  function renderUnavailableBinding(binding: EnvironmentConnection) {
+  function renderUnavailableBinding(
+    binding: EnvironmentConnection,
+    treeParentKey: string,
+  ) {
     return (
       <button
         key={binding.id}
@@ -962,6 +1001,13 @@ export function DatabaseExplorer({
           )
         }
         title={t("connections.environmentDatabaseUnavailable")}
+        role="treeitem"
+        aria-level={4}
+        data-explorer-tree-item
+        data-explorer-tree-key={`binding:${binding.id}`}
+        data-explorer-tree-parent-key={treeParentKey}
+        data-tree-primary-action
+        tabIndex={-1}
       >
         <StatusDot tone="warning" />
         <Icon name="database" className="tw:shrink-0" />
@@ -995,12 +1041,21 @@ export function DatabaseExplorer({
     const activeAnalysisIsVisible = environmentAnalyses.some(
       (article) => article.id === activeProjectEnvironmentResourceId,
     );
+    const environmentTreeKey = `environment:${environment.id}`;
+    const databaseTreeKey = `${environmentTreeKey}:resource:databases`;
+    const sourceTreeKey = `${environmentTreeKey}:resource:sources`;
+    const analysisTreeKey = `${environmentTreeKey}:resource:analyses`;
 
     return (
       <div className="tw:grid tw:pl-3">
         <TreeSectionButton
           expanded={databaseExpanded}
           icon="database"
+          treeItem={{
+            key: databaseTreeKey,
+            parentKey: environmentTreeKey,
+            level: 3,
+          }}
           selected={
             activeProjectEnvironmentId === environment.id &&
             activeProjectEnvironmentView === "databases"
@@ -1013,6 +1068,7 @@ export function DatabaseExplorer({
                 variant="ghost"
                 title={t("connections.environmentAddDatabase")}
                 aria-label={t("connections.environmentAddDatabase")}
+                tabIndex={-1}
                 onClick={() => {
                   onOpenProjectEnvironment(environment.id, "databases");
                   onNewConnection();
@@ -1036,6 +1092,11 @@ export function DatabaseExplorer({
                 message={t("connections.environmentDatabaseLoadFailed")}
                 detail={errMessage(bindingQuery.error)}
                 retryLabel={t("app.retry")}
+                treeItem={{
+                  key: `${databaseTreeKey}:retry`,
+                  parentKey: databaseTreeKey,
+                  level: 4,
+                }}
                 onRetry={() => void bindingQuery.refetch()}
               />
             ) : null}
@@ -1051,8 +1112,8 @@ export function DatabaseExplorer({
                     )
                   : null;
                 return connection
-                  ? renderConnection(connection, true)
-                  : renderUnavailableBinding(binding);
+                  ? renderConnection(connection, true, databaseTreeKey, 4)
+                  : renderUnavailableBinding(binding, databaseTreeKey);
               })
             ) : (
               <button
@@ -1061,6 +1122,13 @@ export function DatabaseExplorer({
                 onClick={() =>
                   onOpenProjectEnvironment(environment.id, "databases")
                 }
+                role="treeitem"
+                aria-level={4}
+                data-explorer-tree-item
+                data-explorer-tree-key={`${databaseTreeKey}:add`}
+                data-explorer-tree-parent-key={databaseTreeKey}
+                data-tree-primary-action
+                tabIndex={-1}
               >
                 {t("connections.environmentAddDatabase")}
               </button>
@@ -1071,6 +1139,11 @@ export function DatabaseExplorer({
         <TreeSectionButton
           expanded={sourceExpanded}
           icon="branch"
+          treeItem={{
+            key: sourceTreeKey,
+            parentKey: environmentTreeKey,
+            level: 3,
+          }}
           selected={
             activeProjectEnvironmentId === environment.id &&
             activeProjectEnvironmentView === "sources"
@@ -1083,6 +1156,7 @@ export function DatabaseExplorer({
                 variant="ghost"
                 title={t("connections.environmentAddSource")}
                 aria-label={t("connections.environmentAddSource")}
+                tabIndex={-1}
                 onClick={() =>
                   onOpenProjectEnvironment(environment.id, "sources")
                 }
@@ -1105,6 +1179,11 @@ export function DatabaseExplorer({
                 message={t("connections.environmentSourceLoadFailed")}
                 detail={errMessage(knowledgeSources.error)}
                 retryLabel={t("app.retry")}
+                treeItem={{
+                  key: `${sourceTreeKey}:retry`,
+                  parentKey: sourceTreeKey,
+                  level: 4,
+                }}
                 onRetry={() => void knowledgeSources.refetch()}
               />
             ) : null}
@@ -1125,6 +1204,13 @@ export function DatabaseExplorer({
                     dirty: t("knowledge.revisionDirty"),
                     snapshot: t("knowledge.revisionSnapshot"),
                   })}`}
+                  role="treeitem"
+                  aria-level={4}
+                  data-explorer-tree-item
+                  data-explorer-tree-key={`source:${source.sourceId}`}
+                  data-explorer-tree-parent-key={sourceTreeKey}
+                  data-tree-primary-action
+                  tabIndex={-1}
                 >
                   <StatusDot tone={knowledgeSourceTone(source)} />
                   <Icon
@@ -1143,6 +1229,13 @@ export function DatabaseExplorer({
                 onClick={() =>
                   onOpenProjectEnvironment(environment.id, "sources")
                 }
+                role="treeitem"
+                aria-level={4}
+                data-explorer-tree-item
+                data-explorer-tree-key={`${sourceTreeKey}:add`}
+                data-explorer-tree-parent-key={sourceTreeKey}
+                data-tree-primary-action
+                tabIndex={-1}
               >
                 {t("connections.environmentAddSource")}
               </button>
@@ -1153,6 +1246,11 @@ export function DatabaseExplorer({
         <TreeSectionButton
           expanded={analysisExpanded}
           icon="chart"
+          treeItem={{
+            key: analysisTreeKey,
+            parentKey: environmentTreeKey,
+            level: 3,
+          }}
           selected={
             activeProjectEnvironmentId === environment.id &&
             activeProjectEnvironmentView === "analyses" &&
@@ -1177,6 +1275,13 @@ export function DatabaseExplorer({
                 className="tw:flex tw:min-h-control-sm tw:w-full tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-1.5 tw:border-0 tw:bg-transparent tw:px-2 tw:py-1 tw:text-left tw:font-sans tw:text-xs tw:text-danger tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
                 onClick={() => void analysisQuery.refetch()}
                 title={errMessage(analysisQuery.error)}
+                role="treeitem"
+                aria-level={4}
+                data-explorer-tree-item
+                data-explorer-tree-key={`${analysisTreeKey}:retry`}
+                data-explorer-tree-parent-key={analysisTreeKey}
+                data-tree-primary-action
+                tabIndex={-1}
               >
                 <Icon name="alert" className="tw:shrink-0" />
                 <span className="tw:min-w-0 tw:flex-1 tw:truncate">
@@ -1201,6 +1306,16 @@ export function DatabaseExplorer({
                     )
                   }
                   title={article.definition.question}
+                  role="treeitem"
+                  aria-level={4}
+                  aria-selected={
+                    activeProjectEnvironmentResourceId === article.id
+                  }
+                  data-explorer-tree-item
+                  data-explorer-tree-key={`analysis:${article.id}`}
+                  data-explorer-tree-parent-key={analysisTreeKey}
+                  data-tree-primary-action
+                  tabIndex={-1}
                 >
                   <StatusDot tone={environmentAnalysisTone(article)} />
                   <Icon name="chart" className="tw:shrink-0" />
@@ -1216,6 +1331,13 @@ export function DatabaseExplorer({
                 onClick={() =>
                   onOpenProjectEnvironment(environment.id, "analyses")
                 }
+                role="treeitem"
+                aria-level={4}
+                data-explorer-tree-item
+                data-explorer-tree-key={`${analysisTreeKey}:empty`}
+                data-explorer-tree-parent-key={analysisTreeKey}
+                data-tree-primary-action
+                tabIndex={-1}
               >
                 {t("connections.environmentNoAnalyses")}
               </button>
@@ -1231,12 +1353,18 @@ export function DatabaseExplorer({
     const activeEnvironmentBelongsToProject = project.environments.some(
       (environment) => environment.id === activeProjectEnvironmentId,
     );
+    const projectTreeKey = `project:${project.id}`;
     return (
       <div key={project.id} className="tw:grid">
         <TreeSectionButton
           expanded={projectExpanded}
           icon="folder"
           prominence="project"
+          treeItem={{
+            key: projectTreeKey,
+            parentKey: null,
+            level: 1,
+          }}
           selected={activeEnvironmentBelongsToProject && !projectExpanded}
           actions={
             <TreeRowActions>
@@ -1246,6 +1374,7 @@ export function DatabaseExplorer({
                 variant="ghost"
                 title={t("connections.addEnvironment")}
                 aria-label={t("connections.addEnvironment")}
+                tabIndex={-1}
                 onClick={() => setEnvironmentSetupProjectId(project.id)}
               >
                 <Icon name="plus" />
@@ -1262,11 +1391,17 @@ export function DatabaseExplorer({
               const environmentExpanded = expandedEnvironmentIds.has(
                 environment.id,
               );
+              const environmentTreeKey = `environment:${environment.id}`;
               return (
                 <div key={environment.id} className="tw:grid">
                   <TreeSectionButton
                     expanded={environmentExpanded}
                     icon="folder"
+                    treeItem={{
+                      key: environmentTreeKey,
+                      parentKey: projectTreeKey,
+                      level: 2,
+                    }}
                     selected={
                       activeProjectEnvironmentId === environment.id &&
                       !environmentExpanded
@@ -1502,7 +1637,7 @@ export function DatabaseExplorer({
                   setGlobalFilter("");
                   return;
                 }
-                setSearchOpen(false);
+                closeExplorerSearch();
               }}
               onKeyDown={(event) => {
                 if (event.key === "ArrowDown") {
@@ -1572,8 +1707,6 @@ export function DatabaseExplorer({
             </p>
           </div>
         ) : null}
-        {knowledgeProjects.data?.map(renderProject)}
-
         {connections.length === 0 ? (
           <div className="tw:grid tw:gap-5 tw:p-3">
             <ToolWindowSection title={t("connections.createDataSource")}>
@@ -1634,36 +1767,55 @@ export function DatabaseExplorer({
             </ToolWindowSection>
           </div>
         ) : null}
-        {knowledgeEnabled &&
-        (knowledgeProjects.data?.length ?? 0) > 0 &&
-        unassignedSections.length > 0 ? (
-          <div className="tw:grid tw:pt-1">
-            <TreeSectionButton
-              expanded={expandedResourceKeys.has("unassigned")}
-              icon="folder"
-              onToggle={() =>
-                toggleExpandedId(setExpandedResourceKeys, "unassigned")
-              }
-            >
-              {t("connections.unassigned")}
-            </TreeSectionButton>
-            {expandedResourceKeys.has("unassigned") ? (
-              <div className="tw:grid tw:border-l tw:border-border-subtle tw:pl-1">
-                {unassignedSections.map((section) =>
-                  section.kind === "group"
-                    ? renderGroup(section.group)
-                    : renderConnection(section.connection, true),
-                )}
-              </div>
-            ) : null}
-          </div>
-        ) : !knowledgeEnabled ? (
-          unassignedSections.map((section) =>
-            section.kind === "group"
-              ? renderGroup(section.group)
-              : renderConnection(section.connection),
-          )
-        ) : null}
+        <div
+          ref={treeRootRef}
+          role="tree"
+          aria-label={t("connections.databaseExplorer")}
+          onFocusCapture={treeKeyboard.onFocusCapture}
+          onKeyDown={treeKeyboard.onKeyDown}
+        >
+          {knowledgeProjects.data?.map(renderProject)}
+          {knowledgeEnabled &&
+          (knowledgeProjects.data?.length ?? 0) > 0 &&
+          unassignedSections.length > 0 ? (
+            <div className="tw:grid tw:pt-1">
+              <TreeSectionButton
+                expanded={expandedResourceKeys.has("unassigned")}
+                icon="folder"
+                treeItem={{
+                  key: "resource:unassigned",
+                  parentKey: null,
+                  level: 1,
+                }}
+                onToggle={() =>
+                  toggleExpandedId(setExpandedResourceKeys, "unassigned")
+                }
+              >
+                {t("connections.unassigned")}
+              </TreeSectionButton>
+              {expandedResourceKeys.has("unassigned") ? (
+                <div className="tw:grid tw:border-l tw:border-border-subtle tw:pl-1">
+                  {unassignedSections.map((section) =>
+                    section.kind === "group"
+                      ? renderGroup(section.group)
+                      : renderConnection(
+                          section.connection,
+                          true,
+                          "resource:unassigned",
+                          2,
+                        ),
+                  )}
+                </div>
+              ) : null}
+            </div>
+          ) : !knowledgeEnabled ? (
+            unassignedSections.map((section) =>
+              section.kind === "group"
+                ? renderGroup(section.group)
+                : renderConnection(section.connection),
+            )
+          ) : null}
+        </div>
       </div>
 
       {workspaceAccount ? (
