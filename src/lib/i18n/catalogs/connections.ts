@@ -163,6 +163,24 @@ export const connectionsCatalog = defineCatalog(
     "connections.problemPortInvalid":
       "Enter a port from 1 through 65535.",
     "connections.problemRuntime": "Connection check failed",
+    "connections.testFailure.timeoutNetworkTitle": "Could not reach the database",
+    "connections.testFailure.timeoutNetworkRecovery":
+      "Check the host, port, network access, and SSH Host alias, then test again.",
+    "connections.testFailure.authenticationTitle": "Authentication failed",
+    "connections.testFailure.authenticationRecovery":
+      "Check the user and password stored on this device, then test again.",
+    "connections.testFailure.tlsTitle": "TLS verification failed",
+    "connections.testFailure.tlsRecovery":
+      "Check the TLS mode and certificate paths in SSH/SSL, then test again.",
+    "connections.testFailure.databaseConfigTitle": "Database configuration was rejected",
+    "connections.testFailure.databaseConfigRecovery":
+      "Check the database name and connection options, then test again.",
+    "connections.testFailure.unknownTitle": "Connection check failed",
+    "connections.testFailure.unknownRecovery":
+      "Review the technical details, correct the connection settings, and test again.",
+    "connections.testFailure.technicalDetails": "Technical details",
+    "connections.testFailure.transportDetail":
+      "The Desktop connection-test transport failed before returning a typed receipt.",
     "connections.problems": "Problems",
     "connections.problemsEmpty":
       "No configuration problems were found.",
@@ -474,6 +492,24 @@ export const connectionsCatalog = defineCatalog(
     "connections.problemPortInvalid":
       "1부터 65535 사이의 포트를 입력하세요.",
     "connections.problemRuntime": "연결 검사 실패",
+    "connections.testFailure.timeoutNetworkTitle": "데이터베이스에 연결할 수 없습니다",
+    "connections.testFailure.timeoutNetworkRecovery":
+      "호스트, 포트, 네트워크 접근과 SSH Host 별칭을 확인한 뒤 다시 테스트하세요.",
+    "connections.testFailure.authenticationTitle": "인증에 실패했습니다",
+    "connections.testFailure.authenticationRecovery":
+      "이 기기에 저장된 사용자와 비밀번호를 확인한 뒤 다시 테스트하세요.",
+    "connections.testFailure.tlsTitle": "TLS 검증에 실패했습니다",
+    "connections.testFailure.tlsRecovery":
+      "SSH/SSL에서 TLS 모드와 인증서 경로를 확인한 뒤 다시 테스트하세요.",
+    "connections.testFailure.databaseConfigTitle": "데이터베이스 설정이 거부되었습니다",
+    "connections.testFailure.databaseConfigRecovery":
+      "데이터베이스 이름과 연결 옵션을 확인한 뒤 다시 테스트하세요.",
+    "connections.testFailure.unknownTitle": "연결 검사에 실패했습니다",
+    "connections.testFailure.unknownRecovery":
+      "기술 상세를 확인하고 연결 설정을 수정한 뒤 다시 테스트하세요.",
+    "connections.testFailure.technicalDetails": "기술 상세",
+    "connections.testFailure.transportDetail":
+      "Desktop 연결 테스트 전송이 구조화된 결과를 반환하기 전에 실패했습니다.",
     "connections.problems": "문제",
     "connections.problemsEmpty": "구성 문제를 찾지 못했습니다.",
     "connections.problemSqliteFileRequired":

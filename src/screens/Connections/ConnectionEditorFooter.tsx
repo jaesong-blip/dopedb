@@ -25,7 +25,7 @@ export function ConnectionEditorFooter({
       {view === "dataSources" ? (
         canEditConnection ? (
           <>
-            <Button disabled={commands.busy} size="compact" onClick={onCancel}>
+            <Button size="compact" onClick={onCancel}>
               {t("common.cancel")}
             </Button>
             <Button

@@ -31,6 +31,7 @@ export function ConnectionSecurityTab({
         ) : flags.isMongo ? (
           <>
             <CheckboxField
+              id="connection-tls-control"
               label={t("connections.enableTls")}
               checked={flags.mongoTlsEnabled}
               onChange={(event) =>
@@ -96,6 +97,7 @@ export function ConnectionSecurityTab({
           <>
             <Field label={t("connections.sslMode")}>
               <SelectInput
+                id="connection-tls-control"
                 value={form.sslmode}
                 onChange={(event) => set("sslmode", event.target.value)}
               >

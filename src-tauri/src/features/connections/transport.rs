@@ -107,8 +107,13 @@ pub async fn delete_connection(
 }
 
 #[tauri::command]
-pub async fn test_connection(state: State<'_, AppState>, id: ConnectionId) -> AppResult<()> {
-    state.services.connections.test(id).await
+pub async fn test_connection(
+    state: State<'_, AppState>,
+    id: ConnectionId,
+) -> AppResult<super::ConnectionTestReceipt> {
+    Ok(super::ConnectionTestReceipt::from_result(
+        state.services.connections.test(id).await,
+    ))
 }
 
 #[tauri::command]
@@ -116,15 +121,17 @@ pub async fn test_connection_profile(
     state: State<'_, AppState>,
     profile: ConnectionProfile,
     password: Option<String>,
-) -> AppResult<()> {
-    state
-        .services
-        .connections
-        .test_profile(ConnectionProfileTestRequest {
-            profile,
-            password: password.map(Zeroizing::new),
-        })
-        .await
+) -> AppResult<super::ConnectionTestReceipt> {
+    Ok(super::ConnectionTestReceipt::from_result(
+        state
+            .services
+            .connections
+            .test_profile(ConnectionProfileTestRequest {
+                profile,
+                password: password.map(Zeroizing::new),
+            })
+            .await,
+    ))
 }
 
 #[tauri::command]

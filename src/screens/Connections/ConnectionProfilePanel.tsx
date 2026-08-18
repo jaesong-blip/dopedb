@@ -72,6 +72,27 @@ export function ConnectionProfilePanel({
       ) : null}
 
       <div className="tw:min-h-0 tw:flex-1 tw:overflow-y-auto tw:p-5">
+        {!problems.open && commands.testFailure ? (
+          <section
+            className="tw:mx-auto tw:mb-4 tw:grid tw:w-full tw:max-w-[840px] tw:gap-1.5 tw:rounded-sm tw:border tw:border-danger/40 tw:bg-danger-muted tw:p-3"
+            role="alert"
+          >
+            <strong className="tw:text-sm tw:font-semibold tw:text-danger">
+              {commands.testFailureTitle(commands.testFailure.code)}
+            </strong>
+            <p className="tw:m-0 tw:text-sm tw:leading-body tw:text-foreground">
+              {commands.testFailureRecovery(commands.testFailure.code)}
+            </p>
+            <details className="tw:min-w-0 tw:text-xs">
+              <summary className="tw:cursor-pointer tw:text-muted-foreground">
+                {t("connections.testFailure.technicalDetails")}
+              </summary>
+              <pre className="tw:mt-2 tw:mb-0 tw:max-h-40 tw:overflow-auto tw:whitespace-pre-wrap tw:[overflow-wrap:anywhere] tw:font-mono tw:text-xs tw:text-foreground">
+                {commands.testFailure.detail}
+              </pre>
+            </details>
+          </section>
+        ) : null}
         {problems.open ? (
           <DiagnosticSummary
             title={t("connections.problems")}

@@ -15,6 +15,7 @@ use crate::monitoring::HealthSnapshot;
 
 #[test]
 fn query_and_skill_security_contracts_stay_fail_closed() {
+    crate::features::connections::assert_connection_test_failure_contract();
     let production = ConnectionProfile {
         id: Uuid::new_v4(),
         name: "query-feature-test".into(),

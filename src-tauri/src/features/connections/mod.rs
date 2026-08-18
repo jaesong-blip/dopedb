@@ -20,9 +20,11 @@ use adapters::{
 pub(crate) use application::{
     ConnectionProfileTestRequest, ConnectionUpsertRequest, ConnectionUseCases,
 };
+#[cfg(test)]
+pub(crate) use domain::assert_connection_test_failure_contract;
 pub(crate) use domain::{
-    AgentConnectionSummary, CliConnectionResolutionError, DriverCapability, DriverDescriptor,
-    DriverInstallMode, DriverInstallState, MAX_CONNECTION_CREDENTIAL_BYTES,
+    AgentConnectionSummary, CliConnectionResolutionError, ConnectionTestReceipt, DriverCapability,
+    DriverDescriptor, DriverInstallMode, DriverInstallState, MAX_CONNECTION_CREDENTIAL_BYTES,
 };
 pub(crate) use ports::ConnectionCredentialVault;
 

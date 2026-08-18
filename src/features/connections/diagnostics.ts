@@ -66,6 +66,7 @@ export function diagnoseConnection(
   drivers: readonly DriverDescriptor[],
   driverCatalogFailed: boolean,
   driverCatalogPending: boolean,
+  portDraft = String(profile.port),
 ): ConnectionDiagnostic[] {
   const diagnostics: ConnectionDiagnostic[] = [];
   const name = profile.name.trim();
@@ -116,9 +117,10 @@ export function diagnoseConnection(
       profile.extraParams.srv === "true";
     if (
       !mongoSrv &&
-      (!Number.isInteger(profile.port) ||
-        profile.port < 1 ||
-        profile.port > 65_535)
+      (!/^\d+$/u.test(portDraft) ||
+        !Number.isSafeInteger(Number(portDraft)) ||
+        Number(portDraft) < 1 ||
+        Number(portDraft) > 65_535)
     ) {
       diagnostics.push(
         issue("portInvalid", "danger", "connection-port"),

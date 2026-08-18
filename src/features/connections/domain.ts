@@ -70,6 +70,28 @@ export interface ConnectionProfile {
   providerTarget: ConnectionProviderTarget | null;
 }
 
+export type ConnectionTestFailureCode =
+  | "timeoutNetwork"
+  | "authentication"
+  | "tls"
+  | "databaseConfig"
+  | "unknown";
+
+export type ConnectionTestFailureField =
+  | "credentials"
+  | "tls"
+  | "database";
+
+export interface ConnectionTestFailure {
+  code: ConnectionTestFailureCode;
+  field: ConnectionTestFailureField | null;
+  detail: string;
+}
+
+export type ConnectionTestReceipt =
+  | { ok: true; failure: null }
+  | { ok: false; failure: ConnectionTestFailure };
+
 export type ConnectionAccessIssue = "grant" | "credentials";
 
 /** One authority-neutral projection shared by Explorer loading and recovery UI. */

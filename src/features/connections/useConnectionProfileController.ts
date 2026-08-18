@@ -1,6 +1,6 @@
 // Owns Connection profile validation and save/test/delete lifecycle commands;
 // editable draft mechanics stay in the profile state model.
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { DiagnosticItem } from "../../design-system/components/Diagnostics";
 import type { FieldValidation } from "../../design-system/components/FormControls";
@@ -9,12 +9,6 @@ import { errMessage } from "../../ipc/types";
 import { useI18n } from "../../lib/i18n";
 import { useCatalogScope } from "../../lib/queries";
 import { useToast } from "../../components/Toast";
-import { captureProductEvent } from "../productAnalytics/client";
-import {
-  productAnalyticsConnectionEngine,
-  productAnalyticsCredentialMode,
-  productAnalyticsWorkspaceContext,
-} from "../productAnalytics/outcomes";
 import {
   deleteWorkspaceConnection,
   updateWorkspaceConnection,
@@ -22,6 +16,11 @@ import {
 import {
   type ConnectionTab,
 } from "./connectionEditorModel";
+import {
+  connectionTestFailureRecovery,
+  connectionTestFailureTarget,
+  connectionTestFailureTitle,
+} from "./connectionTestFailure";
 import { formatConnectionUrl, parseConnectionUrl } from "./connectionUrl";
 import {
   diagnoseConnection,
@@ -30,11 +29,12 @@ import {
 import {
   connectionId,
   type ConnectionProfile,
+  type ConnectionTestFailureCode,
 } from "./domain";
 import {
   CONNECTION_INPUT_MODE_PARAMETER,
-  CONNECTION_SSH_ALIAS_PARAMETER,
 } from "./options";
+import { connectionVerificationRecorder } from "./connectionVerificationAnalytics";
 import {
   deleteConnection,
   discoverConnectionProfileDatabases,
@@ -76,6 +76,13 @@ export function useConnectionProfileController({
     pending: boolean;
     databases: string[];
   }>({ pending: false, databases: [] });
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const driverCatalog = catalog.model.driverCatalog;
   const diagnosticProfile = isSharedTemplate
     ? { ...form.value, extraParams: {} }
@@ -86,6 +93,7 @@ export function useConnectionProfileController({
     driverCatalog.data ?? [],
     driverCatalog.isError,
     driverCatalog.isPending,
+    form.portDraft,
   );
   const parsedConnectionUrl =
     !isSharedTemplate && url.mode === "urlOnly"
@@ -114,6 +122,14 @@ export function useConnectionProfileController({
       tone: "danger",
       title: t("connections.problemRuntime"),
       description: status.message,
+    });
+  }
+  if (status.testFailure) {
+    problemItems.push({
+      id: "connection-test-failure",
+      tone: "danger",
+      title: connectionTestFailureTitle(t, status.testFailure.code),
+      description: connectionTestFailureRecovery(t, status.testFailure.code),
     });
   }
   const validation = {
@@ -200,6 +216,16 @@ export function useConnectionProfileController({
   }
 
   function openDiagnostic(diagnosticId: string) {
+    if (diagnosticId === "connection-test-failure") {
+      dialogs.problems.setOpen(false);
+      if (status.testFailure) {
+        const target = connectionTestFailureTarget(status.testFailure);
+        if (!target) return;
+        tabState.setActive(target.tab);
+        requestAnimationFrame(() => document.getElementById(target.fieldId)?.focus());
+      }
+      return;
+    }
     if (diagnosticId === "connection-url-invalid") {
       dialogs.problems.setOpen(false);
       tabState.setActive("general");
@@ -228,6 +254,7 @@ export function useConnectionProfileController({
     status.setBusy(true);
     status.setRunning(closeEditor ? "save" : "apply");
     status.setMessage(null);
+    status.setTestFailure(null);
     try {
       const saved = isSharedTemplate
         ? await updateWorkspaceConnection({
@@ -326,54 +353,45 @@ export function useConnectionProfileController({
       dialogs.problems.setOpen(true);
       return;
     }
-    const analyticsContext = productAnalyticsWorkspaceContext(catalogScope);
-    const analyticsDedupeId = crypto.randomUUID();
-    const analyticsEngine = productAnalyticsConnectionEngine(form.value.engine);
-    const analyticsCredentialMode =
-      form.value.engine === "sqlite"
-        ? "none"
-        : productAnalyticsCredentialMode(form.value.credentialMode);
-    const analyticsSsh =
-      form.value.engine !== "sqlite" &&
-      Boolean(
-        form.value.extraParams[CONNECTION_SSH_ALIAS_PARAMETER]?.trim(),
-      );
-    const recordVerification = (outcome: "success" | "failed") => {
-      if (!analyticsContext) return;
-      void captureProductEvent({
-        name: "connection_verification_completed",
-        dedupeId: analyticsDedupeId,
-        context: analyticsContext,
-        properties: {
-          outcome,
-          engine: analyticsEngine,
-          credentialMode: analyticsCredentialMode,
-          ssh: analyticsSsh,
-        },
-      });
-    };
+    const recordVerification = connectionVerificationRecorder(catalogScope, form.value);
     status.setBusy(true);
     status.setRunning("test");
     status.setMessage(null);
+    status.setTestFailure(null);
+    dialogs.problems.setOpen(false);
     try {
-      if (isSharedTemplate) {
-        await testConnection(form.value.id);
-      } else {
-        await testConnectionProfile(
+      const receipt = isSharedTemplate
+        ? await testConnection(form.value.id)
+        : await testConnectionProfile(
           form.value,
           credentials.password || undefined,
         );
+      if (!mounted.current) return;
+      if (!receipt.ok) {
+        status.setTestFailure(receipt.failure);
+        status.setMessageIsError(true);
+        dialogs.problems.setOpen(true);
+        recordVerification("failed");
+        return;
       }
       status.setMessage(`✓ ${t("connections.connectionOk")}`);
       status.setMessageIsError(false);
       recordVerification("success");
-    } catch (error) {
-      status.setMessage(errMessage(error));
+    } catch {
+      if (!mounted.current) return;
+      status.setTestFailure({
+        code: "unknown",
+        field: null,
+        detail: t("connections.testFailure.transportDetail"),
+      });
       status.setMessageIsError(true);
+      dialogs.problems.setOpen(true);
       recordVerification("failed");
     } finally {
-      status.setBusy(false);
-      status.setRunning(null);
+      if (mounted.current) {
+        status.setBusy(false);
+        status.setRunning(null);
+      }
     }
   }
 
@@ -401,6 +419,10 @@ export function useConnectionProfileController({
     view: {
       form: form.value,
       set: form.set,
+      port: {
+        draft: form.portDraft,
+        setDraft: form.setPortDraft,
+      },
       flags: form.flags,
       identity: {
         isNew: identity.isNew,
@@ -449,6 +471,9 @@ export function useConnectionProfileController({
       running: status.running,
       message: status.message,
       messageIsError: status.messageIsError,
+      testFailure: status.testFailure,
+      testFailureTitle: (code: ConnectionTestFailureCode) => connectionTestFailureTitle(t, code),
+      testFailureRecovery: (code: ConnectionTestFailureCode) => connectionTestFailureRecovery(t, code),
       save,
       test,
       duplicate: duplicateCurrentConnection,

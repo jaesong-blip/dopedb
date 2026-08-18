@@ -1,6 +1,6 @@
 // Owns the editable profile draft, URL projection, connection options, and
 // local command status shared by the Connection editor controllers.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useToast } from "../../components/Toast";
 import { isDocumentEngine } from "../../lib/capabilities";
@@ -16,6 +16,7 @@ import {
 } from "./connectionEditorModel";
 import { formatConnectionUrl, parseConnectionUrl } from "./connectionUrl";
 import type { ConnectionProfile } from "./domain";
+import type { ConnectionTestFailure } from "./domain";
 import {
   CONNECTION_INPUT_MODE_PARAMETER,
   isConnectionOptionParameter,
@@ -46,6 +47,7 @@ export function useConnectionProfileState({
   const [isNew, setIsNew] = useState(initial === null);
   const [persisted, setPersisted] = useState(initial !== null);
   const [password, setPassword] = useState("");
+  const [portDraft, setPortDraftState] = useState(() => String(form.port));
   const [connectionInputMode, setConnectionInputMode] =
     useState<ConnectionInputMode>(
       form.extraParams[CONNECTION_INPUT_MODE_PARAMETER] === "urlOnly"
@@ -62,6 +64,7 @@ export function useConnectionProfileState({
   >(null);
   const [message, setMessage] = useState<string | null>(null);
   const [messageIsError, setMessageIsError] = useState(false);
+  const [testFailure, setTestFailure] = useState<ConnectionTestFailure | null>(null);
   const flags = connectionProfileFlags(form);
   const advancedParameters = Object.entries(form.extraParams).filter(
     ([key]) =>
@@ -69,11 +72,24 @@ export function useConnectionProfileState({
       !CONTROLLED_CONNECTION_PARAMETERS.has(key),
   );
 
+  useEffect(() => {
+    setPortDraftState(String(form.port));
+  }, [form.port]);
+
   function set<K extends keyof ConnectionProfile>(
     key: K,
     value: ConnectionProfile[K],
   ) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function setPortDraft(value: string) {
+    setPortDraftState(value);
+    if (!/^\d+$/u.test(value)) return;
+    const port = Number(value);
+    if (Number.isSafeInteger(port) && port >= 1 && port <= 65_535) {
+      set("port", port);
+    }
   }
 
   function setExtraParameter(key: string, value: string) {
@@ -270,6 +286,8 @@ export function useConnectionProfileState({
       value: form,
       setValue: setForm,
       set,
+      portDraft,
+      setPortDraft,
       flags,
       advancedParameters,
       addAdvancedParameter,
@@ -305,6 +323,8 @@ export function useConnectionProfileState({
       setMessage,
       messageIsError,
       setMessageIsError,
+      testFailure,
+      setTestFailure,
     },
   };
 }

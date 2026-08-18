@@ -6,6 +6,7 @@ import { invoke } from "../../ipc/core";
 import type {
   ConnectionId,
   ConnectionProfile,
+  ConnectionTestReceipt,
   DriverDescriptor,
 } from "./domain";
 
@@ -43,14 +44,14 @@ export function deleteConnection(id: ConnectionId): Promise<void> {
   return invoke("delete_connection", { id });
 }
 
-export function testConnection(id: ConnectionId): Promise<void> {
+export function testConnection(id: ConnectionId): Promise<ConnectionTestReceipt> {
   return invoke("test_connection", { id });
 }
 
 export function testConnectionProfile(
   profile: ConnectionProfile,
   password?: string,
-): Promise<void> {
+): Promise<ConnectionTestReceipt> {
   return invoke("test_connection_profile", { profile, password });
 }
 

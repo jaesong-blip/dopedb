@@ -224,18 +224,14 @@ export function ConnectionGeneralTab({
                   id="connection-port"
                   density="compact"
                   type="number"
-                  value={form.port}
+                  value={profile.port.draft}
                   min={1}
                   max={65_535}
                   aria-invalid={
                     validation.port?.tone === "danger" || undefined
                   }
                   disabled={!canEditConnection || (isMongo && srv)}
-                  onChange={(event) => {
-                    if (event.target.value !== "") {
-                      set("port", Number(event.target.value));
-                    }
-                  }}
+                  onChange={(event) => profile.port.setDraft(event.target.value)}
                 />
                 {validation.port ? (
                   <FieldValidationMessage validation={validation.port} />
@@ -332,6 +328,7 @@ export function ConnectionGeneralTab({
             <>
               <PropertyRow label={t("connections.user")}>
                 <TextInput
+                  id="connection-username"
                   density="compact"
                   aria-label={t("connections.user")}
                   value={form.username}
@@ -341,6 +338,7 @@ export function ConnectionGeneralTab({
 
               <PropertyRow label={t("connections.password")}>
                 <TextInput
+                  id="connection-password"
                   density="compact"
                   type="password"
                   aria-label={t("connections.password")}
