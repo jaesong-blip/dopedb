@@ -560,6 +560,7 @@ pub(crate) trait HostedKnowledgeAuthorityPort: Clone + Send + Sync + 'static {
         environment_id: Uuid,
         binding_id: Uuid,
         connection_id: Uuid,
+        expected_connection_revision: i64,
         role: &str,
         alias: &str,
     ) -> impl Future<Output = AppResult<RemoteEnvironmentConnectionBinding>> + Send;

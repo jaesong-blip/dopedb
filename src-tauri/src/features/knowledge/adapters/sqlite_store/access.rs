@@ -451,6 +451,7 @@ impl Store {
                 "the Environment connection binding is invalid".into(),
             ));
         }
+        let mut transaction = self.pool().begin().await?;
         let environment: Option<(i64,)> = sqlx::query_as(
             "SELECT environment.revision
              FROM knowledge_project_environments environment
@@ -459,7 +460,7 @@ impl Store {
         )
         .bind(project_environment_id.to_string())
         .bind(connection.scope.workspace_id.to_string())
-        .fetch_optional(self.pool())
+        .fetch_optional(&mut *transaction)
         .await?;
         let Some((environment_revision,)) = environment else {
             return Err(AppError::NotFound(
@@ -468,14 +469,30 @@ impl Store {
         };
         let now = Utc::now();
         sqlx::query(
+            "UPDATE knowledge_environment_connections
+             SET revoked_at = ?1
+             WHERE workspace_id = ?2 AND project_environment_id = ?3
+               AND connection_id = ?4 AND id != ?5 AND revoked_at IS NULL",
+        )
+        .bind(now)
+        .bind(connection.scope.workspace_id.to_string())
+        .bind(project_environment_id.to_string())
+        .bind(connection.connection_id.to_string())
+        .bind(binding_id.to_string())
+        .execute(&mut *transaction)
+        .await?;
+        let changed = sqlx::query(
             "INSERT INTO knowledge_environment_connections
                  (id, workspace_id, project_environment_id, environment_revision,
                   connection_id, connection_revision, role, alias, created_at, revoked_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, NULL)
-             ON CONFLICT(project_environment_id, connection_id) WHERE revoked_at IS NULL
+             ON CONFLICT(id)
              DO UPDATE SET environment_revision = excluded.environment_revision,
                            connection_revision = excluded.connection_revision,
-                           role = excluded.role, alias = excluded.alias",
+                           role = excluded.role, alias = excluded.alias, revoked_at = NULL
+             WHERE knowledge_environment_connections.workspace_id = excluded.workspace_id
+               AND knowledge_environment_connections.project_environment_id = excluded.project_environment_id
+               AND knowledge_environment_connections.connection_id = excluded.connection_id",
         )
         .bind(binding_id.to_string())
         .bind(connection.scope.workspace_id.to_string())
@@ -486,8 +503,15 @@ impl Store {
         .bind(role.trim())
         .bind(alias.trim())
         .bind(now)
-        .execute(self.pool())
+        .execute(&mut *transaction)
         .await?;
+        if changed.rows_affected() != 1 {
+            transaction.rollback().await?;
+            return Err(AppError::Blocked {
+                reason: "the Environment connection binding identity changed".into(),
+            });
+        }
+        transaction.commit().await?;
         self.environment_connections(connection.scope.workspace_id, project_environment_id)
             .await?
             .into_iter()

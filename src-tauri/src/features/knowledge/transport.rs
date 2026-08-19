@@ -1234,6 +1234,7 @@ pub(crate) async fn bind_knowledge_environment_connection(
                 input.project_environment_id,
                 proposed_binding_id,
                 remote_connection_id,
+                connection.connection_revision,
                 &input.role,
                 &input.alias,
             )

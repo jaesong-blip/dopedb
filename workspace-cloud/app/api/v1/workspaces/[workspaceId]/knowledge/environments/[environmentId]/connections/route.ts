@@ -79,11 +79,22 @@ export async function POST(request: Request, context: RouteContext) {
     || !isUuid(body.bindingId)
     || typeof body.connectionId !== "string"
     || !isUuid(body.connectionId)
+    || (
+      body.expectedConnectionRevision !== undefined
+      && (
+        typeof body.expectedConnectionRevision !== "number"
+        || !Number.isSafeInteger(body.expectedConnectionRevision)
+        || body.expectedConnectionRevision < 1
+      )
+    )
     || typeof body.role !== "string"
     || !isSafeDisplayText(body.role.trim(), 64)
     || typeof body.alias !== "string"
     || !isSafeDisplayText(body.alias.trim(), 128)
   ) return jsonError("Invalid Environment connection binding", 400);
+  const expectedConnectionRevision = body.expectedConnectionRevision === undefined
+    ? null
+    : body.expectedConnectionRevision as number;
 
   const bindingResult = await db.execute<{
     id: string;
@@ -110,6 +121,8 @@ export async function POST(request: Request, context: RouteContext) {
        AND connection."deleted_at" IS NULL
        AND connection."revocation_pending_at" IS NULL
        AND connection."revocation_claim_id" IS NULL
+       AND (${expectedConnectionRevision === null}
+         OR connection."revision" = ${expectedConnectionRevision ?? 0})
       CROSS JOIN actor_authority
       WHERE environment."organization_id" = ${workspaceId}
         AND environment."id" = ${environmentId}::uuid

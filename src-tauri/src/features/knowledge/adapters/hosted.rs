@@ -710,9 +710,15 @@ async fn bind_environment_connection(
     environment_id: Uuid,
     binding_id: Uuid,
     connection_id: Uuid,
+    expected_connection_revision: i64,
     role: &str,
     alias: &str,
 ) -> AppResult<RemoteEnvironmentConnectionBinding> {
+    if expected_connection_revision <= 0 {
+        return Err(AppError::Config(
+            "the Environment connection revision is invalid".into(),
+        ));
+    }
     let token = bearer(user_id).await?;
     let response = client()?
         .post(format!(
@@ -723,6 +729,7 @@ async fn bind_environment_connection(
         .json(&json!({
             "bindingId": binding_id,
             "connectionId": connection_id,
+            "expectedConnectionRevision": expected_connection_revision,
             "role": role,
             "alias": alias,
         }))
@@ -738,9 +745,14 @@ async fn bind_environment_connection(
     )
     .await?
     .binding;
-    if binding.project_environment_id != environment_id || binding.connection_id != connection_id {
+    if binding.project_environment_id != environment_id
+        || binding.connection_id != connection_id
+        || binding.connection_revision != expected_connection_revision
+        || binding.current_connection_revision != expected_connection_revision
+        || binding.stale
+    {
         return Err(AppError::Network(
-            "Project Knowledge changed Environment connection identity".into(),
+            "Project Knowledge changed Environment connection identity or revision".into(),
         ));
     }
     Ok(binding)
@@ -1277,6 +1289,7 @@ impl HostedKnowledgeAuthorityPort for HostedKnowledgeAuthority {
         environment_id: Uuid,
         binding_id: Uuid,
         connection_id: Uuid,
+        expected_connection_revision: i64,
         role: &str,
         alias: &str,
     ) -> impl std::future::Future<Output = AppResult<RemoteEnvironmentConnectionBinding>> + Send
@@ -1287,6 +1300,7 @@ impl HostedKnowledgeAuthorityPort for HostedKnowledgeAuthority {
             environment_id,
             binding_id,
             connection_id,
+            expected_connection_revision,
             role,
             alias,
         )

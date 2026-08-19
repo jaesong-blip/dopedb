@@ -433,6 +433,7 @@ where
         environment_id: Uuid,
         binding_id: Uuid,
         connection_id: Uuid,
+        expected_connection_revision: i64,
         role: &str,
         alias: &str,
     ) -> AppResult<RemoteEnvironmentConnectionBinding> {
@@ -443,6 +444,7 @@ where
                 environment_id,
                 binding_id,
                 connection_id,
+                expected_connection_revision,
                 role,
                 alias,
             )

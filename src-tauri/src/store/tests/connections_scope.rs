@@ -1343,13 +1343,14 @@ async fn remote_template_sync_preserves_member_local_credential_binding() {
     .execute(store.pool())
     .await
     .unwrap();
+    let environment_binding_id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO knowledge_environment_connections
              (id, workspace_id, project_environment_id, environment_revision,
               connection_id, connection_revision, role, alias, created_at)
          VALUES (?1, ?2, ?3, 1, ?4, 2, 'primary', 'Primary', ?5)",
     )
-    .bind(Uuid::new_v4().to_string())
+    .bind(environment_binding_id.to_string())
     .bind(workspace_id.to_string())
     .bind(environment_id.to_string())
     .bind(id.to_string())
@@ -1380,6 +1381,38 @@ async fn remote_template_sync_preserves_member_local_credential_binding() {
         .await
         .unwrap()
         .is_empty());
+
+    // A transient hosted-inventory miss may tombstone the local cache before
+    // the same immutable binding is observed again. Reconciliation must revive
+    // that exact binding instead of leaving Agent Environment selection empty.
+    knowledge
+        .revoke_environment_connection(workspace_id, environment_binding_id)
+        .await
+        .unwrap();
+    assert!(knowledge
+        .agent_knowledge_environments(&pinned)
+        .await
+        .unwrap()
+        .is_empty());
+    let revived = knowledge
+        .bind_environment_connection(
+            environment_binding_id,
+            &pinned,
+            environment_id,
+            "primary",
+            "Primary",
+        )
+        .await
+        .unwrap();
+    assert_eq!(revived.id, environment_binding_id);
+    assert_eq!(
+        knowledge
+            .agent_knowledge_environments(&pinned)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
 
     assert_agent_acp_batch_replay_is_bounded(&store, id).await;
 
