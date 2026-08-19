@@ -13,8 +13,8 @@ use crate::model::{
 };
 use crate::monitoring::HealthSnapshot;
 
-#[test]
-fn query_and_skill_security_contracts_stay_fail_closed() {
+#[tokio::test]
+async fn query_and_skill_security_contracts_stay_fail_closed() {
     crate::features::connections::assert_connection_test_failure_contract();
     let production = ConnectionProfile {
         id: Uuid::new_v4(),
@@ -156,6 +156,7 @@ fn query_and_skill_security_contracts_stay_fail_closed() {
     crate::features::product_analytics::transport::assert_product_analytics_response_contract();
     crate::hosted_control_plane::assert_shared_http_client_contract();
     crate::features::workspaces::adapters::control_plane::assert_hosted_workspace_response_bounds_contract();
+    crate::connection::keychain::assert_workspace_session_keychain_async_contract().await;
     crate::connection::assert_warm_cache_authorization_contract();
     super::adapters::assert_ephemeral_page_contract();
 }

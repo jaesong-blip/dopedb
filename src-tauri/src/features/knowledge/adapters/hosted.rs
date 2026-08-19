@@ -209,8 +209,9 @@ struct GithubInstallResponse {
     authorization_url: String,
 }
 
-fn bearer(user_id: &str) -> AppResult<Zeroizing<String>> {
-    fetch_workspace_session(user_id)?
+async fn bearer(user_id: &str) -> AppResult<Zeroizing<String>> {
+    fetch_workspace_session(user_id)
+        .await?
         .map(Zeroizing::new)
         .ok_or_else(|| {
             AppError::Config("Project Knowledge requires an authenticated session".into())
@@ -239,7 +240,7 @@ async fn ensure_personal_knowledge_scope(
             "the Personal Knowledge scope inventory is invalid".into(),
         ));
     }
-    let token = bearer(user_id)?;
+    let token = bearer(user_id).await?;
     let response = client()?
         .post(format!("{}/api/v1/personal/knowledge/scope", origin()?))
         .bearer_auth(token.as_str())
@@ -267,7 +268,7 @@ async fn list_knowledge_projects(
     user_id: &str,
     workspace_id: Uuid,
 ) -> AppResult<Vec<RemoteKnowledgeProject>> {
-    let token = bearer(user_id)?;
+    let token = bearer(user_id).await?;
     let response = client()?
         .get(format!(
             "{}/api/v1/workspaces/{workspace_id}/knowledge/projects",
@@ -312,7 +313,7 @@ async fn create_knowledge_project(
     workspace_id: Uuid,
     request: &CreateKnowledgeProjectRequest,
 ) -> AppResult<RemoteKnowledgeProject> {
-    let token = bearer(user_id)?;
+    let token = bearer(user_id).await?;
     let response = client()?
         .post(format!(
             "{}/api/v1/workspaces/{workspace_id}/knowledge/projects",
@@ -346,7 +347,7 @@ async fn create_knowledge_environment(
     project_id: Uuid,
     request: &AppendKnowledgeEnvironmentRequest,
 ) -> AppResult<RemoteKnowledgeProject> {
-    let token = bearer(user_id)?;
+    let token = bearer(user_id).await?;
     let response = client()?
         .post(format!(
             "{}/api/v1/workspaces/{workspace_id}/knowledge/projects/{project_id}/environments",
@@ -385,7 +386,7 @@ async fn list_current_knowledge_grants(
     user_id: &str,
     workspace_id: Uuid,
 ) -> AppResult<Vec<RemoteKnowledgeGrant>> {
-    let token = bearer(user_id)?;
+    let token = bearer(user_id).await?;
     let response = client()?
         .get(format!(
             "{}/api/v1/workspaces/{workspace_id}/knowledge/grants?scope=mine",
@@ -437,7 +438,7 @@ async fn create_current_knowledge_grant(
             "the Personal Knowledge member authority is invalid".into(),
         ));
     }
-    let token = bearer(user_id)?;
+    let token = bearer(user_id).await?;
     let response = client()?
         .post(format!(
             "{}/api/v1/workspaces/{workspace_id}/knowledge/grants",
@@ -495,7 +496,7 @@ async fn list_remote_knowledge_mappings(
     user_id: &str,
     workspace_id: Uuid,
 ) -> AppResult<Vec<KnowledgeMappingProposal>> {
-    let token = bearer(user_id)?;
+    let token = bearer(user_id).await?;
     let response = client()?
         .get(format!(
             "{}/api/v1/workspaces/{workspace_id}/knowledge/mappings",
@@ -530,7 +531,7 @@ async fn propose_remote_knowledge_mapping(
     grant_id: Uuid,
     proposal: &KnowledgeMappingProposal,
 ) -> AppResult<KnowledgeMappingProposal> {
-    let token = bearer(user_id)?;
+    let token = bearer(user_id).await?;
     let response = client()?
         .post(format!(
             "{}/api/v1/workspaces/{workspace_id}/knowledge/mappings",
@@ -589,7 +590,7 @@ async fn decide_remote_knowledge_mapping(
             ));
         }
     };
-    let token = bearer(user_id)?;
+    let token = bearer(user_id).await?;
     let response = client()?
         .patch(format!(
             "{}/api/v1/workspaces/{workspace_id}/knowledge/mappings",
@@ -617,7 +618,7 @@ async fn download_knowledge_graph(
     source_id: Uuid,
     expected_graph_revision_id: Uuid,
 ) -> AppResult<GraphBuildArtifactV1> {
-    let token = bearer(user_id)?;
+    let token = bearer(user_id).await?;
     let response = client()?
         .get(format!(
             "{}/api/v1/workspaces/{workspace_id}/knowledge/sources/{source_id}/graph?grantId={grant_id}",
@@ -660,7 +661,7 @@ async fn list_environment_connections(
     workspace_id: Uuid,
     environment_id: Uuid,
 ) -> AppResult<Vec<RemoteEnvironmentConnectionBinding>> {
-    let token = bearer(user_id)?;
+    let token = bearer(user_id).await?;
     let response = client()?
         .get(format!(
             "{}/api/v1/workspaces/{workspace_id}/knowledge/environments/{environment_id}/connections",
@@ -712,7 +713,7 @@ async fn bind_environment_connection(
     role: &str,
     alias: &str,
 ) -> AppResult<RemoteEnvironmentConnectionBinding> {
-    let token = bearer(user_id)?;
+    let token = bearer(user_id).await?;
     let response = client()?
         .post(format!(
             "{}/api/v1/workspaces/{workspace_id}/knowledge/environments/{environment_id}/connections",
@@ -751,7 +752,7 @@ async fn revoke_environment_connection(
     environment_id: Uuid,
     binding_id: Uuid,
 ) -> AppResult<()> {
-    let token = bearer(user_id)?;
+    let token = bearer(user_id).await?;
     let response = client()?
         .delete(format!(
             "{}/api/v1/workspaces/{workspace_id}/knowledge/environments/{environment_id}/connections",
@@ -769,7 +770,7 @@ async fn revoke_environment_connection(
 }
 
 async fn begin_knowledge_github_install(user_id: &str, workspace_id: Uuid) -> AppResult<String> {
-    let token = bearer(user_id)?;
+    let token = bearer(user_id).await?;
     let response = client()?
         .post(format!(
             "{}/api/v1/workspaces/{workspace_id}/knowledge/github/install",
@@ -807,7 +808,7 @@ async fn list_knowledge_github_repositories(
     user_id: &str,
     workspace_id: Uuid,
 ) -> AppResult<Vec<RemoteGithubRepository>> {
-    let token = bearer(user_id)?;
+    let token = bearer(user_id).await?;
     let response = client()?
         .get(format!(
             "{}/api/v1/workspaces/{workspace_id}/knowledge/github/repositories",
@@ -859,7 +860,7 @@ async fn create_knowledge_source(
     workspace_id: Uuid,
     request: &CreateKnowledgeSourceRequest<'_>,
 ) -> AppResult<CreatedKnowledgeSource> {
-    let token = bearer(user_id)?;
+    let token = bearer(user_id).await?;
     let response = client()?
         .post(format!(
             "{}/api/v1/workspaces/{workspace_id}/knowledge/sources",
@@ -897,7 +898,7 @@ async fn list_remote_knowledge_sources(
     user_id: &str,
     workspace_id: Uuid,
 ) -> AppResult<Vec<RemoteKnowledgeSource>> {
-    let token = bearer(user_id)?;
+    let token = bearer(user_id).await?;
     let response = client()?
         .get(format!(
             "{}/api/v1/workspaces/{workspace_id}/knowledge/sources",
@@ -957,7 +958,7 @@ async fn search_remote_source(
     let authority = &request.authority;
     let source = authority.source;
     let limit = request.limit;
-    let token = bearer(authority.account_id)?;
+    let token = bearer(authority.account_id).await?;
     let mut url = Url::parse(&format!(
         "{}/api/v1/workspaces/{}/knowledge/sources/{}/browse",
         origin()?,
@@ -1017,7 +1018,7 @@ async fn read_remote_source(
 ) -> AppResult<RemoteSourceReadResult> {
     let authority = &request.authority;
     let source = authority.source;
-    let token = bearer(authority.account_id)?;
+    let token = bearer(authority.account_id).await?;
     let response = client()?
         .post(format!(
             "{}/api/v1/workspaces/{}/knowledge/sources/{}/browse",
@@ -1070,7 +1071,7 @@ async fn list_remote_knowledge_source_sync_progress(
     user_id: &str,
     workspace_id: Uuid,
 ) -> AppResult<Vec<RemoteKnowledgeSyncProgress>> {
-    let token = bearer(user_id)?;
+    let token = bearer(user_id).await?;
     let response = client()?
         .get(format!(
             "{}/api/v1/workspaces/{workspace_id}/knowledge/source-sync-progress",
@@ -1102,7 +1103,7 @@ async fn request_knowledge_source_sync(
     workspace_id: Uuid,
     source_id: Uuid,
 ) -> AppResult<Option<Uuid>> {
-    let token = bearer(user_id)?;
+    let token = bearer(user_id).await?;
     let response = client()?
         .post(format!(
             "{}/api/v1/workspaces/{workspace_id}/knowledge/sources/{source_id}",
@@ -1132,7 +1133,7 @@ async fn delete_knowledge_source(
     workspace_id: Uuid,
     source_id: Uuid,
 ) -> AppResult<()> {
-    let token = bearer(user_id)?;
+    let token = bearer(user_id).await?;
     let response = client()?
         .delete(format!(
             "{}/api/v1/workspaces/{workspace_id}/knowledge/sources/{source_id}",

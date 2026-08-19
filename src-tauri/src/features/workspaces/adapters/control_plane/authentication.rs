@@ -83,12 +83,12 @@ async fn session_for_token(token: &str) -> AppResult<Option<WorkspaceAuthUser>> 
 
 /// Validate one account-specific session already stored in the OS credential store.
 pub(super) async fn auth_user(user_id: &str) -> AppResult<Option<WorkspaceAuthUser>> {
-    let Some(token) = fetch_workspace_session(user_id)?.map(Zeroizing::new) else {
+    let Some(token) = fetch_workspace_session(user_id).await?.map(Zeroizing::new) else {
         return Ok(None);
     };
     let user = session_for_token(token.as_str()).await?;
     if user.as_ref().map(|user| user.id.as_str()) != Some(user_id) {
-        delete_workspace_session(user_id)?;
+        delete_workspace_session(user_id).await?;
         return Ok(None);
     }
     Ok(user)
@@ -97,14 +97,14 @@ pub(super) async fn auth_user(user_id: &str) -> AppResult<Option<WorkspaceAuthUs
 /// One-time upgrade from the old fixed credential item. The token is validated before
 /// it is copied to its account-specific key, so corrupt legacy state is never retained.
 pub(super) async fn migrate_legacy_session() -> AppResult<Option<WorkspaceAuthUser>> {
-    let Some(token) = fetch_legacy_workspace_session()?.map(Zeroizing::new) else {
+    let Some(token) = fetch_legacy_workspace_session().await?.map(Zeroizing::new) else {
         return Ok(None);
     };
     let user = session_for_token(token.as_str()).await?;
     if let Some(user) = user.as_ref() {
-        store_workspace_session(&user.id, token.as_str())?;
+        store_workspace_session(&user.id, token.as_str()).await?;
     }
-    delete_legacy_workspace_session()?;
+    delete_legacy_workspace_session().await?;
     Ok(user)
 }
 
@@ -112,7 +112,7 @@ pub(super) async fn migrate_legacy_session() -> AppResult<Option<WorkspaceAuthUs
 /// always remove the native client's credential. Remote revocation is best-effort so
 /// losing the network cannot trap someone in a locally signed-in desktop session.
 pub(super) async fn sign_out(user_id: &str) -> AppResult<()> {
-    let token = fetch_workspace_session(user_id)?.map(Zeroizing::new);
+    let token = fetch_workspace_session(user_id).await?.map(Zeroizing::new);
     if let Some(token) = token.as_deref() {
         let remote_result = async {
             let origin = origin()?;
@@ -137,13 +137,14 @@ pub(super) async fn sign_out(user_id: &str) -> AppResult<()> {
             );
         }
     }
-    delete_workspace_session(user_id)
+    delete_workspace_session(user_id).await
 }
 
 /// Fetch organization memberships for the stored Bearer session. Only identifiers
 /// and display names enter the local store; Better Auth remains membership authority.
 pub(super) async fn remote_workspaces(user_id: &str) -> AppResult<Vec<RemoteWorkspace>> {
-    let token = fetch_workspace_session(user_id)?
+    let token = fetch_workspace_session(user_id)
+        .await?
         .map(Zeroizing::new)
         .ok_or_else(|| {
             AppError::Config("workspace memberships require an authenticated session".into())
@@ -156,7 +157,7 @@ pub(super) async fn remote_workspaces(user_id: &str) -> AppResult<Vec<RemoteWork
         .await
         .map_err(|error| request_error("loading workspace memberships", error))?;
     if response.status() == StatusCode::UNAUTHORIZED {
-        delete_workspace_session(user_id)?;
+        delete_workspace_session(user_id).await?;
         return Err(AppError::Network(
             "workspace session is no longer active".into(),
         ));
@@ -226,7 +227,7 @@ pub(super) async fn poll_login(device_code: &str) -> AppResult<WorkspaceLoginPol
         let user = session_for_token(token.as_str()).await?.ok_or_else(|| {
             AppError::Network("workspace login returned an inactive session".into())
         })?;
-        store_workspace_session(&user.id, token.as_str())?;
+        store_workspace_session(&user.id, token.as_str()).await?;
         return Ok(WorkspaceLoginPoll {
             status: WorkspaceLoginPollStatus::SignedIn,
             user: Some(user),

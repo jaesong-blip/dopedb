@@ -338,7 +338,8 @@ pub(super) async fn provider_local_target(
     workspace_id: Uuid,
     connection_id: ConnectionId,
 ) -> AppResult<RuntimeProviderLocalTarget> {
-    let token = fetch_workspace_session(user_id)?
+    let token = fetch_workspace_session(user_id)
+        .await?
         .map(Zeroizing::new)
         .ok_or_else(|| {
             AppError::Config(
@@ -356,7 +357,7 @@ pub(super) async fn provider_local_target(
         .await
         .map_err(|error| request_error("reading provider-local target", error))?;
     if response.status() == StatusCode::UNAUTHORIZED {
-        delete_workspace_session(user_id)?;
+        delete_workspace_session(user_id).await?;
     }
     if !response.status().is_success() {
         return Err(AppError::Network(

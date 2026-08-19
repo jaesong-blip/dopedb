@@ -99,7 +99,8 @@ impl HostedProvisioningTargetAuthority {
             .selected_account_id
             .as_deref()
             .ok_or_else(|| blocked("Managed Access requires an active workspace account"))?;
-        let token = fetch_workspace_session(account_id)?
+        let token = fetch_workspace_session(account_id)
+            .await?
             .map(Zeroizing::new)
             .ok_or_else(|| blocked("Managed Access requires an authenticated session"))?;
         let origin = Url::parse(&hosted_control_plane::origin()?)
@@ -119,7 +120,7 @@ impl HostedProvisioningTargetAuthority {
             .await
             .map_err(|_| AppError::Network("Managed Access target is unavailable".into()))?;
         if response.status() == StatusCode::UNAUTHORIZED {
-            delete_workspace_session(account_id)?;
+            delete_workspace_session(account_id).await?;
         }
         if !response.status().is_success() {
             return Err(blocked("Managed Access target is unavailable"));
@@ -162,7 +163,8 @@ impl HostedProvisioningTargetAuthority {
             .selected_account_id
             .as_deref()
             .ok_or_else(|| blocked("Managed Access requires an active workspace account"))?;
-        let token = fetch_workspace_session(account_id)?
+        let token = fetch_workspace_session(account_id)
+            .await?
             .map(Zeroizing::new)
             .ok_or_else(|| blocked("Managed Access requires an authenticated session"))?;
         let origin = Url::parse(&hosted_control_plane::origin()?)
@@ -190,7 +192,7 @@ impl HostedProvisioningTargetAuthority {
             .await
             .map_err(|_| AppError::Network("Managed Access destroy is unavailable".into()))?;
         if response.status() == StatusCode::UNAUTHORIZED {
-            delete_workspace_session(account_id)?;
+            delete_workspace_session(account_id).await?;
         }
         if !response.status().is_success() {
             return Err(blocked("Managed Access destroy is unavailable"));

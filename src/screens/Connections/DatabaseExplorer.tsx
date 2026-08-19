@@ -59,6 +59,7 @@ import {
   qk,
   useCatalogScope,
 } from "../../lib/queries";
+import { useWorkspaceResourceQueryRecovery } from "../../lib/queryClient";
 import {
   buildConnectionSections,
   compareCatalogs,
@@ -213,6 +214,7 @@ export function DatabaseExplorer({
   const toast = useToast();
   const queryClient = useQueryClient();
   const catalogScope = useCatalogScope();
+  useWorkspaceResourceQueryRecovery(catalogScope.key, catalogScope.ready);
   const catalogScopeKeyRef = useRef(catalogScope.key);
   const knowledgeEnabled =
     catalogScope.ready &&

@@ -27,6 +27,7 @@ import {
   useOperationActivity,
 } from "../../lib/operationActivity";
 import { useCatalogScope } from "../../lib/queries";
+import { useWorkspaceResourceQueryRecovery } from "../../lib/queryClient";
 import { useAppUpdater } from "../updater/useAppUpdater";
 import ShellLayout from "./ShellLayout";
 import WorkbenchContent from "./WorkbenchContent";
@@ -55,6 +56,7 @@ function Shell() {
   const { t } = useI18n();
   const toast = useToast();
   const catalogScope = useCatalogScope();
+  useWorkspaceResourceQueryRecovery(catalogScope.key, catalogScope.ready);
   const activity = useOperationActivity();
   useSkillStartupObserver();
 

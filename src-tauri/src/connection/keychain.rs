@@ -14,7 +14,8 @@
 //! credentials use the benchmark's isolated temporary data root instead.
 
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex, MutexGuard};
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
+use std::time::Duration;
 
 #[cfg(not(feature = "packaged-benchmark"))]
 use keyring::Entry;
@@ -31,6 +32,9 @@ const LEGACY_WORKSPACE_SESSION_ACCOUNT: &str = "workspace-session";
 const ANALYSIS_RESULT_CACHE_KEY_ACCOUNT: &str = "analysis-result-cache-key:v1";
 static SESSION_CACHE: LazyLock<Mutex<HashMap<String, Zeroizing<String>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+static WORKSPACE_SESSION_KEYCHAIN_GATE: LazyLock<Arc<tokio::sync::Mutex<()>>> =
+    LazyLock::new(|| Arc::new(tokio::sync::Mutex::new(())));
+const WORKSPACE_SESSION_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 fn session_cache() -> MutexGuard<'static, HashMap<String, Zeroizing<String>>> {
     lock_unpoisoned(&SESSION_CACHE)
@@ -191,29 +195,129 @@ fn delete_workspace_session_account(account: &str) -> AppResult<()> {
     }
 }
 
-/// Store one Better Auth Bearer session in an account-specific credential item.
-pub fn store_workspace_session(user_id: &str, token: &str) -> AppResult<()> {
-    store_workspace_session_account(&workspace_session_account(user_id)?, token)
+async fn workspace_session_keychain_task<T, F>(task: F) -> AppResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> AppResult<T> + Send + 'static,
+{
+    let gate = WORKSPACE_SESSION_KEYCHAIN_GATE.clone().lock_owned().await;
+    tokio::task::spawn_blocking(move || {
+        let _gate = gate;
+        task()
+    })
+    .await
+    .map_err(|_| AppError::Config("workspace session credential task stopped".into()))?
 }
 
-/// Read one account's stored session. A missing item is normal signed-out state.
-pub fn fetch_workspace_session(user_id: &str) -> AppResult<Option<String>> {
-    fetch_workspace_session_account(&workspace_session_account(user_id)?)
+async fn bounded_workspace_session_read<T, F>(task: F) -> AppResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> AppResult<T> + Send + 'static,
+{
+    bounded_workspace_session_read_with_timeout(WORKSPACE_SESSION_READ_TIMEOUT, task).await
 }
 
-/// Delete one local Better Auth session. Missing state is idempotently signed out.
-pub fn delete_workspace_session(user_id: &str) -> AppResult<()> {
-    delete_workspace_session_account(&workspace_session_account(user_id)?)
+async fn bounded_workspace_session_read_with_timeout<T, F>(
+    timeout: Duration,
+    task: F,
+) -> AppResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> AppResult<T> + Send + 'static,
+{
+    tokio::time::timeout(timeout, workspace_session_keychain_task(task))
+        .await
+        .map_err(|_| {
+            AppError::Timeout("workspace session credential read exceeded 10 seconds".into())
+        })?
+}
+
+/// Store one Better Auth Bearer session without blocking a Tokio runtime worker.
+pub async fn store_workspace_session(user_id: &str, token: &str) -> AppResult<()> {
+    let account = workspace_session_account(user_id)?;
+    let token = Zeroizing::new(token.to_owned());
+    workspace_session_keychain_task(move || {
+        store_workspace_session_account(&account, token.as_str())
+    })
+    .await
+}
+
+/// Read one account's stored session without blocking a Tokio runtime worker.
+/// A missing item is normal signed-out state. The cold-read gate also collapses
+/// concurrent startup requests so only the first one reaches the OS credential store.
+pub async fn fetch_workspace_session(user_id: &str) -> AppResult<Option<String>> {
+    let account = workspace_session_account(user_id)?;
+    if let Some(token) = cached_secret(&account) {
+        return Ok(Some(token));
+    }
+    bounded_workspace_session_read(move || {
+        // Another caller may have populated the process cache while this read
+        // waited for the single-flight gate.
+        fetch_workspace_session_account(&account)
+    })
+    .await
+}
+
+/// Delete one local Better Auth session without blocking a Tokio runtime worker.
+/// Missing state is idempotently signed out.
+pub async fn delete_workspace_session(user_id: &str) -> AppResult<()> {
+    let account = workspace_session_account(user_id)?;
+    workspace_session_keychain_task(move || delete_workspace_session_account(&account)).await
 }
 
 /// Upgrade helper for releases that stored exactly one session under a fixed account.
 /// Callers validate and copy the token before removing this legacy item.
-pub(crate) fn fetch_legacy_workspace_session() -> AppResult<Option<String>> {
-    fetch_workspace_session_account(LEGACY_WORKSPACE_SESSION_ACCOUNT)
+pub(crate) async fn fetch_legacy_workspace_session() -> AppResult<Option<String>> {
+    if let Some(token) = cached_secret(LEGACY_WORKSPACE_SESSION_ACCOUNT) {
+        return Ok(Some(token));
+    }
+    bounded_workspace_session_read(move || {
+        fetch_workspace_session_account(LEGACY_WORKSPACE_SESSION_ACCOUNT)
+    })
+    .await
 }
 
-pub(crate) fn delete_legacy_workspace_session() -> AppResult<()> {
-    delete_workspace_session_account(LEGACY_WORKSPACE_SESSION_ACCOUNT)
+pub(crate) async fn delete_legacy_workspace_session() -> AppResult<()> {
+    workspace_session_keychain_task(move || {
+        delete_workspace_session_account(LEGACY_WORKSPACE_SESSION_ACCOUNT)
+    })
+    .await
+}
+
+#[cfg(test)]
+pub(crate) async fn assert_workspace_session_keychain_async_contract() {
+    let source = include_str!("keychain.rs");
+    let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+    for signature in [
+        "pub async fn store_workspace_session",
+        "pub async fn fetch_workspace_session",
+        "pub async fn delete_workspace_session",
+        "pub(crate) async fn fetch_legacy_workspace_session",
+        "pub(crate) async fn delete_legacy_workspace_session",
+    ] {
+        assert!(source.contains(signature), "missing {signature}");
+    }
+    assert!(source.contains("WORKSPACE_SESSION_KEYCHAIN_GATE"));
+    assert!(source.contains("WORKSPACE_SESSION_READ_TIMEOUT"));
+    assert!(source.contains("lock_owned().await"));
+    assert!(source.contains("tokio::time::timeout"));
+    assert_eq!(
+        production_source
+            .matches("tokio::task::spawn_blocking")
+            .count(),
+        1
+    );
+
+    let timed_out: AppResult<()> =
+        bounded_workspace_session_read_with_timeout(Duration::from_millis(10), || {
+            std::thread::sleep(Duration::from_millis(50));
+            Ok(())
+        })
+        .await;
+    assert!(matches!(timed_out, Err(AppError::Timeout(_))));
+    // The timed-out blocking task is deliberately detached and keeps the gate until
+    // the OS call returns. Let this deterministic stand-in release it for other tests.
+    tokio::time::sleep(Duration::from_millis(60)).await;
 }
 
 fn analysis_runner_capability_account(

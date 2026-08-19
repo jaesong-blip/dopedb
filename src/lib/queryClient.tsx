@@ -74,6 +74,36 @@ export async function refetchWorkspaceResourceQueries(queryClient: QueryClient) 
   await queryClient.refetchQueries({ predicate: isWorkspaceResource, type: "active" });
 }
 
+/** Resume only data-less private observers stranded by a completed scope replacement. */
+export async function resumePendingWorkspaceResourceQueries(queryClient: QueryClient) {
+  await queryClient.refetchQueries({
+    predicate: (query) =>
+      isWorkspaceResource(query)
+      && query.state.status === "pending"
+      && query.state.fetchStatus === "idle",
+    type: "active",
+  });
+}
+
+/** Recover active private reads after the scope hook commits its new authority key. */
+export function useWorkspaceResourceQueryRecovery(scopeKey: string, ready: boolean) {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (!ready || scopeKey.length === 0) return;
+    let active = true;
+    // Run after every committed observer state, not only when the scope key changes.
+    // A later authority fence can cancel a query after this component's first effect,
+    // leaving the same key at pending + idle without changing either dependency.
+    // React StrictMode's discarded setup is fenced before its microtask can refetch.
+    queueMicrotask(() => {
+      if (active) void resumePendingWorkspaceResourceQueries(queryClient);
+    });
+    return () => {
+      active = false;
+    };
+  });
+}
+
 /** Drop stale database state when a synchronized shared connection changes authority. */
 export async function resetConnectionResourceQueries(
   queryClient: QueryClient,

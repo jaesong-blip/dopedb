@@ -647,8 +647,9 @@ struct ReadNotificationResponse {
     read: Vec<Uuid>,
 }
 
-fn token(user_id: &str) -> AppResult<Zeroizing<String>> {
-    fetch_workspace_session(user_id)?
+async fn token(user_id: &str) -> AppResult<Zeroizing<String>> {
+    fetch_workspace_session(user_id)
+        .await?
         .map(Zeroizing::new)
         .ok_or_else(|| AppError::Config("Analysis Articles require sign-in".into()))
 }
@@ -668,7 +669,7 @@ async fn response<T: DeserializeOwned>(
     maximum: usize,
 ) -> AppResult<T> {
     if response.status() == StatusCode::UNAUTHORIZED {
-        delete_workspace_session(user_id)?;
+        delete_workspace_session(user_id).await?;
     }
     if !response.status().is_success() {
         return Err(oauth_error(response).await);
@@ -860,7 +861,7 @@ pub(crate) async fn list_analysis_articles(
     workspace_id: Uuid,
     environment_id: Option<Uuid>,
 ) -> AppResult<Vec<AnalysisArticleRecord>> {
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let mut url = Url::parse(&format!(
         "{}/api/v1/workspaces/{workspace_id}/analyses",
         origin()?
@@ -899,7 +900,7 @@ pub(crate) async fn get_analysis_article(
     workspace_id: Uuid,
     article_id: Uuid,
 ) -> AppResult<AnalysisArticleRecord> {
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .get(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/{article_id}",
@@ -930,7 +931,7 @@ pub(crate) async fn create_analysis_article(
             "Analysis Article create contract is invalid".into(),
         ));
     }
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .post(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses",
@@ -985,7 +986,7 @@ pub(crate) async fn mutate_analysis_article(
             json!({ "action": "restore", "revision": revision })
         }
     };
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .patch(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/{article_id}",
@@ -1014,7 +1015,7 @@ pub(crate) async fn delete_analysis_article(
     article_id: Uuid,
     expected_revision: i64,
 ) -> AppResult<i64> {
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .delete(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/{article_id}",
@@ -1045,7 +1046,7 @@ pub(crate) async fn list_analysis_article_revisions(
     workspace_id: Uuid,
     article_id: Uuid,
 ) -> AppResult<Vec<RemoteAnalysisArticleRevision>> {
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .get(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/{article_id}/revisions",
@@ -1083,7 +1084,7 @@ pub(crate) async fn register_analysis_runner(
     device_id: &str,
     background_allowed: bool,
 ) -> AppResult<RegisteredAnalysisRunner> {
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let device_id = Uuid::parse_str(device_id)
         .map_err(|_| AppError::Config("Analysis runner device id is invalid".into()))?;
     let device_id_string = device_id.to_string();
@@ -1213,7 +1214,7 @@ pub(crate) async fn list_analysis_runners(
     user_id: &str,
     workspace_id: Uuid,
 ) -> AppResult<Vec<RemoteAnalysisRunner>> {
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .get(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/runners",
@@ -1252,7 +1253,7 @@ pub(crate) async fn revoke_analysis_runner(
     workspace_id: Uuid,
     runner_id: Uuid,
 ) -> AppResult<AnalysisRunnerRevocation> {
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .delete(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/runners/{runner_id}",
@@ -1285,7 +1286,7 @@ pub(crate) async fn list_analysis_publications(
     workspace_id: Uuid,
     article_id: Uuid,
 ) -> AppResult<Vec<RemoteAnalysisPublication>> {
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .get(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/{article_id}/publications",
@@ -1324,7 +1325,7 @@ pub(crate) async fn preview_analysis_publication(
             "Analysis publication preview cannot assert a snapshot hash".into(),
         ));
     }
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .post(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/{article_id}/publications/preview",
@@ -1374,7 +1375,7 @@ pub(crate) async fn create_analysis_publication(
             "Analysis publication requires its exact preview hash".into(),
         ));
     }
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .post(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/{article_id}/publications",
@@ -1410,7 +1411,7 @@ pub(crate) async fn revoke_analysis_publication(
     article_id: Uuid,
     publication_id: Uuid,
 ) -> AppResult<DateTime<Utc>> {
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .delete(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/{article_id}/publications/{publication_id}",
@@ -1451,7 +1452,7 @@ pub(crate) async fn list_analysis_collaborators(
     user_id: &str,
     workspace_id: Uuid,
 ) -> AppResult<AnalysisCollaboratorDirectory> {
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .get(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/members",
@@ -1498,7 +1499,7 @@ pub(crate) async fn list_analysis_signals(
     workspace_id: Uuid,
     article_id: Uuid,
 ) -> AppResult<Vec<RemoteAnalysisSignal>> {
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .get(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/{article_id}/signals",
@@ -1533,7 +1534,7 @@ pub(crate) async fn create_analysis_signal(
     request: &AnalysisSignalCreateRequest,
 ) -> AppResult<RemoteAnalysisSignal> {
     validate_signal_request(request, article_id)?;
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .post(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/{article_id}/signals",
@@ -1569,7 +1570,7 @@ pub(crate) async fn update_analysis_signal(
             "Analysis signal update changed identity or revision".into(),
         ));
     }
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .patch(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/{article_id}/signals/{signal_id}",
@@ -1615,7 +1616,7 @@ pub(crate) async fn set_analysis_signal_enabled(
             "Analysis signal expected revision must be positive".into(),
         ));
     }
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .patch(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/{article_id}/signals/{signal_id}",
@@ -1650,7 +1651,7 @@ pub(crate) async fn delete_analysis_signal(
     signal_id: Uuid,
     expected_revision: i64,
 ) -> AppResult<i64> {
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .delete(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/{article_id}/signals/{signal_id}",
@@ -1682,7 +1683,7 @@ pub(crate) async fn list_analysis_signal_receipts(
     article_id: Uuid,
     signal_id: Uuid,
 ) -> AppResult<Vec<RemoteAnalysisSignalHistoryReceipt>> {
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .get(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/{article_id}/signals/{signal_id}/receipts",
@@ -1751,7 +1752,7 @@ pub(crate) async fn submit_analysis_signal_receipt(
             "invalid Analysis signal evaluation evidence".into(),
         ));
     }
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .post(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/{article_id}/signals/{signal_id}/receipts",
@@ -1801,7 +1802,7 @@ pub(crate) async fn list_analysis_notifications(
         AnalysisSignalChannel::WorkspaceWeb => "workspace_web",
         AnalysisSignalChannel::Email => unreachable!(),
     };
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .get(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/notifications?channel={channel}",
@@ -1857,7 +1858,7 @@ pub(crate) async fn mark_analysis_notifications_read(
             ))
         }
     };
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .patch(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/notifications?channel={channel}",
@@ -1901,7 +1902,7 @@ pub(crate) async fn start_analysis_run(
     runner_capability_generation: u64,
     lease: Option<&RemoteAnalysisLease>,
 ) -> AppResult<(RemoteAnalysisRun, AnalysisArticleRecord)> {
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let mut request = client()?
         .post(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/{article_id}/runs",
@@ -2169,7 +2170,7 @@ pub(crate) async fn complete_analysis_run(
     fragments: &[AnalysisResultFragment],
     error: &Option<AnalysisRunError>,
 ) -> AppResult<RemoteAnalysisRun> {
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let terminal_receipts = if state == AnalysisRunState::Succeeded {
         query_receipts
     } else {
@@ -2313,7 +2314,7 @@ pub(crate) async fn get_analysis_run(
     article_id: Uuid,
     run_id: Uuid,
 ) -> AppResult<RemoteAnalysisRun> {
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .get(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/{article_id}/runs/{run_id}",
@@ -2347,7 +2348,7 @@ pub(crate) async fn list_analysis_runs(
     article_id: Uuid,
     before: Option<DateTime<Utc>>,
 ) -> AppResult<(Vec<RemoteAnalysisRun>, Option<String>)> {
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let mut url = Url::parse(&format!(
         "{}/api/v1/workspaces/{workspace_id}/analyses/{article_id}/runs",
         origin()?
@@ -2387,7 +2388,7 @@ pub(crate) async fn cancel_analysis_run(
     article_id: Uuid,
     run_id: Uuid,
 ) -> AppResult<RemoteAnalysisRun> {
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .post(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/{article_id}/runs/{run_id}/cancel",
@@ -2419,7 +2420,7 @@ pub(crate) async fn get_analysis_result(
     article_id: Uuid,
     run_id: Uuid,
 ) -> AppResult<RemoteAnalysisResult> {
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .get(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/{article_id}/runs/{run_id}/results",
@@ -2453,7 +2454,7 @@ pub(crate) async fn claim_analysis_refresh_lease(
     runner_capability: &str,
     runner_capability_generation: u64,
 ) -> AppResult<Option<RemoteAnalysisLease>> {
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .post(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/leases",
@@ -2519,7 +2520,7 @@ pub(crate) async fn release_analysis_refresh_lease(
     workspace_id: Uuid,
     lease: &RemoteAnalysisLease,
 ) -> AppResult<bool> {
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .delete(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/leases/{}",
@@ -2550,7 +2551,7 @@ pub(crate) async fn analysis_refresh_lease_is_active(
     workspace_id: Uuid,
     lease: &RemoteAnalysisLease,
 ) -> AppResult<bool> {
-    let token = token(user_id)?;
+    let token = token(user_id).await?;
     let raw = client()?
         .get(format!(
             "{}/api/v1/workspaces/{workspace_id}/analyses/leases/{}",

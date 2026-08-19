@@ -63,11 +63,11 @@ impl HostedProviderAuthority {
     }
 
     async fn inventory(&self, scope: &ProviderScope) -> AppResult<Vec<ProviderIntegrationSummary>> {
-        let token = fetch_workspace_session(scope.account_id.as_str())?.ok_or_else(|| {
-            AppError::Blocked {
+        let token = fetch_workspace_session(scope.account_id.as_str())
+            .await?
+            .ok_or_else(|| AppError::Blocked {
                 reason: "provider integrations require an active hosted session".into(),
-            }
-        })?;
+            })?;
         let origin = Url::parse(&hosted_control_plane::origin()?)
             .map_err(|_| AppError::Config("workspace control-plane origin is invalid".into()))?;
         let path = format!(

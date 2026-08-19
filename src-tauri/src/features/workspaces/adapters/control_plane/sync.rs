@@ -17,7 +17,8 @@ pub(super) async fn workspace_pull_page(
             "workspace pull cursor exceeds the exact Cloud range".into(),
         ));
     }
-    let token = fetch_workspace_session(user_id)?
+    let token = fetch_workspace_session(user_id)
+        .await?
         .map(Zeroizing::new)
         .ok_or_else(|| {
             AppError::Config("workspace sync requires an authenticated session".into())
@@ -41,7 +42,7 @@ pub(super) async fn workspace_pull_page(
         return Ok(None);
     }
     if response.status() == StatusCode::UNAUTHORIZED {
-        delete_workspace_session(user_id)?;
+        delete_workspace_session(user_id).await?;
     }
     if !response.status().is_success() {
         return Err(oauth_error(response).await);

@@ -13,6 +13,7 @@ import {
   resetConnectionResourceQueries,
   refetchWorkspaceResourceQueries,
   resetWorkspaceResourceQueries,
+  resumePendingWorkspaceResourceQueries,
 } from "../../lib/queryClient";
 import {
   shouldRevalidateWorkspaceAuth,
@@ -738,6 +739,47 @@ describe("workspace auth lifecycle", () => {
     expect(knowledgeReads).toBe(2);
     expect(knowledgeObserver.getCurrentResult().data).toEqual(["ready"]);
 
+    // A changed authority generation commits a new query key after the old scope
+    // has already been fenced. Once that key is active, recover only its data-less
+    // pending observer; successful reads and inactive old-scope entries stay still.
+    let changedScopeReads = 0;
+    const changedScopeObserver = new QueryObserver(queryClient, {
+      queryKey: knowledgeQueryKeys.projects("scope-b"),
+      queryFn: ({ signal }) => {
+        changedScopeReads += 1;
+        if (changedScopeReads > 1) return Promise.resolve(["new-scope"]);
+        return new Promise<string[]>((_resolve, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => reject(new DOMException("scope replacement", "AbortError")),
+            { once: true },
+          );
+        });
+      },
+    });
+    const stopChangedScope = changedScopeObserver.subscribe(() => undefined);
+    await Promise.resolve();
+    await queryClient.cancelQueries({
+      queryKey: knowledgeQueryKeys.projects("scope-b"),
+      exact: true,
+    });
+    expect(changedScopeObserver.getCurrentResult().status).toBe("pending");
+    expect(changedScopeObserver.getCurrentResult().fetchStatus).toBe("idle");
+
+    let inactiveReads = 0;
+    const inactiveObserver = new QueryObserver(queryClient, {
+      queryKey: knowledgeQueryKeys.projects("old-scope"),
+      queryFn: async () => ++inactiveReads,
+      enabled: false,
+    });
+    const stopInactive = inactiveObserver.subscribe(() => undefined);
+    stopInactive();
+    await resumePendingWorkspaceResourceQueries(queryClient);
+    expect(changedScopeReads).toBe(2);
+    expect(changedScopeObserver.getCurrentResult().data).toEqual(["new-scope"]);
+    expect(knowledgeReads).toBe(2);
+    expect(inactiveReads).toBe(0);
+
     let oldReadAborted = false;
     const pendingOldRead = queryClient.fetchQuery({
       queryKey: ["knowledgeSources", "old-workspace"],
@@ -768,6 +810,7 @@ describe("workspace auth lifecycle", () => {
       queryClient.getQueryData(["knowledgeSources", "new-workspace"]),
     ).toBeUndefined();
     stopKnowledge();
+    stopChangedScope();
     stopAgentEnvironments();
     stopPrivate();
     stopCatalog();

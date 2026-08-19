@@ -127,7 +127,8 @@ pub(super) async fn remote_connections(
     user_id: &str,
     workspace_id: Uuid,
 ) -> AppResult<Option<Vec<(ConnectionProfile, i64)>>> {
-    let token = fetch_workspace_session(user_id)?
+    let token = fetch_workspace_session(user_id)
+        .await?
         .map(Zeroizing::new)
         .ok_or_else(|| {
             AppError::Config("shared connections require an authenticated session".into())
@@ -147,7 +148,7 @@ pub(super) async fn remote_connections(
         return Ok(None);
     }
     if response.status() == StatusCode::UNAUTHORIZED {
-        delete_workspace_session(user_id)?;
+        delete_workspace_session(user_id).await?;
     }
     if !response.status().is_success() {
         return Err(oauth_error(response).await);
@@ -177,7 +178,8 @@ pub(super) async fn share_connection(
     workspace_id: Uuid,
     profile: &ConnectionProfile,
 ) -> AppResult<(ConnectionProfile, i64)> {
-    let token = fetch_workspace_session(user_id)?
+    let token = fetch_workspace_session(user_id)
+        .await?
         .map(Zeroizing::new)
         .ok_or_else(|| {
             AppError::Config("sharing a connection requires an authenticated session".into())
@@ -209,7 +211,7 @@ pub(super) async fn share_connection(
         .await
         .map_err(|error| request_error("sharing connection", error))?;
     if response.status() == StatusCode::UNAUTHORIZED {
-        delete_workspace_session(user_id)?;
+        delete_workspace_session(user_id).await?;
     }
     if !response.status().is_success() {
         return Err(oauth_error(response).await);
@@ -231,7 +233,8 @@ pub(super) async fn update_connection(
     profile: &ConnectionProfile,
     expected_revision: i64,
 ) -> AppResult<(ConnectionProfile, i64)> {
-    let token = fetch_workspace_session(user_id)?
+    let token = fetch_workspace_session(user_id)
+        .await?
         .map(Zeroizing::new)
         .ok_or_else(|| {
             AppError::Config(
@@ -266,7 +269,7 @@ pub(super) async fn update_connection(
         .await
         .map_err(|error| request_error("updating shared connection", error))?;
     if response.status() == StatusCode::UNAUTHORIZED {
-        delete_workspace_session(user_id)?;
+        delete_workspace_session(user_id).await?;
     }
     if !response.status().is_success() {
         return Err(oauth_error(response).await);
@@ -288,7 +291,8 @@ pub(super) async fn delete_connection(
     connection_id: Uuid,
     expected_revision: i64,
 ) -> AppResult<()> {
-    let token = fetch_workspace_session(user_id)?
+    let token = fetch_workspace_session(user_id)
+        .await?
         .map(Zeroizing::new)
         .ok_or_else(|| {
             AppError::Config(
@@ -306,7 +310,7 @@ pub(super) async fn delete_connection(
         .await
         .map_err(|error| request_error("deleting shared connection", error))?;
     if response.status() == StatusCode::UNAUTHORIZED {
-        delete_workspace_session(user_id)?;
+        delete_workspace_session(user_id).await?;
     }
     if response.status().is_success() || response.status() == StatusCode::NOT_FOUND {
         return Ok(());
@@ -322,7 +326,8 @@ pub(super) async fn authorize_connection(
     connection_id: Uuid,
     write: bool,
 ) -> AppResult<RemoteConnectionAuthority> {
-    let token = fetch_workspace_session(user_id)?
+    let token = fetch_workspace_session(user_id)
+        .await?
         .map(Zeroizing::new)
         .ok_or_else(|| {
             AppError::Config("shared connection access requires an authenticated session".into())
@@ -338,7 +343,7 @@ pub(super) async fn authorize_connection(
         .await
         .map_err(|error| request_error("authorizing shared connection", error))?;
     if response.status() == StatusCode::UNAUTHORIZED {
-        delete_workspace_session(user_id)?;
+        delete_workspace_session(user_id).await?;
     }
     if !response.status().is_success() {
         return Err(oauth_error(response).await);
@@ -382,7 +387,8 @@ pub(super) async fn issue_managed_connection_lease(
             "managed credentials were requested for a local binding".into(),
         ));
     }
-    let token = fetch_workspace_session(user_id)?
+    let token = fetch_workspace_session(user_id)
+        .await?
         .map(Zeroizing::new)
         .ok_or_else(|| {
             AppError::Config("managed database access requires an authenticated session".into())
@@ -416,7 +422,7 @@ pub(super) async fn issue_managed_connection_lease(
         .await
         .map_err(|error| request_error("requesting managed database access", error))?;
     if response.status() == StatusCode::UNAUTHORIZED {
-        delete_workspace_session(user_id)?;
+        delete_workspace_session(user_id).await?;
     }
     if !response.status().is_success() {
         return Err(oauth_error(response).await);
@@ -519,7 +525,7 @@ pub(super) async fn release_managed_connection_lease(
     connection_id: Uuid,
     lease_id: Uuid,
 ) -> AppResult<()> {
-    let Some(token) = fetch_workspace_session(user_id)?.map(Zeroizing::new) else {
+    let Some(token) = fetch_workspace_session(user_id).await?.map(Zeroizing::new) else {
         return Ok(());
     };
     let origin = origin()?;
@@ -533,7 +539,7 @@ pub(super) async fn release_managed_connection_lease(
         .await
         .map_err(|error| request_error("releasing managed database access", error))?;
     if response.status() == StatusCode::UNAUTHORIZED {
-        delete_workspace_session(user_id)?;
+        delete_workspace_session(user_id).await?;
     }
     if !response.status().is_success() {
         return Err(oauth_error(response).await);
