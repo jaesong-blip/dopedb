@@ -284,7 +284,7 @@ export default function SchemaExplorer({
       ) : (
         <div
           data-inspector={inspectorOpen}
-          className="tw:grid tw:min-h-[320px] tw:min-w-0 tw:flex-1 tw:grid-cols-[minmax(0,1fr)] tw:data-[inspector=true]:grid-cols-[minmax(0,1fr)_320px] tw:@max-[1100px]:data-[inspector=true]:grid-cols-[minmax(0,1fr)]"
+          className="tw:grid tw:min-h-[320px] tw:min-w-0 tw:flex-1 tw:grid-cols-[minmax(0,1fr)] tw:data-[inspector=true]:grid-cols-[minmax(0,1fr)_320px] tw:@max-[1100px]:data-[inspector=true]:flex-none tw:@max-[1100px]:data-[inspector=true]:grid-cols-[minmax(0,1fr)]"
         >
           <Suspense fallback={<Skeleton lines={8} />}>
             <ErdCanvas
@@ -299,7 +299,7 @@ export default function SchemaExplorer({
           </Suspense>
           {inspectorOpen && (
             <aside
-              className="tw:min-w-0 tw:overflow-auto tw:border-l tw:border-border-subtle tw:py-3 tw:pr-0 tw:pl-4 tw:[&_h3]:mt-4 tw:@max-[1100px]:max-h-[320px] tw:@max-[1100px]:border-t tw:@max-[1100px]:border-l-0 tw:@max-[1100px]:px-0 tw:@max-[1100px]:pt-3"
+              className="tw:min-w-0 tw:overflow-auto tw:border-l tw:border-border-subtle tw:py-3 tw:pr-0 tw:pl-4 tw:[&_h3]:mt-4 tw:@max-[1100px]:overflow-visible tw:@max-[1100px]:border-t tw:@max-[1100px]:border-l-0 tw:@max-[1100px]:px-0 tw:@max-[1100px]:pt-3"
               id="schema-inspector"
             >
               {selected ? (
