@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -21,9 +21,8 @@ import {
 import { errMessage } from "../../ipc/types";
 import { useI18n } from "../../lib/i18n";
 import { analysisQueryKeys } from "./queryKeys";
-import { AnalysisArticleVisualization } from "./AnalysisArticleVisualization";
+import { AnalysisPublicationSnapshotPreview } from "./AnalysisPublicationSnapshotPreview";
 import {
-  mergeAnalysisFragments,
   type AnalysisArticleRecord,
   type AnalysisPublicationPreview,
   type AnalysisPublicationRequest,
@@ -127,40 +126,6 @@ export function AnalysisPublicationPanel({
     },
     onError: (nextError) => setError(errMessage(nextError)),
   });
-
-  const previewDefinition = useMemo(() => {
-    if (!preview) return null;
-    return {
-      ...article.definition,
-      title: preview.snapshot.title,
-      summary: preview.snapshot.summary,
-      blocks: preview.snapshot.blocks.map((block) => ({
-        id: block.id,
-        kind: block.kind,
-        title: block.title,
-        width: block.width,
-        config: block.config,
-        sourceNodeId: article.definition.blocks.find((candidate) => candidate.id === block.id)?.sourceNodeId ?? null,
-      })),
-    };
-  }, [article.definition, preview]);
-  const previewData = useMemo(
-    () => mergeAnalysisFragments(preview?.snapshot.blocks.flatMap((block) => block.fragments) ?? []),
-    [preview],
-  );
-  const previewParameterValues = useMemo(() => {
-    if (!preview) return {};
-    const selected = new Set(request.parameterIds);
-    const parameters = article.definition.parameters.filter((parameter) =>
-      selected.has(parameter.id),
-    );
-    return Object.fromEntries(
-      parameters.flatMap((parameter, index) => {
-        const snapshot = preview.snapshot.parameters[index];
-        return snapshot ? [[parameter.id, snapshot.value]] : [];
-      }),
-    );
-  }, [article.definition.parameters, preview, request.parameterIds]);
 
   if (article.state !== "live" || !article.liveRunId) {
     return (
@@ -285,30 +250,12 @@ export function AnalysisPublicationPanel({
         </div>
       </section>
 
-      {preview && previewDefinition ? (
-        <section className="tw:grid tw:gap-3 tw:border-t tw:border-border-subtle tw:pt-5">
-          <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
-            <h2 className="tw:m-0 tw:text-base tw:font-semibold">{t("analysis.publicationApprovedPreview")}</h2>
-            <StatusBadge density="compact">{preview.snapshotHash.slice(0, 12)}</StatusBadge>
-            <span className="tw:text-xs tw:text-muted-foreground">{t("analysis.publicationDataAsOf", { time: new Date(preview.snapshot.dataAsOf).toLocaleString(lang) })}</span>
-          </div>
-          {preview.snapshot.parameters.length ? (
-            <dl className="tw:flex tw:flex-wrap tw:gap-2">
-              {preview.snapshot.parameters.map((parameter) => (
-                <div className="tw:flex tw:items-center tw:gap-1 tw:rounded-full tw:border tw:border-border-subtle tw:px-2 tw:py-1 tw:text-xs" key={parameter.label}>
-                  <dt className="tw:text-muted-foreground">{parameter.label}</dt>
-                  <dd className="tw:m-0 tw:font-mono">{String(parameter.value)}</dd>
-                </div>
-              ))}
-            </dl>
-          ) : null}
-          <AnalysisArticleVisualization
-            definition={previewDefinition}
-            data={previewData}
-            parameterValues={previewParameterValues}
-            mode="snapshot"
-          />
-        </section>
+      {preview ? (
+        <AnalysisPublicationSnapshotPreview
+          definition={article.definition}
+          parameterIds={request.parameterIds}
+          preview={preview}
+        />
       ) : null}
 
       <section className="tw:grid tw:gap-3 tw:border-t tw:border-border-subtle tw:pt-5">

@@ -161,6 +161,8 @@ pub(crate) async fn packaged_benchmark_config(
             "startup"
         } else if WORKLOAD_SCENARIOS.contains(&scenario.as_str()) {
             "workload"
+        } else if QA_SCENARIOS.contains(&scenario.as_str()) {
+            "qa"
         } else {
             return Err(AppError::Config(
                 "packaged benchmark scenario is unsupported".into(),
@@ -1305,6 +1307,9 @@ const WORKLOAD_SCENARIOS: [&str; 9] = [
     "interaction-surfaces",
     "idle-runtime",
 ];
+
+#[cfg(feature = "packaged-benchmark")]
+const QA_SCENARIOS: [&str; 1] = ["publication-snapshot-qa"];
 
 #[cfg(feature = "packaged-benchmark")]
 const ACTION_NAMES: [&str; 37] = [

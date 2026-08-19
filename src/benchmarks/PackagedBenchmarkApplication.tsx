@@ -76,6 +76,7 @@ import {
   type PackagedBackendAction,
   type PackagedBackendReceipt,
 } from "./backend";
+import { AnalysisPublicationSnapshotScenario } from "./AnalysisPublicationSnapshotScenario";
 
 const ACTION_SAMPLES = 5;
 const SQL_RICH_EDITING_MAX_BYTES = 256 * 1024;
@@ -108,6 +109,8 @@ export function PackagedBenchmarkApplication({
       return <InteractionSurfacesScenario />;
     case "idle-runtime":
       return <IdleRuntimeScenario />;
+    case "publication-snapshot-qa":
+      return <AnalysisPublicationSnapshotScenario />;
     default:
       return <BenchmarkFailure />;
   }

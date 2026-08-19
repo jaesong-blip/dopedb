@@ -28,7 +28,7 @@ const benchmarkConfig = packagedBenchmark
   ? await packagedBenchmarkConfig()
   : null;
 let application: React.ReactNode;
-if (benchmarkConfig?.kind === "workload") {
+if (benchmarkConfig?.kind === "workload" || benchmarkConfig?.kind === "qa") {
   const { PackagedBenchmarkApplication } = await import(
     "./benchmarks/PackagedBenchmarkApplication"
   );

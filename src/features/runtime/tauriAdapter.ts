@@ -57,7 +57,7 @@ export type PackagedBenchmarkRendererMetrics = {
 
 export type PackagedBenchmarkConfig = {
   scenario: string;
-  kind: "startup" | "workload";
+  kind: "startup" | "workload" | "qa";
   phase: "install" | "restart" | null;
 };
 
