@@ -6,8 +6,10 @@ import { knowledgeQueryKeys } from "../knowledge/queryKeys";
 import {
   agentDockInteraction,
   agentDockLayout,
+  shouldOverlayAgentDock,
   shouldDismissAgentOverlayFromEscape,
 } from "../agents/layout";
+import { retainInertShellChildren } from "../appShell/useInertShellBackground";
 import {
   cancelWorkspaceResourceQueries,
   resetConnectionResourceQueries,
@@ -180,6 +182,21 @@ describe("workspace auth lifecycle", () => {
     expect(agentDockLayout(false, false)).toBe("docked");
     expect(agentDockLayout(false, true)).toBe("overlay");
     expect(agentDockLayout(true, true)).toBe("compact");
+    expect(shouldOverlayAgentDock({
+      viewportWidth: 1_200,
+      leftToolWindowWidth: 355,
+      requestedAgentWidth: 466,
+    })).toBe(true);
+    expect(shouldOverlayAgentDock({
+      viewportWidth: 1_440,
+      leftToolWindowWidth: 396,
+      requestedAgentWidth: 396,
+    })).toBe(false);
+    expect(shouldOverlayAgentDock({
+      viewportWidth: 1_200,
+      leftToolWindowWidth: 0,
+      requestedAgentWidth: 466,
+    })).toBe(false);
     expect(agentDockInteraction("docked")).toEqual({
       role: undefined,
       ariaModal: undefined,
@@ -195,6 +212,20 @@ describe("workspace auth lifecycle", () => {
       ariaModal: true,
       shellInert: true,
     });
+    const preInert = { inert: true, isConnected: true };
+    const workbench = { inert: false, isConnected: true };
+    const agent = { inert: false, isConnected: true };
+    const releaseInert = retainInertShellChildren([
+      { element: preInert, agentSurface: false },
+      { element: workbench, agentSurface: false },
+      { element: agent, agentSurface: true },
+    ], true);
+    expect(preInert.inert).toBe(true);
+    expect(workbench.inert).toBe(true);
+    expect(agent.inert).toBe(false);
+    releaseInert();
+    expect(preInert.inert).toBe(true);
+    expect(workbench.inert).toBe(false);
     expect(shouldDismissAgentOverlayFromEscape({
       defaultPrevented: false,
       focusInside: true,

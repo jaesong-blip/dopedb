@@ -462,6 +462,13 @@ DopeDB의 실제 작업 흐름과 접근성, supported viewport를 위한 제품
   Agent의 desktop 기본 폭은 396px이다. 검수된
   `1385×918` AI Chat 상세 참조처럼 약 595px까지 넓힌 값도
   `agentDockWidth`에 독립 저장한다.
+  다만 열린 왼쪽 tool window와 저장된 Agent 폭을 함께 적용했을 때 중앙
+  workbench가 520px보다 좁아지면 Agent는 modeless 오른쪽 overlay로 투영한다.
+  창 폭만 보는 고정 breakpoint로 세 pane을 강제로 유지하거나 중앙 pane을
+  0에 가깝게 축소하지 않는다.
+  compact Agent가 modal일 때 배경 shell은 실제 grid 형제에 `inert`를 적용한다.
+  WKWebView에서 자손의 text·icon·border paint를 누락시키는 `display: contents`
+  wrapper를 shell grid와 접근성 경계로 사용하지 않는다.
   상태는 desktop 선호 폭을 소유하고 shell projection만 현재 viewport에 맞춰
   clamp한다. 따라서 compact viewport에서 처음 mount되거나 왕복해도 저장된
   desktop 폭과 다음 desktop projection은 변경되지 않는다.

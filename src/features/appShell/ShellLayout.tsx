@@ -1,4 +1,4 @@
-import type { ReactNode, RefObject } from "react";
+import { useRef, type ReactNode, type RefObject } from "react";
 
 import { Icon } from "../../components/Icon";
 import { ResizeSeparator } from "../../design-system/components/ResizeSeparator";
@@ -13,6 +13,7 @@ import {
   agentDockInteraction,
   agentDockLayout,
   clampAgentDockWidth,
+  shouldOverlayAgentDock,
 } from "../agents/layout";
 import { AgentSelectionProvider } from "../agents/selectionContext";
 import type { BackgroundTask } from "../backgroundTasks/domain";
@@ -35,6 +36,7 @@ import type { WorkbenchDocument } from "../workbench/domain";
 import WorkspaceAccount from "../workspaces/components/WorkspaceAccount";
 import WorkspaceSwitcher from "../workspaces/components/WorkspaceSwitcher";
 import { IdeStatusBar, IdeTopBar } from "./IdeChrome";
+import { useInertShellBackground } from "./useInertShellBackground";
 
 const IS_MACOS =
   typeof navigator !== "undefined" &&
@@ -192,6 +194,7 @@ export default function ShellLayout(props: Props) {
 }
 
 function ShellLayoutContent({ model, commands }: Props) {
+  const shellRef = useRef<HTMLDivElement>(null);
   const { t } = useI18n();
   const {
     workspace,
@@ -231,12 +234,20 @@ function ShellLayoutContent({ model, commands }: Props) {
   const leftToolWindowVisible =
     databaseExplorerVisible || localHistoryVisible;
   const servicesVisible = services.open;
-  const agentLayout = agentDockLayout(viewport.compact, agent.overlay);
+  const agentOverlay =
+    agent.overlay ||
+    (agent.open && shouldOverlayAgentDock({
+      viewportWidth: typeof window === "undefined" ? 1_280 : window.innerWidth,
+      leftToolWindowWidth: leftToolWindowVisible ? viewport.sidebarWidth : 0,
+      requestedAgentWidth: agent.width,
+    }));
+  const agentLayout = agentDockLayout(viewport.compact, agentOverlay);
   const compactAgentModalOpen =
     agent.open &&
     workspace.selected !== null &&
     agentDockInteraction(agentLayout).shellInert;
-  const rightDockWidth = agent.open && !agent.overlay
+  useInertShellBackground(shellRef, compactAgentModalOpen);
+  const rightDockWidth = agent.open && !agentOverlay
     ? clampAgentDockWidth(
         agent.width,
         typeof window === "undefined" ? 1_280 : window.innerWidth,
@@ -265,6 +276,7 @@ function ShellLayoutContent({ model, commands }: Props) {
 
   return (
     <div
+      ref={shellRef}
       className="app tw:grid tw:h-dvh tw:overflow-hidden tw:bg-muted"
       data-compact={viewport.compact}
       data-platform={IS_MACOS ? "macos" : "other"}
@@ -286,10 +298,6 @@ function ShellLayoutContent({ model, commands }: Props) {
             }px var(--ds-status-bar-height)`,
       }}
     >
-      <div
-        className="tw:contents"
-        inert={compactAgentModalOpen ? true : undefined}
-      >
       <IdeTopBar
         selected={workspace.selected}
         supportsSql={workspace.supportsSql}
@@ -485,8 +493,6 @@ function ShellLayoutContent({ model, commands }: Props) {
         onOpenNotifications={commands.status.openNotifications}
         onSafetySettings={commands.workspace.safetySettings}
       />
-      </div>
-
       {agent.open && workspace.selected && (
         <AcpChatPanel
           connection={workspace.selected}
@@ -494,7 +500,7 @@ function ShellLayoutContent({ model, commands }: Props) {
           documents={workbench.documents}
           activeDocumentId={workbench.activeDocumentId}
           selectedTable={workbench.selectedTable}
-          overlay={agent.overlay}
+          overlay={agentOverlay}
           compact={viewport.compact}
           width={rightDockWidth}
           onWidthChange={commands.agent.widthChanged}
