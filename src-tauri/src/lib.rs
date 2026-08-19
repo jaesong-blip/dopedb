@@ -392,6 +392,14 @@ pub fn run() {
                 tauri::async_runtime::block_on(agents.flush_persistence(Duration::from_secs(2)));
                 let broker = app_handle.state::<state::AppState>().broker.clone();
                 tauri::async_runtime::block_on(broker.shutdown_and_wait(Duration::from_secs(2)));
+                let connections = app_handle.state::<state::AppState>().connections.clone();
+                if tauri::async_runtime::block_on(async {
+                    tokio::time::timeout(Duration::from_secs(2), connections.shutdown_all()).await
+                })
+                .is_err()
+                {
+                    tracing::warn!("connection shutdown timed out during application exit");
+                }
             }
         });
 }

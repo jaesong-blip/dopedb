@@ -327,9 +327,20 @@ export function collectQueryRuntimeOwnershipDiagnostics(context) {
   const diagnostics = [];
   const transport = "src-tauri/src/features/queries/transport.rs";
   const appEntrypoint = "src-tauri/src/lib.rs";
-  if (!read(appEntrypoint).includes("queries.shutdown_desktop_streams(Duration::from_secs(2))")) {
+  const appEntrypointSource = read(appEntrypoint);
+  if (!appEntrypointSource.includes("queries.shutdown_desktop_streams(Duration::from_secs(2))")) {
     diagnostics.push(
       `${appEntrypoint}: Tauri Exit must bounded-drain owned desktop SQL streams before runtime teardown`,
+    );
+  }
+  if (!appEntrypointSource.includes("connections.shutdown_all()")) {
+    diagnostics.push(
+      `${appEntrypoint}: Tauri Exit must bounded-stop connection pools and child transports before runtime teardown`,
+    );
+  }
+  if (/block_on\s*\(\s*tokio::time::timeout/.test(appEntrypointSource)) {
+    diagnostics.push(
+      `${appEntrypoint}: Tokio timeout futures must be constructed inside the async runtime`,
     );
   }
   forbid(context, diagnostics, transport, [

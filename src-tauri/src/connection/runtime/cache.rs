@@ -113,10 +113,13 @@ impl CacheEntry {
             if let Some(tunnel) = self.take_ssh_tunnel() {
                 tunnel.close().await;
             }
-            self.live.close().await;
             if let Some(proxy) = self.take_cloud_sql_proxy() {
                 proxy.close().await;
             }
+            // An in-flight catalog or query lease can keep `Pool::close` waiting.
+            // Stop child transports first so the application-exit deadline cannot
+            // expire while a Cloud SQL proxy is still reachable as an orphan.
+            self.live.close().await;
         }
     }
 

@@ -25,6 +25,9 @@ use crate::store::Store;
 pub struct AppState {
     /// Transport-neutral application services shared by Tauri and the local broker.
     pub services: ApplicationServices,
+    /// Process-local owner retained by the composition root so child transports and
+    /// pools can be explicitly stopped before the async runtime exits.
+    pub(crate) connections: ConnectionManager,
     /// Owner-local CLI broker. Session capabilities live only inside this runtime.
     pub(crate) broker: BrokerRuntime,
     /// Offline Skill bundle inventory and atomic per-user installer.
@@ -104,6 +107,7 @@ impl AppState {
         provider_recovery?;
         Ok(Self {
             services,
+            connections,
             broker,
             skills,
             terminals,

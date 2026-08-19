@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex as StdMutex, Weak};
 use std::time::Duration;
 
 use dashmap::DashMap;
+use futures::future::join_all;
 use sqlx::Row;
 use tokio::sync::{Mutex, OwnedMutexGuard, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
 use tokio::time::Instant;
@@ -1302,6 +1303,21 @@ impl ConnectionManager {
         for entry in entries {
             entry.force_close_and_release().await;
         }
+    }
+
+    /// Stops every process-local connection resource before the Tauri runtime exits.
+    /// Relying on `Drop` here is insufficient: the runtime can stop before its spawned
+    /// cleanup futures run, leaving SSH or Cloud SQL helper processes orphaned.
+    pub(crate) async fn shutdown_all(&self) {
+        let _session_gate = self.inner.session_gate.write().await;
+        self.revoke_sessions(None, "application exiting").await;
+        let scope_gate = self.inner.scope_gate.write().await;
+        let entries = self.detach_all().await;
+        drop(scope_gate);
+        join_all(entries.into_iter().map(|entry| async move {
+            entry.force_close_and_release().await;
+        }))
+        .await;
     }
 
     pub(crate) async fn pin(
