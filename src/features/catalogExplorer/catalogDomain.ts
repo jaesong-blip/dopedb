@@ -9,7 +9,8 @@ import type { IconName } from "../../components/Icon";
 
 export type DropTarget =
   | { kind: "connection"; id: string }
-  | { kind: "group"; key: string };
+  | { kind: "group"; key: string }
+  | { kind: "environment"; id: string };
 
 export const SQL_OBJECT_SECTIONS: Array<{
   kind: CatalogObjectKind;

@@ -23,7 +23,10 @@ DopeDB의 제품 축, 실제 사용자 작업, 접근성, 운영 안전성, 지�
 
 - 상단은 workspace와 현재 문맥, document tab, 실제 전역 command를 제공한다.
 - 왼쪽 Explorer는 Project → Environment → Databases/Data sources/Analyses의
-  계층과 실제 catalog를 소유한다.
+  계층과 실제 catalog를 소유한다. 아직 Environment에 묶이지 않은 연결은
+  `Unassigned`에만 표시하고, 그 행을 원하는 Environment로 끌어 놓으면 기존
+  environment-connection binding command로 이동한다. 이미 묶인 연결을 암묵적으로
+  재배치하거나 복제하지 않는다.
 - 중앙 document surface는 welcome, query, data, schema, analysis처럼 현재 작업
   하나를 소유한다.
 - 오른쪽 Agent surface는 exact Project·Environment·connection revision에 고정된
@@ -44,6 +47,14 @@ DopeDB의 제품 축, 실제 사용자 작업, 접근성, 운영 안전성, 지�
   trigger 복구를 책임진다.
 - data grid의 header/row/row number는 28px, 기본 column은 144px을 기준으로 한다.
   virtualization 여부와 무관하게 selection, resize, sort, filter 계약은 같다.
+- 사용자가 편집기에서 작성한 SQL은 Run 동작 자체를 exact payload 승인으로 사용해
+  중복 검토 화면이나 확인 문구 입력 없이 실행한다. Agent와 background 작업이
+  제안한 mutation은 사람이 작성한 것으로 간주하지 않고 별도 한 번의 명시적
+  승인·거절을 유지한다.
+- Desktop의 연결별 쓰기 실행 제어는 `Settings → Safety` 한 곳이 소유한다.
+  연결 편집기와 작업 화면은 쓰기 권한을 변경하지 않으며, 상태 표시와 Safety
+  진입만 제공한다. workspace가 부여한 권한은 상한이고 기기별 Safety 설정은 이를
+  좁힐 수만 있다.
 - enabled control은 반드시 실제 command와 state owner를 가진다. 아직 없는 기능은
   tracker에 `missing`으로 기록하고 가짜 control을 만들지 않는다.
 

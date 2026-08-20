@@ -4,14 +4,13 @@ import { defineCatalog } from "../types";
 export const safetyCatalog = defineCatalog(
   {
     "safety.allowWrites": "Allow writes",
-    "safety.allowWritesHint": "Master gate for the write path (off by default).",
+    "safety.allowWritesHint":
+      "The single Desktop gate for write execution on this connection. Workspace authority can only narrow it.",
     "safety.autoRunReads": "Auto-run reads",
     "safety.autoRunReadsHint":
       "Run read-only SELECTs without a manual approve.",
     "safety.body":
-      "This connection's database policy. Reads can move quickly; writes stay visible and gated.",
-    "safety.connectionWritePolicyRequired":
-      "This data source's write policy is off. Enable Allow write operations under Data Source Options before opening the local safety gate.",
+      "This is the only Desktop control for this connection's write execution. Run approves SQL you authored; Agent proposals still require an explicit approval.",
     "safety.execPreviewRowLimit": "Exec-preview row limit",
     "safety.execPreviewRowLimitHint":
       "Skip execute-preview above this estimate (L3 gate).",
@@ -60,23 +59,21 @@ export const safetyCatalog = defineCatalog(
     "safety.monitoringTitle": "Agent monitoring access",
     "safety.monitoringUser": "Database user",
     "safety.monitoringWorking": "Applying...",
-    "safety.openConnectionOptions": "Open Data Source Options",
     "safety.saved": "Safety settings saved",
     "safety.refreshFailed":
       "The saved safety settings are still shown, but they could not be refreshed. {error}",
     "safety.sharedWritesHint":
-      "A workspace administrator controls this DB policy. When enabled, it remains effective for members with an Editor, Admin, or Owner role and a use grant; short-lived credentials rotate automatically.",
+      "A workspace administrator sets the maximum DB authority. This device switch can narrow an allowed write grant but cannot broaden it.",
     "safety.title": "Safety settings",
   },
   {
     "safety.allowWrites": "쓰기 허용",
-    "safety.allowWritesHint": "쓰기 경로의 마스터 게이트입니다. 기본값은 꺼짐입니다.",
+    "safety.allowWritesHint":
+      "이 연결의 쓰기 실행을 제어하는 유일한 Desktop 게이트입니다. 워크스페이스 권한보다 넓힐 수는 없습니다.",
     "safety.autoRunReads": "읽기 자동 실행",
     "safety.autoRunReadsHint": "읽기 전용 SELECT를 수동 승인 없이 실행합니다.",
     "safety.body":
-      "이 연결의 데이터베이스 정책입니다. 읽기는 빠르게 흐르게 두고, 쓰기는 보이는 승인 흐름 뒤에 둡니다.",
-    "safety.connectionWritePolicyRequired":
-      "이 데이터 소스의 쓰기 정책이 꺼져 있습니다. 로컬 안전 게이트를 열기 전에 데이터 소스 옵션에서 ‘쓰기 작업 허용’을 켜세요.",
+      "이 연결의 쓰기 실행을 제어하는 유일한 Desktop 화면입니다. 직접 작성한 SQL은 실행 동작이 승인이고, Agent 제안은 별도 승인이 필요합니다.",
     "safety.execPreviewRowLimit": "실행 미리보기 행 제한",
     "safety.execPreviewRowLimitHint":
       "예상 행 수가 이 값을 넘으면 실행 미리보기를 건너뜁니다 (L3 게이트).",
@@ -125,12 +122,11 @@ export const safetyCatalog = defineCatalog(
     "safety.monitoringTitle": "Agent 모니터링 접근",
     "safety.monitoringUser": "DB 사용자",
     "safety.monitoringWorking": "적용 중...",
-    "safety.openConnectionOptions": "데이터 소스 옵션 열기",
     "safety.saved": "안전 설정이 저장되었습니다",
     "safety.refreshFailed":
       "저장된 안전 설정을 계속 표시하지만 새로고침하지 못했습니다. {error}",
     "safety.sharedWritesHint":
-      "이 DB 정책은 워크스페이스 관리자가 정합니다. 쓰기를 허용하면 사용 권한이 있는 에디터·관리자·소유자에게 역할이 유지되는 동안 적용되고 단기 자격증명은 자동 회전합니다.",
+      "워크스페이스 관리자가 DB 권한의 상한을 정합니다. 이 기기의 스위치는 허용된 쓰기 권한을 좁힐 수 있지만 더 넓힐 수는 없습니다.",
     "safety.title": "안전 설정",
   },
 );

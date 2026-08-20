@@ -213,6 +213,64 @@ async fn assert_current_store_migration_is_write_free() {
         .upsert_connection(&sqlite_profile(integrity_connection_id, "integrity-guard"))
         .await
         .unwrap();
+    let mut local_safety = store.get_safety(integrity_connection_id).await.unwrap();
+    local_safety.allow_writes = true;
+    assert!(store
+        .set_safety(integrity_connection_id, 1, true, &local_safety)
+        .await
+        .unwrap());
+    assert!(
+        store
+            .get_connection(integrity_connection_id)
+            .await
+            .unwrap()
+            .allow_writes
+    );
+    assert!(
+        store
+            .get_safety(integrity_connection_id)
+            .await
+            .unwrap()
+            .allow_writes
+    );
+    local_safety.max_rows = 321;
+    assert!(!store
+        .set_safety(integrity_connection_id, 2, true, &local_safety)
+        .await
+        .unwrap());
+    assert_eq!(
+        store
+            .get_safety(integrity_connection_id)
+            .await
+            .unwrap()
+            .max_rows,
+        321
+    );
+    assert!(matches!(
+        store
+            .set_safety(integrity_connection_id, 1, true, &local_safety)
+            .await,
+        Err(AppError::Blocked { .. })
+    ));
+    local_safety.allow_writes = false;
+    assert!(store
+        .set_safety(integrity_connection_id, 2, true, &local_safety)
+        .await
+        .unwrap());
+    assert!(
+        !store
+            .get_connection(integrity_connection_id)
+            .await
+            .unwrap()
+            .allow_writes
+    );
+    assert!(
+        !store
+            .get_safety(integrity_connection_id)
+            .await
+            .unwrap()
+            .allow_writes
+    );
     assert!(
         sqlx::query("UPDATE connections SET port = 65536 WHERE id = ?1")
             .bind(integrity_connection_id.to_string())
@@ -1481,7 +1539,7 @@ async fn managed_remote_template_never_reads_or_accepts_a_local_binding() {
     };
     template.provider_target = Some(provider_target.clone());
     let removed_credential_ids = store
-        .sync_remote_connections(workspace_id, &user.id, &[(template, 2)])
+        .sync_remote_connections(workspace_id, &user.id, &[(template.clone(), 2)])
         .await
         .unwrap();
     assert!(removed_credential_ids.contains(&credential_id));
@@ -1535,7 +1593,24 @@ async fn managed_remote_template_never_reads_or_accepts_a_local_binding() {
         .execute(store.pool())
         .await
         .unwrap();
+    assert!(!store.get_safety(id).await.unwrap().allow_writes);
+    let mut device_safety = store.get_safety(id).await.unwrap();
+    device_safety.allow_writes = true;
+    assert!(store
+        .set_safety(id, 2, false, &device_safety)
+        .await
+        .unwrap());
+    store
+        .sync_remote_connections(workspace_id, &user.id, &[(template.clone(), 3)])
+        .await
+        .unwrap();
     assert!(store.get_safety(id).await.unwrap().allow_writes);
+    template.allow_writes = false;
+    store
+        .sync_remote_connections(workspace_id, &user.id, &[(template, 4)])
+        .await
+        .unwrap();
+    assert!(!store.get_safety(id).await.unwrap().allow_writes);
     let binding_material: (String, String, Option<String>) = sqlx::query_as(
         "SELECT username, extra_params, secret_ref
          FROM workspace_connection_bindings

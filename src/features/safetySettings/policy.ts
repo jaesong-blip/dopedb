@@ -25,6 +25,30 @@ export function connectionCanEnterWritePath(
   );
 }
 
+/** The Safety page owns the local connection's write policy and local consent. */
+export function safetyWriteControlAvailable(
+  connection: ConnectionWriteAuthority,
+): boolean {
+  if (
+    connection.credentialMode === "local" &&
+    connection.workspaceAccess === "local"
+  ) {
+    return true;
+  }
+  return connectionCanEnterWritePath(connection);
+}
+
+/** Normalize a Safety form without allowing it to broaden workspace authority. */
+export function requestedSafetySettings(
+  connection: ConnectionWriteAuthority,
+  settings: SafetySettings,
+): SafetySettings {
+  if (safetyWriteControlAvailable(connection) || !settings.allowWrites) {
+    return settings;
+  }
+  return { ...settings, allowWrites: false };
+}
+
 export function effectiveSafetySettings(
   connection: ConnectionWriteAuthority,
   settings: SafetySettings,

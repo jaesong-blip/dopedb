@@ -28,7 +28,7 @@ where
         &self,
         connection_id: Uuid,
         settings: SafetySettings,
-    ) -> AppResult<()> {
+    ) -> AppResult<bool> {
         self.port.update(connection_id, settings).await
     }
 }

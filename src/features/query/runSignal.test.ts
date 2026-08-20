@@ -1,6 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SafetySettings } from "../../ipc/types";
-import { effectiveSafetySettings } from "../safetySettings/policy";
+import {
+  effectiveSafetySettings,
+  requestedSafetySettings,
+  safetyWriteControlAvailable,
+} from "../safetySettings/policy";
+import { approveManualOperationIfRequired } from "../queries/runPath";
 import { buildRunSignal } from "./runSignal";
 
 const safety: SafetySettings = {
@@ -17,7 +22,7 @@ const t = (key: string, vars?: Record<string, string | number>) =>
   `${key}${vars ? `:${JSON.stringify(vars)}` : ""}`;
 
 describe("SQL run guidance", () => {
-  it("warns before a write when connection writes are disabled", () => {
+  it("warns before a write while one Safety control owns manual approval", async () => {
     const requestedWrites = { ...safety, allowWrites: true };
     expect(
       effectiveSafetySettings(
@@ -49,6 +54,58 @@ describe("SQL run guidance", () => {
         requestedWrites,
       ).allowWrites,
     ).toBe(true);
+    const localConnection = {
+      allowWrites: false,
+      credentialMode: "local" as const,
+      workspaceAccess: "local" as const,
+    };
+    expect(safetyWriteControlAvailable(localConnection)).toBe(true);
+    expect(
+      requestedSafetySettings(localConnection, {
+        ...safety,
+        allowWrites: true,
+      }).allowWrites,
+    ).toBe(true);
+    expect(
+      requestedSafetySettings(
+        {
+          allowWrites: true,
+          credentialMode: "memberLocal",
+          workspaceAccess: "write",
+        },
+        { ...safety, allowWrites: true },
+      ).allowWrites,
+    ).toBe(false);
+    const managedConnection = {
+      allowWrites: true,
+      credentialMode: "managed" as const,
+      workspaceAccess: "write" as const,
+    };
+    expect(safetyWriteControlAvailable(managedConnection)).toBe(true);
+    expect(
+      requestedSafetySettings(managedConnection, {
+        ...safety,
+        allowWrites: false,
+      }).allowWrites,
+    ).toBe(false);
+
+    const approve = vi.fn().mockResolvedValue(undefined);
+    await expect(
+      approveManualOperationIfRequired(
+        {
+          operationId: "00000000-0000-4000-8000-000000000001",
+          payloadHash: "a".repeat(64),
+          approvalRequired: true,
+          confirmationPhrase: "PROD",
+        },
+        approve,
+      ),
+    ).resolves.toBe(true);
+    expect(approve).toHaveBeenCalledWith(
+      "00000000-0000-4000-8000-000000000001",
+      "a".repeat(64),
+      "PROD",
+    );
     expect(buildRunSignal("UPDATE users SET active = 0", [], safety, t)).toEqual({
       tone: "warning",
       icon: "alert",

@@ -327,7 +327,7 @@ impl Store {
             .bind(provider_target)
             .execute(&mut *tx)
             .await?;
-            sync_safety_allow_writes(
+            reconcile_safety_write_ceiling(
                 &mut tx,
                 profile.id,
                 profile.credential_mode == WorkspaceCredentialMode::Managed

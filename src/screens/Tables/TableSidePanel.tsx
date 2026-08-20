@@ -7,7 +7,6 @@ import {
 import CellViewer from "../../components/CellViewer";
 import { Icon } from "../../components/Icon";
 import { Button } from "../../design-system/components/Button";
-import { TextInput } from "../../design-system/components/FormControls";
 import RowEditor, {
   type RowEditorSubmission,
 } from "../../components/RowEditor";
@@ -65,7 +64,6 @@ type Props = {
   reviewing: boolean;
   staged: StagedWrite[];
   proposal: ScriptOperationProposal | null;
-  confirmation: string;
   running: boolean;
   catalogPending: boolean;
   selectedCell: SelectedCell | null;
@@ -75,7 +73,6 @@ type Props = {
   onArmDelete: () => void;
   onCloseReview: () => void;
   onRemoveStaged: (id: string) => void;
-  onConfirmation: (value: string) => void;
   onPrepare: () => void;
   onApprove: () => void;
   onReject: () => void;
@@ -94,7 +91,6 @@ export default function TableSidePanel(props: Props) {
     reviewing,
     staged,
     proposal,
-    confirmation,
     running,
     catalogPending,
     selectedCell,
@@ -256,21 +252,6 @@ export default function TableSidePanel(props: Props) {
               </li>
             ))}
           </ol>
-          {proposal?.confirmationPhrase && (
-            <label className="tw:mt-3 tw:grid tw:gap-2 tw:text-sm">
-              <span>
-                {t("approval.confirmationPrompt")}{" "}
-                <code>{proposal.confirmationPhrase}</code>
-              </span>
-              <TextInput
-                monospace
-                value={confirmation}
-                onChange={(event) => props.onConfirmation(event.target.value)}
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </label>
-          )}
           <InspectorFooter>
             {!proposal ? (
               <Button
@@ -284,11 +265,7 @@ export default function TableSidePanel(props: Props) {
               <>
                 <Button
                   variant="primary"
-                  disabled={
-                    running ||
-                    (!!proposal.confirmationPhrase &&
-                      confirmation !== proposal.confirmationPhrase)
-                  }
+                  disabled={running}
                   onClick={props.onApprove}
                 >
                   {running

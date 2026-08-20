@@ -2,11 +2,8 @@
 // execution sessions and Output/Result live in the shell-owned Services window.
 // Multi-statement scripts execute through the backend script runner and preserve
 // per-statement results. ⌘↩ runs the current draft or selected SQL.
-import ApprovalCard from "../../features/operations/ApprovalCard";
 import { Icon } from "../../components/Icon";
 import LazySqlViewer from "../../components/LazySqlViewer";
-import { StatusBadge } from "../../design-system/components/Status";
-import { TextInput } from "../../design-system/components/FormControls";
 import {
   WorkbenchButton,
   WorkbenchContainedBody,
@@ -42,12 +39,10 @@ export default function Sql(props: SqlWorkbenchProps) {
   const {
     analysisCurrent,
     applyParameterValues,
-    approvePendingScript,
     cancelRun,
     catalog,
     closeParameterDialog,
     closePlan,
-    completePendingApproval,
     databaseOptions,
     documentConflict,
     documentSaveError,
@@ -75,17 +70,11 @@ export default function Sql(props: SqlWorkbenchProps) {
     openParameterDialog,
     parameterDialog,
     parameterValues,
-    pendingApproval,
-    pendingScriptApproval,
     plan,
     planErr,
-    rejectPendingApproval,
-    rejectPendingScript,
     resolveModeHint,
     running,
-    scriptConfirmation,
     setDraft,
-    setScriptConfirmation,
   } = useSqlWorkbenchController(props);
 
   return (
@@ -368,84 +357,6 @@ export default function Sql(props: SqlWorkbenchProps) {
             </details>
           )}
 
-          {pendingApproval && (
-            <ApprovalCard
-              key={pendingApproval.proposal.operationId}
-              connectionId={connection.id}
-              engine={connection.engine}
-              sql={pendingApproval.sql}
-              safety={safety}
-              initialProposal={pendingApproval.proposal}
-              onExecuted={completePendingApproval}
-              onReject={rejectPendingApproval}
-            />
-          )}
-
-          {pendingScriptApproval && (
-            <section className="tw:my-2 tw:grid tw:gap-3 tw:border-y tw:border-warning tw:bg-background tw:p-3">
-              <div className="ds-title-line">
-                <strong>{t("approval.review")}</strong>
-                <StatusBadge tone="warning">
-                  {t("sql.statementCount", {
-                    count: pendingScriptApproval.proposal.statementCount,
-                  })}
-                </StatusBadge>
-              </div>
-              <LazySqlViewer
-                value={pendingScriptApproval.sql}
-                minHeight="96px"
-              />
-              <div className="tw:text-sm tw:text-muted-foreground tw:[&_code]:font-mono tw:[&_code]:text-xs tw:[&_code]:[overflow-wrap:anywhere]">
-                {t("approval.payloadHash")}{" "}
-                <code>{pendingScriptApproval.proposal.payloadHash}</code>
-              </div>
-              {pendingScriptApproval.proposal.confirmationPhrase && (
-                <label className="tw:grid tw:gap-2 tw:text-sm">
-                  <span>
-                    {t("approval.confirmationPrompt")}{" "}
-                    <code>
-                      {pendingScriptApproval.proposal.confirmationPhrase}
-                    </code>
-                  </span>
-                  <span className="tw:w-[min(100%,320px)]">
-                    <TextInput
-                      monospace
-                      value={scriptConfirmation}
-                      onChange={(event) =>
-                        setScriptConfirmation(event.target.value)
-                      }
-                      placeholder={
-                        pendingScriptApproval.proposal.confirmationPhrase
-                      }
-                      autoComplete="off"
-                      spellCheck={false}
-                    />
-                  </span>
-                </label>
-              )}
-              <div className="ds-action-row ds-control-row">
-                <WorkbenchButton
-                  variant="primary"
-                  disabled={
-                    running ||
-                    (!!pendingScriptApproval.proposal.confirmationPhrase &&
-                      scriptConfirmation !==
-                        pendingScriptApproval.proposal.confirmationPhrase)
-                  }
-                  onClick={() => void approvePendingScript()}
-                >
-                  {t("approval.approveAndRunWrite")}
-                </WorkbenchButton>
-                <WorkbenchButton
-                  variant="default"
-                  disabled={running}
-                  onClick={() => void rejectPendingScript()}
-                >
-                  {t("approval.reject")}
-                </WorkbenchButton>
-              </div>
-            </section>
-          )}
         </div>
       </WorkbenchContainedBody>
       {parameterDialog ? (

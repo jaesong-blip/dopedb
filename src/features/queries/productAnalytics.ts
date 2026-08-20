@@ -52,8 +52,6 @@ type QueryExecutionAnalyticsState = {
   scope: CatalogScope;
   connectionEngine: ConnectionEngine;
   credentialMode: WorkspaceCredentialMode;
-  approvalPending: boolean;
-  approvalRejected: boolean;
   cancelled: boolean;
   failed: boolean;
   materializedCompleted: boolean;
@@ -135,8 +133,6 @@ function recordOutcome(
 
 export function useQueryExecutionAnalytics({
   scope,
-  approvalPending,
-  approvalRejected,
   cancelled,
   failed,
   materializedCompleted,
@@ -157,16 +153,10 @@ export function useQueryExecutionAnalytics({
   useEffect(() => {
     const attempt = attemptRef.current;
     if (!attempt || !attempt.armed || attempt.completed) return;
-    if (approvalPending) {
-      attempt.approvalRequired = true;
-      return;
-    }
-
     const currentStream = streamRunId > attempt.previousStreamRunId;
     let outcome: QueryOutcome | null = null;
     if (currentStream && streamOutcome === "unknown") outcome = "unknown";
     else if (
-      approvalRejected ||
       cancelled ||
       (currentStream && streamOutcome === "cancelled")
     ) {
@@ -199,8 +189,6 @@ export function useQueryExecutionAnalytics({
       measuredDurationMs ?? Math.max(0, Date.now() - attempt.startedAtMs),
     );
   }, [
-    approvalPending,
-    approvalRejected,
     cancelled,
     failed,
     materializedCompleted,

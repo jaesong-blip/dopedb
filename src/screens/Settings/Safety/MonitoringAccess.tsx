@@ -1,5 +1,5 @@
 // Compact PostgreSQL monitoring-role control. The backend owns the fixed GRANT/REVOKE
-// and Agent planning safety decision; this panel only exposes status, explicit confirmation, and
+// and Agent planning safety decision; this panel only exposes status, exact approval, and
 // a DBA-copy fallback without turning on arbitrary database writes.
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -18,7 +18,6 @@ import { Icon } from "../../../components/Icon";
 import Skeleton from "../../../components/Skeleton";
 import { useToast } from "../../../components/Toast";
 import { Button } from "../../../design-system/components/Button";
-import { TextInput } from "../../../design-system/components/FormControls";
 import { StatusBadge } from "../../../design-system/components/Status";
 import { monitoringStatusQuery, qk } from "../../../lib/queries";
 import { useI18n } from "../../../lib/i18n";
@@ -31,12 +30,10 @@ export default function MonitoringAccess({ connectionId }: { connectionId: strin
   const queryClient = useQueryClient();
   const statusQuery = useQuery(monitoringStatusQuery(connectionId));
   const [proposal, setProposal] = useState<MonitoringOperationProposal | null>(null);
-  const [confirmation, setConfirmation] = useState("");
   const propose = useMutation({
     mutationFn: (enabled: boolean) => proposePostgresMonitoring(connectionId, enabled),
     onSuccess: (operation) => {
       setProposal(operation);
-      setConfirmation("");
     },
     onError: (error) => toast(errMessage(error), "error"),
   });
@@ -45,13 +42,12 @@ export default function MonitoringAccess({ connectionId }: { connectionId: strin
       await approveOperation(
         operation.operationId,
         operation.payloadHash,
-        operation.confirmationPhrase ? confirmation : undefined,
+        operation.confirmationPhrase ?? undefined,
       );
       return setPostgresMonitoring(operation.operationId);
     },
     onSuccess: (status) => {
       setProposal(null);
-      setConfirmation("");
       queryClient.setQueryData(qk.monitoring(connectionId), status);
       toast(status.roleGranted ? t("safety.monitoringEnabled") : t("safety.monitoringRevoked"));
     },
@@ -62,14 +58,12 @@ export default function MonitoringAccess({ connectionId }: { connectionId: strin
       rejectOperation(operation.operationId, operation.payloadHash),
     onSuccess: () => {
       setProposal(null);
-      setConfirmation("");
     },
     onError: (error) => toast(errMessage(error), "error"),
   });
 
   useEffect(() => {
     setProposal(null);
-    setConfirmation("");
   }, [connectionId]);
 
   function copyGrant() {
@@ -221,35 +215,11 @@ export default function MonitoringAccess({ connectionId }: { connectionId: strin
               {proposal.payloadHash}
             </code>
           </div>
-          {proposal.confirmationPhrase && (
-            <label className="tw:grid tw:gap-2 tw:text-sm">
-              <span>
-                {t("approval.confirmationPrompt")}{" "}
-                <code>{proposal.confirmationPhrase}</code>
-              </span>
-              <span className="tw:w-full tw:max-w-[320px]">
-                <TextInput
-                  monospace
-                  value={confirmation}
-                  onChange={(event) => setConfirmation(event.target.value)}
-                  placeholder={proposal.confirmationPhrase}
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </span>
-            </label>
-          )}
           <div className="ds-action-row ds-control-row">
             <Button
               size="compact"
               variant="primary"
-              disabled={
-                busy
-                || (
-                  !!proposal.confirmationPhrase
-                  && confirmation !== proposal.confirmationPhrase
-                )
-              }
+              disabled={busy}
               onClick={() => apply.mutate(proposal)}
             >
               {apply.isPending

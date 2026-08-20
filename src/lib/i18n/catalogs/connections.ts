@@ -13,9 +13,6 @@ export const connectionsCatalog = defineCatalog(
     "connections.addDataSourceSearchPlaceholder":
       "Search databases, cloud, or files",
     "connections.addParameter": "Add parameter",
-    "connections.allowWrites": "Allow write operations",
-    "connections.allowWritesBody":
-      "Writes still pass through DopeDB safety review and approval.",
     "connections.autoDisconnect": "Auto-disconnect after",
     "connections.autoDisconnectSeconds":
       "Auto-disconnect interval in seconds",
@@ -94,6 +91,8 @@ export const connectionsCatalog = defineCatalog(
       "Could not load analyses",
     "connections.environmentDatabaseLoadFailed":
       "Could not load Environment databases",
+    "connections.environmentConnectionMoved":
+      "Moved {connection} to {environment}.",
     "connections.environmentSourceLoadFailed":
       "Could not load Environment data sources",
     "connections.environmentAnalyses": "Analyses",
@@ -336,8 +335,6 @@ export const connectionsCatalog = defineCatalog(
     "connections.user": "User",
     "connections.userPassword": "User & Password",
     "connections.views": "Views ({count})",
-    "connections.writeAccessHint":
-      "Write access is controlled per-connection in Settings > Safety.",
   },
   {
     "connections.browse": "찾아보기...",
@@ -350,9 +347,6 @@ export const connectionsCatalog = defineCatalog(
     "connections.addDataSourceSearchPlaceholder":
       "데이터베이스, 클라우드 또는 파일 검색",
     "connections.addParameter": "매개변수 추가",
-    "connections.allowWrites": "쓰기 작업 허용",
-    "connections.allowWritesBody":
-      "쓰기는 계속 DopeDB 안전 검토와 승인을 거칩니다.",
     "connections.autoDisconnect": "다음 시간 후 자동 연결 해제",
     "connections.autoDisconnectSeconds":
       "자동 연결 해제 간격(초)",
@@ -431,6 +425,8 @@ export const connectionsCatalog = defineCatalog(
       "분석을 불러오지 못했습니다",
     "connections.environmentDatabaseLoadFailed":
       "환경 데이터베이스를 불러오지 못했습니다",
+    "connections.environmentConnectionMoved":
+      "{connection} 연결을 {environment} 환경으로 이동했습니다.",
     "connections.environmentSourceLoadFailed":
       "환경 데이터 소스를 불러오지 못했습니다",
     "connections.environmentAnalyses": "분석",
@@ -670,7 +666,5 @@ export const connectionsCatalog = defineCatalog(
     "connections.user": "사용자",
     "connections.userPassword": "사용자 및 비밀번호",
     "connections.views": "뷰 ({count})",
-    "connections.writeAccessHint":
-      "쓰기 권한은 연결별로 설정 > 안전에서 제어합니다.",
   },
 );

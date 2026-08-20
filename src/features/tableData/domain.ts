@@ -36,7 +36,6 @@ export type TableDataState = {
   staged: StagedWrite[];
   reviewing: boolean;
   proposal: ScriptOperationProposal | null;
-  confirmation: string;
   running: boolean;
   pendingDelete: PendingDelete | null;
   structureOpen: boolean;

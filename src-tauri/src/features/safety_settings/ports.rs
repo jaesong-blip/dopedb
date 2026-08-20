@@ -14,5 +14,5 @@ pub(crate) trait SafetySettingsPort: Clone + Send + Sync + 'static {
         &self,
         connection_id: Uuid,
         settings: SafetySettings,
-    ) -> impl Future<Output = AppResult<()>> + Send;
+    ) -> impl Future<Output = AppResult<bool>> + Send;
 }

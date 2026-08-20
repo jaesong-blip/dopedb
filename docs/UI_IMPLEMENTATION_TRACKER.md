@@ -19,16 +19,16 @@ runtime과 성능 수치로 수행한다.
 | App shell/chrome | `complete` | `features/appShell`, design-system chrome primitives | packaged macOS·Windows에서 keyboard launcher와 compact window를 정기 확인 |
 | Action Search | `complete` | `features/actionSearch` | cached catalog scope, `/` action mode, focus 복구와 bounded top-k를 유지 |
 | Welcome document | `complete` | `screens/Onboarding` | 연결 전/후 실제 command 집합이 달라지는지 packaged smoke에서 확인 |
-| Database Explorer | `complete` | `screens/Connections/DatabaseExplorer`, `features/catalogExplorer` | loaded-only 객체 검색과 대형 catalog의 selection/scroll 보존을 packaged smoke에서 유지 |
-| Connection editor | `complete` | `features/connections/useConnectionEditorController` | 지원 engine별 최소 입력·Test·Apply/OK 실제 연결 검수 |
+| Database Explorer | `complete` | `screens/Connections/DatabaseExplorer`, `features/catalogExplorer` | Unassigned→Environment binding drag, loaded-only 객체 검색과 대형 catalog의 selection/scroll 보존을 packaged smoke에서 유지 |
+| Connection editor | `complete` | `features/connections/useConnectionEditorController` | 연결 identity·접속 옵션만 소유하고 쓰기 실행 제어는 Settings → Safety 단일 경계를 유지 |
 | Provider account access | `complete` | `workspace-cloud/features/providerAccess`, provider application modules | 실제 계정 OAuth/CLI 실패·recovery 및 revoke 검수 |
-| SQL editor/query workflow | `complete` | `features/queries`, `screens/Sql`, Rust query application | 10 KiB/100 KiB/1 MiB 입력과 cancel/transaction packaged 검수 |
+| SQL editor/query workflow | `complete` | `features/queries`, `screens/Sql`, Rust query application | 수동 Run exact 승인, Agent 제안 분리, 10 KiB/100 KiB/1 MiB 입력과 cancel/transaction packaged 검수 |
 | Result/Data grid | `complete` | `features/queryResults`, Rust result artifact | 30열·50,000행 selection/filter/export와 메모리 경계 검수 |
 | Services/Jobs | `complete` | `features/queryServices`, `features/jobs` | background cancel과 복원된 result handle packaged 검수 |
 | Agent tool window | `complete` | `features/agents`, ACP Rust runtime | 공식 adapter 설치·로그아웃·permission·resume의 OS별 검수 |
 | Knowledge graph | `complete` | Rust `features/knowledge`, frontend Knowledge projection | GitHub/Local source revision, publish, mapping과 exact grant 검수 |
 | Analysis Article | `partial` | `features/analysisArticles`, cloud analysis application | production runner, publication, metric signal의 실제 환경 검수 |
-| Settings | `complete` | `features/settings` | keyboard navigation, compact viewport와 scope별 즉시 저장 검수 |
+| Settings | `complete` | `features/settings`, `features/safetySettings` | 선택 연결의 단일 쓰기 제어, fail-closed profile/local gate 저장, compact viewport 검수 |
 | Diagnostics/Recovery | `complete` | design-system diagnostics, feature recovery boundaries | failure injection에서 오류 owner와 retry가 유지되는지 확인 |
 
 ## 공용 UI 계약
@@ -70,7 +70,8 @@ Acceptance: account integration 조회 실패가 shared connection inventory 전
 ### 3. Query와 결과 관찰
 
 1. SQL document에서 Run 또는 안전한 statement preview를 실행한다.
-2. parameter, approval, manual transaction 상태를 실행 전에 확인한다.
+2. parameter와 manual transaction 상태를 확인한다. 사용자가 작성한 SQL은 Run이
+   exact 승인이고, Agent가 제안한 mutation만 별도 승인·거절한다.
 3. streaming result를 grid에서 선택·복사·filter하고 Services에서 작업을 관찰한다.
 4. 큰 결과는 native artifact와 streaming export를 사용하고 renderer가 전체 row를
    보관하지 않는다.

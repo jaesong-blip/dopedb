@@ -94,7 +94,6 @@ export default function SqlTableData({
       staged,
       reviewing,
       proposal: stagedProposal,
-      confirmation: stagedConfirmation,
       running: stagedRunning,
       pendingDelete,
       structureOpen: structure,
@@ -343,7 +342,7 @@ export default function SqlTableData({
       await approveOperation(
         stagedProposal.operationId,
         stagedProposal.payloadHash,
-        stagedProposal.confirmationPhrase ? stagedConfirmation : undefined,
+        stagedProposal.confirmationPhrase ?? undefined,
       );
       finishStagedChanges(await runScript(stagedProposal.operationId));
     } catch (error) {
@@ -365,7 +364,6 @@ export default function SqlTableData({
     } finally {
       commands.patch({
         proposal: null,
-        confirmation: "",
         reviewing: false,
       });
     }
@@ -389,7 +387,6 @@ export default function SqlTableData({
       staged: [],
       reviewing: false,
       proposal: null,
-      confirmation: "",
       editor: null,
       pendingDelete: null,
       writeError: null,
@@ -598,7 +595,6 @@ export default function SqlTableData({
               reviewing={reviewing}
               staged={staged}
               proposal={stagedProposal}
-              confirmation={stagedConfirmation}
               running={stagedRunning}
               catalogPending={snapshotQuery.isPending}
               selectedCell={cellSel}
@@ -610,13 +606,9 @@ export default function SqlTableData({
                 commands.patch({
                   reviewing: false,
                   proposal: null,
-                  confirmation: "",
                 })
               }
               onRemoveStaged={commands.removeStaged}
-              onConfirmation={(confirmation) =>
-                commands.patch({ confirmation })
-              }
               onPrepare={() => void prepareStagedChanges()}
               onApprove={() => void approveStagedChanges()}
               onReject={() => void rejectStagedChanges()}

@@ -33,7 +33,6 @@ export function initialTableDataState(viewKey: string): TableDataState {
     staged: [],
     reviewing: false,
     proposal: null,
-    confirmation: "",
     running: false,
     pendingDelete: null,
     structureOpen: false,

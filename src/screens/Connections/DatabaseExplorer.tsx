@@ -38,11 +38,18 @@ import type {
   KnowledgeSource,
 } from "../../features/knowledge/domain";
 import {
+  bindKnowledgeEnvironmentConnection,
   listKnowledgeEnvironmentConnections,
   listKnowledgeProjects,
   listKnowledgeSources,
   onKnowledgeSourceChanged,
 } from "../../features/knowledge/tauriAdapter";
+import { captureProductEvent } from "../../features/productAnalytics/client";
+import {
+  productAnalyticsAccessMode,
+  productAnalyticsConnectionEngine,
+  productAnalyticsWorkspaceContext,
+} from "../../features/productAnalytics/outcomes";
 import type { AnalysisArticleRecord } from "../../features/analysisArticles/domain";
 import { listAnalysisArticles } from "../../features/analysisArticles/tauriAdapter";
 import { analysisQueryKeys } from "../../features/analysisArticles/queryKeys";
@@ -416,6 +423,73 @@ export function DatabaseExplorer({
       ? connections.filter((connection) => !boundConnectionIds.has(connection.id))
       : connections;
   const unassignedSections = buildConnectionSections(unassignedConnections);
+  const unassignedConnectionIds = new Set(
+    unassignedConnections.map((connection) => connection.id),
+  );
+  const environmentDropTargets = projectEnvironmentIds.map(
+    (environmentId, index) => ({
+      id: environmentId,
+      accepting: environmentConnectionQueries[index]?.isSuccess === true,
+      connectionIds: new Set(
+        (environmentConnectionsById.get(environmentId) ?? []).flatMap(
+          (binding) => (binding.connectionId ? [binding.connectionId] : []),
+        ),
+      ),
+    }),
+  );
+
+  async function bindDroppedConnection(
+    connection: ConnectionProfile,
+    environmentId: string,
+  ) {
+    const environment = (knowledgeProjects.data ?? [])
+      .flatMap((project) => project.environments)
+      .find((candidate) => candidate.id === environmentId);
+    if (!environment) return;
+    try {
+      const binding = await bindKnowledgeEnvironmentConnection({
+        projectEnvironmentId: environmentId,
+        connectionId: connection.id,
+        role: "primary",
+        alias:
+          connection.name.trim() || connection.database.trim() || "database",
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: knowledgeQueryKeys.environmentConnections(
+            environmentId,
+            catalogScope.key,
+          ),
+          refetchType: "active",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: knowledgeQueryKeys.agentEnvironments(),
+          refetchType: "active",
+        }),
+      ]);
+      const context = productAnalyticsWorkspaceContext(catalogScope);
+      if (context) {
+        void captureProductEvent({
+          name: "environment_connection_bound",
+          properties: {
+            accessMode: productAnalyticsAccessMode(connection.credentialMode),
+            engine: productAnalyticsConnectionEngine(connection.engine),
+          },
+          context,
+          dedupeId: binding.id,
+        });
+      }
+      toast(
+        t("connections.environmentConnectionMoved", {
+          connection:
+            connection.name || connection.database || t("app.unnamed"),
+          environment: environment.name,
+        }),
+      );
+    } catch (error) {
+      toast(errMessage(error), "error");
+    }
+  }
 
   function openProviderCredentials(provider: ProviderKind) {
     providerReturnFocusRef.current =
@@ -434,7 +508,11 @@ export function DatabaseExplorer({
     pointerMove: pointerMoveConnection,
     pointerUp: pointerUpConnection,
     pointerCancel: pointerCancelConnection,
-  } = useSchemaGroupDrag(connections, onConnectionUpdated);
+  } = useSchemaGroupDrag(connections, onConnectionUpdated, {
+    environmentTargets: environmentDropTargets,
+    unassignedConnectionIds,
+    onDropOnEnvironment: bindDroppedConnection,
+  });
 
   useEffect(() => {
     if (!openMenuId) return;
@@ -1390,8 +1468,16 @@ export function DatabaseExplorer({
                 environment.id,
               );
               const environmentTreeKey = `environment:${environment.id}`;
+              const isEnvironmentDropTarget =
+                dropTarget?.kind === "environment" &&
+                dropTarget.id === environment.id;
               return (
-                <div key={environment.id} className="tw:grid">
+                <div
+                  key={environment.id}
+                  data-knowledge-environment-drop-id={environment.id}
+                  data-drop-target={isEnvironmentDropTarget}
+                  className="tw:grid tw:border-l tw:border-transparent tw:transition-colors tw:data-[drop-target=true]:border-ring tw:data-[drop-target=true]:bg-muted"
+                >
                   <TreeSectionButton
                     expanded={environmentExpanded}
                     icon="folder"

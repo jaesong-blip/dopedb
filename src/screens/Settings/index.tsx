@@ -36,7 +36,7 @@ type SettingsScope = "application" | "dataSource";
 export default function Settings({
   connection,
   onClose,
-  onEditConnection,
+  onConnectionUpdated,
   onSafetySaved,
   refreshSafety,
   initialSection,
@@ -46,7 +46,7 @@ export default function Settings({
 }: {
   connection: ConnectionProfile | null;
   onClose: () => void;
-  onEditConnection: (connection: ConnectionProfile) => void;
+  onConnectionUpdated: (connection: ConnectionProfile) => void;
   onSafetySaved: (connectionId: string, settings: SafetySettings) => void;
   // Re-loads the App's per-connection safety so Safety edits apply without reselecting.
   refreshSafety: () => void;
@@ -333,7 +333,7 @@ export default function Settings({
                   (connection ? (
                     <Safety
                       connection={connection}
-                      onEditConnection={() => onEditConnection(connection)}
+                      onConnectionUpdated={onConnectionUpdated}
                       onSaved={onSafetySaved}
                     />
                   ) : (

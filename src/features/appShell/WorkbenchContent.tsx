@@ -91,6 +91,7 @@ type WorkbenchContentCommands = {
       profile: ConnectionProfile,
       closeEditor: boolean,
     ) => Promise<void>;
+    update: (connection: ConnectionProfile) => void;
     createDemo: () => void;
   };
   safety: {
@@ -165,7 +166,7 @@ function WorkbenchContentResolved({ model, commands }: Props) {
       initialSection={route.settingsSection}
       refreshSafety={commands.safety.refresh}
       onSafetySaved={commands.safety.accept}
-      onEditConnection={commands.connections.edit}
+      onConnectionUpdated={commands.connections.update}
       updater={update.snapshot}
       onUpdateRefresh={commands.update.refresh}
       onUpdateInstall={commands.update.install}

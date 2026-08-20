@@ -1,4 +1,4 @@
-// CodeMirror 6 SQL viewer/editor, shared by the Ask screen, ApprovalCard, and the SQL
+// CodeMirror 6 SQL viewer/editor, shared by read-only SQL surfaces and the SQL
 // screen. Read-only by default; when a `catalog` is passed it feeds schema-aware
 // autocomplete (table + column names), and `onRun` binds Mod-Enter to execute.
 import { useCallback, useMemo } from "react";

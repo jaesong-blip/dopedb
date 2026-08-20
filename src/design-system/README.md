@@ -516,7 +516,11 @@ DopeDB의 실제 작업 흐름과 접근성, supported viewport를 위한 제품
   Project가 없는
   workspace에서는 설명만 표시하고 별도 생성 row를 누적하지 않으며, 생성 직후
   새 Environment의 `Databases` folder를 연다. resource folder와 `Unassigned` 행에는
-  연결 개수 badge를 붙이지 않는다. 중앙 환경 상세나 AI Chat 안내에
+  연결 개수 badge를 붙이지 않는다. `Unassigned` 연결 행은 pointer drag로 원하는
+  Environment에 놓을 수 있고, 유효한 대상은 drag 중 semantic border와 surface로
+  표시한다. 이 shortcut은 기존 environment binding command를 재사용하며, 이미
+  묶인 연결의 암묵적 이동이나 복제를 허용하지 않는다. 키보드 사용자는 기존
+  Environment database binding 화면을 그대로 사용한다. 중앙 환경 상세나 AI Chat 안내에
   같은 생성 form을 중복하지 않는다. Dashboard, Funnel Analysis, Agent Report는
   별도 navigation이나 screen을 갖지 않는다.
 - 이 hierarchy의 Project prominence와 header action locality는 공개 Orca의
@@ -542,6 +546,9 @@ DopeDB의 실제 작업 흐름과 접근성, supported viewport를 위한 제품
   평평한 icon action과 semantic success glyph를 사용한다. manual transaction이
   구현되기 전에는 `Tx: Auto`에 가짜 menu chevron이나 commit/rollback action을
   붙이지 않는다.
+  사용자가 편집기에서 작성한 SQL은 이 Run command 자체가 exact payload 승인이며,
+  같은 SQL을 별도 review surface에 복제하거나 확인 문구 입력을 요구하지 않는다.
+  Agent가 제안한 mutation은 별도 단일 승인·거절 surface를 유지한다.
 - `ResultMeta`, `SqlSnippet`: 결과 pane의 고정 metadata bar와 축약 SQL 표기.
 - `DataGridStatusPill`: table data와 query result가 공유하는 grid 하단 중앙의
   floating row-count surface. 범위·duration·선택 상태의 상세 정보는 접근 가능한

@@ -155,7 +155,7 @@ export default function ConnectionNode(props: Props) {
         data-nested={props.nested}
         data-dragging={props.draggingId === connection.id}
         data-drop-target={isDropTarget}
-        className="ds-object-row tw:group tw:relative tw:touch-none tw:select-none tw:gap-1 tw:rounded-xs tw:pr-[calc(var(--ds-control-sm)+var(--ds-space-1))] tw:text-ui tw:font-medium tw:leading-ui tw:data-[nested=true]:pl-2 tw:data-[dragging=true]:opacity-50 tw:data-[drop-target=true]:bg-muted tw:data-[drop-target=true]:ring-2 tw:data-[drop-target=true]:ring-ring"
+        className="ds-object-row tw:group tw:relative tw:cursor-grab tw:touch-none tw:select-none tw:gap-1 tw:rounded-xs tw:pr-[calc(var(--ds-control-sm)+var(--ds-space-1))] tw:text-ui tw:font-medium tw:leading-ui tw:active:cursor-grabbing tw:data-[nested=true]:pl-2 tw:data-[dragging=true]:opacity-50 tw:data-[drop-target=true]:bg-muted tw:data-[drop-target=true]:ring-2 tw:data-[drop-target=true]:ring-ring"
         role="treeitem"
         aria-expanded={props.expanded}
         aria-level={props.treeLevel}

@@ -162,7 +162,6 @@ export default function JobPanel({
   const [nullValues, setNullValues] = useState(",NULL,null");
   const [batchSize, setBatchSize] = useState(DEFAULT_BATCH_SIZE);
   const [approval, setApproval] = useState<Approval | null>(null);
-  const [confirmation, setConfirmation] = useState("");
   const [detail, setDetail] = useState<JobDetail | null>(null);
   const [busy, setBusy] = useState(false);
   const [busyJobId, setBusyJobId] = useState<JobId | null>(null);
@@ -183,7 +182,6 @@ export default function JobPanel({
     setTargets({});
     setRequired({});
     setApproval(null);
-    setConfirmation("");
     setError(null);
   }
 
@@ -304,11 +302,10 @@ export default function JobPanel({
       await approveOperation(
         approval.job.operationId,
         approval.payloadHash,
-        approval.confirmationPhrase ? confirmation : undefined,
+        approval.confirmationPhrase ?? undefined,
       );
       await startJob(scopedConnectionId, approval.job.id);
       setApproval(null);
-      setConfirmation("");
       setCapability(null);
       setDetail(null);
       await queryClient.invalidateQueries({ queryKey: qk.jobs(connectionId) });
@@ -326,7 +323,6 @@ export default function JobPanel({
     try {
       await cancelJob(scopedConnectionId, approval.job.id);
       setApproval(null);
-      setConfirmation("");
       setDetail(null);
       await queryClient.invalidateQueries({ queryKey: qk.jobs(connectionId) });
     } catch (cause) {
@@ -363,7 +359,6 @@ export default function JobPanel({
           payloadHash: next.payloadHash,
           confirmationPhrase: next.confirmationPhrase,
         });
-        setConfirmation("");
       }
     } catch (cause) {
       setError(errMessage(cause));
@@ -681,32 +676,10 @@ export default function JobPanel({
               </dd>
             </div>
           </JobFacts>
-          {approval.confirmationPhrase && (
-            <Field
-              label={
-                <span>
-                  {t("approval.confirmationPrompt")}{" "}
-                  <code>{approval.confirmationPhrase}</code>
-                </span>
-              }
-            >
-              <TextInput
-                monospace
-                value={confirmation}
-                onChange={(event) => setConfirmation(event.target.value)}
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </Field>
-          )}
           <div className="ds-action-row ds-control-row">
             <Button
               variant="primary"
-              disabled={
-                busy ||
-                (!!approval.confirmationPhrase &&
-                  confirmation !== approval.confirmationPhrase)
-              }
+              disabled={busy}
               onClick={() => void approveAndStart()}
             >
               {t("jobs.approveAndStart")}

@@ -13,17 +13,20 @@ pub(in crate::store) async fn ensure_safety_row(
     Ok(())
 }
 
-pub(in crate::store) async fn sync_safety_allow_writes(
+pub(in crate::store) async fn reconcile_safety_write_ceiling(
     tx: &mut Transaction<'_, Sqlite>,
     connection_id: Uuid,
-    allow_writes: bool,
+    write_ceiling: bool,
 ) -> AppResult<()> {
     ensure_safety_row(tx, connection_id).await?;
-    sqlx::query("UPDATE connection_safety SET allow_writes = ?2 WHERE connection_id = ?1")
-        .bind(connection_id.to_string())
-        .bind(allow_writes)
-        .execute(&mut **tx)
-        .await?;
+    // Workspace authority is an upper bound. A refresh may revoke a local
+    // device opt-in, but it must never silently turn that opt-in back on.
+    if !write_ceiling {
+        sqlx::query("UPDATE connection_safety SET allow_writes = 0 WHERE connection_id = ?1")
+            .bind(connection_id.to_string())
+            .execute(&mut **tx)
+            .await?;
+    }
     Ok(())
 }
 
@@ -56,8 +59,74 @@ impl Store {
         })
     }
 
-    pub async fn set_safety(&self, connection_id: Uuid, s: &SafetySettings) -> AppResult<()> {
-        self.get_connection(connection_id).await?;
+    /// Persist the device-owned safety policy. For a local connection, its
+    /// durable write ceiling changes in the same transaction; shared
+    /// connection ceilings remain server-owned and are never widened here.
+    pub async fn set_safety(
+        &self,
+        connection_id: Uuid,
+        expected_connection_revision: i64,
+        update_local_write_ceiling: bool,
+        s: &SafetySettings,
+    ) -> AppResult<bool> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("UPDATE app_settings SET value = value WHERE key = 'active_scope_generation'")
+            .execute(&mut *tx)
+            .await?;
+        let connection: Option<(i64, String, String, bool, Option<String>)> = sqlx::query_as(
+            "SELECT revision, workspace_access, credential_mode, allow_writes, remote_id
+             FROM connections
+             WHERE id = ?1 AND deleted_at IS NULL",
+        )
+        .bind(connection_id.to_string())
+        .fetch_optional(&mut *tx)
+        .await?;
+        let Some((revision, workspace_access, credential_mode, previous_ceiling, remote_id)) =
+            connection
+        else {
+            return Err(AppError::NotFound(format!("connection {connection_id}")));
+        };
+        if revision != expected_connection_revision {
+            return Err(AppError::Blocked {
+                reason: "the connection changed before its safety policy could be saved".into(),
+            });
+        }
+        let is_local =
+            workspace_access == "local" && credential_mode == "local" && remote_id.is_none();
+        if is_local != update_local_write_ceiling {
+            return Err(AppError::Blocked {
+                reason: "the connection authority changed before its safety policy could be saved"
+                    .into(),
+            });
+        }
+        let previous_safety = sqlx::query_scalar::<_, bool>(
+            "SELECT allow_writes FROM connection_safety WHERE connection_id = ?1",
+        )
+        .bind(connection_id.to_string())
+        .fetch_optional(&mut *tx)
+        .await?
+        .unwrap_or(false);
+        let ceiling_changed = is_local && previous_ceiling != s.allow_writes;
+        if ceiling_changed {
+            let updated = sqlx::query(
+                "UPDATE connections
+                 SET allow_writes = ?2, revision = revision + 1, updated_at = ?3
+                 WHERE id = ?1 AND revision = ?4
+                   AND workspace_access = 'local' AND credential_mode = 'local'
+                   AND remote_id IS NULL AND deleted_at IS NULL",
+            )
+            .bind(connection_id.to_string())
+            .bind(s.allow_writes)
+            .bind(Utc::now())
+            .bind(expected_connection_revision)
+            .execute(&mut *tx)
+            .await?;
+            if updated.rows_affected() != 1 {
+                return Err(AppError::Blocked {
+                    reason: "the connection changed before its write policy could be saved".into(),
+                });
+            }
+        }
         sqlx::query(
             r#"INSERT INTO connection_safety
                 (connection_id, require_approval, allow_writes, wrap_writes_in_tx,
@@ -76,8 +145,9 @@ impl Store {
         .bind(s.auto_run_reads)
         .bind(s.max_rows as i64)
         .bind(s.exec_preview_row_limit)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await?;
-        Ok(())
+        tx.commit().await?;
+        Ok(previous_safety != s.allow_writes || ceiling_changed)
     }
 }

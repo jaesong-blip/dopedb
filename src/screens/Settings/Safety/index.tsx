@@ -18,6 +18,8 @@ import {
 import {
   connectionCanEnterWritePath,
   effectiveSafetySettings,
+  requestedSafetySettings,
+  safetyWriteControlAvailable,
 } from "../../../features/safetySettings/policy";
 import { useI18n, type I18nKey } from "../../../lib/i18n";
 import type { ConnectionProfile } from "../../../features/connections/domain";
@@ -42,23 +44,19 @@ const NUMBERS: { key: keyof SafetySettings; label: I18nKey; hint: I18nKey }[] = 
 
 export default function Safety({
   connection,
-  onEditConnection,
+  onConnectionUpdated,
   onSaved,
 }: {
-  connection: Pick<
-    ConnectionProfile,
-    "id" | "allowWrites" | "credentialMode" | "workspaceAccess"
-  >;
-  onEditConnection: () => void;
+  connection: ConnectionProfile;
+  onConnectionUpdated: (connection: ConnectionProfile) => void;
   onSaved: (connectionId: string, settings: SafetySettings) => void;
 }) {
   const { t } = useI18n();
   const connectionId = connection.id;
   const workspaceManaged = connection.credentialMode !== "local";
   const connectionWriteEnabled = connectionCanEnterWritePath(connection);
+  const writeControlAvailable = safetyWriteControlAvailable(connection);
   const memberLocalReadOnly = connection.credentialMode === "memberLocal";
-  const localWritePolicyRequired =
-    connection.credentialMode === "local" && !connectionWriteEnabled;
   const [settings, setSettings] = useState<SafetySettings | null>(null);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
@@ -67,8 +65,25 @@ export default function Safety({
   const safetyPhase = queryResultPhase(safetyQuery.data, safetyQuery.error);
 
   useEffect(() => {
-    setSettings(safetyQuery.data ?? null);
-  }, [connectionId, safetyQuery.data]);
+    setSettings(
+      safetyQuery.data
+        ? effectiveSafetySettings(
+            {
+              allowWrites: connection.allowWrites,
+              credentialMode: connection.credentialMode,
+              workspaceAccess: connection.workspaceAccess,
+            },
+            safetyQuery.data,
+          )
+        : null,
+    );
+  }, [
+    connection.allowWrites,
+    connection.credentialMode,
+    connection.workspaceAccess,
+    connectionId,
+    safetyQuery.data,
+  ]);
 
   if (!settings) {
     if (safetyPhase === "coldError" && safetyQuery.error) {
@@ -100,10 +115,20 @@ export default function Safety({
 
   async function save() {
     if (!settings) return;
-    const requested = effectiveSafetySettings(connection, settings);
+    const requested = requestedSafetySettings(connection, settings);
+    const localPolicyChange =
+      connection.credentialMode === "local" &&
+      connection.workspaceAccess === "local" &&
+      connection.allowWrites !== requested.allowWrites;
     setBusy(true);
     try {
       await setSafetySettings(connectionId, requested);
+      if (localPolicyChange) {
+        onConnectionUpdated({
+          ...connection,
+          allowWrites: requested.allowWrites,
+        });
+      }
       const persisted = await queryClient.fetchQuery({
         ...safetySettingsQuery(connectionId),
         staleTime: 0,
@@ -128,7 +153,7 @@ export default function Safety({
   }
 
   const effectiveAllowWrites =
-    settings.allowWrites && connectionWriteEnabled;
+    settings.allowWrites && writeControlAvailable;
 
   return (
     <div className="tw:flex tw:w-full tw:max-w-[880px] tw:flex-col tw:gap-4 tw:max-[640px]:max-w-none">
@@ -179,7 +204,7 @@ export default function Safety({
                 }
                 disabled={
                   item.key === "allowWrites" &&
-                  (workspaceManaged || !connectionWriteEnabled)
+                  !writeControlAvailable
                 }
                 onChange={(e) => set(item.key, e.target.checked as never)}
                 label={<strong>{t(item.label)}</strong>}
@@ -190,11 +215,9 @@ export default function Safety({
                     ? item.hint
                     : memberLocalReadOnly
                       ? "safety.memberLocalReadOnlyHint"
-                      : workspaceManaged
+                      : workspaceManaged && !connectionWriteEnabled
                         ? "safety.sharedWritesHint"
-                        : localWritePolicyRequired
-                          ? "safety.connectionWritePolicyRequired"
-                          : item.hint,
+                        : item.hint,
                 )}
               />
             </div>
@@ -207,17 +230,6 @@ export default function Safety({
             <p className="tw:m-0 tw:border-t tw:border-border-subtle tw:pt-2 tw:text-sm tw:leading-body tw:text-muted-foreground">
               {t("safety.sharedWritesHint")}
             </p>
-          ) : localWritePolicyRequired ? (
-            <div className="tw:grid tw:gap-2 tw:border-t tw:border-border-subtle tw:pt-2">
-              <p className="tw:m-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
-                {t("safety.connectionWritePolicyRequired")}
-              </p>
-              <div>
-                <Button size="compact" onClick={onEditConnection}>
-                  {t("safety.openConnectionOptions")}
-                </Button>
-              </div>
-            </div>
           ) : null}
         </SettingsGroup>
 

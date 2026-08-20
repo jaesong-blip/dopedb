@@ -1,6 +1,5 @@
 // Presents runtime-backed connection/session options from the profile view
 // model; mutation and validation ownership remains in the feature controller.
-import { Icon } from "../../components/Icon";
 import InfoTip from "../../components/InfoTip";
 import {
   CheckboxField,
@@ -236,20 +235,6 @@ export function ConnectionOptionsTab({
             <option value="prod">prod</option>
           </SelectInput>
         </Field>
-        <div className="tw:grid tw:gap-1">
-          <CheckboxField
-            label={t("connections.allowWrites")}
-            checked={form.allowWrites}
-            onChange={(event) => set("allowWrites", event.target.checked)}
-          />
-          <p className="tw:m-0 tw:pl-6 tw:text-sm tw:text-muted-foreground">
-            {t("connections.allowWritesBody")}
-          </p>
-        </div>
-        <div className="tw:flex tw:items-center tw:gap-2 tw:text-sm tw:text-muted-foreground">
-          <Icon name="info" />
-          <span>{t("connections.writeAccessHint")}</span>
-        </div>
       </section>
     </div>
   );

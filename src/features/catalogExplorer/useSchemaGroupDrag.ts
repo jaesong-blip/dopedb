@@ -25,9 +25,25 @@ type DragStart = {
   y: number;
 };
 
+type EnvironmentDropTarget = {
+  id: string;
+  accepting: boolean;
+  connectionIds: ReadonlySet<string>;
+};
+
+type ConnectionDragOptions = {
+  environmentTargets?: readonly EnvironmentDropTarget[];
+  unassignedConnectionIds?: ReadonlySet<string>;
+  onDropOnEnvironment?: (
+    connection: ConnectionProfile,
+    environmentId: string,
+  ) => Promise<void>;
+};
+
 export function useSchemaGroupDrag(
   connections: ConnectionProfile[],
   onConnectionUpdated: (connection: ConnectionProfile) => void,
+  options: ConnectionDragOptions = {},
 ) {
   const { t } = useI18n();
   const toast = useToast();
@@ -44,6 +60,9 @@ export function useSchemaGroupDrag(
   const sections = useMemo(
     () => buildConnectionSections(connections),
     [connections],
+  );
+  const environmentTargetById = new Map(
+    (options.environmentTargets ?? []).map((target) => [target.id, target]),
   );
   const groupByConnectionId = useMemo(() => {
     const map = new Map<string, SchemaConnectionGroup>();
@@ -95,6 +114,18 @@ export function useSchemaGroupDrag(
     );
   }
 
+  function canDropOnEnvironment(
+    dragId: string | null,
+    environmentId: string,
+  ) {
+    const target = environmentTargetById.get(environmentId);
+    return !!dragId
+      && !!target?.accepting
+      && options.unassignedConnectionIds?.has(dragId) === true
+      && !target.connectionIds.has(dragId)
+      && typeof options.onDropOnEnvironment === "function";
+  }
+
   async function saveGroup(ids: ConnectionId[], schemaGroup: string) {
     const originals = ids
       .map((id) => connectionById(id))
@@ -115,6 +146,11 @@ export function useSchemaGroupDrag(
   async function applyDrop(dragId: string, target: DropTarget) {
     const dragged = connectionById(dragId);
     if (!dragged) return;
+    if (target.kind === "environment") {
+      if (!canDropOnEnvironment(dragId, target.id)) return;
+      await options.onDropOnEnvironment?.(dragged, target.id);
+      return;
+    }
     if (target.kind === "connection") {
       const destination = connectionById(target.id);
       if (!destination || !canDropOnConnection(dragged.id, destination)) return;
@@ -179,6 +215,15 @@ export function useSchemaGroupDrag(
   ): DropTarget | null {
     const element = document.elementFromPoint(x, y);
     if (!(element instanceof HTMLElement)) return null;
+    const targetEnvironmentId = element.closest<HTMLElement>(
+      "[data-knowledge-environment-drop-id]",
+    )?.dataset.knowledgeEnvironmentDropId;
+    if (
+      targetEnvironmentId &&
+      canDropOnEnvironment(dragId, targetEnvironmentId)
+    ) {
+      return { kind: "environment", id: targetEnvironmentId };
+    }
     const targetConnectionId = element.closest<HTMLElement>(
       "[data-connection-id]",
     )?.dataset.connectionId;
@@ -304,7 +349,11 @@ function sameDropTarget(
 ) {
   if (left === null || right === null) return left === right;
   if (left.kind !== right.kind) return false;
-  return left.kind === "connection"
-    ? left.id === (right as { kind: "connection"; id: string }).id
-    : left.key === (right as { kind: "group"; key: string }).key;
+  if (left.kind === "connection") {
+    return left.id === (right as { kind: "connection"; id: string }).id;
+  }
+  if (left.kind === "environment") {
+    return left.id === (right as { kind: "environment"; id: string }).id;
+  }
+  return left.key === (right as { kind: "group"; key: string }).key;
 }

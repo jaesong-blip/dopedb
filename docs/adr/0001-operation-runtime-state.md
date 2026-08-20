@@ -37,6 +37,12 @@ workspace + account scope + connection + connection revision
 - 실행 API는 SQL, connection, `approved: bool`을 다시 받지 않는다.
 - Runtime은 저장된 immutable payload를 읽고 실행 직전에 현재 권한과 정책을 다시
   검사한다.
+- 사용자가 SQL 편집기에서 작성한 payload는 Run 동작을 exact 승인 의사로 사용해
+  같은 화면에서 다시 SQL을 복제하거나 확인 문구를 입력시키지 않는다. 이 경우도
+  Runtime의 immutable payload hash와 현재 policy 재검사를 생략하지 않는다.
+- Agent, Job, background 작업이 제안한 mutation은 작성 주체가 사람이 아니므로
+  별도의 단일 승인·거절 동작을 유지한다. 위험 문구 재입력은 승인 권한이 아니며
+  사용하지 않는다.
 - Agent, CLI, Plugin은 승인할 수 없다.
 - compare-and-swap으로 `ready|approved → executing`을 원자적으로 claim한다.
 

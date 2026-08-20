@@ -276,10 +276,15 @@ pub async fn get_safety(state: State<'_, AppState>, id: Uuid) -> AppResult<Safet
 #[tauri::command]
 pub async fn set_safety(
     state: State<'_, AppState>,
+    app: tauri::AppHandle,
     id: Uuid,
     settings: SafetySettings,
 ) -> AppResult<()> {
-    state.services.safety.update(id, settings).await
+    if state.services.safety.update(id, settings).await? {
+        state.terminals.stop_connection(id.into(), &app);
+        state.agents_acp.stop_connection(id.into());
+    }
+    Ok(())
 }
 
 // ── lightweight monitoring access ───────────────────────────────────────────

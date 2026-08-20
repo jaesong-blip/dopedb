@@ -5,7 +5,7 @@ mod ports;
 
 use uuid::Uuid;
 
-use crate::connection::{ConnectionAccess, ConnectionManager};
+use crate::connection::ConnectionManager;
 use crate::error::AppResult;
 use crate::model::{SafetySettings, WorkspaceCredentialMode};
 use crate::store::Store;
@@ -35,7 +35,7 @@ impl SafetySettingsFeature {
         &self,
         connection_id: Uuid,
         settings: SafetySettings,
-    ) -> AppResult<()> {
+    ) -> AppResult<bool> {
         self.application.update(connection_id, settings).await
     }
 }
@@ -55,36 +55,46 @@ impl SafetyPlatformAdapter {
         self.store.get_safety(connection_id).await
     }
 
-    /// Normalize untrusted UI limits and persist them under an online connection
-    /// authorization guard. Shared write policy is projected by the server rather
-    /// than widened by this member-local settings surface.
+    /// Normalize untrusted UI limits and persist them under the active scope guard.
+    /// Shared write policy is projected by the server rather than widened by this
+    /// member-local settings surface. A limits-only edit must not drain a live
+    /// connection; an actual write-gate change retires the cached pool afterward.
     pub(crate) async fn update(
         &self,
         connection_id: Uuid,
         mut settings: SafetySettings,
-    ) -> AppResult<()> {
-        let profile = self.store.get_connection(connection_id).await?;
-        if profile.credential_mode != WorkspaceCredentialMode::Local {
-            settings.allow_writes = profile.credential_mode == WorkspaceCredentialMode::Managed
+    ) -> AppResult<bool> {
+        let operation_scope = self.connections.begin_operation_scope().await;
+        let pin = operation_scope
+            .pin_connection_for_view(connection_id)
+            .await?;
+        let profile = &pin.profile;
+        let update_local_write_ceiling = profile.credential_mode == WorkspaceCredentialMode::Local
+            && profile.workspace_access == crate::model::WorkspaceConnectionAccess::Local;
+        if !update_local_write_ceiling {
+            settings.allow_writes = settings.allow_writes
+                && profile.credential_mode == WorkspaceCredentialMode::Managed
                 && profile.allow_writes
                 && profile.workspace_access.can_write();
         } else if !profile.workspace_access.can_write() {
             settings.allow_writes = false;
         }
-        let _mutation = self
-            .connections
-            .begin_connection_mutation(
-                connection_id,
-                if settings.allow_writes {
-                    ConnectionAccess::Write
-                } else {
-                    ConnectionAccess::Read
-                },
-            )
-            .await?;
+        let expected_connection_revision = pin.connection_revision;
         settings.max_rows = settings.max_rows.clamp(1, 100_000);
         settings.exec_preview_row_limit = settings.exec_preview_row_limit.clamp(0, 1_000_000);
-        self.store.set_safety(connection_id, &settings).await
+        let write_policy_changed = self
+            .store
+            .set_safety(
+                connection_id,
+                expected_connection_revision,
+                update_local_write_ceiling,
+                &settings,
+            )
+            .await?;
+        if write_policy_changed {
+            operation_scope.retire_connection(connection_id).await;
+        }
+        Ok(write_policy_changed)
     }
 }
 
@@ -100,7 +110,7 @@ impl SafetySettingsPort for SafetyPlatformAdapter {
         &self,
         connection_id: Uuid,
         settings: SafetySettings,
-    ) -> impl std::future::Future<Output = AppResult<()>> + Send {
+    ) -> impl std::future::Future<Output = AppResult<bool>> + Send {
         SafetyPlatformAdapter::update(self, connection_id, settings)
     }
 }

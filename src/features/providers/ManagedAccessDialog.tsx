@@ -9,7 +9,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Icon } from "../../components/Icon";
 import { Button } from "../../design-system/components/Button";
-import { Field, TextInput } from "../../design-system/components/FormControls";
 import {
   ModalBackdrop,
   ModalFooter,
@@ -166,7 +165,6 @@ export function ManagedAccessDialog({
   const [targetId, setTargetId] = useState<string | null>(null);
   const [access, setAccess] = useState<ProvisioningAccessMode>("read");
   const [plan, setPlan] = useState<ProviderProvisioningPlan | null>(null);
-  const [confirmation, setConfirmation] = useState("");
   const [pending, setPending] = useState<
     | "discover"
     | "plan"
@@ -209,7 +207,6 @@ export function ManagedAccessDialog({
     setTargets(null);
     setTargetId(null);
     setPlan(null);
-    setConfirmation("");
     setFailed(false);
   }
 
@@ -239,7 +236,6 @@ export function ManagedAccessDialog({
         access,
       );
       setPlan(nextPlan);
-      setConfirmation("");
       await queryClient.invalidateQueries({
         queryKey: providerCredentialQueryKeys.provisioning(connectionId),
       });
@@ -260,7 +256,7 @@ export function ManagedAccessDialog({
         await approveOperation(
           current.operationId,
           current.payloadHash,
-          current.confirmationPhrase ? confirmation : undefined,
+          current.confirmationPhrase ?? undefined,
         );
         current = await getProviderProvisioningStatus(current.receiptId);
         setPlan(current);
@@ -299,7 +295,6 @@ export function ManagedAccessDialog({
     setFailed(false);
     try {
       setPlan(await prepareProviderProvisioningDestroy(plan.receiptId));
-      setConfirmation("");
     } catch {
       setFailed(true);
     } finally {
@@ -313,7 +308,6 @@ export function ManagedAccessDialog({
     setFailed(false);
     try {
       setPlan(await prepareProviderProvisioningRepair(plan.receiptId));
-      setConfirmation("");
     } catch {
       setFailed(true);
     } finally {
@@ -352,9 +346,6 @@ export function ManagedAccessDialog({
             version: selectedStatus.minimumVersion ?? "—",
           })
     : null;
-  const confirmationReady = !plan?.confirmationPhrase
-    || confirmation === plan.confirmationPhrase;
-
   return (
     <ModalBackdrop onMouseDown={pending === null ? close : undefined}>
       <ModalSurface
@@ -563,18 +554,6 @@ export function ManagedAccessDialog({
                       />
                     </div>
                   ) : null}
-                  {plan.confirmationPhrase && plan.operationState === "pending_approval" ? (
-                    <Field label={t("managedAccess.confirmation", { phrase: plan.confirmationPhrase })}>
-                      <TextInput
-                        density="compact"
-                        value={confirmation}
-                        onChange={(event) => setConfirmation(event.currentTarget.value)}
-                        autoComplete="off"
-                        spellCheck={false}
-                        disabled={pending !== null}
-                      />
-                    </Field>
-                  ) : null}
                   {plan.canDestroy ? (
                     <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2 tw:border-t tw:border-border-subtle tw:pt-3">
                       {plan.state === "ready" ? (
@@ -619,7 +598,6 @@ export function ManagedAccessDialog({
               size="compact"
               onClick={() => {
                 setPlan(null);
-                setConfirmation("");
               }}
               disabled={pending !== null}
             >
@@ -654,7 +632,7 @@ export function ManagedAccessDialog({
               size="compact"
               variant="primary"
               onClick={() => void runPlan()}
-              disabled={pending !== null || !confirmationReady}
+              disabled={pending !== null}
             >
               <Icon name="play" />
               {plan.operationState === "pending_approval"

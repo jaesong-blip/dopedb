@@ -1,7 +1,7 @@
 // Row editor panel: one input per column (checkbox for SQL NULL, numeric input for
 // numeric columns, PK fields readonly on edit). Generates an INSERT/UPDATE via sqlBuild
-// and hands the SQL up via onSubmit — the parent routes it through ApprovalCard so the
-// safety pipeline (classify/preview/approve/audit) applies. Never executes directly.
+// and hands the SQL up via onSubmit — the parent routes it through the exact native
+// operation pipeline so classify/approve/audit still applies. Never executes directly.
 import { useMemo, useState } from "react";
 import { Button } from "../design-system/components/Button";
 import { TextInput } from "../design-system/components/FormControls";

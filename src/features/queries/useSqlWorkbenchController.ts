@@ -5,10 +5,7 @@ import type { SqlLanguage } from "sql-formatter";
 import { useQuery } from "@tanstack/react-query";
 
 import type { ConnectionProfile } from "../connections/domain";
-import {
-  approveOperation,
-  rejectOperation,
-} from "../operations/tauriAdapter";
+import { approveOperation } from "../operations/tauriAdapter";
 import {
   localizeRunSignal,
 } from "../query/runSignal";
@@ -40,7 +37,6 @@ import type {
   AppErrorDetails,
   ExecOutcome,
   SafetySettings,
-  ScriptOperationProposal,
   ScriptOutcome,
 } from "../../ipc/types";
 import { errDetails, errMessage } from "../../ipc/types";
@@ -53,7 +49,7 @@ import {
 } from "../../lib/queries";
 import { splitStatements } from "../../lib/sqlStatements";
 import { useQueryRun } from "../../lib/useQueryRun";
-import type { PreviewReport, SqlOperationProposal } from "./domain";
+import type { PreviewReport } from "./domain";
 import type {
   SqlCursorPosition,
   SqlExecutionStatus,
@@ -69,6 +65,7 @@ import {
 } from "./namespace";
 import type { SqlResolveMode } from "./resolveMode";
 import {
+  approveManualOperationIfRequired,
   canFallbackFromCombinedRead,
   initialSqlRunPath,
   proposalSqlRunPath,
@@ -105,18 +102,6 @@ interface LastAttempt {
   at: string;
   documentVersion: number;
   source: SqlRunSource;
-}
-
-interface PendingSqlApproval {
-  proposal: SqlOperationProposal;
-  sql: string;
-  at: string;
-}
-
-interface PendingScriptApproval {
-  proposal: ScriptOperationProposal;
-  sql: string;
-  at: string;
 }
 
 type ResultKind = "single" | "script";
@@ -270,12 +255,6 @@ export function useSqlWorkbenchController({
   const { running, cancelled, execute, cancel, track } = useQueryRun();
   const [runErr, setRunErr] = useState<QueryErrorInfo | null>(null);
   const [lastAttempt, setLastAttempt] = useState<LastAttempt | null>(null);
-  const [pendingApproval, setPendingApproval] =
-    useState<PendingSqlApproval | null>(null);
-  const [pendingScriptApproval, setPendingScriptApproval] =
-    useState<PendingScriptApproval | null>(null);
-  const [approvalRejected, setApprovalRejected] = useState(false);
-  const [scriptConfirmation, setScriptConfirmation] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const [parameterValues, setParameterValues] = useState<
     Record<string, string>
@@ -299,8 +278,6 @@ export function useSqlWorkbenchController({
     scope: catalogScope,
     connectionEngine: connection.engine,
     credentialMode: connection.credentialMode,
-    approvalPending: Boolean(pendingApproval || pendingScriptApproval),
-    approvalRejected,
     cancelled,
     failed: runErr !== null,
     materializedCompleted: run !== null,
@@ -462,9 +439,6 @@ export function useSqlWorkbenchController({
     });
     onShowQueryServices(sessionId);
     setRunErr(null);
-    setApprovalRejected(false);
-    setPendingApproval(null);
-    setPendingScriptApproval(null);
     setRun(null);
     setScriptOut(null);
     setResultKind(script ? "script" : "single");
@@ -484,10 +458,8 @@ export function useSqlWorkbenchController({
           );
           if (proposal.approvalRequired) {
             queryAnalytics.requireApproval(analyticsAttempt);
-            setPendingScriptApproval({ proposal, sql, at });
-            setScriptConfirmation("");
-            return;
           }
+          await approveManualOperationIfRequired(proposal, approveOperation);
           track(proposal.operationId);
           const outcome = await runScript(proposal.operationId);
           setScriptOut({ outcome, at });
@@ -500,13 +472,18 @@ export function useSqlWorkbenchController({
               effectiveNamespace,
               effectiveDatabase,
             );
-            if (proposalSqlRunPath(proposal) === "approval") {
+            const approvalRequired =
+              proposalSqlRunPath(proposal) === "approval";
+            if (approvalRequired) {
               queryAnalytics.requireApproval(analyticsAttempt);
-              setPendingApproval({ proposal, sql, at });
-              return;
+              await approveManualOperationIfRequired(
+                proposal,
+                approveOperation,
+              );
             }
             setRun(null);
-            if (manualTransaction.status) {
+            if (approvalRequired || manualTransaction.status) {
+              track(proposal.operationId);
               setRun({
                 sql,
                 outcome: await runSqlOperation(proposal.operationId),
@@ -615,54 +592,6 @@ export function useSqlWorkbenchController({
     else if (pending.action === "explain") void explainSql(sql);
   }
 
-  async function approvePendingScript() {
-    const pending = pendingScriptApproval;
-    if (!pending || running) return;
-    try {
-      await execute(async () => {
-        track(pending.proposal.operationId);
-        await approveOperation(
-          pending.proposal.operationId,
-          pending.proposal.payloadHash,
-          pending.proposal.confirmationPhrase ? scriptConfirmation : undefined,
-        );
-        const outcome = await runScript(pending.proposal.operationId);
-        setResultKind("script");
-        setScriptOut({ outcome, at: new Date().toLocaleTimeString() });
-        setPendingScriptApproval(null);
-        setScriptConfirmation("");
-      });
-    } catch (e) {
-      const details = errDetails(e);
-      setRunErr({
-        ...details,
-        sql: pending.sql,
-        at: new Date().toLocaleTimeString(),
-      });
-    }
-  }
-
-  async function rejectPendingScript() {
-    const pending = pendingScriptApproval;
-    if (!pending || running) return;
-    try {
-      await rejectOperation(
-        pending.proposal.operationId,
-        pending.proposal.payloadHash,
-      );
-      setApprovalRejected(true);
-      setPendingScriptApproval(null);
-      setScriptConfirmation("");
-    } catch (e) {
-      const details = errDetails(e);
-      setRunErr({
-        ...details,
-        sql: pending.sql,
-        at: new Date().toLocaleTimeString(),
-      });
-    }
-  }
-
   async function explainSql(sql: string) {
     if (!sql.trim() || splitStatements(sql).length > 1 || explaining) return;
     setPlanErr(null);
@@ -751,13 +680,6 @@ export function useSqlWorkbenchController({
         label: t("services.status.failed"),
       };
     }
-    if (pendingApproval || pendingScriptApproval) {
-      return {
-        source: attempt.source,
-        state: "waiting",
-        label: t("services.status.waiting"),
-      };
-    }
     if (
       running ||
       stream.phase === "connecting" ||
@@ -769,7 +691,7 @@ export function useSqlWorkbenchController({
         label: t("sql.runningFor", { seconds: elapsed }),
       };
     }
-    if (approvalRejected || cancelled || stream.phase === "cancelled") {
+    if (cancelled || stream.phase === "cancelled") {
       return {
         source: attempt.source,
         state: "cancelled",
@@ -790,13 +712,10 @@ export function useSqlWorkbenchController({
     }
     return null;
   }, [
-    approvalRejected,
     cancelled,
     draftVersion,
     elapsed,
     lastAttempt,
-    pendingApproval,
-    pendingScriptApproval,
     run,
     runErr,
     running,
@@ -843,17 +762,15 @@ export function useSqlWorkbenchController({
 
     const status = runErr
       ? "failed"
-      : pendingApproval || pendingScriptApproval
-        ? "waiting"
-        : approvalRejected || cancelled || stream.phase === "cancelled"
-          ? "cancelled"
-          : running ||
-              stream.phase === "connecting" ||
-              stream.phase === "streaming"
+      : cancelled || stream.phase === "cancelled"
+        ? "cancelled"
+        : running ||
+            stream.phase === "connecting" ||
+            stream.phase === "streaming"
+          ? "running"
+          : result.kind === "none"
             ? "running"
-            : result.kind === "none"
-              ? "running"
-              : "completed";
+            : "completed";
 
     onQueryServiceSessionChange({
       ...session,
@@ -863,12 +780,9 @@ export function useSqlWorkbenchController({
     });
   }, [
     aiPrompt,
-    approvalRejected,
     cancelled,
     lastAttempt?.sql,
     onQueryServiceSessionChange,
-    pendingApproval,
-    pendingScriptApproval,
     resultKind,
     run,
     runErr,
@@ -884,30 +798,13 @@ export function useSqlWorkbenchController({
   };
   const closeParameterDialog = () => setParameterDialog(null);
   const closePlan = () => setPlan(null);
-  const completePendingApproval = (outcome: ExecOutcome) => {
-    if (!pendingApproval) return;
-    setResultKind("single");
-    setRun({
-      sql: pendingApproval.sql,
-      outcome,
-      at: new Date().toLocaleTimeString(),
-    });
-    setPendingApproval(null);
-  };
-  const rejectPendingApproval = () => {
-    setApprovalRejected(true);
-    setPendingApproval(null);
-  };
-
   return {
     analysisCurrent,
     applyParameterValues,
-    approvePendingScript,
     cancelRun,
     catalog,
     closeParameterDialog,
     closePlan,
-    completePendingApproval,
     databaseOptions,
     documentConflict,
     documentSaveError,
@@ -935,16 +832,10 @@ export function useSqlWorkbenchController({
     openParameterDialog,
     parameterDialog,
     parameterValues,
-    pendingApproval,
-    pendingScriptApproval,
     plan,
     planErr,
-    rejectPendingApproval,
-    rejectPendingScript,
     resolveModeHint,
     running,
-    scriptConfirmation,
     setDraft,
-    setScriptConfirmation,
   };
 }
