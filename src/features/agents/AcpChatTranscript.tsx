@@ -17,11 +17,16 @@ import {
   AgentStreamingText,
 } from "../../design-system/components/AgentRichText";
 import { Button } from "../../design-system/components/Button";
-import { LoadingLabel, StatusDot } from "../../design-system/components/Status";
+import {
+  InlineNotice,
+  LoadingLabel,
+  StatusDot,
+} from "../../design-system/components/Status";
 import { useI18n } from "../../lib/i18n";
 import { reportRenderFailure } from "../monitoring/client";
 import AcpStructuredResult from "./AcpStructuredResult";
 import {
+  agentSessionErrorLabel,
   findAnalysisArticle,
   loginCommand,
   planEntryLabel,
@@ -37,7 +42,10 @@ import {
   toolStatusTone,
 } from "./acpTranscriptPresentation";
 import type { AcpPermissionOption, AgentProvider } from "./domain";
-import type { AcpTranscriptItem } from "./transcript";
+import {
+  closedBeforeTurnCompleted,
+  type AcpTranscriptItem,
+} from "./transcript";
 import type { AcpChatController } from "./useAcpChatController";
 
 type AcpChatTranscriptProps = Pick<
@@ -64,6 +72,21 @@ export default function AcpChatTranscript({
 }: AcpChatTranscriptProps) {
   const { t } = useI18n();
   const active = session.active;
+  const activeError = active?.error
+    ? agentSessionErrorLabel(active.error, t)
+    : null;
+  const transcriptContainsActiveError = Boolean(
+    active?.error && session.transcript.some(
+      (item) => item.kind === "error" && item.message === active.error,
+    ),
+  );
+  const incompleteClosedTurn = Boolean(
+    active && closedBeforeTurnCompleted(
+      active.lifecycle,
+      active.error,
+      session.transcript,
+    ),
+  );
   return (
     <div
       ref={viewport.transcriptRef}
@@ -174,7 +197,7 @@ export default function AcpChatTranscript({
             <>
               <Icon name="alert" />
               <strong>{t("agent.acpFailed")}</strong>
-              <p>{active.error}</p>
+              <p>{activeError}</p>
             </>
           ) : (
             <>
@@ -215,6 +238,16 @@ export default function AcpChatTranscript({
               />
             </Fragment>
           ))}
+          {active.lifecycle === "failed" && activeError && !transcriptContainsActiveError ? (
+            <InlineNotice tone="danger" icon="alert" role="alert">
+              {activeError}
+            </InlineNotice>
+          ) : null}
+          {incompleteClosedTurn ? (
+            <InlineNotice tone="warning" icon="alert" role="status">
+              {t("agent.acpClosedBeforeTurnCompleted")}
+            </InlineNotice>
+          ) : null}
           {active.lifecycle === "running" ? (
             <div className="tw:flex tw:items-center tw:gap-2 tw:py-1 tw:text-xs tw:text-muted-foreground">
               <StatusDot tone="success" />
@@ -500,7 +533,7 @@ const TranscriptItemView = memo(function TranscriptItemView({
         className="tw:max-w-full tw:min-w-0 tw:overflow-hidden tw:break-words tw:rounded-md tw:border tw:border-danger-border tw:bg-danger-muted tw:px-3 tw:py-2 tw:text-sm tw:leading-body tw:text-danger"
         role="alert"
       >
-        {item.message}
+        {agentSessionErrorLabel(item.message, t)}
       </div>
     );
   }

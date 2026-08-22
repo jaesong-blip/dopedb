@@ -64,6 +64,10 @@ export const safetyCatalog = defineCatalog(
       "The saved safety settings are still shown, but they could not be refreshed. {error}",
     "safety.sharedWritesHint":
       "A workspace administrator sets the maximum DB authority. This device switch can narrow an allowed write grant but cannot broaden it.",
+    "safety.sharedWritesManagerHint":
+      "Saving here changes both the workspace's role-based write policy and this device gate. The managed provider must have a separate write identity.",
+    "safety.workspacePolicyRollbackFailed":
+      "The device stayed read-only, but the workspace write policy could not be rolled back. Retry with this switch off. {error}",
     "safety.title": "Safety settings",
   },
   {
@@ -127,6 +131,10 @@ export const safetyCatalog = defineCatalog(
       "저장된 안전 설정을 계속 표시하지만 새로고침하지 못했습니다. {error}",
     "safety.sharedWritesHint":
       "워크스페이스 관리자가 DB 권한의 상한을 정합니다. 이 기기의 스위치는 허용된 쓰기 권한을 좁힐 수 있지만 더 넓힐 수는 없습니다.",
+    "safety.sharedWritesManagerHint":
+      "여기서 저장하면 워크스페이스의 역할 기반 쓰기 정책과 이 기기의 gate를 함께 변경합니다. 관리형 공급자에 별도 쓰기 계정이 있어야 합니다.",
+    "safety.workspacePolicyRollbackFailed":
+      "이 기기는 읽기 전용으로 유지됐지만 워크스페이스 쓰기 정책을 되돌리지 못했습니다. 스위치를 끈 상태로 다시 저장하세요. {error}",
     "safety.title": "안전 설정",
   },
 );

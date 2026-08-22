@@ -53,8 +53,9 @@ DopeDB의 제품 축, 실제 사용자 작업, 접근성, 운영 안전성, 지�
   승인·거절을 유지한다.
 - Desktop의 연결별 쓰기 실행 제어는 `Settings → Safety` 한 곳이 소유한다.
   연결 편집기와 작업 화면은 쓰기 권한을 변경하지 않으며, 상태 표시와 Safety
-  진입만 제공한다. workspace가 부여한 권한은 상한이고 기기별 Safety 설정은 이를
-  좁힐 수만 있다.
+  진입만 제공한다. 관리형 연결의 `manage` 권한 보유자는 같은 Safety control로
+  workspace 쓰기 상한과 현재 기기 gate를 함께 변경한다. 그 밖의 구성원에게
+  workspace가 부여한 권한은 상한이고 기기별 Safety 설정은 이를 좁힐 수만 있다.
 - enabled control은 반드시 실제 command와 state owner를 가진다. 아직 없는 기능은
   tracker에 `missing`으로 기록하고 가짜 control을 만들지 않는다.
 

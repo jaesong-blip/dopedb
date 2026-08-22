@@ -9,6 +9,10 @@ import {
   shouldOverlayAgentDock,
   shouldDismissAgentOverlayFromEscape,
 } from "../agents/layout";
+import {
+  agentSessionErrorLabel,
+} from "../agents/acpTranscriptPresentation";
+import { closedBeforeTurnCompleted } from "../agents/transcript";
 import { retainInertShellChildren } from "../appShell/useInertShellBackground";
 import {
   cancelWorkspaceResourceQueries,
@@ -20,6 +24,7 @@ import {
 import {
   shouldRevalidateWorkspaceAuth,
   WORKSPACE_AUTH_RECHECK_MS,
+  WORKSPACE_AUTH_RETRY_MS,
 } from "./authPolicy";
 import {
   runWorkspaceAuthorityTransition,
@@ -147,12 +152,13 @@ describe("workspace auth lifecycle", () => {
       false,
       1_000 + 60_000,
     );
-    // WorkspaceAccount uses this exact gate before the native membership/auth
-    // refresh, whose authority fence would otherwise stop active ACP and PTY work.
+    // WorkspaceAccount uses this exact gate before native membership/auth
+    // verification; an unchanged proof must leave active ACP and PTY work alive.
     expect(recentlyVerifiedFocusMayRefreshAuthority).toBe(false);
   });
 
   it("revalidates a signed-in state after the cooldown", () => {
+    expect(WORKSPACE_AUTH_RETRY_MS).toBeLessThan(WORKSPACE_AUTH_RECHECK_MS);
     expect(
       shouldRevalidateWorkspaceAuth(
         true,
@@ -178,6 +184,31 @@ describe("workspace auth lifecycle", () => {
     );
     expect(allowedUrls).toContain("https://dopedb.dev/privacy");
     expect(allowedUrls).not.toContain("https://github.com/*");
+
+    const translateKey = ((key: string) => key) as Parameters<
+      typeof agentSessionErrorLabel
+    >[1];
+    expect(agentSessionErrorLabel("workspace_authority_changed", translateKey))
+      .toBe("agent.acpInterruptedWorkspaceAuthority");
+    expect(agentSessionErrorLabel("connection_authority_changed", translateKey))
+      .toBe("agent.acpInterruptedConnectionAuthority");
+    expect(agentSessionErrorLabel("agent_process_closed", translateKey))
+      .toBe("agent.acpInterruptedProcessClosed");
+    expect(agentSessionErrorLabel("agent_process_unavailable", translateKey))
+      .toBe("agent.acpInterruptedProcessUnavailable");
+    expect(agentSessionErrorLabel("provider detail", translateKey))
+      .toBe("provider detail");
+    expect(closedBeforeTurnCompleted("closed", null, [
+      { kind: "user" },
+      { kind: "tool" },
+    ])).toBe(true);
+    expect(closedBeforeTurnCompleted("closed", null, [
+      { kind: "user" },
+      { kind: "turnEnd" },
+    ])).toBe(false);
+    expect(closedBeforeTurnCompleted("failed", null, [
+      { kind: "user" },
+    ])).toBe(false);
 
     expect(agentDockLayout(false, false)).toBe("docked");
     expect(agentDockLayout(false, true)).toBe("overlay");

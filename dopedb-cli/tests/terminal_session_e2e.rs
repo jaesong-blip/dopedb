@@ -17,7 +17,7 @@ use dopedb_protocol::{
     CatalogArguments, CatalogContents, CatalogSearchArguments, CatalogSearchMatch,
     CatalogSearchMatchType, CatalogSearchResult, CatalogSnapshot, Column, CommandName,
     ConnectionSelector, DatabaseEngine, EmptyArguments, NormalizedTypeFamily, ObjectKind,
-    AcpPluginId, ObjectRef, QueryHealth, QueryPlanArguments, QueryPlanResult,
+    AcpPluginId, ErrorCode, ObjectRef, ProtocolError, QueryHealth, QueryPlanArguments, QueryPlanResult,
     QueryResultPage, QueryRunArguments, QueryRunResult, Relation, RequestEnvelope,
     ResponseEnvelope, RuntimeDiscovery, SchemaListResult, SchemaSummary, MAX_REQUEST_BYTES,
     MAX_RESPONSE_BYTES, PROTOCOL_MAX, PROTOCOL_MIN,
@@ -41,6 +41,17 @@ fn respond<T: serde::Serialize>(stream: &mut UnixStream, request: &RequestEnvelo
         request.protocol_version,
         request.request_id,
         serde_json::to_value(result).unwrap(),
+    );
+    stream
+        .write_all(&encode_frame(&response, MAX_RESPONSE_BYTES).unwrap())
+        .unwrap();
+}
+
+fn respond_retryable_authority_refresh(stream: &mut UnixStream, request: &RequestEnvelope) {
+    let response = ResponseEnvelope::failure(
+        request.protocol_version,
+        request.request_id,
+        ProtocolError::new(ErrorCode::RuntimeUnavailable, true),
     );
     stream
         .write_all(&encode_frame(&response, MAX_RESPONSE_BYTES).unwrap())
@@ -186,7 +197,8 @@ pub(super) fn run() {
     let (cancel_started_tx, cancel_started_rx) = mpsc::channel();
     let server = thread::spawn(move || {
         let mut catalog_searches = 0;
-        for _ in 0..5 {
+        let mut authority_retry_sent = false;
+        for _ in 0..6 {
             let (mut stream, _) = listener.accept().unwrap();
             let request = read_request(&mut stream);
             let authentication = request.authentication.as_ref().unwrap();
@@ -198,6 +210,11 @@ pub(super) fn run() {
                 .is_none());
             match request.command {
                 CommandName::SchemaList => {
+                    if !authority_retry_sent {
+                        authority_retry_sent = true;
+                        respond_retryable_authority_refresh(&mut stream, &request);
+                        continue;
+                    }
                     let arguments: CatalogArguments =
                         serde_json::from_value(request.arguments.clone()).unwrap();
                     assert_eq!(arguments.connection, ConnectionSelector::Current);
@@ -321,6 +338,7 @@ pub(super) fn run() {
                 _ => unreachable!(),
             }
         }
+        assert!(authority_retry_sent);
 
         let (mut stream, _) = listener.accept().unwrap();
         let request = read_request(&mut stream);
@@ -407,10 +425,12 @@ pub(super) fn run() {
             .expect("every MCP request must receive one response")
     };
     assert_eq!(response(1)["result"]["serverInfo"]["name"], "dopedb");
-    assert!(response(1)["result"]["instructions"]
-        .as_str()
-        .unwrap()
-        .contains("partial result"));
+    let instructions = response(1)["result"]["instructions"].as_str().unwrap();
+    assert!(instructions.contains("partial result"));
+    assert!(instructions.contains("EVIDENCE ROUTING"));
+    assert!(instructions.contains("call environment_context once"));
+    assert!(instructions.contains("inspect the exact pinned source first"));
+    assert!(instructions.contains("After at most six query_read calls"));
     let tools = response(2)["result"]["tools"].as_array().unwrap();
     assert!(tools.iter().any(|tool| tool["name"] == "catalog_search"));
     assert!(tools.iter().any(|tool| tool["name"] == "query_read"));
@@ -427,6 +447,10 @@ pub(super) fn run() {
         query_read_tool["inputSchema"]["properties"]["timeoutMs"]["maximum"],
         300_000,
     );
+    assert!(query_read_tool["description"]
+        .as_str()
+        .unwrap()
+        .contains("establish that meaning from pinned source first"));
     let catalog_search_tool = tools
         .iter()
         .find(|tool| tool["name"] == "catalog_search")

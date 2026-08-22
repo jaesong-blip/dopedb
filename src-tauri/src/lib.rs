@@ -191,6 +191,7 @@ pub fn run() {
             features::workspaces::transport::copy_connection_to_workspace,
             features::workspaces::transport::bind_workspace_connection_credentials,
             features::workspaces::transport::update_workspace_connection,
+            features::workspaces::transport::set_workspace_connection_write_policy,
             features::workspaces::transport::delete_workspace_connection,
             features::knowledge::transport::list_knowledge_projects_command,
             features::knowledge::transport::create_knowledge_project_command,

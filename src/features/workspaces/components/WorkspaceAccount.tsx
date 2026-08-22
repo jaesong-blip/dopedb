@@ -33,7 +33,10 @@ import {
   workspaceQueryKeys,
   type WorkspaceContextState,
 } from "../queries";
-import { shouldRevalidateWorkspaceAuth } from "../authPolicy";
+import {
+  shouldRevalidateWorkspaceAuth,
+  WORKSPACE_AUTH_RETRY_MS,
+} from "../authPolicy";
 import { onWorkspaceLoginRequested } from "../loginRequest";
 import { errMessage } from "../../../ipc/types";
 import { useI18n } from "../../../lib/i18n";
@@ -82,10 +85,12 @@ export default function WorkspaceAccount({
     request: Promise<WorkspaceLoginPoll>;
   } | null>(null);
   const membershipRefreshInFlight = useRef<Promise<void> | null>(null);
+  const membershipRefreshRetryTimer = useRef<number | null>(null);
+  const workspaceAccountMounted = useRef(false);
   const browserWasActive = useRef(false);
   const providerCredentialAuthorityVersion = useRef<number | null>(null);
   const focusReturnHandler = useRef<() => void>(() => undefined);
-  const membershipRefreshHandler = useRef<() => void>(() => undefined);
+  const membershipRefreshHandler = useRef<(force?: boolean) => void>(() => undefined);
   const loginRequestHandler = useRef<() => void>(() => undefined);
   const workspaceDataRefreshHandler = useRef<() => void | Promise<void>>(
     () => undefined,
@@ -95,6 +100,25 @@ export default function WorkspaceAccount({
   );
   workspaceDataRefreshHandler.current = onWorkspaceDataRefreshed;
   scopeChangeHandler.current = onScopeChanged;
+
+  const clearMembershipRefreshRetry = useCallback(() => {
+    if (membershipRefreshRetryTimer.current === null) return;
+    window.clearTimeout(membershipRefreshRetryTimer.current);
+    membershipRefreshRetryTimer.current = null;
+  }, []);
+
+  const scheduleMembershipRefreshRetry = useCallback(() => {
+    if (
+      !workspaceAccountMounted.current ||
+      membershipRefreshRetryTimer.current !== null
+    ) {
+      return;
+    }
+    membershipRefreshRetryTimer.current = window.setTimeout(() => {
+      membershipRefreshRetryTimer.current = null;
+      membershipRefreshHandler.current(true);
+    }, WORKSPACE_AUTH_RETRY_MS);
+  }, []);
 
   const refreshWorkspaceAuthority = useCallback(
     async function refreshWorkspaceAuthority(
@@ -193,6 +217,7 @@ export default function WorkspaceAccount({
   );
 
   useEffect(() => {
+    workspaceAccountMounted.current = true;
     const onBlur = () => {
       if (pendingLogin.current) browserWasActive.current = true;
     };
@@ -205,11 +230,19 @@ export default function WorkspaceAccount({
       browserWasActive.current = false;
       focusReturnHandler.current();
     };
+    const onOnline = () => membershipRefreshHandler.current(true);
     window.addEventListener("blur", onBlur);
     window.addEventListener("focus", onFocus);
+    window.addEventListener("online", onOnline);
     return () => {
+      workspaceAccountMounted.current = false;
       window.removeEventListener("blur", onBlur);
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener("online", onOnline);
+      if (membershipRefreshRetryTimer.current !== null) {
+        window.clearTimeout(membershipRefreshRetryTimer.current);
+        membershipRefreshRetryTimer.current = null;
+      }
       loginAttempt.current += 1;
       pendingLogin.current = null;
     };
@@ -250,17 +283,22 @@ export default function WorkspaceAccount({
 
   useEffect(() => {
     // React StrictMode mounts effects twice in development. The native refresh is
-    // an authority fence, so duplicate setup must share the already running call.
+    // one authority verification, so duplicate setup must share the in-flight call.
     if (membershipRefreshInFlight.current) return;
     const request = refreshWorkspaceAuthority(refreshWorkspaceAuthState)
-      .catch(() => undefined)
+      .then(clearMembershipRefreshRetry)
+      .catch(() => scheduleMembershipRefreshRetry())
       .finally(() => {
         if (membershipRefreshInFlight.current === request) {
           membershipRefreshInFlight.current = null;
         }
       });
     membershipRefreshInFlight.current = request;
-  }, [refreshWorkspaceAuthority]);
+  }, [
+    clearMembershipRefreshRetry,
+    refreshWorkspaceAuthority,
+    scheduleMembershipRefreshRetry,
+  ]);
 
   async function wait(ms: number) {
     await new Promise<void>((resolve) => window.setTimeout(resolve, ms));
@@ -366,23 +404,27 @@ export default function WorkspaceAccount({
   }
 
   focusReturnHandler.current = () => void checkAfterBrowserReturn();
-  membershipRefreshHandler.current = () => {
+  membershipRefreshHandler.current = (force = false) => {
     if (!auth.data?.authenticated || membershipRefreshInFlight.current) return;
     const revalidateAuth = shouldRevalidateWorkspaceAuth(
       true,
       auth.dataUpdatedAt,
       auth.isFetching,
     );
-    // The native authority refresh fences every ACP and PTY authority before
-    // syncing. A routine focus event must never invoke it inside the auth cooldown.
-    if (!revalidateAuth) return;
+    // Routine focus respects the cooldown. Forced retries are reserved for a
+    // previous failed proof or the browser returning online; native keeps the ACP
+    // process alive while the Broker authority gate is paused.
+    if (!force && !revalidateAuth) return;
+    clearMembershipRefreshRetry();
     const request = refreshWorkspaceAuthority(refreshWorkspaceAuthState)
+      .then(clearMembershipRefreshRetry)
       .catch(async () => {
         // A membership 401 also invalidates the hosted session. Confirm that state
         // silently so expired team scopes disappear without turning the button into
         // a foreground loading indicator.
         await auth.refetch().catch(() => undefined);
         await invalidateWorkspaceContext(queryClient);
+        scheduleMembershipRefreshRetry();
       })
       .finally(() => {
         if (membershipRefreshInFlight.current === request) {

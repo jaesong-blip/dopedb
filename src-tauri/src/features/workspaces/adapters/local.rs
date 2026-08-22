@@ -92,6 +92,19 @@ impl WorkspaceRepositoryPort for SqliteWorkspaceRepository {
 
     async fn authority_fingerprint(&self) -> AppResult<WorkspaceAuthorityFingerprint> {
         let scope = self.store.active_resource_scope().await?;
+        let connections = self
+            .store
+            .active_connection_authority_fingerprint()
+            .await?
+            .into_iter()
+            .map(|(id, connection_revision, binding_revision)| {
+                (
+                    ConnectionId::from(id),
+                    connection_revision,
+                    binding_revision,
+                )
+            })
+            .collect();
         let mut grants = self
             .store
             .workspace_accounts()
@@ -109,6 +122,7 @@ impl WorkspaceRepositoryPort for SqliteWorkspaceRepository {
             workspace_id: scope.workspace_id.into(),
             account_scope: scope.account_scope.storage_key().to_owned(),
             generation: scope.generation,
+            connections,
             grants,
         })
     }

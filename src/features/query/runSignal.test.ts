@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SafetySettings } from "../../ipc/types";
 import {
+  connectionId,
+  type ConnectionProfile,
+} from "../connections/domain";
+import { persistConnectionSafety } from "../safetySettings/persistence";
+import {
+  canManageWorkspaceWritePolicy,
   effectiveSafetySettings,
   requestedSafetySettings,
   safetyWriteControlAvailable,
@@ -88,6 +94,99 @@ describe("SQL run guidance", () => {
         allowWrites: false,
       }).allowWrites,
     ).toBe(false);
+    const managedWorkspaceManager = {
+      allowWrites: false,
+      credentialMode: "managed" as const,
+      workspaceAccess: "manage" as const,
+    };
+    expect(canManageWorkspaceWritePolicy(managedWorkspaceManager)).toBe(true);
+    expect(safetyWriteControlAvailable(managedWorkspaceManager)).toBe(true);
+    expect(
+      requestedSafetySettings(managedWorkspaceManager, {
+        ...safety,
+        allowWrites: true,
+      }).allowWrites,
+    ).toBe(true);
+    expect(canManageWorkspaceWritePolicy({
+      ...managedWorkspaceManager,
+      workspaceAccess: "write",
+    })).toBe(false);
+    expect(safetyWriteControlAvailable({
+      ...managedWorkspaceManager,
+      workspaceAccess: "write",
+    })).toBe(false);
+
+    const managedProfile: ConnectionProfile = {
+      id: connectionId("00000000-0000-4000-8000-000000000010"),
+      name: "managed",
+      engine: "postgres",
+      provider: "gcpCloudSql",
+      driverId: null,
+      host: "127.0.0.1",
+      port: 5432,
+      database: "app",
+      username: "",
+      sslmode: "require",
+      extraParams: {},
+      readonlyDefault: true,
+      allowWrites: false,
+      secretRef: null,
+      env: "prod",
+      schemaGroup: null,
+      workspaceAccess: "manage",
+      credentialMode: "managed",
+      providerTarget: null,
+    };
+    const persistenceOrder: string[] = [];
+    const setWorkspaceWritePolicy = vi.fn(async (
+      _id: ConnectionProfile["id"],
+      allowWrites: boolean,
+    ) => {
+      persistenceOrder.push(`workspace:${allowWrites}`);
+      return { ...managedProfile, allowWrites };
+    });
+    await expect(persistConnectionSafety(
+      managedProfile,
+      { ...safety, allowWrites: true },
+      {
+        setDeviceSafety: async () => {
+          persistenceOrder.push("device:true");
+        },
+        setWorkspaceWritePolicy,
+      },
+    )).resolves.toMatchObject({ allowWrites: true });
+    expect(persistenceOrder).toEqual(["workspace:true", "device:true"]);
+
+    persistenceOrder.length = 0;
+    await expect(persistConnectionSafety(
+      managedProfile,
+      { ...safety, allowWrites: true },
+      {
+        setDeviceSafety: async () => {
+          persistenceOrder.push("device:true");
+          throw new Error("device write failed");
+        },
+        setWorkspaceWritePolicy,
+      },
+    )).rejects.toThrow("device write failed");
+    expect(persistenceOrder).toEqual([
+      "workspace:true",
+      "device:true",
+      "workspace:false",
+    ]);
+
+    persistenceOrder.length = 0;
+    await expect(persistConnectionSafety(
+      { ...managedProfile, allowWrites: true },
+      safety,
+      {
+        setDeviceSafety: async () => {
+          persistenceOrder.push("device:false");
+        },
+        setWorkspaceWritePolicy,
+      },
+    )).resolves.toMatchObject({ allowWrites: false });
+    expect(persistenceOrder).toEqual(["device:false", "workspace:false"]);
 
     const approve = vi.fn().mockResolvedValue(undefined);
     await expect(

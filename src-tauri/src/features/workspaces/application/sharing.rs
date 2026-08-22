@@ -19,6 +19,11 @@ use super::{
     WorkspaceCredentialBindingRequest, WorkspaceUseCases,
 };
 
+enum SharedConnectionMutation {
+    Template(Box<ConnectionProfile>),
+    WritePolicy(bool),
+}
+
 impl<R, A, C, V, E, S> WorkspaceUseCases<R, A, C, V, E, S>
 where
     R: WorkspaceRepositoryPort,
@@ -173,35 +178,75 @@ where
         &self,
         request: WorkspaceConnectionUpdateRequest,
     ) -> AppResult<ConnectionProfile> {
-        let WorkspaceConnectionUpdateRequest { mut profile } = request;
+        let WorkspaceConnectionUpdateRequest { profile } = request;
         let connection_id = ConnectionId::from(profile.id);
+        self.mutate_connection(
+            connection_id,
+            SharedConnectionMutation::Template(Box::new(profile)),
+        )
+        .await
+    }
+
+    /// Change only the server-owned write ceiling for a managed connection. The
+    /// caller's device gate remains a separate, narrower Safety setting.
+    pub(crate) async fn set_connection_write_policy(
+        &self,
+        connection_id: ConnectionId,
+        allow_writes: bool,
+    ) -> AppResult<ConnectionProfile> {
+        self.mutate_connection(
+            connection_id,
+            SharedConnectionMutation::WritePolicy(allow_writes),
+        )
+        .await
+    }
+
+    async fn mutate_connection(
+        &self,
+        connection_id: ConnectionId,
+        change: SharedConnectionMutation,
+    ) -> AppResult<ConnectionProfile> {
         let mutation = self
             .runtime
             .begin_connection_mutation(connection_id)
             .await?;
         let current = mutation.profile().clone();
-        if profile.id != current.id {
-            return Err(AppError::Config(
-                "shared connection update id does not match the active template".into(),
-            ));
-        }
         if current.workspace_access != WorkspaceConnectionAccess::Manage {
             return Err(AppError::Blocked {
                 reason: "managing this shared connection requires workspace manage access".into(),
             });
         }
-        if profile.credential_mode != current.credential_mode {
-            return Err(AppError::Config(
-                "shared connection credential mode cannot be changed by the template editor".into(),
-            ));
-        }
+        let (mut profile, requested_write_policy) = match change {
+            SharedConnectionMutation::Template(profile) => {
+                let mut profile = *profile;
+                if profile.id != current.id {
+                    return Err(AppError::Config(
+                        "shared connection update id does not match the active template".into(),
+                    ));
+                }
+                if profile.credential_mode != current.credential_mode {
+                    return Err(AppError::Config(
+                        "shared connection credential mode cannot be changed by the template editor"
+                            .into(),
+                    ));
+                }
+                // The connection editor owns identity and transport only. Preserve
+                // the workspace write ceiling that Safety owns.
+                profile.allow_writes = current.credential_mode == WorkspaceCredentialMode::Managed
+                    && current.allow_writes;
+                (profile, None)
+            }
+            SharedConnectionMutation::WritePolicy(allow_writes) => {
+                if current.credential_mode != WorkspaceCredentialMode::Managed {
+                    return Err(AppError::Blocked {
+                        reason: "workspace writes require a managed connection".into(),
+                    });
+                }
+                (current.clone(), Some(allow_writes))
+            }
+        };
         let account_user_id = mutation.selected_account_id()?;
         let workspace_id = self.repository.active_workspace_id().await?;
-        profile.readonly_default = true;
-        profile.allow_writes =
-            current.credential_mode == WorkspaceCredentialMode::Managed && current.allow_writes;
-        profile.workspace_access = current.workspace_access;
-        profile.credential_mode = current.credential_mode;
 
         let mut remote = self
             .control_plane
@@ -216,6 +261,21 @@ where
             .iter()
             .position(|(candidate, _)| candidate.id == current.id)
             .ok_or_else(|| AppError::NotFound(format!("shared connection {connection_id}")))?;
+        if let Some(allow_writes) = requested_write_policy {
+            // A policy-only mutation must never overwrite a newer connection
+            // template with the local cache. Start from the just-fetched exact
+            // hosted revision and change only its write ceiling.
+            profile = remote[position].0.clone();
+            if profile.credential_mode != WorkspaceCredentialMode::Managed {
+                return Err(AppError::Blocked {
+                    reason: "workspace writes require a managed connection".into(),
+                });
+            }
+            profile.allow_writes = allow_writes;
+        }
+        profile.readonly_default = true;
+        profile.workspace_access = current.workspace_access;
+        profile.credential_mode = current.credential_mode;
         let expected_revision = remote[position].1;
         let updated = self
             .control_plane

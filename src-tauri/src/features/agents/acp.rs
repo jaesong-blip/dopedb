@@ -71,6 +71,10 @@ const MAX_PERMISSION_OPTION_BYTES: usize = 1024;
 const MAX_CONFIG_OPTIONS: usize = 64;
 const MAX_CONFIG_OPTION_ID_BYTES: usize = 256;
 const MAX_CONFIG_OPTION_VALUE_BYTES: usize = 1024;
+const WORKSPACE_AUTHORITY_CHANGED: &str = "workspace_authority_changed";
+const CONNECTION_AUTHORITY_CHANGED: &str = "connection_authority_changed";
+const AGENT_PROCESS_CLOSED: &str = "agent_process_closed";
+const AGENT_PROCESS_UNAVAILABLE: &str = "agent_process_unavailable";
 
 #[derive(Clone)]
 pub(crate) struct AcpRuntime {
@@ -659,15 +663,34 @@ impl AcpRuntime {
                 (entry.value().connection_id == connection_id
                     && !matches!(
                         entry.value().summary().lifecycle,
-                        AcpSessionLifecycle::Closed
+                        AcpSessionLifecycle::Closed | AcpSessionLifecycle::Failed
                     ))
                 .then_some(*entry.key())
             })
             .collect::<Vec<_>>();
         for id in &sessions {
-            let _ = self.close(*id);
+            self.interrupt(*id, CONNECTION_AUTHORITY_CHANGED);
         }
         sessions.len()
+    }
+
+    /// Stop only after a proven active workspace/account authority transition.
+    /// Routine refreshes use the Broker verification gate and never call this.
+    pub(crate) fn interrupt_all_for_workspace_authority_change(&self) {
+        let ids = self
+            .sessions
+            .iter()
+            .filter_map(|entry| {
+                (!matches!(
+                    entry.value().summary().lifecycle,
+                    AcpSessionLifecycle::Closed | AcpSessionLifecycle::Failed
+                ))
+                .then_some(*entry.key())
+            })
+            .collect::<Vec<_>>();
+        for id in ids {
+            self.interrupt(id, WORKSPACE_AUTHORITY_CHANGED);
+        }
     }
 
     pub(crate) async fn stop_provider_and_wait(
@@ -721,6 +744,22 @@ impl AcpRuntime {
             .map(|entry| entry.value().clone())
             .ok_or_else(|| AppError::NotFound("Agent session not found".into()))
     }
+
+    fn interrupt(&self, id: AcpSessionId, reason: &'static str) {
+        let Ok(session) = self.session(id) else {
+            return;
+        };
+        session.cancel_pending_permissions();
+        // Persist the authoritative interruption reason before asking the actor
+        // to exit. If Close wins the scheduler race first, run_session would only
+        // be able to observe an unexplained adapter EOF.
+        session.set_interrupted(reason);
+        if let Ok(sender) = session.sender() {
+            let _ = sender.send(SessionCommand::Close);
+        }
+        self.broker.sessions().revoke(session.broker_session_id);
+        session.busy.store(false, Ordering::SeqCst);
+    }
 }
 
 fn detached_session_projection(mut summary: AcpSessionSummary) -> AcpSessionSummary {
@@ -731,8 +770,8 @@ fn detached_session_projection(mut summary: AcpSessionSummary) -> AcpSessionSumm
             | AcpSessionLifecycle::Running
             | AcpSessionLifecycle::WaitingPermission
     ) {
-        summary.lifecycle = AcpSessionLifecycle::Closed;
-        summary.error = None;
+        summary.lifecycle = AcpSessionLifecycle::Failed;
+        summary.error = Some(AGENT_PROCESS_UNAVAILABLE.into());
     }
     summary
 }
@@ -815,6 +854,27 @@ impl AcpSession {
             self.accepting_events.store(false, Ordering::SeqCst);
             let _ = self.persistence_queue.send(PersistenceCommand::Shutdown);
         }
+    }
+
+    fn set_interrupted(&self, reason: &'static str) {
+        let _push_order = lock_unpoisoned(&self.push_order);
+        if !self.accepting_events.load(Ordering::SeqCst) {
+            return;
+        }
+        {
+            let mut summary = lock_unpoisoned(&self.summary);
+            summary.lifecycle = AcpSessionLifecycle::Failed;
+            summary.error = Some(reason.into());
+            summary.updated_at = Utc::now();
+        }
+        self.push_unlocked(AcpSessionEventPayload::Error {
+            message: reason.into(),
+        });
+        self.push_unlocked(AcpSessionEventPayload::Status {
+            lifecycle: AcpSessionLifecycle::Failed,
+        });
+        self.accepting_events.store(false, Ordering::SeqCst);
+        let _ = self.persistence_queue.send(PersistenceCommand::Shutdown);
     }
 
     fn push(&self, payload: AcpSessionEventPayload) {
@@ -1268,7 +1328,11 @@ async fn run_session(
                 session.summary().lifecycle,
                 AcpSessionLifecycle::Closed | AcpSessionLifecycle::Failed
             ) {
-                session.set_lifecycle(AcpSessionLifecycle::Closed, None);
+                // Only an explicit close marks a conversation Closed. EOF from an
+                // adapter process while the session is otherwise live is an
+                // interruption and must remain visible and resumable instead of
+                // silently discarding an unfinished answer.
+                session.set_interrupted(AGENT_PROCESS_CLOSED);
             }
         }
         Err(message) => {

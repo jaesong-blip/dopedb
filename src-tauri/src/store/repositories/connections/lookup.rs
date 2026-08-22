@@ -4,6 +4,63 @@ use super::super::super::*;
 use crate::kernel::access::{CatalogCachePolicy, PinnedConnection, WorkspaceKind};
 
 impl Store {
+    /// Read the exact active connection authority in one SQLite snapshot. This
+    /// projection contains no secret or target metadata; it exists so a hosted
+    /// refresh can keep unrelated ACP conversations alive while fencing only a
+    /// connection whose template or member-local binding revision changed.
+    pub(crate) async fn active_connection_authority_fingerprint(
+        &self,
+    ) -> AppResult<Vec<(Uuid, i64, i64)>> {
+        let rows: Vec<(String, i64, i64)> = sqlx::query_as(
+            "WITH active AS (
+                 SELECT w.id AS workspace_id,
+                        w.kind AS workspace_kind,
+                        account.value AS selected_account_id
+                 FROM app_settings workspace
+                 JOIN workspaces w
+                   ON workspace.key = 'active_workspace_id'
+                  AND workspace.value = w.id
+                  AND w.lifecycle_state = 'active'
+                 LEFT JOIN app_settings account
+                   ON account.key = 'active_workspace_account_id'
+             )
+             SELECT c.id,
+                    c.revision,
+                    CASE WHEN c.remote_id IS NOT NULL
+                         THEN COALESCE(binding.revision, 0) ELSE 0 END
+             FROM active
+             JOIN connections c
+               ON c.workspace_id = active.workspace_id
+              AND c.deleted_at IS NULL
+             LEFT JOIN workspace_connection_bindings binding
+               ON binding.connection_id = c.id
+              AND binding.account_user_id = active.selected_account_id
+             WHERE (active.workspace_kind = 'personal'
+                    OR (active.selected_account_id IS NOT NULL AND EXISTS(
+                        SELECT 1 FROM workspace_members member
+                        WHERE member.workspace_id = active.workspace_id
+                          AND member.user_id = active.selected_account_id
+                          AND member.status = 'active'
+                    )))
+               AND (active.workspace_kind = 'personal'
+                    OR (c.remote_id IS NOT NULL AND binding.connection_id IS NOT NULL)
+                    OR c.account_user_id = active.selected_account_id)
+             ORDER BY c.id",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(|(id, connection_revision, binding_revision)| {
+                if connection_revision < 1 || binding_revision < 0 {
+                    return Err(AppError::Config(
+                        "active connection authority revision is invalid".into(),
+                    ));
+                }
+                Ok((parse_uuid(id)?, connection_revision, binding_revision))
+            })
+            .collect()
+    }
+
     pub async fn list_connections(&self) -> AppResult<Vec<ConnectionProfile>> {
         let workspace = self.active_workspace().await?;
         let account_user_id = self.active_workspace_account_id().await?;

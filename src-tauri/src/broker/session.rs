@@ -3,6 +3,7 @@
 
 use std::collections::BTreeSet;
 use std::fmt;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -148,6 +149,16 @@ impl fmt::Debug for IssuedSessionCapability {
 pub(crate) struct BrokerSessionRegistry {
     runtime_id: RuntimeId,
     sessions: std::sync::Arc<DashMap<TerminalSessionId, SessionRecord>>,
+    authority_verified: std::sync::Arc<AtomicBool>,
+    authority_refreshes: std::sync::Arc<AtomicUsize>,
+}
+
+/// One in-flight hosted-authority verification. While any guard is alive, new
+/// Broker authentication and capability issuance fail closed without destroying
+/// the already running ACP/PTY process. A successful unchanged refresh can then
+/// resume those exact capabilities instead of terminating the conversation.
+pub(crate) struct BrokerAuthorityRefreshGuard {
+    refreshes: std::sync::Arc<AtomicUsize>,
 }
 
 impl BrokerSessionRegistry {
@@ -155,6 +166,38 @@ impl BrokerSessionRegistry {
         Self {
             runtime_id,
             sessions: std::sync::Arc::new(DashMap::new()),
+            authority_verified: std::sync::Arc::new(AtomicBool::new(true)),
+            authority_refreshes: std::sync::Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    pub(crate) fn begin_authority_refresh(&self) -> BrokerAuthorityRefreshGuard {
+        self.authority_refreshes.fetch_add(1, Ordering::SeqCst);
+        BrokerAuthorityRefreshGuard {
+            refreshes: std::sync::Arc::clone(&self.authority_refreshes),
+        }
+    }
+
+    pub(crate) fn confirm_authority(&self) {
+        self.authority_verified.store(true, Ordering::SeqCst);
+    }
+
+    pub(crate) fn mark_authority_unverified(&self) {
+        self.authority_verified.store(false, Ordering::SeqCst);
+    }
+
+    pub(crate) fn authority_available(&self) -> bool {
+        self.authority_verified.load(Ordering::SeqCst)
+            && self.authority_refreshes.load(Ordering::SeqCst) == 0
+    }
+
+    fn ensure_authority_available(&self) -> AppResult<()> {
+        if self.authority_available() {
+            Ok(())
+        } else {
+            Err(AppError::Blocked {
+                reason: "workspace authority is being revalidated; retry shortly".into(),
+            })
         }
     }
 
@@ -225,6 +268,7 @@ impl BrokerSessionRegistry {
         agent_registration: Option<AgentSessionRegisterArguments>,
         knowledge_scope: Option<KnowledgeSessionScope>,
     ) -> AppResult<IssuedSessionCapability> {
+        self.ensure_authority_available()?;
         if ttl.is_zero() {
             return Err(AppError::Config(
                 "terminal session capability TTL must be positive".into(),
@@ -288,6 +332,7 @@ impl BrokerSessionRegistry {
         authentication: &SessionAuthentication,
         peer: Option<&PeerProcessIdentity>,
     ) -> AppResult<AuthenticatedSession> {
+        self.ensure_authority_available()?;
         if authentication.token().is_some() {
             return self.authenticate_bearer(authentication);
         }
@@ -319,6 +364,7 @@ impl BrokerSessionRegistry {
         peer: PeerProcessIdentity,
         registration: &AgentSessionRegisterArguments,
     ) -> AppResult<AuthenticatedSession> {
+        self.ensure_authority_available()?;
         if !valid_agent_registration_paths(registration) {
             return Err(authentication_denied());
         }
@@ -412,6 +458,13 @@ impl BrokerSessionRegistry {
     #[cfg(test)]
     fn len(&self) -> usize {
         self.sessions.len()
+    }
+}
+
+impl Drop for BrokerAuthorityRefreshGuard {
+    fn drop(&mut self) {
+        let previous = self.refreshes.fetch_sub(1, Ordering::SeqCst);
+        debug_assert!(previous > 0, "Broker authority refresh guard underflowed");
     }
 }
 
@@ -557,6 +610,35 @@ mod tests {
         assert_eq!(authenticated.knowledge_account_scope.as_str(), "personal");
         assert!(authenticated.require(BrokerCapability::QueryPlan).is_ok());
         assert!(authenticated.require(BrokerCapability::SqlPropose).is_err());
+
+        // A routine hosted-authority refresh pauses new Broker work without
+        // deleting the process capability. Confirming the unchanged authority
+        // resumes the same session only after the in-flight guard is released.
+        let refresh = registry.begin_authority_refresh();
+        assert!(registry.authenticate(&authentication, None).is_err());
+        assert!(registry
+            .issue(
+                TerminalSessionId::from(Uuid::new_v4()),
+                &pin(connection_id.into()),
+                [BrokerCapability::ConnectionRead],
+                Duration::from_secs(60),
+            )
+            .is_err());
+        registry.confirm_authority();
+        assert!(registry.authenticate(&authentication, None).is_err());
+        drop(refresh);
+        assert!(registry.authenticate(&authentication, None).is_ok());
+
+        // A failed Team-authority verification stays fail closed across the end
+        // of its request, then a later proven refresh restores the same capability.
+        let failed_refresh = registry.begin_authority_refresh();
+        registry.mark_authority_unverified();
+        drop(failed_refresh);
+        assert!(registry.authenticate(&authentication, None).is_err());
+        let recovered_refresh = registry.begin_authority_refresh();
+        registry.confirm_authority();
+        drop(recovered_refresh);
+        assert!(registry.authenticate(&authentication, None).is_ok());
 
         let wrong = SessionAuthentication::new(issued.terminal_session_id.into(), "00".repeat(32));
         assert!(registry.authenticate(&wrong, None).is_err());

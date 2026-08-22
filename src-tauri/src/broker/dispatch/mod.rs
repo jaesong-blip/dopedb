@@ -229,6 +229,9 @@ impl BrokerDispatcher {
 
     fn register_agent_session(&self, request: &RequestEnvelope) -> ResponseEnvelope {
         let request_id = request.request_id;
+        if !self.sessions.authority_available() {
+            return failure(request_id, ErrorCode::RuntimeUnavailable, true);
+        }
         let arguments = match decode_arguments::<AgentSessionRegisterCommand>(request) {
             Ok(arguments) if arguments.validate() => arguments,
             _ => return failure(request_id, ErrorCode::InvalidRequest, false),
@@ -255,18 +258,21 @@ impl BrokerDispatcher {
         &self,
         request: &RequestEnvelope,
         capability: BrokerCapability,
-    ) -> Result<AuthenticatedSession, ErrorCode> {
+    ) -> Result<AuthenticatedSession, (ErrorCode, bool)> {
+        if !self.sessions.authority_available() {
+            return Err((ErrorCode::RuntimeUnavailable, true));
+        }
         let authentication = request
             .authentication
             .as_ref()
-            .ok_or(ErrorCode::AuthenticationDenied)?;
+            .ok_or((ErrorCode::AuthenticationDenied, false))?;
         let session = self
             .sessions
             .authenticate(authentication, self.peer.as_ref())
-            .map_err(|_| ErrorCode::AuthenticationDenied)?;
+            .map_err(|_| (ErrorCode::AuthenticationDenied, false))?;
         session
             .require(capability)
-            .map_err(|_| ErrorCode::ScopeDenied)?;
+            .map_err(|_| (ErrorCode::ScopeDenied, false))?;
         Ok(session)
     }
 

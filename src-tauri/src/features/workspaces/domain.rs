@@ -6,7 +6,7 @@
 
 use crate::error::{AppError, AppResult};
 use crate::kernel::access::WorkspaceKind;
-use crate::kernel::identity::{AccountId, WorkspaceId};
+use crate::kernel::identity::{AccountId, ConnectionId, WorkspaceId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -128,14 +128,18 @@ pub(crate) struct WorkspacePullPage {
     pub(crate) analysis_tombstone: bool,
 }
 
-/// Complete snapshot of the authority that can keep process-local Terminal sessions
-/// alive. Any scope, account partition, generation, or membership-role change revokes
-/// those sessions.
+/// Complete local authority snapshot used after a hosted refresh. The active scope,
+/// its generation, and active connection revisions decide which process capabilities
+/// survive; the all-account grant set separately drives provider-binding cleanup.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct WorkspaceAuthorityFingerprint {
     pub(crate) workspace_id: WorkspaceId,
     pub(crate) account_scope: String,
     pub(crate) generation: i64,
+    /// Active-scope connection and member-local binding revisions. A remote
+    /// collection refresh can change one exact Agent grant without changing the
+    /// workspace membership generation, so transport fencing compares this set too.
+    pub(crate) connections: Vec<(ConnectionId, i64, i64)>,
     pub(crate) grants: Vec<(AccountId, WorkspaceId, WorkspaceRole)>,
 }
 

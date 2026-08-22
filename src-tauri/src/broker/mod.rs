@@ -20,7 +20,7 @@ use tokio_util::sync::CancellationToken;
 
 #[cfg(windows)]
 pub(crate) use peer::restrict_path_to_current_user;
-pub(crate) use session::{BrokerCapability, BrokerSessionRegistry};
+pub(crate) use session::{BrokerAuthorityRefreshGuard, BrokerCapability, BrokerSessionRegistry};
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct BrokerRuntimeStatus {
@@ -66,6 +66,18 @@ impl BrokerRuntime {
 
     pub(crate) fn sessions(&self) -> &BrokerSessionRegistry {
         &self.inner.sessions
+    }
+
+    pub(crate) fn begin_authority_refresh(&self) -> BrokerAuthorityRefreshGuard {
+        self.inner.sessions.begin_authority_refresh()
+    }
+
+    pub(crate) fn confirm_authority(&self) {
+        self.inner.sessions.confirm_authority();
+    }
+
+    pub(crate) fn mark_authority_unverified(&self) {
+        self.inner.sessions.mark_authority_unverified();
     }
 
     pub(crate) fn runtime_file(&self) -> Option<PathBuf> {

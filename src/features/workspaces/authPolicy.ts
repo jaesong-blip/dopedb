@@ -1,6 +1,7 @@
 // Workspace identity stays visually stable while the server silently revalidates
 // the OS-keychain session. Resource APIs still authorize every sensitive action.
 export const WORKSPACE_AUTH_RECHECK_MS = 5 * 60_000;
+export const WORKSPACE_AUTH_RETRY_MS = 30_000;
 
 export function shouldRevalidateWorkspaceAuth(
   authenticated: boolean,

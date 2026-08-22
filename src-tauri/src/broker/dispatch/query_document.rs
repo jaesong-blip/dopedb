@@ -20,7 +20,7 @@ pub(super) async fn handle(
     };
     let session = match dispatcher.authenticate(request, capability) {
         Ok(session) => session,
-        Err(code) => return failure(request_id, code, false),
+        Err((code, retryable)) => return failure(request_id, code, retryable),
     };
     match request.command {
         CommandName::DocumentRun => {

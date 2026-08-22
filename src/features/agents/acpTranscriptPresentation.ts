@@ -166,6 +166,15 @@ export function toolContentText(value: unknown): string | null {
 
 export function progressActivityLabel(text: string, t: Translate) {
   const normalized = text.toLocaleLowerCase();
+  if (/(environment_context|source context|evidence route|근거 범위)/.test(normalized)) {
+    return t("agent.acpActivityEvidencePlan");
+  }
+  if (/(source_search|searching source|source search|소스 검색)/.test(normalized)) {
+    return t("agent.acpActivitySourceSearch");
+  }
+  if (/(source_read|reading source|source code|소스 코드)/.test(normalized)) {
+    return t("agent.acpActivitySourceRead");
+  }
   if (/(dashboard|chart|visuali[sz]|대시보드|차트|시각화)/.test(normalized)) {
     return t("agent.acpActivityAnalysisArticle");
   }
@@ -213,6 +222,15 @@ export function toolActivityLabel(
 
   if (/tool.?search/.test(identifier)) {
     return t("agent.acpActivityToolSearch");
+  }
+  if (/environment_context/.test(identifier)) {
+    return t("agent.acpActivityEvidencePlan");
+  }
+  if (/source_search/.test(identifier)) {
+    return t("agent.acpActivitySourceSearch");
+  }
+  if (/source_read/.test(identifier)) {
+    return t("agent.acpActivitySourceRead");
   }
   if (/dashboard|chart|visuali[sz]/.test(identifier)) {
     return t("agent.acpActivityAnalysisArticle");
@@ -302,6 +320,22 @@ export function lifecycleLabel(
   t: Translate,
 ) {
   return t(`agent.acpLifecycle.${lifecycle}` as Parameters<typeof t>[0]);
+}
+
+export function agentSessionErrorLabel(message: string, t: Translate) {
+  if (message === "workspace_authority_changed") {
+    return t("agent.acpInterruptedWorkspaceAuthority");
+  }
+  if (message === "connection_authority_changed") {
+    return t("agent.acpInterruptedConnectionAuthority");
+  }
+  if (message === "agent_process_closed") {
+    return t("agent.acpInterruptedProcessClosed");
+  }
+  if (message === "agent_process_unavailable") {
+    return t("agent.acpInterruptedProcessUnavailable");
+  }
+  return message;
 }
 
 export function stopReasonLabel(reason: string, t: Translate) {

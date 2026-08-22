@@ -102,6 +102,13 @@ export function updateWorkspaceConnection(
   return invoke("update_workspace_connection", { profile });
 }
 
+export function setWorkspaceConnectionWritePolicy(
+  id: ConnectionId,
+  allowWrites: boolean,
+): Promise<ConnectionProfile> {
+  return invoke("set_workspace_connection_write_policy", { id, allowWrites });
+}
+
 export function deleteWorkspaceConnection(
   id: ConnectionId,
 ): Promise<ConnectionProfile> {

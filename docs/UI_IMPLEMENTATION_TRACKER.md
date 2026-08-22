@@ -25,10 +25,10 @@ runtime과 성능 수치로 수행한다.
 | SQL editor/query workflow | `complete` | `features/queries`, `screens/Sql`, Rust query application | 수동 Run exact 승인, Agent 제안 분리, 10 KiB/100 KiB/1 MiB 입력과 cancel/transaction packaged 검수 |
 | Result/Data grid | `complete` | `features/queryResults`, Rust result artifact | 30열·50,000행 selection/filter/export와 메모리 경계 검수 |
 | Services/Jobs | `complete` | `features/queryServices`, `features/jobs` | background cancel과 복원된 result handle packaged 검수 |
-| Agent tool window | `complete` | `features/agents`, ACP Rust runtime | 공식 adapter 설치·로그아웃·permission·resume의 OS별 검수 |
+| Agent tool window | `complete` | `features/agents`, ACP Rust runtime | 공식 adapter 설치·로그아웃·permission·resume, 동일 권한 focus-refresh 연속성, 실제 권한·process 중단 사유와 복구의 OS별 검수 |
 | Knowledge graph | `complete` | Rust `features/knowledge`, frontend Knowledge projection | GitHub/Local source revision, publish, mapping과 exact grant 검수 |
 | Analysis Article | `partial` | `features/analysisArticles`, cloud analysis application | production runner, publication, metric signal의 실제 환경 검수 |
-| Settings | `complete` | `features/settings`, `features/safetySettings` | 선택 연결의 단일 쓰기 제어, fail-closed profile/local gate 저장, compact viewport 검수 |
+| Settings | `complete` | `features/settings`, `features/safetySettings` | 선택 연결의 단일 쓰기 제어, 관리자용 workspace 상한 + 기기 gate의 fail-closed 저장, compact viewport 검수 |
 | Diagnostics/Recovery | `complete` | design-system diagnostics, feature recovery boundaries | failure injection에서 오류 owner와 retry가 유지되는지 확인 |
 
 ## 공용 UI 계약

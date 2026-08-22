@@ -25,6 +25,16 @@ export function connectionCanEnterWritePath(
   );
 }
 
+/** A manager may change the managed workspace ceiling from the Safety surface. */
+export function canManageWorkspaceWritePolicy(
+  connection: ConnectionWriteAuthority,
+): boolean {
+  return (
+    connection.credentialMode === "managed" &&
+    connection.workspaceAccess === "manage"
+  );
+}
+
 /** The Safety page owns the local connection's write policy and local consent. */
 export function safetyWriteControlAvailable(
   connection: ConnectionWriteAuthority,
@@ -35,10 +45,17 @@ export function safetyWriteControlAvailable(
   ) {
     return true;
   }
-  return connectionCanEnterWritePath(connection);
+  return (
+    canManageWorkspaceWritePolicy(connection) ||
+    connectionCanEnterWritePath(connection)
+  );
 }
 
-/** Normalize a Safety form without allowing it to broaden workspace authority. */
+/**
+ * Normalize the local form against current authority. A manager can request a
+ * coordinated hosted-policy change, but this value alone never widens runtime
+ * authority; the dedicated workspace command remains the server gate.
+ */
 export function requestedSafetySettings(
   connection: ConnectionWriteAuthority,
   settings: SafetySettings,

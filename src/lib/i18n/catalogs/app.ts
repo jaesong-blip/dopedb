@@ -139,7 +139,7 @@ export const appCatalog = defineCatalog(
     "settings.launchAtLoginDisabled": "Launch at sign-in: disabled",
     "settings.agentDebugDetails": "Show Agent debugging details",
     "settings.agentDebugDetailsBody":
-      "Shows ACP progress, tool identifiers, inputs, and results in AI Chat. Keep this off for the compact activity view; details can include database metadata.",
+      "Shows ACP progress, tool identifiers, inputs, and results in AI Chat. Keep this off for the compact activity view; details can include database and source metadata.",
     "settings.cli": "Command line",
     "settings.languageBody":
       "Choose the UI language for the desktop client. The setting is saved on this device.",
@@ -300,7 +300,7 @@ export const appCatalog = defineCatalog(
     "settings.launchAtLoginDisabled": "로그인 시 시작: 꺼짐",
     "settings.agentDebugDetails": "Agent 디버깅 세부 정보 표시",
     "settings.agentDebugDetailsBody":
-      "AI Chat에 ACP 진행 기록, 도구 식별자, 입력과 결과를 표시합니다. 일반 사용 시에는 끄고 간결한 작업 내역을 사용하세요. 세부 정보에는 데이터베이스 메타데이터가 포함될 수 있습니다.",
+      "AI Chat에 ACP 진행 기록, 도구 식별자, 입력과 결과를 표시합니다. 일반 사용 시에는 끄고 간결한 작업 내역을 사용하세요. 세부 정보에는 데이터베이스와 소스 메타데이터가 포함될 수 있습니다.",
     "settings.cli": "명령줄",
     "settings.languageBody":
       "데스크톱 클라이언트의 UI 언어를 선택하세요. 이 설정은 이 기기에 저장됩니다.",

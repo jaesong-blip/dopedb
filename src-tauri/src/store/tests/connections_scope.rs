@@ -2167,6 +2167,28 @@ async fn pinned_catalog_cache_rejects_scope_aba_and_keeps_accounts_isolated() {
     assert!(!store.is_pin_current(&repinned_a).await.unwrap());
     let role_repinned_a = store.pin_connection_for_read(connection_id).await.unwrap();
     assert!(role_repinned_a.scope.generation > repinned_a.scope.generation);
+    let unchanged_generation = role_repinned_a.scope.generation;
+    let unchanged_connections = store
+        .active_connection_authority_fingerprint()
+        .await
+        .unwrap();
+    store
+        .sync_account_workspaces(
+            &user_a,
+            &[(workspace_id, "Shared".into(), WorkspaceRole::Viewer)],
+        )
+        .await
+        .unwrap();
+    let unchanged_pin = store.pin_connection_for_read(connection_id).await.unwrap();
+    assert_eq!(unchanged_pin.scope.generation, unchanged_generation);
+    assert_eq!(
+        store
+            .active_connection_authority_fingerprint()
+            .await
+            .unwrap(),
+        unchanged_connections,
+        "an identical hosted refresh must not invent a runtime authority change"
+    );
     let repinned_a = role_repinned_a;
 
     // A rollback binary can only write V1. Its row acts as a freshness marker:

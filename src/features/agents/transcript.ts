@@ -1,4 +1,5 @@
 import type {
+  AcpSessionLifecycle,
   AcpSessionConfigOption,
   AcpSessionEvent,
 } from "./domain";
@@ -51,6 +52,21 @@ export type AcpTranscriptItem = VersionedTranscriptItem &
         stopReason: string;
       }
   );
+
+export function closedBeforeTurnCompleted(
+  lifecycle: AcpSessionLifecycle,
+  error: string | null,
+  items: readonly Pick<AcpTranscriptItem, "kind">[],
+) {
+  if (lifecycle !== "closed" || error !== null) return false;
+  let lastUserIndex = -1;
+  let lastTurnEndIndex = -1;
+  items.forEach((item, index) => {
+    if (item.kind === "user") lastUserIndex = index;
+    if (item.kind === "turnEnd") lastTurnEndIndex = index;
+  });
+  return lastUserIndex > lastTurnEndIndex;
+}
 
 /**
  * Mutable, revision-signalled ACP projection.

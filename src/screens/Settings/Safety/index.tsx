@@ -16,13 +16,19 @@ import {
   StatusBadge,
 } from "../../../design-system/components/Status";
 import {
+  canManageWorkspaceWritePolicy,
   connectionCanEnterWritePath,
   effectiveSafetySettings,
   requestedSafetySettings,
   safetyWriteControlAvailable,
 } from "../../../features/safetySettings/policy";
+import {
+  persistConnectionSafety,
+  WorkspaceWritePolicyRollbackError,
+} from "../../../features/safetySettings/persistence";
 import { useI18n, type I18nKey } from "../../../lib/i18n";
 import type { ConnectionProfile } from "../../../features/connections/domain";
+import { setWorkspaceConnectionWritePolicy } from "../../../features/workspaces/tauriAdapter";
 import MonitoringAccess from "./MonitoringAccess";
 import { setSafetySettings } from "../../../features/safetySettings/tauriAdapter";
 import {
@@ -54,11 +60,13 @@ export default function Safety({
   const { t } = useI18n();
   const connectionId = connection.id;
   const workspaceManaged = connection.credentialMode !== "local";
+  const workspacePolicyEditable = canManageWorkspaceWritePolicy(connection);
   const connectionWriteEnabled = connectionCanEnterWritePath(connection);
   const writeControlAvailable = safetyWriteControlAvailable(connection);
   const memberLocalReadOnly = connection.credentialMode === "memberLocal";
   const [settings, setSettings] = useState<SafetySettings | null>(null);
   const [busy, setBusy] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const toast = useToast();
   const queryClient = useQueryClient();
   const safetyQuery = useQuery(safetySettingsQuery(connectionId));
@@ -121,13 +129,24 @@ export default function Safety({
       connection.workspaceAccess === "local" &&
       connection.allowWrites !== requested.allowWrites;
     setBusy(true);
+    setSaveError(null);
     try {
-      await setSafetySettings(connectionId, requested);
+      let persistedConnection = await persistConnectionSafety(
+        connection,
+        requested,
+        {
+          setDeviceSafety: setSafetySettings,
+          setWorkspaceWritePolicy: setWorkspaceConnectionWritePolicy,
+        },
+      );
       if (localPolicyChange) {
-        onConnectionUpdated({
-          ...connection,
+        persistedConnection = {
+          ...persistedConnection,
           allowWrites: requested.allowWrites,
-        });
+        };
+      }
+      if (persistedConnection !== connection) {
+        onConnectionUpdated(persistedConnection);
       }
       const persisted = await queryClient.fetchQuery({
         ...safetySettingsQuery(connectionId),
@@ -138,15 +157,23 @@ export default function Safety({
       onSaved(connectionId, persisted);
       toast(t("safety.saved"));
     } catch (e) {
+      let message = errMessage(e);
+      if (e instanceof WorkspaceWritePolicyRollbackError) {
+        onConnectionUpdated(e.connection);
+        message = t("safety.workspacePolicyRollbackFailed", {
+          error: errMessage(e.rollbackError),
+        });
+      }
       try {
         setSettings(await queryClient.fetchQuery({
           ...safetySettingsQuery(connectionId),
           staleTime: 0,
         }));
       } catch {
-        setSettings(requested);
+        setSettings({ ...requested, allowWrites: false });
       }
-      toast(errMessage(e), "error");
+      setSaveError(message);
+      toast(message, "error");
     } finally {
       setBusy(false);
     }
@@ -169,6 +196,11 @@ export default function Safety({
           )}
         >
           {t("safety.refreshFailed", { error: errMessage(safetyQuery.error) })}
+        </InlineNotice>
+      ) : null}
+      {saveError ? (
+        <InlineNotice tone="danger" icon="alert" role="alert">
+          {saveError}
         </InlineNotice>
       ) : null}
       <div className="tw:flex tw:items-center tw:justify-between tw:gap-3 tw:max-[860px]:flex-col tw:max-[860px]:items-start">
@@ -203,8 +235,10 @@ export default function Safety({
                     : (settings[item.key] as boolean)
                 }
                 disabled={
-                  item.key === "allowWrites" &&
-                  !writeControlAvailable
+                  busy || (
+                    item.key === "allowWrites" &&
+                    !writeControlAvailable
+                  )
                 }
                 onChange={(e) => set(item.key, e.target.checked as never)}
                 label={<strong>{t(item.label)}</strong>}
@@ -215,7 +249,9 @@ export default function Safety({
                     ? item.hint
                     : memberLocalReadOnly
                       ? "safety.memberLocalReadOnlyHint"
-                      : workspaceManaged && !connectionWriteEnabled
+                      : workspacePolicyEditable
+                        ? "safety.sharedWritesManagerHint"
+                        : workspaceManaged && !connectionWriteEnabled
                         ? "safety.sharedWritesHint"
                         : item.hint,
                 )}
@@ -228,7 +264,11 @@ export default function Safety({
             </p>
           ) : workspaceManaged ? (
             <p className="tw:m-0 tw:border-t tw:border-border-subtle tw:pt-2 tw:text-sm tw:leading-body tw:text-muted-foreground">
-              {t("safety.sharedWritesHint")}
+              {t(
+                workspacePolicyEditable
+                  ? "safety.sharedWritesManagerHint"
+                  : "safety.sharedWritesHint",
+              )}
             </p>
           ) : null}
         </SettingsGroup>
