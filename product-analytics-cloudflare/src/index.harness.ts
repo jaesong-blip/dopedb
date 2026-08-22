@@ -1,11 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import golden from "../../tests/fixtures/product-analytics-v1.json";
 import worker, { parseEnvelope } from "./index";
 
 describe("Cloudflare product analytics contract", () => {
+  afterEach(() => vi.useRealTimers());
+
   it("accepts the shared v1 golden and rejects free-form or stale mutations", async () => {
     const now = Date.parse("2026-08-14T00:01:00Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
     const value = structuredClone(golden);
     for (const event of value.events) event.occurredAt = "2026-08-14T00:00:00Z";
     const parsed = parseEnvelope(value, now);
