@@ -336,8 +336,10 @@ and [Apple notarization workflow](https://developer.apple.com/documentation/secu
 when provisioning or rotating those operator-owned credentials.
 
 In `developer-id` mode each macOS matrix job imports the identity into an
-ephemeral CI keychain, lets Tauri sign and notarize, and then verifies the app
-bundle, DMG, and updater archive independently. Stable finalization requires
+ephemeral CI keychain, lets Tauri sign and notarize the app, then separately
+submits and staples the final DMG before replacing the initially uploaded draft
+asset. It then verifies the app bundle, DMG, and updater archive independently.
+Stable finalization requires
 per-architecture trust receipts whose SHA-256 values match the exact release
 assets, and removes the temporary keychain and API key file even when the build
 fails. In `legacy-unsigned` mode those steps and receipts stay inactive.

@@ -290,6 +290,33 @@ jobs:
           uploadUpdaterSignatures: true
           args: ${{ matrix.args }}
 
+      - name: Notarize and staple macOS DMG
+        id: notarize_macos_dmg
+        if: runner.os == 'macOS' && needs.verify-release.outputs.macos_distribution_mode == 'developer-id'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/release/notarize-macos-dmg.sh \
+            --bundle-root "target/${{ matrix.target }}/release/bundle" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Replace draft DMG with notarized artifact
+        if: runner.os == 'macOS' && needs.verify-release.outputs.macos_distribution_mode == 'developer-id'
+        shell: bash
+        env:
+          DOPEDB_NOTARIZED_DMG: ${{ steps.notarize_macos_dmg.outputs.dmg }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$DOPEDB_NOTARIZED_DMG" || ! -f "$DOPEDB_NOTARIZED_DMG" ]]; then
+            echo "Notarized DMG output is missing." >&2
+            exit 1
+          fi
+          gh release upload "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            "$DOPEDB_NOTARIZED_DMG" \
+            --clobber
+
       - name: Verify Developer ID, notarization, and identical app payloads
         if: runner.os == 'macOS' && needs.verify-release.outputs.macos_distribution_mode == 'developer-id'
         shell: bash

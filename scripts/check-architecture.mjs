@@ -15,6 +15,7 @@ import { collectI18nOwnershipDiagnostics } from "./architecture/i18n-ownership-g
 import { collectProviderOwnershipDiagnostics } from "./architecture/provider-ownership.mjs";
 import { collectQueryCentralIpcDiagnostics } from "./architecture/query-central-ipc-ownership.mjs";
 import { collectQueryFrontendOwnershipDiagnostics } from "./architecture/query-frontend-ownership.mjs";
+import { collectReleaseWorkflowDiagnostics } from "./architecture/release-workflow-guards.mjs";
 import { collectRepositoryIdentityDiagnostics } from "./architecture/repository-identity-guards.mjs";
 import { collectTerminalSecurityDiagnostics } from "./architecture/terminal-security-guards.mjs";
 import { collectUpdaterOwnershipDiagnostics } from "./architecture/updater-ownership-guards.mjs";
@@ -179,6 +180,7 @@ for (const collect of [
   collectConnectionEditorDiagnostics,
   collectProviderOwnershipDiagnostics,
   collectI18nOwnershipDiagnostics,
+  collectReleaseWorkflowDiagnostics,
   collectRepositoryIdentityDiagnostics,
   collectQueryProductionModuleDiagnostics,
   collectQueryTestModuleDiagnostics,
