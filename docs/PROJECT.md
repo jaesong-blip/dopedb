@@ -296,9 +296,12 @@ Required protected `stable-release` environment secrets:
 
 ```txt
 TAURI_SIGNING_PRIVATE_KEY
-TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 SENTRY_AUTH_TOKEN
 ```
+
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` is required only when the updater private
+key was generated with a passphrase. It stays absent for a passwordless updater
+key; adding an unrelated placeholder password would make signing fail.
 
 GitHub does not expose existing secret values. The repository owner must recreate
 these names in `stable-release`, verify the protected workflow, and only then remove
@@ -306,11 +309,10 @@ any repository-level copies. AI agents and source changes do not read, migrate, 
 delete signing material. The local updater key path used during setup was
 `~/.tauri/dopedb-updater.key`. Do not commit private keys.
 
-The checked-in `.release/macos-distribution.json` currently selects
-`legacy-unsigned`. In that mode stable releases do not read or require Apple
-credentials and must not claim Developer ID or notarization. Switching the file
-to `developer-id` requires an explicit user decision after Apple Developer
-Program enrollment.
+The checked-in `.release/macos-distribution.json` selects `developer-id` after
+the repository owner's explicit activation decision and Apple Developer Program
+enrollment. Stable releases therefore fail closed unless the protected Apple
+credentials are present and every macOS trust check succeeds.
 
 Once `developer-id` is active, the protected `stable-release` environment must
 own these macOS distribution secrets. Repository contributors and AI agents do
@@ -325,7 +327,7 @@ APPLE_API_PRIVATE_KEY
 ```
 
 `APPLE_CERTIFICATE` is the Base64-encoded `.p12` export of the `Developer ID
-Application` identity for Team `B67K525D3B`. `APPLE_API_PRIVATE_KEY` is the
+Application` identity for Team `DD8NQWK3XA`. `APPLE_API_PRIVATE_KEY` is the
 one-time `.p8` download for the App Store Connect API key identified by
 `APPLE_API_KEY`; the checked-in public identity boundary lives in
 `.release/macos-distribution.json`.
@@ -357,10 +359,11 @@ it only to the root package.
 ## macOS Distribution
 
 The app is distributed outside the Mac App Store. The current checked-in mode is
-`legacy-unsigned`, so macOS can show an unidentified developer warning. Only
-these legacy releases use the bypass path below, and only after confirming the
-file came from the official GitHub Release. After the user explicitly activates
-`developer-id`, every later stable release returns to the fail-closed trust gate.
+`developer-id`, so every stable macOS artifact must pass Developer ID signing,
+Apple notarization, stapling, Gatekeeper assessment, and exact-asset trust receipt
+verification. Older `legacy-unsigned` releases can still show an unidentified
+developer warning; only those historical artifacts use the bypass path below,
+and only after confirming the file came from the official GitHub Release.
 
 User-facing bypass path:
 
@@ -397,7 +400,7 @@ the macOS Developer ID work in #133.
 
 ## Deferred Work
 
-- Explicit Developer ID activation and clean-device online/offline verification (#133)
+- Clean-device online/offline verification for Developer ID distribution (#133)
 - More structured Agent proposal types beyond SQL
 - SSH tunnel support
 - More granular Agent and plugin origin handling
