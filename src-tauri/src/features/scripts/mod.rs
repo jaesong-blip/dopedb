@@ -130,7 +130,7 @@ impl DesktopScriptRunError {
 
 pub(crate) struct DesktopScriptScopedFailure {
     error: AppError,
-    _scope: ConnectionOperationScope,
+    _scope: Box<ConnectionOperationScope>,
 }
 
 impl fmt::Debug for DesktopScriptScopedFailure {

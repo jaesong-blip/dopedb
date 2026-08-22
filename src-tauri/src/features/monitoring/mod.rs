@@ -106,7 +106,7 @@ impl MonitoringError {
 
 pub(crate) struct MonitoringScopedFailure {
     error: AppError,
-    _scope: ConnectionOperationScope,
+    _scope: Box<ConnectionOperationScope>,
 }
 
 impl fmt::Debug for MonitoringScopedFailure {

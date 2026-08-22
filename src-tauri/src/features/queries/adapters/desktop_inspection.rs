@@ -96,7 +96,7 @@ impl QueryPlatformAdapter {
                 policy_snapshot: policy.snapshot,
                 policy_revision: policy.revision,
                 _authority: DesktopSqlPreviewAuthority::Scope {
-                    _scope: operation_scope,
+                    _scope: Box::new(operation_scope),
                 },
             });
         }
@@ -174,7 +174,7 @@ fn scoped(
     DesktopSqlInspectionError::Scoped {
         error,
         _authority: DesktopSqlPreviewAuthority::Scope {
-            _scope: operation_scope,
+            _scope: Box::new(operation_scope),
         },
     }
 }

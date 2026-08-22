@@ -13,7 +13,7 @@ impl MonitoringPlatformAdapter {
             Err(error) => {
                 return Err(MonitoringError::Scoped(MonitoringScopedFailure {
                     error,
-                    _scope: operation_scope,
+                    _scope: Box::new(operation_scope),
                 }))
             }
         };
@@ -74,7 +74,7 @@ impl MonitoringPlatformAdapter {
             Err(error) => {
                 return Err(MonitoringError::Scoped(MonitoringScopedFailure {
                     error,
-                    _scope: operation_scope,
+                    _scope: Box::new(operation_scope),
                 }));
             }
         };
@@ -83,7 +83,7 @@ impl MonitoringPlatformAdapter {
                 error: AppError::Blocked {
                     reason: "your workspace role cannot change database monitoring grants".into(),
                 },
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
         if !matches!(pin.profile.engine, Engine::Postgres) {
@@ -91,7 +91,7 @@ impl MonitoringPlatformAdapter {
                 error: AppError::Config(
                     "pg_monitor is only available for PostgreSQL connections".into(),
                 ),
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
         let settings = self
@@ -104,7 +104,7 @@ impl MonitoringPlatformAdapter {
                 error: AppError::Blocked {
                     reason: "writes are disabled for this connection".into(),
                 },
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
         let policy = capture_policy(&pin, &settings).map_err(MonitoringError::Application)?;
@@ -190,7 +190,7 @@ impl MonitoringPlatformAdapter {
             Err(error) => {
                 return Err(MonitoringError::Scoped(MonitoringScopedFailure {
                     error,
-                    _scope: operation_scope,
+                    _scope: Box::new(operation_scope),
                 }));
             }
         };
@@ -200,7 +200,7 @@ impl MonitoringPlatformAdapter {
                 error: AppError::Blocked {
                     reason: "your workspace role no longer grants monitoring changes".into(),
                 },
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
         if !matches!(operation_pin.profile.engine, Engine::Postgres) {
@@ -208,7 +208,7 @@ impl MonitoringPlatformAdapter {
                 error: AppError::Config(
                     "pg_monitor is only available for PostgreSQL connections".into(),
                 ),
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
         let settings = self
@@ -221,7 +221,7 @@ impl MonitoringPlatformAdapter {
                 error: AppError::Blocked {
                     reason: "writes are disabled for this connection".into(),
                 },
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
         let policy =
@@ -231,7 +231,7 @@ impl MonitoringPlatformAdapter {
                 error: AppError::Blocked {
                     reason: "the connection or safety policy changed; create a new proposal".into(),
                 },
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
 
@@ -240,7 +240,7 @@ impl MonitoringPlatformAdapter {
             Err(error) => {
                 return Err(MonitoringError::Scoped(MonitoringScopedFailure {
                     error,
-                    _scope: operation_scope,
+                    _scope: Box::new(operation_scope),
                 }));
             }
         };
@@ -280,7 +280,7 @@ impl MonitoringPlatformAdapter {
                 error: AppError::Config(format!(
                     "audit pre-record failed — refusing to change pg_monitor: {error}"
                 )),
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
 

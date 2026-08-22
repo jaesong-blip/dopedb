@@ -19,7 +19,7 @@ impl ScriptPlatformAdapter {
             Err(error) => {
                 return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
                     error,
-                    _scope: operation_scope,
+                    _scope: Box::new(operation_scope),
                 }))
             }
         };
@@ -28,7 +28,7 @@ impl ScriptPlatformAdapter {
                 error: AppError::Blocked {
                     reason: "SQL scripts are unavailable for document connections".into(),
                 },
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
         let database = request
@@ -39,7 +39,7 @@ impl ScriptPlatformAdapter {
         if database.is_empty() || database.len() > 255 || database.chars().any(char::is_control) {
             return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
                 error: AppError::Config("target database name is empty or invalid".into()),
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
         let namespace = match crate::executor::namespace::resolve_sql_namespace(
@@ -50,7 +50,7 @@ impl ScriptPlatformAdapter {
             Err(error) => {
                 return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
                     error,
-                    _scope: operation_scope,
+                    _scope: Box::new(operation_scope),
                 }))
             }
         };
@@ -63,7 +63,7 @@ impl ScriptPlatformAdapter {
         if statements.is_empty() {
             return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
                 error: AppError::Config("no executable statements in the script".into()),
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
         let classifications = statements
@@ -84,7 +84,7 @@ impl ScriptPlatformAdapter {
                     reason: "arbitrary privilege SQL is blocked; use a supported, narrowly scoped administrative action"
                         .into(),
                 },
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
         let has_write = script_has_write(&kinds);
@@ -98,7 +98,7 @@ impl ScriptPlatformAdapter {
                 error: AppError::Blocked {
                     reason: "your workspace role no longer grants this script access".into(),
                 },
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
         if has_write && !settings.allow_writes {
@@ -106,7 +106,7 @@ impl ScriptPlatformAdapter {
                 error: AppError::Blocked {
                     reason: "writes are disabled for this connection".into(),
                 },
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
         let policy = capture_policy(&pin, &settings).map_err(DesktopScriptRunError::Application)?;
@@ -116,7 +116,7 @@ impl ScriptPlatformAdapter {
                 error: AppError::Blocked {
                     reason: "a script cannot be both a schema and table-data change".into(),
                 },
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
         if let Some(context) = &request.schema_change {
@@ -128,7 +128,7 @@ impl ScriptPlatformAdapter {
                     error: AppError::Blocked {
                         reason: "schema-change SQL does not match its exact rendered plan".into(),
                     },
-                    _scope: operation_scope,
+                    _scope: Box::new(operation_scope),
                 }));
             }
             if !has_write {
@@ -136,7 +136,7 @@ impl ScriptPlatformAdapter {
                     error: AppError::Blocked {
                         reason: "a schema-change proposal must contain target-mutating DDL".into(),
                     },
-                    _scope: operation_scope,
+                    _scope: Box::new(operation_scope),
                 }));
             }
         }
@@ -157,7 +157,7 @@ impl ScriptPlatformAdapter {
                         reason: "staged table changes have an invalid optimistic-lock contract"
                             .into(),
                     },
-                    _scope: operation_scope,
+                    _scope: Box::new(operation_scope),
                 }));
             }
             if classifications.iter().any(|classification| {
@@ -168,7 +168,7 @@ impl ScriptPlatformAdapter {
                         reason: "staged table changes may contain only INSERT, UPDATE, or DELETE"
                             .into(),
                     },
-                    _scope: operation_scope,
+                    _scope: Box::new(operation_scope),
                 }));
             }
         }

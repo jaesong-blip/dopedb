@@ -35,7 +35,7 @@ pub(crate) enum AgentQueryRunError {
 /// A post-connect failure whose lease remains alive through Broker projection.
 pub(crate) struct AgentQueryExecutionFailure {
     error: AppError,
-    _lease: ConnectionLease,
+    _lease: Box<ConnectionLease>,
 }
 
 impl fmt::Debug for AgentQueryExecutionFailure {
@@ -51,7 +51,7 @@ impl AgentQueryExecutionFailure {
     pub(super) fn new(error: AppError, lease: ConnectionLease) -> Self {
         Self {
             error,
-            _lease: lease,
+            _lease: Box::new(lease),
         }
     }
 
@@ -63,7 +63,7 @@ impl AgentQueryExecutionFailure {
 /// A successful target read whose mandatory provenance receipt could not persist.
 pub(crate) struct AgentQueryProvenanceFailure {
     error: AppError,
-    _lease: ConnectionLease,
+    _lease: Box<ConnectionLease>,
 }
 
 impl fmt::Debug for AgentQueryProvenanceFailure {
@@ -79,7 +79,7 @@ impl AgentQueryProvenanceFailure {
     pub(super) fn new(error: AppError, lease: ConnectionLease) -> Self {
         Self {
             error,
-            _lease: lease,
+            _lease: Box::new(lease),
         }
     }
 

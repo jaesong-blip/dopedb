@@ -24,7 +24,7 @@ impl ScriptPlatformAdapter {
                 error: AppError::Blocked {
                     reason: "your workspace role grants read-only database access".into(),
                 },
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
         if !settings.allow_writes {
@@ -47,7 +47,7 @@ impl ScriptPlatformAdapter {
             .await;
             return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
                 error: AppError::Blocked { reason },
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
         let has_ddl = kinds.iter().any(|kind| matches!(kind, QueryKind::Ddl));
@@ -88,7 +88,7 @@ impl ScriptPlatformAdapter {
                 error: AppError::Config(format!(
                     "audit pre-record failed — refusing to run script: {error}"
                 )),
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
 

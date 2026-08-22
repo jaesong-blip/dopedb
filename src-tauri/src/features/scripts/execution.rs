@@ -36,7 +36,7 @@ impl ScriptPlatformAdapter {
             Err(error) => {
                 return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
                     error,
-                    _scope: operation_scope,
+                    _scope: Box::new(operation_scope),
                 }))
             }
         };
@@ -50,7 +50,7 @@ impl ScriptPlatformAdapter {
             Err(error) => {
                 return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
                     error,
-                    _scope: operation_scope,
+                    _scope: Box::new(operation_scope),
                 }))
             }
         };
@@ -60,7 +60,7 @@ impl ScriptPlatformAdapter {
             Err(error) => {
                 return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
                     error,
-                    _scope: operation_scope,
+                    _scope: Box::new(operation_scope),
                 }))
             }
         };
@@ -71,7 +71,7 @@ impl ScriptPlatformAdapter {
                 error: AppError::Blocked {
                     reason: "the connection or safety policy changed; create a new proposal".into(),
                 },
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
         if let Some(context) = &payload.schema_change {
@@ -84,7 +84,7 @@ impl ScriptPlatformAdapter {
                     error: AppError::Blocked {
                         reason: "stored schema-change provenance is inconsistent".into(),
                     },
-                    _scope: operation_scope,
+                    _scope: Box::new(operation_scope),
                 }));
             }
             let snapshot = self
@@ -98,7 +98,7 @@ impl ScriptPlatformAdapter {
                         reason: "the target schema changed after approval; create a new proposal"
                             .into(),
                     },
-                    _scope: operation_scope,
+                    _scope: Box::new(operation_scope),
                 }));
             }
             let rendered = crate::ddl::render(&snapshot, &context.request)
@@ -109,7 +109,7 @@ impl ScriptPlatformAdapter {
                         reason: "the schema-change renderer no longer matches the approved plan"
                             .into(),
                     },
-                    _scope: operation_scope,
+                    _scope: Box::new(operation_scope),
                 }));
             }
         } else if planned.kind == OperationKind::SchemaChange {
@@ -117,7 +117,7 @@ impl ScriptPlatformAdapter {
                 error: AppError::Blocked {
                     reason: "schema-change operation is missing its structured payload".into(),
                 },
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
         if let Some(context) = &payload.table_change {
@@ -129,7 +129,7 @@ impl ScriptPlatformAdapter {
                     error: AppError::Blocked {
                         reason: "stored table-change provenance is inconsistent".into(),
                     },
-                    _scope: operation_scope,
+                    _scope: Box::new(operation_scope),
                 }));
             }
             let snapshot = self
@@ -144,7 +144,7 @@ impl ScriptPlatformAdapter {
                             "the target schema changed after table edits were staged; reload the table"
                                 .into(),
                     },
-                    _scope: operation_scope,
+                    _scope: Box::new(operation_scope),
                 }));
             }
         } else if planned.kind == OperationKind::TableDataChange {
@@ -152,7 +152,7 @@ impl ScriptPlatformAdapter {
                 error: AppError::Blocked {
                     reason: "table-data operation is missing its optimistic-lock payload".into(),
                 },
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
         let engine = operation_pin.profile.engine;
@@ -161,7 +161,7 @@ impl ScriptPlatformAdapter {
         if statements.is_empty() {
             return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
                 error: AppError::Config("no executable statements in the script".into()),
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
         let kinds = match statements
@@ -173,7 +173,7 @@ impl ScriptPlatformAdapter {
             Err(error) => {
                 return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
                     error,
-                    _scope: operation_scope,
+                    _scope: Box::new(operation_scope),
                 }))
             }
         };
@@ -185,7 +185,7 @@ impl ScriptPlatformAdapter {
                 error: AppError::Blocked {
                     reason: "stored script contains blocked arbitrary privilege SQL".into(),
                 },
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
 
@@ -204,7 +204,7 @@ impl ScriptPlatformAdapter {
                 error: AppError::Blocked {
                     reason: "stored script classification no longer matches its proposal".into(),
                 },
-                _scope: operation_scope,
+                _scope: Box::new(operation_scope),
             }));
         }
         let operation = self

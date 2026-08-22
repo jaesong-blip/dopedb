@@ -41,8 +41,12 @@ pub(super) struct StoredDesktopSqlPayload {
 /// the operation scope itself; reports that touched the database keep the exact
 /// connection lease used to produce them.
 pub(crate) enum DesktopSqlPreviewAuthority {
-    Scope { _scope: ConnectionOperationScope },
-    Lease { _lease: Box<ConnectionLease> },
+    Scope {
+        _scope: Box<ConnectionOperationScope>,
+    },
+    Lease {
+        _lease: Box<ConnectionLease>,
+    },
 }
 
 /// Atomic desktop inspection response. The private policy snapshot is the exact
