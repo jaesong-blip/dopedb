@@ -102,7 +102,9 @@ export const homeCopy = {
       body:
         "DopeDB is not a database proxy. We know who may reach what; credentials, queries, results, cancellation, and rollback all happen on your machine. The only results that leave it are the bounded fragments a person reviewed and shared. With a connection already synchronized, our service going down does not stop your database work.",
       imageAlt:
-        "DopeDB desktop workspace showing an Agent answer, database result, safety gate, and audit timeline",
+        "DopeDB Desktop showing the bundled Demo SQLite orders table in the local data workbench",
+      captureLabel: "Captured from DopeDB Desktop",
+      captureDetail: "Bundled demo data · no customer data",
       labels: [
         { title: "Control plane", body: "Identity · policy · revisions" },
         { title: "Local boundary", body: "Credentials · queries · recovery" },
@@ -337,7 +339,9 @@ receipt         pending human decision`,
       body:
         "DopeDB는 proxy가 아닙니다. 우리는 누가 무엇에 접근할 수 있는지를 알고, 자격 증명·쿼리·결과·중단·rollback은 당신 기기에서 벌어집니다. 팀에 올라가는 결과는 사람이 검토해 공유한 bounded 조각뿐이고, 이미 동기화된 연결이라면 우리 서비스가 멈춰도 당신의 DB 작업은 멈추지 않습니다.",
       imageAlt:
-        "Agent 답변, 데이터베이스 결과, 안전 게이트, 감사 타임라인을 보여주는 DopeDB 데스크톱 워크스페이스",
+        "로컬 데이터 워크벤치에서 번들 Demo SQLite 주문 테이블을 보여주는 실제 DopeDB Desktop 화면",
+      captureLabel: "실제 DopeDB Desktop 캡처",
+      captureDetail: "번들 데모 데이터 · 고객 데이터 없음",
       labels: [
         { title: "Control plane", body: "Identity · policy · revisions" },
         { title: "Local boundary", body: "Credentials · queries · recovery" },

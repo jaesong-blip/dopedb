@@ -84,10 +84,10 @@ export const metadata: Metadata = {
     locale: "en_US",
     images: [
       {
-        url: "/dopedb-dashboard.png",
-        width: 1600,
-        height: 1120,
-        alt: "DopeDB desktop app preview",
+        url: "/dopedb-desktop.png",
+        width: 2400,
+        height: 1536,
+        alt: "DopeDB Desktop showing the bundled Demo SQLite orders table",
       },
     ],
   },
@@ -96,7 +96,7 @@ export const metadata: Metadata = {
     title: "DopeDB - Shared database access",
     description:
       "Share a database connection and policy while credentials stay personal and every Agent stays pinned to exact authority.",
-    images: ["/dopedb-dashboard.png"],
+    images: ["/dopedb-desktop.png"],
   },
 };
 

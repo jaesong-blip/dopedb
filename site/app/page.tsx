@@ -61,10 +61,10 @@ export async function generateMetadata({ searchParams }: HomeProps): Promise<Met
         type: "website",
         images: [
           {
-            url: "/dopedb-dashboard.png",
-            width: 1600,
-            height: 1120,
-            alt: "DopeDB(도프디비) 데스크톱 앱 화면",
+            url: "/dopedb-desktop.png",
+            width: 2400,
+            height: 1536,
+            alt: "번들 Demo SQLite 주문 테이블을 보여주는 실제 DopeDB(도프디비) Desktop 화면",
           },
         ],
       },
@@ -72,7 +72,7 @@ export async function generateMetadata({ searchParams }: HomeProps): Promise<Met
         card: "summary_large_image",
         title,
         description,
-        images: ["/dopedb-dashboard.png"],
+        images: ["/dopedb-desktop.png"],
       },
     };
   }
@@ -110,7 +110,7 @@ export default async function Home({ searchParams }: HomeProps) {
     url: siteUrl,
     downloadUrl: [downloadUrls.windows, downloadUrls.macApple, downloadUrls.macIntel],
     codeRepository: repoUrl,
-    image: `${siteUrl}/dopedb-dashboard.png`,
+    image: `${siteUrl}/dopedb-desktop.png`,
     license: `${repoUrl}/blob/main/LICENSE`,
     inLanguage: lang,
     offers: {
