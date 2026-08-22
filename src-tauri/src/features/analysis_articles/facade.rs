@@ -10,6 +10,7 @@ use super::ports::{
     LocalAnalysisSignalState,
 };
 use super::runner::AnalysisArticleRunner;
+use super::validation::validate_shared_create;
 
 #[derive(Clone)]
 pub(crate) struct AnalysisArticlesFeature<L, E, H> {
@@ -143,6 +144,7 @@ where
         workspace_id: uuid::Uuid,
         article: &dopedb_protocol::SharedAnalysisArticleCreate,
     ) -> AppResult<dopedb_protocol::AnalysisArticleRecord> {
+        validate_shared_create(article)?;
         self.hosted
             .create_article(account_id, workspace_id, article)
             .await
@@ -156,6 +158,9 @@ where
         expected_revision: i64,
         mutation: AnalysisArticleMutation,
     ) -> AppResult<dopedb_protocol::AnalysisArticleRecord> {
+        if let AnalysisArticleMutation::Update(article) = &mutation {
+            validate_shared_create(article)?;
+        }
         self.hosted
             .mutate_article(
                 account_id,

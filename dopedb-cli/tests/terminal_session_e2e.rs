@@ -58,6 +58,17 @@ fn respond_retryable_authority_refresh(stream: &mut UnixStream, request: &Reques
         .unwrap();
 }
 
+fn respond_invalid_request(stream: &mut UnixStream, request: &RequestEnvelope) {
+    let response = ResponseEnvelope::failure(
+        request.protocol_version,
+        request.request_id,
+        ProtocolError::new(ErrorCode::InvalidRequest, false),
+    );
+    stream
+        .write_all(&encode_frame(&response, MAX_RESPONSE_BYTES).unwrap())
+        .unwrap();
+}
+
 fn process_bound_agent_command(runtime_file: &std::path::Path, session_id: Uuid) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_dopedb-agent-bridge"));
     command
@@ -194,11 +205,18 @@ pub(super) fn run() {
     let plan_id = Uuid::from_u128(8);
     let query_run_id = Uuid::from_u128(9);
     let sql = "SELECT COUNT(*) AS total_users FROM public.users";
+    let contracts: serde_json::Value = serde_json::from_str(include_str!(
+        "../../dopedb-protocol/tests/fixtures/control-plane-contracts-v1.json"
+    ))
+    .unwrap();
+    let mut proposal_definition = contracts["analysisArticleCreate"]["definition"].clone();
+    proposal_definition.as_object_mut().unwrap().remove("source");
+    proposal_definition["refresh"]["shareReviewedResults"] = serde_json::json!(false);
     let (cancel_started_tx, cancel_started_rx) = mpsc::channel();
     let server = thread::spawn(move || {
         let mut catalog_searches = 0;
         let mut authority_retry_sent = false;
-        for _ in 0..6 {
+        for _ in 0..7 {
             let (mut stream, _) = listener.accept().unwrap();
             let request = read_request(&mut stream);
             let authentication = request.authentication.as_ref().unwrap();
@@ -335,6 +353,9 @@ pub(super) fn run() {
                         },
                     );
                 }
+                CommandName::AnalysisArticlePropose => {
+                    respond_invalid_request(&mut stream, &request);
+                }
                 _ => unreachable!(),
             }
         }
@@ -415,9 +436,18 @@ pub(super) fn run() {
                     "arguments": { "database": "app", "sql": sql }
                 }
             }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 7,
+                "method": "tools/call",
+                "params": {
+                    "name": "analysis_article_propose",
+                    "arguments": { "definition": proposal_definition }
+                }
+            }),
         ],
     );
-    assert_eq!(bridge.len(), 6);
+    assert_eq!(bridge.len(), 7);
     let response = |id: i64| {
         bridge
             .iter()
@@ -476,6 +506,57 @@ pub(super) fn run() {
             ["maxItems"],
         32,
     );
+    let block_variants = article_tool["inputSchema"]["properties"]["definition"]["properties"]
+        ["blocks"]["items"]["oneOf"]
+        .as_array()
+        .expect("Analysis Article blocks must use a discriminated schema");
+    let block_variant = |kind: &str| {
+        block_variants
+            .iter()
+            .find(|variant| {
+                variant["properties"]["kind"]["const"] == kind
+                    || variant["properties"]["kind"]["enum"]
+                        .as_array()
+                        .is_some_and(|kinds| kinds.iter().any(|value| value == kind))
+            })
+            .expect("every supported block kind must have an exact schema")
+    };
+    assert_eq!(
+        block_variant("heading")["properties"]["config"]["required"],
+        serde_json::json!(["level", "text"]),
+    );
+    assert_eq!(
+        block_variant("metric")["properties"]["config"]["required"],
+        serde_json::json!([
+            "metricId",
+            "comparisonColumn",
+            "sparklineColumn",
+            "sampleCountColumn"
+        ]),
+    );
+    assert_eq!(
+        block_variant("table")["properties"]["config"]["required"],
+        serde_json::json!(["columns", "pageSize"]),
+    );
+    assert_eq!(
+        article_tool["inputSchema"]["properties"]["definition"]["properties"]["refresh"]
+            ["properties"]["mode"]["const"],
+        "manual",
+    );
+    assert_eq!(
+        article_tool["inputSchema"]["properties"]["definition"]["properties"]["refresh"]
+            ["properties"]["cron"]["type"],
+        "null",
+    );
+    let transform_variants = article_tool["inputSchema"]["properties"]["definition"]
+        ["properties"]["transforms"]["items"]["oneOf"]
+        .as_array()
+        .expect("Analysis Article transforms must use a discriminated schema");
+    assert!(transform_variants.iter().any(|variant| {
+        variant["properties"]["operation"]["const"] == "aggregate"
+            && variant["properties"]["config"]["required"]
+                == serde_json::json!(["groupBy", "measures"])
+    }));
     assert!(article_tool["description"]
         .as_str()
         .unwrap()
@@ -537,6 +618,11 @@ pub(super) fn run() {
         response(6)["result"]["structuredContent"]["run"]["result"]["rows"][0][0],
         42
     );
+    assert_eq!(response(7)["result"]["isError"], true);
+    assert!(response(7)["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("exact config shown in this tool's input schema"));
     let serialized = serde_json::to_string(&bridge).unwrap();
     assert!(!serialized.contains("must-never-escape"));
 

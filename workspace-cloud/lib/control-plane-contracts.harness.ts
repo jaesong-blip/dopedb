@@ -229,6 +229,38 @@ describe("Desktop control-plane contracts", () => {
       unexpected: true,
     })).toThrow();
 
+    type MutableAnalysisFixture = {
+      definition: { blocks: Array<Record<string, unknown>> };
+    };
+    const malformedArticle = (mutate: (article: MutableAnalysisFixture) => void) => {
+      const article = structuredClone(fixture.analysisArticleCreate) as MutableAnalysisFixture;
+      mutate(article);
+      return article;
+    };
+    expect(() => parseSharedAnalysisArticleCreate(malformedArticle((article) => {
+      article.definition.blocks[0] = {
+        id: "missing_heading_text",
+        kind: "heading",
+        title: "Missing text",
+        sourceNodeId: null,
+        width: 12,
+        config: { level: 1 },
+      };
+    }))).toThrow("Invalid heading block");
+    expect(() => parseSharedAnalysisArticleCreate(malformedArticle((article) => {
+      article.definition.blocks[0]!.config = { metricId: "active_accounts" };
+    }))).toThrow("Invalid metric block");
+    expect(() => parseSharedAnalysisArticleCreate(malformedArticle((article) => {
+      article.definition.blocks[1]!.config = {};
+    }))).toThrow("Invalid table block");
+    expect(() => parseSharedAnalysisArticleCreate(malformedArticle((article) => {
+      article.definition.blocks[1] = {
+        ...article.definition.blocks[1]!,
+        kind: "bar",
+        config: { xColumn: "active_accounts", seriesColumns: ["active_accounts"] },
+      };
+    }))).toThrow("Invalid Analysis Article chart config");
+
     expect(Object.keys(productAnalyticsGolden).sort()).toEqual([
       "appVersion",
       "events",

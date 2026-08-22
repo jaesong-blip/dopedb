@@ -71,6 +71,7 @@ const TOOL_ANALYSIS_ARTICLE_LIST: &str = "analysis_article_list";
 const TOOL_ANALYSIS_ARTICLE_PROPOSE: &str = "analysis_article_propose";
 const TOOL_ANALYSIS_ARTICLE_UPDATE_DRAFT: &str = "analysis_article_update_draft";
 const TOOL_ANALYSIS_ARTICLE_DRAFT_RUN: &str = "analysis_article_draft_run";
+const ANALYSIS_ARTICLE_INVALID_REQUEST: &str = "the Analysis Article definition is invalid; match every block kind and transform operation to the exact config shown in this tool's input schema, including all required nullable fields";
 const TOOL_KNOWLEDGE_SEARCH: &str = "knowledge_search";
 const TOOL_SOURCE_SEARCH: &str = "source_search";
 const TOOL_SOURCE_READ: &str = "source_read";
@@ -802,7 +803,7 @@ fn tools_result() -> Value {
             tool_definition(
                 TOOL_ANALYSIS_ARTICLE_DRAFT_RUN,
                 "Run an Analysis Article draft",
-                "Executes the complete declarative draft through bounded read-only queries and typed transforms without saving or publishing it. Environment, Knowledge, and connection revision pins come from this session and cannot be supplied by the Agent.",
+                "Executes the complete declarative draft through bounded read-only queries and typed transforms without saving or publishing it. Match each block kind and transform operation to its exact config schema, including required null fields. Environment, Knowledge, and connection revision pins come from this session and cannot be supplied by the Agent.",
                 analysis_article_input_schema(true, false),
                 true,
                 false,
@@ -810,7 +811,7 @@ fn tools_result() -> Value {
             tool_definition(
                 TOOL_ANALYSIS_ARTICLE_PROPOSE,
                 "Propose an Analysis Article",
-                "Creates a shared draft in the pinned Environment. The Agent supplies content only; the Broker injects immutable authority pins. This cannot submit review, make the draft live, schedule production work, or publish results.",
+                "Creates a shared draft in the pinned Environment after the same declarative validation as a draft run. Match each block kind and transform operation to its exact config schema, including required null fields. The Agent supplies content only; the Broker injects immutable authority pins. This cannot submit review, make the draft live, schedule production work, or publish results.",
                 analysis_article_input_schema(false, false),
                 false,
                 false,
@@ -818,7 +819,7 @@ fn tools_result() -> Value {
             tool_definition(
                 TOOL_ANALYSIS_ARTICLE_UPDATE_DRAFT,
                 "Update an Analysis Article draft",
-                "Updates one exact draft revision in the pinned Environment. Review, live, archived, stale-revision, and cross-Environment Articles are rejected.",
+                "Updates one exact draft revision in the pinned Environment after full declarative validation. Match each block kind and transform operation to its exact config schema, including required null fields. Review, live, archived, stale-revision, and cross-Environment Articles are rejected.",
                 analysis_article_input_schema(false, true),
                 false,
                 false,
@@ -995,6 +996,478 @@ fn knowledge_node_schema() -> Value {
     })
 }
 
+fn analysis_id_schema() -> Value {
+    json!({ "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$" })
+}
+
+fn analysis_display_schema(maximum: usize, required: bool) -> Value {
+    let mut schema = serde_json::Map::from_iter([
+        ("type".into(), json!("string")),
+        ("maxLength".into(), json!(maximum)),
+    ]);
+    if required {
+        schema.insert("minLength".into(), json!(1));
+    }
+    Value::Object(schema)
+}
+
+fn analysis_nullable_display_schema(maximum: usize) -> Value {
+    json!({
+        "oneOf": [
+            analysis_display_schema(maximum, true),
+            { "type": "null" }
+        ]
+    })
+}
+
+fn analysis_string_list_schema(minimum: usize, maximum: usize) -> Value {
+    json!({
+        "type": "array",
+        "minItems": minimum,
+        "maxItems": maximum,
+        "uniqueItems": true,
+        "items": analysis_display_schema(256, true)
+    })
+}
+
+fn analysis_number_format_schema() -> Value {
+    let branch = |style: Value, currency: Value| {
+        json!({
+            "type": "object",
+            "properties": {
+                "style": style,
+                "decimals": { "type": "integer", "minimum": 0, "maximum": 8 },
+                "currency": currency
+            },
+            "required": ["style", "decimals", "currency"],
+            "additionalProperties": false
+        })
+    };
+    json!({
+        "oneOf": [
+            branch(
+                json!({ "const": "currency" }),
+                json!({ "type": "string", "pattern": "^[A-Z]{3}$" }),
+            ),
+            branch(
+                json!({ "type": "string", "enum": ["number", "percent", "duration", "compact"] }),
+                json!({ "type": "null" }),
+            )
+        ]
+    })
+}
+
+fn analysis_transform_branch(
+    operations: &[&str],
+    input_count: usize,
+    config: Value,
+    columns: &Value,
+) -> Value {
+    let operation = if operations.len() == 1 {
+        json!({ "const": operations[0] })
+    } else {
+        json!({ "type": "string", "enum": operations })
+    };
+    json!({
+        "type": "object",
+        "properties": {
+            "id": analysis_id_schema(),
+            "title": analysis_display_schema(256, true),
+            "operation": operation,
+            "inputNodeIds": {
+                "type": "array",
+                "minItems": input_count,
+                "maxItems": input_count,
+                "uniqueItems": true,
+                "items": analysis_id_schema()
+            },
+            "config": config,
+            "columns": columns.clone()
+        },
+        "required": ["id", "title", "operation", "inputNodeIds", "config", "columns"],
+        "additionalProperties": false
+    })
+}
+
+fn analysis_transform_schema(columns: &Value) -> Value {
+    let exact = |properties: Value, required: Value| {
+        json!({
+            "type": "object",
+            "properties": properties,
+            "required": required,
+            "additionalProperties": false
+        })
+    };
+    let projected_columns = || analysis_string_list_schema(1, 256);
+    let mapping_proposal = || json!({ "type": "string", "format": "uuid" });
+    json!({
+        "oneOf": [
+            analysis_transform_branch(
+                &["project"], 1,
+                exact(json!({ "columns": projected_columns() }), json!(["columns"])),
+                columns,
+            ),
+            analysis_transform_branch(
+                &["filter"], 1,
+                exact(
+                    json!({
+                        "column": analysis_display_schema(256, true),
+                        "operator": { "type": "string", "enum": ["eq", "neq", "gt", "gte", "lt", "lte", "contains", "in", "is_null", "not_null"] },
+                        "value": {
+                            "oneOf": [
+                                { "type": "string", "maxLength": 4_000 },
+                                { "type": "number" },
+                                { "type": "boolean" },
+                                { "type": "array", "maxItems": 256 },
+                                { "type": "null" }
+                            ]
+                        }
+                    }),
+                    json!(["column", "operator", "value"]),
+                ),
+                columns,
+            ),
+            analysis_transform_branch(
+                &["sort"], 1,
+                exact(
+                    json!({
+                        "columns": {
+                            "type": "array", "minItems": 1, "maxItems": 32,
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "column": analysis_display_schema(256, true),
+                                    "direction": { "type": "string", "enum": ["asc", "desc"] }
+                                },
+                                "required": ["column", "direction"],
+                                "additionalProperties": false
+                            }
+                        }
+                    }),
+                    json!(["columns"]),
+                ),
+                columns,
+            ),
+            analysis_transform_branch(
+                &["limit"], 1,
+                exact(json!({ "count": { "type": "integer", "minimum": 1, "maximum": 50_000 } }), json!(["count"])),
+                columns,
+            ),
+            analysis_transform_branch(
+                &["union"], 2,
+                exact(
+                    json!({ "all": { "type": "boolean" }, "mappingProposalId": mapping_proposal() }),
+                    json!(["all", "mappingProposalId"]),
+                ),
+                columns,
+            ),
+            analysis_transform_branch(
+                &["group"], 1,
+                exact(json!({ "columns": analysis_string_list_schema(1, 32) }), json!(["columns"])),
+                columns,
+            ),
+            analysis_transform_branch(
+                &["aggregate"], 1,
+                exact(
+                    json!({
+                        "groupBy": analysis_string_list_schema(0, 32),
+                        "measures": {
+                            "type": "array", "minItems": 1, "maxItems": 64,
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "column": analysis_display_schema(256, true),
+                                    "function": { "type": "string", "enum": ["count", "count_distinct", "sum", "avg", "min", "max"] },
+                                    "as": analysis_id_schema()
+                                },
+                                "required": ["column", "function", "as"],
+                                "additionalProperties": false
+                            }
+                        }
+                    }),
+                    json!(["groupBy", "measures"]),
+                ),
+                columns,
+            ),
+            analysis_transform_branch(
+                &["inner_join", "left_join"], 2,
+                exact(
+                    json!({
+                        "mappingProposalId": mapping_proposal(),
+                        "keys": {
+                            "type": "array", "minItems": 1, "maxItems": 16,
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "left": analysis_display_schema(256, true),
+                                    "right": analysis_display_schema(256, true)
+                                },
+                                "required": ["left", "right"],
+                                "additionalProperties": false
+                            }
+                        }
+                    }),
+                    json!(["mappingProposalId", "keys"]),
+                ),
+                columns,
+            ),
+            analysis_transform_branch(
+                &["window"], 1,
+                exact(
+                    json!({
+                        "partitionBy": analysis_string_list_schema(0, 16),
+                        "orderBy": analysis_display_schema(256, true),
+                        "measures": {
+                            "type": "array", "minItems": 1, "maxItems": 32,
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "column": analysis_nullable_display_schema(256),
+                                    "function": { "type": "string", "enum": ["row_number", "rank", "dense_rank", "running_sum", "running_avg"] },
+                                    "as": analysis_id_schema()
+                                },
+                                "required": ["column", "function", "as"],
+                                "additionalProperties": false
+                            }
+                        }
+                    }),
+                    json!(["partitionBy", "orderBy", "measures"]),
+                ),
+                columns,
+            ),
+            analysis_transform_branch(
+                &["lag"], 1,
+                exact(
+                    json!({
+                        "column": analysis_display_schema(256, true),
+                        "offset": { "type": "integer", "minimum": 1, "maximum": 1_000 },
+                        "partitionBy": analysis_string_list_schema(0, 16),
+                        "orderBy": analysis_display_schema(256, true),
+                        "as": analysis_id_schema()
+                    }),
+                    json!(["column", "offset", "partitionBy", "orderBy", "as"]),
+                ),
+                columns,
+            ),
+            analysis_transform_branch(
+                &["ratio", "difference", "rate"], 1,
+                exact(
+                    json!({
+                        "numerator": analysis_display_schema(256, true),
+                        "denominator": analysis_display_schema(256, true),
+                        "as": analysis_id_schema()
+                    }),
+                    json!(["numerator", "denominator", "as"]),
+                ),
+                columns,
+            ),
+            analysis_transform_branch(
+                &["cohort"], 1,
+                exact(
+                    json!({
+                        "entityColumn": analysis_display_schema(256, true),
+                        "eventTimeColumn": analysis_display_schema(256, true),
+                        "cohortUnit": { "type": "string", "enum": ["day", "week", "month"] },
+                        "as": analysis_id_schema()
+                    }),
+                    json!(["entityColumn", "eventTimeColumn", "cohortUnit", "as"]),
+                ),
+                columns,
+            ),
+            analysis_transform_branch(
+                &["retention"], 1,
+                exact(
+                    json!({
+                        "entityColumn": analysis_display_schema(256, true),
+                        "cohortColumn": analysis_display_schema(256, true),
+                        "eventTimeColumn": analysis_display_schema(256, true),
+                        "periodUnit": { "type": "string", "enum": ["day", "week", "month"] },
+                        "periods": { "type": "integer", "minimum": 1, "maximum": 365 },
+                        "as": analysis_id_schema()
+                    }),
+                    json!(["entityColumn", "cohortColumn", "eventTimeColumn", "periodUnit", "periods", "as"]),
+                ),
+                columns,
+            )
+        ]
+    })
+}
+
+fn analysis_block_branch(kinds: &[&str], source_required: bool, config: Value) -> Value {
+    let kind = if kinds.len() == 1 {
+        json!({ "const": kinds[0] })
+    } else {
+        json!({ "type": "string", "enum": kinds })
+    };
+    let source = if source_required {
+        analysis_id_schema()
+    } else {
+        json!({ "type": "null" })
+    };
+    json!({
+        "type": "object",
+        "properties": {
+            "id": analysis_id_schema(),
+            "kind": kind,
+            "title": analysis_display_schema(256, false),
+            "sourceNodeId": source,
+            "width": { "type": "integer", "minimum": 1, "maximum": 12 },
+            "config": config
+        },
+        "required": ["id", "kind", "title", "sourceNodeId", "width", "config"],
+        "additionalProperties": false
+    })
+}
+
+fn analysis_block_schema() -> Value {
+    let exact = |properties: Value, required: Value| {
+        json!({
+            "type": "object",
+            "properties": properties,
+            "required": required,
+            "additionalProperties": false
+        })
+    };
+    let nullable_column = || analysis_nullable_display_schema(256);
+    json!({
+        "oneOf": [
+            analysis_block_branch(
+                &["heading"], false,
+                exact(
+                    json!({
+                        "level": { "type": "integer", "minimum": 1, "maximum": 3 },
+                        "text": analysis_display_schema(1_000, true)
+                    }),
+                    json!(["level", "text"]),
+                ),
+            ),
+            analysis_block_branch(
+                &["markdown"], false,
+                exact(json!({ "markdown": analysis_display_schema(100_000, false) }), json!(["markdown"])),
+            ),
+            analysis_block_branch(
+                &["callout"], false,
+                exact(
+                    json!({
+                        "tone": { "type": "string", "enum": ["info", "success", "warning", "danger"] },
+                        "markdown": analysis_display_schema(32_000, true)
+                    }),
+                    json!(["tone", "markdown"]),
+                ),
+            ),
+            analysis_block_branch(&["divider"], false, exact(json!({}), json!([]))),
+            analysis_block_branch(
+                &["metric"], true,
+                exact(
+                    json!({
+                        "metricId": analysis_id_schema(),
+                        "comparisonColumn": nullable_column(),
+                        "sparklineColumn": nullable_column(),
+                        "sampleCountColumn": nullable_column()
+                    }),
+                    json!(["metricId", "comparisonColumn", "sparklineColumn", "sampleCountColumn"]),
+                ),
+            ),
+            analysis_block_branch(
+                &["time_series", "bar", "area"], true,
+                exact(
+                    json!({
+                        "xColumn": analysis_display_schema(256, true),
+                        "yColumns": analysis_string_list_schema(1, 12),
+                        "seriesColumn": nullable_column(),
+                        "stacked": { "type": "boolean" },
+                        "format": analysis_number_format_schema()
+                    }),
+                    json!(["xColumn", "yColumns", "seriesColumn", "stacked", "format"]),
+                ),
+            ),
+            analysis_block_branch(
+                &["scatter"], true,
+                exact(
+                    json!({
+                        "xColumn": analysis_display_schema(256, true),
+                        "yColumns": analysis_string_list_schema(1, 12),
+                        "seriesColumn": nullable_column(),
+                        "stacked": { "const": false },
+                        "format": analysis_number_format_schema()
+                    }),
+                    json!(["xColumn", "yColumns", "seriesColumn", "stacked", "format"]),
+                ),
+            ),
+            analysis_block_branch(
+                &["table"], true,
+                exact(
+                    json!({
+                        "columns": analysis_string_list_schema(1, 64),
+                        "pageSize": { "type": "integer", "minimum": 10, "maximum": 500 }
+                    }),
+                    json!(["columns", "pageSize"]),
+                ),
+            ),
+            analysis_block_branch(
+                &["funnel"], true,
+                exact(
+                    json!({
+                        "stageColumn": analysis_display_schema(256, true),
+                        "valueColumn": analysis_display_schema(256, true),
+                        "rateColumn": nullable_column(),
+                        "format": analysis_number_format_schema()
+                    }),
+                    json!(["stageColumn", "valueColumn", "rateColumn", "format"]),
+                ),
+            ),
+            analysis_block_branch(
+                &["retention_cohort"], true,
+                exact(
+                    json!({
+                        "cohortColumn": analysis_display_schema(256, true),
+                        "periodColumn": analysis_display_schema(256, true),
+                        "valueColumn": analysis_display_schema(256, true),
+                        "format": analysis_number_format_schema()
+                    }),
+                    json!(["cohortColumn", "periodColumn", "valueColumn", "format"]),
+                ),
+            ),
+            analysis_block_branch(
+                &["heatmap"], true,
+                exact(
+                    json!({
+                        "xColumn": analysis_display_schema(256, true),
+                        "yColumn": analysis_display_schema(256, true),
+                        "valueColumn": analysis_display_schema(256, true),
+                        "format": analysis_number_format_schema()
+                    }),
+                    json!(["xColumn", "yColumn", "valueColumn", "format"]),
+                ),
+            ),
+            analysis_block_branch(
+                &["date_range_control"], false,
+                exact(
+                    json!({
+                        "parameterIds": {
+                            "type": "array", "minItems": 2, "maxItems": 2,
+                            "uniqueItems": true, "items": analysis_id_schema()
+                        }
+                    }),
+                    json!(["parameterIds"]),
+                ),
+            ),
+            analysis_block_branch(
+                &["comparison_control", "segment_control"], false,
+                exact(
+                    json!({
+                        "parameterIds": {
+                            "type": "array", "minItems": 1, "maxItems": 1,
+                            "items": analysis_id_schema()
+                        }
+                    }),
+                    json!(["parameterIds"]),
+                ),
+            )
+        ]
+    })
+}
+
 fn analysis_article_input_schema(include_parameters: bool, include_revision: bool) -> Value {
     let id = || json!({ "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$" });
     let display = |maximum| json!({ "type": "string", "maxLength": maximum });
@@ -1034,7 +1507,7 @@ fn analysis_article_input_schema(include_parameters: bool, include_revision: boo
                         "type": { "type": "string", "enum": ["string", "number", "boolean", "date", "datetime", "enum"] },
                         "required": { "type": "boolean" },
                         "defaultValue": { "type": ["string", "number", "boolean", "null"] },
-                        "options": { "type": "array", "maxItems": 100, "items": display(4_000) }
+                        "options": { "type": "array", "maxItems": 100, "uniqueItems": true, "items": display(256) }
                     },
                     "required": ["id", "label", "type", "required", "defaultValue", "options"],
                     "additionalProperties": false
@@ -1051,7 +1524,7 @@ fn analysis_article_input_schema(include_parameters: bool, include_revision: boo
                         "sql": { "type": "string", "minLength": 1, "maxLength": 100_000 },
                         "parameterIds": { "type": "array", "maxItems": 64, "items": id() },
                         "maxRows": { "type": "integer", "minimum": 1, "maximum": 50_000 },
-                        "maxBytes": { "type": "integer", "minimum": 1, "maximum": 16_777_216 },
+                        "maxBytes": { "type": "integer", "minimum": 1_024, "maximum": 16_777_216 },
                         "cacheTtlSeconds": { "type": "integer", "minimum": 0, "maximum": 86_400 },
                         "columns": columns.clone()
                     },
@@ -1061,19 +1534,7 @@ fn analysis_article_input_schema(include_parameters: bool, include_revision: boo
             },
             "transforms": {
                 "type": "array", "maxItems": 64,
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "id": id(),
-                        "title": required_display(256),
-                        "operation": { "type": "string", "enum": ["project", "filter", "sort", "limit", "union", "group", "aggregate", "inner_join", "left_join", "window", "lag", "ratio", "difference", "rate", "cohort", "retention"] },
-                        "inputNodeIds": { "type": "array", "minItems": 1, "maxItems": 8, "items": id() },
-                        "config": { "type": "object" },
-                        "columns": columns.clone()
-                    },
-                    "required": ["id", "title", "operation", "inputNodeIds", "config", "columns"],
-                    "additionalProperties": false
-                }
+                "items": analysis_transform_schema(&columns)
             },
             "metrics": {
                 "type": "array", "maxItems": 128,
@@ -1100,19 +1561,7 @@ fn analysis_article_input_schema(include_parameters: bool, include_revision: boo
             },
             "blocks": {
                 "type": "array", "minItems": 1, "maxItems": 128,
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "id": id(),
-                        "kind": { "type": "string", "enum": ["heading", "markdown", "callout", "divider", "metric", "time_series", "bar", "area", "scatter", "table", "funnel", "retention_cohort", "heatmap", "date_range_control", "comparison_control", "segment_control"] },
-                        "title": display(256),
-                        "sourceNodeId": { "anyOf": [id(), { "type": "null" }] },
-                        "width": { "type": "integer", "minimum": 1, "maximum": 12 },
-                        "config": { "type": "object" }
-                    },
-                    "required": ["id", "kind", "title", "sourceNodeId", "width", "config"],
-                    "additionalProperties": false
-                }
+                "items": analysis_block_schema()
             },
             "claims": {
                 "type": "array", "maxItems": 64,
@@ -1120,18 +1569,22 @@ fn analysis_article_input_schema(include_parameters: bool, include_revision: boo
                     "type": "object",
                     "properties": {
                         "id": id(), "text": required_display(4_000),
-                        "blockIds": { "type": "array", "minItems": 1, "maxItems": 32, "items": id() },
-                        "nodeIds": { "type": "array", "minItems": 1, "maxItems": 32, "items": id() }
+                        "blockIds": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": id() },
+                        "nodeIds": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": id() }
                     },
                     "required": ["id", "text", "blockIds", "nodeIds"],
+                    "anyOf": [
+                        { "properties": { "blockIds": { "minItems": 1 } } },
+                        { "properties": { "nodeIds": { "minItems": 1 } } }
+                    ],
                     "additionalProperties": false
                 }
             },
             "refresh": {
                 "type": "object",
                 "properties": {
-                    "mode": { "type": "string", "enum": ["manual", "scheduled"] },
-                    "cron": { "type": ["string", "null"], "maxLength": 256 },
+                    "mode": { "const": "manual" },
+                    "cron": { "type": "null" },
                     "timezone": required_display(128),
                     "runnerId": { "type": "null" },
                     "maxStalenessSeconds": { "type": "integer", "minimum": 60, "maximum": 31_622_400 },
@@ -1378,19 +1831,22 @@ async fn call_tool(
         TOOL_ANALYSIS_ARTICLE_DRAFT_RUN => {
             let arguments: AnalysisArticleDraftRunArguments = tool_arguments(params)?;
             let result =
-                broker_request::<AnalysisArticleDraftRunCommand>(client, &arguments).await?;
+                analysis_article_request::<AnalysisArticleDraftRunCommand>(client, &arguments)
+                    .await?;
             tool_success(&result)
         }
         TOOL_ANALYSIS_ARTICLE_PROPOSE => {
             let arguments: AnalysisArticleProposeArguments = tool_arguments(params)?;
             let result =
-                broker_request::<AnalysisArticleProposeCommand>(client, &arguments).await?;
+                analysis_article_request::<AnalysisArticleProposeCommand>(client, &arguments)
+                    .await?;
             tool_success(&result)
         }
         TOOL_ANALYSIS_ARTICLE_UPDATE_DRAFT => {
             let arguments: AnalysisArticleUpdateDraftArguments = tool_arguments(params)?;
             let result =
-                broker_request::<AnalysisArticleUpdateDraftCommand>(client, &arguments).await?;
+                analysis_article_request::<AnalysisArticleUpdateDraftCommand>(client, &arguments)
+                    .await?;
             tool_success(&result)
         }
         TOOL_QUERY_READ => query_read(client, tool_arguments(params)?, cancellation).await,
@@ -1482,9 +1938,38 @@ async fn broker_request<C>(
 where
     C: CommandSpec,
 {
+    broker_request_with_invalid_hint::<C>(client, arguments, None).await
+}
+
+async fn analysis_article_request<C>(
+    client: &BrokerClient,
+    arguments: &C::Arguments,
+) -> Result<C::Result, String>
+where
+    C: CommandSpec,
+{
+    broker_request_with_invalid_hint::<C>(client, arguments, Some(ANALYSIS_ARTICLE_INVALID_REQUEST))
+        .await
+}
+
+async fn broker_request_with_invalid_hint<C>(
+    client: &BrokerClient,
+    arguments: &C::Arguments,
+    invalid_request_hint: Option<&'static str>,
+) -> Result<C::Result, String>
+where
+    C: CommandSpec,
+{
     for attempt in 0..=AUTHORITY_RETRY_ATTEMPTS {
         match client.request::<C>(arguments).await {
             Ok(result) => return Ok(result),
+            Err(ClientError::Remote(error))
+                if error.code() == ErrorCode::InvalidRequest && invalid_request_hint.is_some() =>
+            {
+                return Err(invalid_request_hint
+                    .expect("guarded Analysis Article hint")
+                    .into());
+            }
             Err(ClientError::Remote(error))
                 if error.code() == ErrorCode::RuntimeUnavailable && error.is_retryable() =>
             {

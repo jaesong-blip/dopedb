@@ -439,6 +439,21 @@ fn sha256(bytes: &[u8]) -> String {
 #[cfg(test)]
 pub(crate) fn assert_runner_safety_contract() {
     super::adapters::assert_parameter_binding_contract();
+    super::adapters::assert_hosted_mutation_error_contract();
+
+    let control_plane_fixture: Value = serde_json::from_str(include_str!(
+        "../../../../dopedb-protocol/tests/fixtures/control-plane-contracts-v1.json"
+    ))
+    .expect("control-plane fixture must decode");
+    let valid_article: dopedb_protocol::SharedAnalysisArticleCreate =
+        serde_json::from_value(control_plane_fixture["analysisArticleCreate"].clone())
+            .expect("golden Analysis Article must decode");
+    assert!(super::validation::validate_shared_create(&valid_article).is_ok());
+    let mut invalid_heading = valid_article;
+    invalid_heading.definition.blocks[0].kind = dopedb_protocol::AnalysisBlockKind::Heading;
+    invalid_heading.definition.blocks[0].source_node_id = None;
+    invalid_heading.definition.blocks[0].config = serde_json::json!({ "level": 1 });
+    assert!(super::validation::validate_shared_create(&invalid_heading).is_err());
 
     let column = AnalysisColumn {
         name: "value".into(),

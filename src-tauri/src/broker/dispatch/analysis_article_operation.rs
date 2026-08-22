@@ -5,8 +5,8 @@ use dopedb_protocol::{
     AnalysisArticleDraftRunArguments, AnalysisArticleDraftRunCommand, AnalysisArticleListCommand,
     AnalysisArticleListResult, AnalysisArticleProposeArguments, AnalysisArticleProposeCommand,
     AnalysisArticleRecordResult, AnalysisArticleSource, AnalysisArticleState,
-    AnalysisArticleUpdateDraftArguments, AnalysisArticleUpdateDraftCommand, AnalysisRunReceipt,
-    AnalysisRunState, SharedAnalysisArticleCreate,
+    AnalysisArticleUpdateDraftArguments, AnalysisArticleUpdateDraftCommand, AnalysisRefreshMode,
+    AnalysisRunReceipt, AnalysisRunState, SharedAnalysisArticleCreate,
 };
 use tauri::Emitter;
 
@@ -116,6 +116,8 @@ fn article_create(
     let environment_revision =
         i64::try_from(scope.environment_revision).map_err(|_| ErrorCode::InvalidRequest)?;
     let mut definition = definition.with_source(source);
+    definition.refresh.mode = AnalysisRefreshMode::Manual;
+    definition.refresh.cron = None;
     definition.refresh.runner_id = None;
     definition.refresh.share_reviewed_results = false;
     let article = SharedAnalysisArticleCreate {

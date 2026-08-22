@@ -6,7 +6,7 @@ use dopedb_protocol::{
     AnalysisArticleConnection, AnalysisArticleDefinition, AnalysisBlockKind, AnalysisColumn,
     AnalysisColumnMasking, AnalysisColumnRole, AnalysisColumnSensitivity, AnalysisColumnType,
     AnalysisNumberStyle, AnalysisParameter, AnalysisParameterType, AnalysisRefreshMode,
-    AnalysisTransformOperation,
+    AnalysisTransformOperation, SharedAnalysisArticleCreate,
 };
 use serde_json::Value;
 
@@ -667,4 +667,17 @@ pub(crate) fn validate_definition(
     }
     validate_refresh(definition)?;
     Ok(parameters)
+}
+
+/// Apply the same declarative contract used by the read-only runner before a
+/// hosted create/update is attempted. This keeps malformed Agent drafts out of
+/// the control plane without opening a database or resolving join mappings.
+pub(crate) fn validate_shared_create(article: &SharedAnalysisArticleCreate) -> AppResult<()> {
+    if !article.validate() {
+        return Err(AppError::Config(
+            "Analysis Article create contract is invalid".into(),
+        ));
+    }
+    validate_definition(&article.definition, &article.connections, &BTreeMap::new())?;
+    Ok(())
 }

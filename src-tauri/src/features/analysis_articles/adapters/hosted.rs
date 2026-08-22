@@ -677,6 +677,66 @@ async fn response<T: DeserializeOwned>(
     bounded_json(response, action, maximum).await
 }
 
+async fn article_mutation_response<T: DeserializeOwned>(
+    response: Response,
+    user_id: &str,
+    action: &str,
+    maximum: usize,
+) -> AppResult<T> {
+    let status = response.status();
+    if status == StatusCode::UNAUTHORIZED {
+        delete_workspace_session(user_id).await?;
+    }
+    if status.is_success() {
+        return bounded_json(response, action, maximum).await;
+    }
+
+    // Consume the bounded hosted error for connection reuse, but expose only
+    // domain-owned messages to the Broker. Control-plane text is not trusted
+    // Agent output and must not cross the ACP boundary verbatim.
+    let hosted_error = oauth_error(response).await;
+    Err(classify_article_mutation_error(status, hosted_error))
+}
+
+fn classify_article_mutation_error(status: StatusCode, hosted_error: AppError) -> AppError {
+    match status {
+        StatusCode::BAD_REQUEST
+        | StatusCode::UNPROCESSABLE_ENTITY
+        | StatusCode::PRECONDITION_REQUIRED => {
+            AppError::Config("Analysis Article definition or mutation contract is invalid".into())
+        }
+        StatusCode::CONFLICT | StatusCode::PRECONDITION_FAILED => AppError::OutcomeUnknown(
+            "Analysis Article revision changed before the mutation could be applied".into(),
+        ),
+        StatusCode::FORBIDDEN => AppError::Blocked {
+            reason: "Analysis Article mutation authority is no longer available".into(),
+        },
+        StatusCode::NOT_FOUND => AppError::NotFound("Analysis Article".into()),
+        _ => hosted_error,
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn assert_hosted_mutation_error_contract() {
+    let upstream = || AppError::Network("untrusted upstream detail".into());
+    assert!(matches!(
+        classify_article_mutation_error(StatusCode::BAD_REQUEST, upstream()),
+        AppError::Config(_)
+    ));
+    assert!(matches!(
+        classify_article_mutation_error(StatusCode::UNPROCESSABLE_ENTITY, upstream()),
+        AppError::Config(_)
+    ));
+    assert!(matches!(
+        classify_article_mutation_error(StatusCode::CONFLICT, upstream()),
+        AppError::OutcomeUnknown(_)
+    ));
+    assert!(matches!(
+        classify_article_mutation_error(StatusCode::BAD_GATEWAY, upstream()),
+        AppError::Network(_)
+    ));
+}
+
 fn validate_article(article: &AnalysisArticleRecord, expected_id: Option<Uuid>) -> AppResult<()> {
     if expected_id.is_some_and(|id| id != article.id)
         || article.environment_revision < 1
@@ -943,7 +1003,7 @@ pub(crate) async fn create_analysis_article(
         .send()
         .await
         .map_err(|error| request_error("creating an Analysis Article", error))?;
-    let body: ArticleResponse = response(
+    let body: ArticleResponse = article_mutation_response(
         raw,
         user_id,
         "created Analysis Article",
@@ -998,7 +1058,7 @@ pub(crate) async fn mutate_analysis_article(
         .send()
         .await
         .map_err(|error| request_error("updating an Analysis Article", error))?;
-    let body: ArticleResponse = response(
+    let body: ArticleResponse = article_mutation_response(
         raw,
         user_id,
         "updated Analysis Article",
