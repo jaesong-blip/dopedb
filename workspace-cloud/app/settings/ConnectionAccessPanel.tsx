@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ControlButton } from "../components/Controls";
 import { useWorkspaceLocale } from "../components/WorkspaceLocale";
+import { candidateConflictResolution } from "../../lib/connection-conflict-decision";
 import type { WorkspaceLocale } from "../../lib/workspace-locale";
 import { workspaceMessages } from "../../lib/workspace-messages";
 import { localizedProviderMessage } from "../../lib/workspace-provider-copy";
@@ -402,7 +403,10 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
           return;
         }
       }
-      const resolution = await postConflictResolution(conflict.id, "candidate");
+      const resolution = await postConflictResolution(
+        conflict.id,
+        candidateConflictResolution(conflict),
+      );
       if (!resolution?.ok) {
         setError(await responseError(resolution, copy.resolveConflictError, locale));
         await loadConflicts();

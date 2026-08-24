@@ -12,6 +12,7 @@ import {
   parseManagedLeaseRequest,
   parseWorkspaceSyncPage,
 } from "./control-plane-contracts";
+import { candidateConflictResolution } from "./connection-conflict-decision";
 import {
   acceptsProductAnalyticsContract,
   parseProductAnalyticsEnvelope,
@@ -130,6 +131,27 @@ const analyticsPropertyKeys = {
   workspace_membership_ready: ["role"],
   shared_connection_access_ready: ["accessMode", "engine"],
 } as const satisfies Record<ProductEventName, readonly string[]>;
+
+describe("Connection conflict decisions", () => {
+  it("closes an already-matching server revision without creating a false candidate result", () => {
+    expect(candidateConflictResolution({
+      currentMatchesServer: true,
+      currentMatchesCandidate: true,
+    })).toBe("server");
+    expect(candidateConflictResolution({
+      currentMatchesServer: true,
+      currentMatchesCandidate: false,
+    })).toBe("candidate");
+    expect(candidateConflictResolution({
+      currentMatchesServer: false,
+      currentMatchesCandidate: true,
+    })).toBe("candidate");
+    expect(candidateConflictResolution({
+      currentMatchesServer: false,
+      currentMatchesCandidate: false,
+    })).toBe("candidate");
+  });
+});
 
 function analyticsEnvelope(
   name: ProductEventName,
