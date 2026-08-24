@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { expect } from "vitest";
 
+import { expectRfc3339Timestamp } from "./assertions";
 import type { AuthorityProviderScenarioResult } from "./authority-provider-scenarios";
 import type { ProviderImportPostgresHarness } from "./fixture";
 
@@ -409,6 +410,8 @@ export async function runAnalysisLifecycleScenarios(
       authority,
     });
     expect(run).toMatchObject({ id, state: "running", runnerId: analysisRunnerId });
+    expectRfc3339Timestamp(run?.startedAt);
+    expectRfc3339Timestamp(run?.createdAt);
     return id;
   };
   await expect(runStore.commitAnalysisRunCreate({
@@ -658,6 +661,8 @@ export async function runAnalysisLifecycleScenarios(
     byteCount: 385,
     resultHash: runContract.analysisRunResultHash([queryReceipt], fragmentManifest),
   });
+  expectRfc3339Timestamp(completedRun?.finishedAt);
+  expectRfc3339Timestamp(completedRun?.createdAt);
   // A response-loss retry recovers the exact durable terminal run without
   // duplicating receipts or terminal audit events.
   await expect(runStore.commitAnalysisRunCompletion({
@@ -728,12 +733,14 @@ export async function runAnalysisLifecycleScenarios(
 
   const cancelledRunId = await createAnalysisRun(3);
   await expect(stageFragment(cancelledRunId, stagedFragment(0))).resolves.not.toBeNull();
-  await expect(runStore.requestAnalysisRunCancellation({
+  const cancelRequestedRun = await runStore.requestAnalysisRunCancellation({
     organizationId,
     articleId,
     runId: cancelledRunId,
     authority,
-  })).resolves.toMatchObject({ id: cancelledRunId });
+  });
+  expect(cancelRequestedRun).toMatchObject({ id: cancelledRunId });
+  expectRfc3339Timestamp(cancelRequestedRun?.cancelRequestedAt);
   expect(await runStore.canStageAnalysisRunFragment({
     organizationId,
     articleId,

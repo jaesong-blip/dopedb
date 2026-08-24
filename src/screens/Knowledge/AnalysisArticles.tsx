@@ -21,10 +21,7 @@ import type {
   KnowledgeEnvironment,
 } from "../../features/knowledge/domain";
 import { Button } from "../../design-system/components/Button";
-import {
-  SelectInput,
-  TextInput,
-} from "../../design-system/components/FormControls";
+import { SelectInput } from "../../design-system/components/FormControls";
 import { PanelTabs } from "../../design-system/components/PanelTabs";
 import {
   InlineNotice,
@@ -34,13 +31,11 @@ import {
   type StatusTone,
 } from "../../design-system/components/Status";
 import {
-  MetadataDot,
   WorkbenchButton,
   WorkbenchDivider,
   WorkbenchEmptyState,
   WorkbenchToolbar,
 } from "../../design-system/components/Workbench";
-import { errMessage } from "../../ipc/types";
 import { useI18n } from "../../lib/i18n";
 
 type Translate = ReturnType<typeof useI18n>["t"];
@@ -99,13 +94,6 @@ function freshnessLabel(value: ReturnType<typeof articleFreshness>, t: Translate
   return t("analysis.freshnessStale");
 }
 
-function collectionErrorMessage(error: unknown, t: Translate): string {
-  const message = errMessage(error);
-  return /returned invalid JSON|expected value at line 1 column 1|404 Not Found|API is unavailable|incompatible response/.test(message)
-    ? t("analysis.loadFailedBody")
-    : message;
-}
-
 export default function AnalysisArticles({
   projectName,
   environment,
@@ -138,8 +126,6 @@ export default function AnalysisArticles({
     editorArticle,
     effectiveRunId,
     execute,
-    filter,
-    filtered,
     parameterValues,
     recoveredResult,
     remove,
@@ -153,15 +139,11 @@ export default function AnalysisArticles({
     saveArticle,
     selected,
     setEditorArticle,
-    setFilter,
     setParameterValues,
-    setSelectedId,
     setSelectedRunId,
-    setStateFilter,
     setTab,
     sharedResult,
     startRun,
-    stateFilter,
     tab,
     transfer,
     transition,
@@ -219,70 +201,7 @@ export default function AnalysisArticles({
         </div>
       ) : null}
 
-      <div className="tw:grid tw:min-h-0 tw:min-w-0 tw:flex-1 tw:grid-cols-[280px_minmax(0,1fr)] tw:@max-[780px]:grid-cols-1">
-        <aside className="tw:flex tw:min-h-0 tw:min-w-0 tw:flex-col tw:border-r tw:border-border-subtle tw:bg-card tw:@max-[780px]:max-h-[280px] tw:@max-[780px]:border-r-0 tw:@max-[780px]:border-b">
-          <div className="tw:grid tw:gap-2 tw:border-b tw:border-border-subtle tw:p-2">
-            <TextInput
-              density="compact"
-              type="search"
-              placeholder={t("analysis.filterPlaceholder")}
-              value={filter}
-              onChange={(event) => setFilter(event.target.value)}
-            />
-            <SelectInput density="compact" value={stateFilter} onChange={(event) => setStateFilter(event.target.value as typeof stateFilter)}>
-              <option value="all">{t("analysis.filterAll")}</option>
-              <option value="draft">{t("analysis.stateDraft")}</option>
-              <option value="review">{t("analysis.stateReview")}</option>
-              <option value="live">{t("analysis.stateLive")}</option>
-              <option value="archived">{t("analysis.stateArchived")}</option>
-            </SelectInput>
-          </div>
-          <div className="scrollbar-sleek tw:min-h-0 tw:flex-1 tw:overflow-auto tw:p-1">
-            {articles.isPending ? (
-              <div className="tw:p-3"><LoadingLabel>{t("analysis.loading")}</LoadingLabel></div>
-            ) : articles.error ? (
-              <div className="tw:p-2">
-                <InlineNotice tone="danger" icon="alert">
-                  <strong>{t("analysis.loadFailedTitle")}</strong>
-                  <span>{collectionErrorMessage(articles.error, t)}</span>
-                </InlineNotice>
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="tw:grid tw:gap-2 tw:p-4 tw:text-sm tw:text-muted-foreground">
-                <Icon name="chart" />
-                <span>{articles.data?.length ? t("analysis.noMatch") : t("analysis.noArticles")}</span>
-              </div>
-            ) : filtered.map((article) => {
-              const freshness = articleFreshness(article);
-              return (
-                <button
-                  key={article.id}
-                  type="button"
-                  data-selected={selected?.id === article.id}
-                  className="tw:grid tw:w-full tw:min-w-0 tw:cursor-pointer tw:grid-cols-[auto_minmax(0,1fr)_auto] tw:items-start tw:gap-x-2 tw:gap-y-1 tw:rounded-sm tw:border-0 tw:bg-transparent tw:px-2 tw:py-2 tw:text-left tw:font-sans tw:text-foreground tw:data-[selected=true]:bg-selection tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
-                  onClick={() => {
-                    setSelectedId(article.id);
-                    setTab("article");
-                  }}
-                >
-                  <StatusDot tone={stateTone(article.state)} />
-                  <strong className="tw:min-w-0 tw:truncate tw:text-sm tw:font-medium">{article.definition.title}</strong>
-                  <span className="tw:font-mono tw:text-2xs tw:text-muted-foreground">r{article.revision}</span>
-                  <span className="tw:col-start-2 tw:min-w-0 tw:truncate tw:text-xs tw:text-muted-foreground">
-                    {article.definition.question || article.definition.summary || t("analysis.noQuestion")}
-                  </span>
-                  <span className="tw:col-start-2 tw:flex tw:min-w-0 tw:items-center tw:gap-1 tw:text-2xs tw:text-muted-foreground">
-                    <span>{stateLabel(article.state, t)}</span>
-                    <MetadataDot />
-                    <span>{freshnessLabel(freshness, t)}</span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </aside>
-
-        <main className="tw:flex tw:min-h-0 tw:min-w-0 tw:flex-col tw:overflow-hidden">
+      <main className="tw:flex tw:min-h-0 tw:min-w-0 tw:flex-1 tw:flex-col tw:overflow-hidden">
           {!selected ? (
             <WorkbenchEmptyState icon="chart">
               <strong>{projectName} / {environment.name}</strong>
@@ -362,8 +281,7 @@ export default function AnalysisArticles({
               </div>
             </>
           )}
-        </main>
-      </div>
+      </main>
 
       {editorArticle ? (
         <AnalysisArticleEditor

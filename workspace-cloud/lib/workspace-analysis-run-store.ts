@@ -71,10 +71,18 @@ function runProjection() {
     run."schema_fingerprints" AS "schemaFingerprints", run."row_count"::integer AS "rowCount",
     run."byte_count"::integer AS "byteCount", run."result_hash" AS "resultHash",
     run."error_kind" AS "errorKind", run."error_message" AS "errorMessage",
-    run."cancel_requested_at" AS "cancelRequestedAt",
+    CASE WHEN run."cancel_requested_at" IS NULL THEN NULL ELSE
+      to_char(run."cancel_requested_at" AT TIME ZONE 'UTC',
+        'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') END AS "cancelRequestedAt",
     run."cancel_requested_by_member_id" AS "cancelRequestedByMemberId",
-    run."started_at" AS "startedAt", run."finished_at" AS "finishedAt",
-    run."created_at" AS "createdAt"`;
+    CASE WHEN run."started_at" IS NULL THEN NULL ELSE
+      to_char(run."started_at" AT TIME ZONE 'UTC',
+        'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') END AS "startedAt",
+    CASE WHEN run."finished_at" IS NULL THEN NULL ELSE
+      to_char(run."finished_at" AT TIME ZONE 'UTC',
+        'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') END AS "finishedAt",
+    to_char(run."created_at" AT TIME ZONE 'UTC',
+      'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "createdAt"`;
 }
 
 export async function requestAnalysisRunCancellation(input: {

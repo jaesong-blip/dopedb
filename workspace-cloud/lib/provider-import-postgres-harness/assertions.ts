@@ -2,6 +2,14 @@ import { expect, vi } from "vitest";
 
 import type { ProviderImportPostgresHarness } from "./fixture";
 
+export function expectRfc3339Timestamp(value: unknown) {
+  if (typeof value !== "string") {
+    throw new Error(`expected an RFC3339 timestamp string, received ${typeof value}`);
+  }
+  expect(value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/);
+  expect(Number.isNaN(Date.parse(value))).toBe(false);
+}
+
 export async function runProviderImportSupportAssertions() {
   const serverLog = await import("../workspace-server-log");
   const { boundedJsonBody, privateJsonStream } = await import("../http");

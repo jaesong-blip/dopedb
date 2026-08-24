@@ -200,7 +200,11 @@ color를 거부한다.
 - Body: 14px.
 - Dense UI: 13px.
 - 보조 텍스트: 12px.
-- uppercase category label: 11px, 600–700 weight, `0.05em` tracking.
+- 기본 본문과 일반 tree row는 최소 450, 일반 control과 DB row는 550,
+  section emphasis는 650, heading과 강한 category label은 700 weight를 사용한다.
+  `font-normal/medium/semibold/bold`는 이 네 semantic token에 대응하며 화면별
+  임의 숫자 weight로 가독성을 보정하지 않는다.
+- uppercase category label: 11px, 650–700 weight, `0.05em` tracking.
 - 큰 제목은 `-0.02em`, 패널 제목은 `-0.01em` tracking을 사용한다.
 - 데이터 숫자는 `font-variant-numeric: tabular-nums`를 사용한다.
 
@@ -349,7 +353,10 @@ Elevation은 세 단계만 허용한다.
   tab의 selection, tooltip, roving arrow/Home/End keyboard focus를 소유한다.
 - `SegmentedControl`: 속성 편집기의 소수 상호 배타 선택을 위한 compact
   radiogroup, keyboard focus와 semantic selection treatment.
-- `EnvironmentBadge`: dev/staging/prod 의미색과 대문자 표기를 한곳에서 소유.
+- `EnvironmentBadge`: database context에서 dev/staging/prod를 neutral 대문자와
+  작은 의미색 점으로 표시한다. Explorer에서는 DB connection row에만 두며,
+  Project의 Environment folder는 자체 이름이 이미 환경을 구분하므로 badge를
+  반복하지 않는다. production도 채운 danger pill로 강조하지 않는다.
 - `TreeSectionButton`, `TreeRowActions`, `TreeSearch`, `VirtualTreeRows`: 객체 트리의
   일반 문장형 hierarchy row, keyboard toggle, dense object search와 대형 leaf
   row windowing. `TreeSectionButton`의 `selected`는 현재 Project Environment나
@@ -495,7 +502,9 @@ DopeDB의 실제 작업 흐름과 접근성, supported viewport를 위한 제품
 - AI Chat composer는 큰 multiline surface, 내부 context chip/action row,
   외부 Agent/model context row의 세 층을 사용한다. 첨부 chip과 popup은
   semantic token과 기존 button/icon 규칙으로 조합하며 feature CSS를 만들지
-  않는다. session 전용 tab action menu는 활성 session이 있을 때만 표시하며
+  않는다. Project Environment와 공식 adapter가 준비되면 panel이 ACP session을
+  선행 초기화하고, 초기화와 동시에 제출된 첫 prompt도 준비 완료 뒤 같은 제출
+  흐름에서 이어서 전송한다. session 전용 tab action menu는 활성 session이 있을 때만 표시하며
   빈 AI Chat에 disabled kebab을 남기지 않는다.
 - AI Chat의 desktop dock은 modeless tool surface다. 좁은 desktop의 오른쪽
   overlay도 `role="dialog"`인 modeless side sheet로 유지해 background focus와
@@ -509,7 +518,10 @@ DopeDB의 실제 작업 흐름과 접근성, supported viewport를 위한 제품
   Analysis Article을 표시한다. 환경에 묶인 DB를 root에 중복 표시하지 않고,
   아직 묶이지 않은 연결만 `Unassigned`에 둔다. 환경 상세는 선택한 resource
   folder가 중앙 pane에 여는 내용이며 별도 Knowledge launcher, Dashboard 전용
-  sidebar, 중복 Project navigation을 만들지 않는다. Explorer의 단일 command
+  sidebar, 중복 Project navigation을 만들지 않는다. `Analyses`가 현재 resource면
+  Explorer의 단일 contextual search row가 Article 문자·상태 필터를 함께 소유하고,
+  중앙 document는 선택한 Article만 표시해 두 번째 collection rail을 만들지 않는다.
+  Explorer의 단일 command
   strip에서 Project와 Environment 생성 action을 구분하고, Project 생성 dialog는
   기본 `main` Environment를 함께 설정한다. Project 행의 hover/focus `plus`는 해당
   Project에 Environment를 추가하고, `Databases` folder의 `plus`는 기존 connection
@@ -525,7 +537,10 @@ DopeDB의 실제 작업 흐름과 접근성, supported viewport를 위한 제품
   Environment에 놓을 수 있고, 유효한 대상은 drag 중 semantic border와 surface로
   표시한다. 이 shortcut은 기존 environment binding command를 재사용하며, 이미
   묶인 연결의 암묵적 이동이나 복제를 허용하지 않는다. 키보드 사용자는 기존
-  Environment database binding 화면을 그대로 사용한다. 중앙 환경 상세나 AI Chat 안내에
+  Environment database binding 화면을 그대로 사용한다. 같은 schema group의 DB는
+  서로 다른 Environment folder 아래에 있더라도 각 DB row의 `diff` command와
+  connection menu에서 동일한 Schema Diff workbench를 열 수 있어야 한다. 중앙 환경
+  상세나 AI Chat 안내에
   같은 생성 form을 중복하지 않는다. Dashboard, Funnel Analysis, Agent Report는
   별도 navigation이나 screen을 갖지 않는다.
 - 이 hierarchy의 Project prominence와 header action locality는 공개 Orca의

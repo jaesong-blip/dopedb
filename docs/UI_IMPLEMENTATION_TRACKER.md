@@ -19,15 +19,15 @@ runtime과 성능 수치로 수행한다.
 | App shell/chrome | `complete` | `features/appShell`, design-system chrome primitives | packaged macOS·Windows에서 keyboard launcher와 compact window를 정기 확인 |
 | Action Search | `complete` | `features/actionSearch` | cached catalog scope, `/` action mode, focus 복구와 bounded top-k를 유지 |
 | Welcome document | `complete` | `screens/Onboarding` | 연결 전/후 실제 command 집합이 달라지는지 packaged smoke에서 확인 |
-| Database Explorer | `complete` | `screens/Connections/DatabaseExplorer`, `features/catalogExplorer` | Unassigned→Environment binding drag, loaded-only 객체 검색과 대형 catalog의 selection/scroll 보존을 packaged smoke에서 유지 |
+| Database Explorer | `complete` | `screens/Connections/DatabaseExplorer`, `features/catalogExplorer` | DB 행에만 조용한 Environment marker와 같은 schema group의 Diff 진입점을 유지하고, Unassigned→Environment binding drag·loaded-only 객체 검색·대형 catalog selection/scroll을 packaged smoke에서 확인 |
 | Connection editor | `complete` | `features/connections/useConnectionEditorController` | 연결 identity·접속 옵션만 소유하고 쓰기 실행 제어는 Settings → Safety 단일 경계를 유지 |
 | Provider account access | `complete` | `workspace-cloud/features/providerAccess`, provider application modules | 실제 계정 OAuth/CLI 실패·recovery 및 revoke 검수 |
 | SQL editor/query workflow | `complete` | `features/queries`, `screens/Sql`, Rust query application | 수동 Run exact 승인, Agent 제안 분리, 10 KiB/100 KiB/1 MiB 입력과 cancel/transaction packaged 검수 |
 | Result/Data grid | `complete` | `features/queryResults`, Rust result artifact | 30열·50,000행 selection/filter/export와 메모리 경계 검수 |
 | Services/Jobs | `complete` | `features/queryServices`, `features/jobs` | background cancel과 복원된 result handle packaged 검수 |
-| Agent tool window | `complete` | `features/agents`, ACP Rust runtime | 공식 adapter 설치·로그아웃·permission·resume, 동일 권한 focus-refresh 연속성, 실제 권한·process 중단 사유와 복구의 OS별 검수 |
+| Agent tool window | `complete` | `features/agents`, ACP Rust runtime | 공식 adapter 설치·로그아웃·permission·resume, 첫 prompt 단일 제출과 동일 권한 focus-refresh 연속성, 실제 권한·process 중단 사유와 복구의 OS별 검수 |
 | Knowledge graph | `complete` | Rust `features/knowledge`, frontend Knowledge projection | GitHub/Local source revision, publish, mapping과 exact grant 검수 |
-| Analysis Article | `partial` | `features/analysisArticles`, cloud analysis application | production runner, publication, metric signal의 실제 환경 검수 |
+| Analysis Article | `partial` | `features/analysisArticles`, cloud analysis application | Explorer 소유 문자·상태 필터와 단일 중앙 document, raw run timestamp의 RFC3339 응답 계약을 유지하고 production runner·publication·metric signal을 실제 환경에서 검수 |
 | Settings | `complete` | `features/settings`, `features/safetySettings` | 선택 연결의 단일 쓰기 제어, 관리자용 workspace 상한 + 기기 gate의 fail-closed 저장, compact viewport 검수 |
 | Diagnostics/Recovery | `complete` | design-system diagnostics, feature recovery boundaries | failure injection에서 오류 owner와 retry가 유지되는지 확인 |
 
@@ -81,7 +81,7 @@ Acceptance: cancel 후 connection을 검증 없이 재사용하지 않고 write 
 
 ### 4. Agent 작업
 
-1. Project·Environment를 선택하고 공식 ACP adapter를 시작한다.
+1. Project·Environment를 선택하면 공식 ACP adapter를 선행 준비하고 첫 prompt는 준비 완료 뒤 같은 제출 흐름에서 전송한다.
 2. Desktop이 exact grant와 connection/graph revision을 immutable pin으로 고정한다.
 3. 화면은 tool 진행, permission, result, 중단과 복구를 보여준다.
 4. provider 인증은 로컬 CLI가 소유하며 앱은 token을 읽거나 login UI를 만들지 않는다.

@@ -58,6 +58,10 @@
 
   --font-sans: var(--ds-font-sans);
   --font-mono: var(--ds-font-mono);
+  --font-weight-normal: var(--ds-font-weight-readable);
+  --font-weight-medium: var(--ds-font-weight-medium);
+  --font-weight-semibold: var(--ds-font-weight-semibold);
+  --font-weight-bold: var(--ds-font-weight-bold);
   --text-2xs: var(--ds-font-size-2xs);
   --text-xs: var(--ds-font-size-xs);
   --text-sm: var(--ds-font-size-sm);

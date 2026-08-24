@@ -15,7 +15,10 @@ import {
   AcpSessionStore,
   mergeAcpSessionSummaries,
 } from "./sessionStore";
-import { isCurrentAcpFocusRequest } from "./sessionFocus";
+import {
+  isCurrentAcpFocusRequest,
+  ownsStartedAcpSession,
+} from "./sessionFocus";
 
 function session(
   id: string,
@@ -82,7 +85,7 @@ describe("ACP session store", () => {
     list.mockResolvedValue([]);
   });
 
-  it("adds an observed session without mutating the prior snapshot", () => {
+  it("preserves observed sessions and accepts only owned focus results", () => {
     const prior: readonly AcpSessionSummary[] = [];
     const merged = mergeAcpSessionSummaries(prior, [session("one")]);
     expect(merged).toHaveLength(1);
@@ -101,6 +104,26 @@ describe("ACP session store", () => {
       selectionGeneration: 3,
       selectedSessionId: session("two").id,
     })).toBe(false);
+    const startRequest = {
+      ...request,
+      selectedSessionId: null,
+    };
+    expect(ownsStartedAcpSession(startRequest, {
+      ...startRequest,
+      selectionGeneration: startRequest.selectionGeneration + 1,
+      selectedSessionId: selected,
+    }, selected)).toBe(true);
+    expect(ownsStartedAcpSession(startRequest, {
+      ...startRequest,
+      scopeKey: "workspace:b",
+      selectionGeneration: startRequest.selectionGeneration + 1,
+      selectedSessionId: selected,
+    }, selected)).toBe(false);
+    expect(ownsStartedAcpSession(startRequest, {
+      ...startRequest,
+      selectionGeneration: startRequest.selectionGeneration + 1,
+      selectedSessionId: session("two").id,
+    }, selected)).toBe(false);
   });
 
   it("rejects an older event for the same exact session", () => {

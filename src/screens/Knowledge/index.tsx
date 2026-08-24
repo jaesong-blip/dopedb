@@ -21,7 +21,10 @@ import {
 import { errMessage } from "../../ipc/types";
 import { useI18n } from "../../lib/i18n";
 import { queryResultPhase } from "../../lib/queryResultPhase";
-import { useCatalogScope } from "../../lib/queries";
+import {
+  sharedWorkspaceScopeAvailable,
+  useCatalogScope,
+} from "../../lib/queries";
 import { captureProductEvent } from "../../features/productAnalytics/client";
 import type {
   ProductAnalyticsEngine,
@@ -169,7 +172,7 @@ export default function Knowledge({
   const projectKey = knowledgeQueryKeys.projects(catalogScope.key);
   const sourceKey = knowledgeQueryKeys.sources(catalogScope.key);
   const repositoryKey = knowledgeQueryKeys.githubRepositories(catalogScope.key);
-  const sharedWorkspace = catalogScope.accountScope !== null;
+  const sharedWorkspace = sharedWorkspaceScopeAvailable(catalogScope);
   const githubProviderVisible = sharedWorkspace || personalWorkspace;
   const githubAvailable = sharedWorkspace || signedInPersonalAccount !== null;
   const projects = useQuery({ queryKey: projectKey, queryFn: listKnowledgeProjects });

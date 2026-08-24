@@ -19,9 +19,10 @@ body {
   color: var(--ds-text);
   font-family: var(--ds-font-sans);
   font-size: var(--ds-font-size-body);
+  font-weight: var(--ds-font-weight-readable);
   letter-spacing: 0.01em;
   line-height: var(--ds-line-body);
-  -webkit-font-smoothing: antialiased;
+  -webkit-font-smoothing: auto;
 }
 
 #root {
@@ -38,21 +39,21 @@ h3 {
 h1 {
   font-size: var(--ds-font-size-heading);
   line-height: var(--ds-line-tight);
-  font-weight: 700;
+  font-weight: var(--ds-font-weight-bold);
   letter-spacing: -0.02em;
 }
 
 h2 {
   font-size: var(--ds-font-size-title);
   line-height: var(--ds-line-tight);
-  font-weight: 650;
+  font-weight: var(--ds-font-weight-semibold);
   letter-spacing: -0.01em;
 }
 
 h3 {
   font-size: var(--ds-font-size-xs);
   line-height: var(--ds-line-ui);
-  font-weight: 700;
+  font-weight: var(--ds-font-weight-bold);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--ds-text-muted);
@@ -154,7 +155,7 @@ h3 {
   background: var(--ds-secondary);
   color: var(--ds-text-muted);
   font-size: var(--ds-font-size-xs);
-  font-weight: 650;
+  font-weight: var(--ds-font-weight-semibold);
   line-height: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -184,7 +185,7 @@ h3 {
   background: var(--ds-accent-soft);
   color: var(--ds-accent-text);
   font-size: var(--ds-font-size-xs);
-  font-weight: 650;
+  font-weight: var(--ds-font-weight-semibold);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -493,7 +494,7 @@ h3 {
   cursor: pointer;
   font: inherit;
   font-size: var(--ds-font-size-sm);
-  font-weight: 650;
+  font-weight: var(--ds-font-weight-semibold);
   line-height: 1;
   pointer-events: auto;
 }

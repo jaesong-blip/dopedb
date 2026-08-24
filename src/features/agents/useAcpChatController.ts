@@ -33,7 +33,6 @@ import {
 } from "./acpPromptContext";
 import {
   loginCommand,
-  providerLabel,
   selectRichTranscriptKeys,
 } from "./acpTranscriptPresentation";
 import { useAgentDebugDetails } from "./displayPreferences";
@@ -78,9 +77,9 @@ import {
   respondAgentAcpPermission,
   resumeAgentAcpSession,
   setAgentAcpConfigOption,
-  startAgentAcpSession,
 } from "./tauriAdapter";
 import { visibleAcpTranscriptItems } from "./transcript";
+import { useAcpSessionStartup } from "./useAcpSessionStartup";
 
 const MAX_PROMPT_CHARS = 8 * 1024;
 const AGENT_SETUP_URL: Record<AgentProvider, string> = {
@@ -284,15 +283,19 @@ export function useAcpChatController({
     }),
     [],
   );
+  const currentFocusRequest = useCallback(
+    (): AcpFocusRequest => ({
+      requestId: focusRequestIdRef.current,
+      scopeKey: catalogScopeKeyRef.current,
+      selectionGeneration: selectionGenerationRef.current,
+      selectedSessionId: activeIdRef.current,
+    }),
+    [],
+  );
   const focusRequestIsCurrent = useCallback(
     (request: AcpFocusRequest) =>
-      isCurrentAcpFocusRequest(request, {
-        requestId: focusRequestIdRef.current,
-        scopeKey: catalogScopeKeyRef.current,
-        selectionGeneration: selectionGenerationRef.current,
-        selectedSessionId: activeIdRef.current,
-      }),
-    [],
+      isCurrentAcpFocusRequest(request, currentFocusRequest()),
+    [currentFocusRequest],
   );
   const recordFocus = useCallback(
     (focus: AcpSessionFocus) =>
@@ -473,50 +476,30 @@ export function useAcpChatController({
       AUTO_SCROLL_THRESHOLD_PX;
   }, []);
 
-  async function startSession(provider = selectedProvider) {
-    const environmentId = selectedEnvironmentId;
-    if (
-      starting ||
-      !prerequisitesReady ||
-      !newEnvironmentScopeReady ||
-      environmentId === null
-    ) {
-      return null;
-    }
-    const request = beginFocusRequest();
-    const completeAnalytics = beginAgentInitializationOutcome(
-      catalogScope,
-      provider,
-    );
-    setStarting(true);
-    setError(null);
-    try {
-      const focus = await startAgentAcpSession(
-        connection.id,
-        provider,
-        environmentId,
-      );
-      completeAnalytics("success");
-      const recorded = recordFocus(focus);
-      if (!recorded || !focusRequestIsCurrent(request)) return null;
+  const commitStartedSession = useCallback(
+    (focus: AcpSessionFocus, provider: AgentProvider) => {
       selectActiveSession(focus.session.id);
       setSelectedProvider(provider);
       setHistoryOpen(false);
-      return focus;
-    } catch (reason) {
-      completeAnalytics("failed");
-      if (!focusRequestIsCurrent(request)) return null;
-      setError(
-        t("agent.acpStartFailed", {
-          provider: providerLabel(provider),
-          error: errMessage(reason),
-        }),
-      );
-      return null;
-    } finally {
-      setStarting(false);
-    }
-  }
+    },
+    [selectActiveSession],
+  );
+  const startSession = useAcpSessionStartup({
+    activeSessionId: activeId,
+    beginFocusRequest,
+    catalogScope,
+    connectionId: connection.id,
+    currentFocusRequest,
+    environmentScopeReady: newEnvironmentScopeReady,
+    focusRequestIsCurrent,
+    onError: setError,
+    onStarted: commitStartedSession,
+    onStartingChange: setStarting,
+    prerequisitesReady,
+    selectedEnvironmentId,
+    selectedProvider,
+    sessionsLoading: sessionSnapshot.loading,
+  });
 
   function beginNewChat() {
     if (starting) return;

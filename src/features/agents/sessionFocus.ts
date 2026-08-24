@@ -18,3 +18,15 @@ export function isCurrentAcpFocusRequest(
     request.selectedSessionId === current.selectedSessionId
   );
 }
+
+export function ownsStartedAcpSession(
+  request: AcpFocusRequest,
+  current: AcpFocusRequest,
+  startedSessionId: AcpSessionId,
+) {
+  return (
+    isCurrentAcpFocusRequest(request, current) ||
+    (request.scopeKey === current.scopeKey &&
+      current.selectedSessionId === startedSessionId)
+  );
+}

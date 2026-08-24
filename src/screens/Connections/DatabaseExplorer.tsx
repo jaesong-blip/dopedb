@@ -50,20 +50,21 @@ import {
   productAnalyticsConnectionEngine,
   productAnalyticsWorkspaceContext,
 } from "../../features/productAnalytics/outcomes";
-import type { AnalysisArticleRecord } from "../../features/analysisArticles/domain";
+import type {
+  AnalysisArticleRecord,
+  AnalysisArticleState,
+} from "../../features/analysisArticles/domain";
 import { listAnalysisArticles } from "../../features/analysisArticles/tauriAdapter";
 import { analysisQueryKeys } from "../../features/analysisArticles/queryKeys";
 import { EnvironmentSetupDialog } from "../../features/knowledge/components/EnvironmentSetupDialog";
 import { ProjectSetupDialog } from "../../features/knowledge/components/ProjectSetupDialog";
-import {
-  knowledgeEnvironmentBadge,
-  knowledgeRevisionLabel,
-} from "../../features/knowledge/presentation";
+import { knowledgeRevisionLabel } from "../../features/knowledge/presentation";
 import { knowledgeQueryKeys } from "../../features/knowledge/queryKeys";
 import { useCatalogExplorerState } from "../../features/catalogExplorer/state";
 import { useSchemaGroupDrag } from "../../features/catalogExplorer/useSchemaGroupDrag";
 import {
   qk,
+  sharedWorkspaceScopeAvailable,
   useCatalogScope,
 } from "../../lib/queries";
 import { useWorkspaceResourceQueryRecovery } from "../../lib/queryClient";
@@ -78,7 +79,7 @@ import {
 import EngineMark from "../../components/EngineMark";
 import { Icon } from "../../components/Icon";
 import { Button } from "../../design-system/components/Button";
-import { EnvironmentBadge } from "../../design-system/components/EnvironmentBadge";
+import { SelectInput } from "../../design-system/components/FormControls";
 import {
   LoadingLabel,
   StatusDot,
@@ -226,7 +227,8 @@ export function DatabaseExplorer({
   const knowledgeEnabled =
     catalogScope.ready &&
     catalogScope.accountScope !== null;
-  const sharedKnowledgeWorkspace = knowledgeEnabled;
+  const sharedKnowledgeWorkspace =
+    knowledgeEnabled && sharedWorkspaceScopeAvailable(catalogScope);
   const knowledgeProjects = useQuery({
     queryKey: knowledgeQueryKeys.projects(catalogScope.key),
     queryFn: listKnowledgeProjects,
@@ -263,6 +265,10 @@ export function DatabaseExplorer({
   });
   const [globalFilter, setGlobalFilter] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [analysisFilter, setAnalysisFilter] = useState("");
+  const [analysisStateFilter, setAnalysisStateFilter] = useState<
+    "all" | AnalysisArticleState
+  >("all");
   const [searchResultsByCatalog, setSearchResultsByCatalog] = useState<
     Record<string, CatalogTreeSearchResult[]>
   >({});
@@ -287,7 +293,9 @@ export function DatabaseExplorer({
       queryFn: () => listAnalysisArticles(environmentId),
       enabled:
         sharedKnowledgeWorkspace &&
-        expandedResourceKeys.has(`${environmentId}:analyses`),
+        (expandedResourceKeys.has(`${environmentId}:analyses`) ||
+          (activeProjectEnvironmentId === environmentId &&
+            activeProjectEnvironmentView === "analyses")),
       retry: false,
     })),
   });
@@ -536,6 +544,30 @@ export function DatabaseExplorer({
     setProjectSetupOpen(false);
     setEnvironmentSetupProjectId(null);
   }, [catalogScope.key]);
+
+  useEffect(() => {
+    setAnalysisFilter("");
+    setAnalysisStateFilter("all");
+  }, [activeProjectEnvironmentId, catalogScope.key]);
+
+  useEffect(() => {
+    if (
+      !activeProjectEnvironmentId ||
+      activeProjectEnvironmentView !== "analyses" ||
+      !projectEnvironmentIds.includes(activeProjectEnvironmentId)
+    ) {
+      return;
+    }
+    const analysisKey = `${activeProjectEnvironmentId}:analyses`;
+    setExpandedResourceKeys((current) => {
+      if (current.has(analysisKey)) return current;
+      return new Set([...current, analysisKey]);
+    });
+  }, [
+    activeProjectEnvironmentId,
+    activeProjectEnvironmentView,
+    projectEnvironmentIds,
+  ]);
 
   const wantedIds = useMemo(() => [...wanted].sort(), [wanted]);
   const readableWantedIds = useMemo(() => {
@@ -869,6 +901,16 @@ export function DatabaseExplorer({
     treeParentKey: string | null = null,
     treeLevel = 1,
   ) {
+    const schemaGroup = groupByConnectionId.get(connection.id);
+    const openConnectionSchemaDiff =
+      schemaGroup && schemaGroup.connections.length > 1
+        ? () => {
+            for (const member of schemaGroup.connections) {
+              ensureLoaded(member.id);
+            }
+            onOpenSchemaDiff(schemaGroup);
+          }
+        : undefined;
     return (
       <ConnectionNode
         key={connection.id}
@@ -919,6 +961,7 @@ export function DatabaseExplorer({
         }
         onRefresh={() => void refreshSchema(connection.id)}
         onDelete={() => void removeConnection(connection)}
+        onOpenSchemaDiff={openConnectionSchemaDiff}
         onOpenTable={(table) => onOpenTable(connection, table)}
         onRequestDetails={(database) =>
           requestDetails(connection.id, database)
@@ -1114,7 +1157,26 @@ export function DatabaseExplorer({
     const analysisExpanded = expandedResourceKeys.has(analysisKey);
     const analysisQuery = environmentAnalysisQueries[environmentIndex];
     const environmentAnalyses = analysisQuery?.data ?? [];
-    const activeAnalysisIsVisible = environmentAnalyses.some(
+    const analysisNeedle = analysisFilter.trim().toLocaleLowerCase();
+    const visibleEnvironmentAnalyses =
+      activeProjectEnvironmentId === environment.id
+        ? environmentAnalyses.filter(
+            (article) =>
+              (analysisStateFilter === "all" ||
+                article.state === analysisStateFilter) &&
+              (!analysisNeedle ||
+                article.definition.title
+                  .toLocaleLowerCase()
+                  .includes(analysisNeedle) ||
+                article.definition.question
+                  .toLocaleLowerCase()
+                  .includes(analysisNeedle) ||
+                article.definition.summary
+                  .toLocaleLowerCase()
+                  .includes(analysisNeedle)),
+          )
+        : environmentAnalyses;
+    const activeAnalysisIsVisible = visibleEnvironmentAnalyses.some(
       (article) => article.id === activeProjectEnvironmentResourceId,
     );
     const environmentTreeKey = `environment:${environment.id}`;
@@ -1365,8 +1427,8 @@ export function DatabaseExplorer({
                 </span>
                 <span className="tw:shrink-0">{t("app.retry")}</span>
               </button>
-            ) : environmentAnalyses.length > 0 ? (
-              environmentAnalyses.map((article) => (
+            ) : visibleEnvironmentAnalyses.length > 0 ? (
+              visibleEnvironmentAnalyses.map((article) => (
                 <button
                   key={article.id}
                   type="button"
@@ -1415,7 +1477,9 @@ export function DatabaseExplorer({
                 data-tree-primary-action
                 tabIndex={-1}
               >
-                {t("connections.environmentNoAnalyses")}
+                {environmentAnalyses.length > 0
+                  ? t("analysis.noMatch")
+                  : t("connections.environmentNoAnalyses")}
               </button>
             )}
           </div>
@@ -1489,13 +1553,6 @@ export function DatabaseExplorer({
                     selected={
                       activeProjectEnvironmentId === environment.id &&
                       !environmentExpanded
-                    }
-                    trailing={
-                      <EnvironmentBadge
-                        environment={knowledgeEnvironmentBadge(
-                          environment.riskClass,
-                        )}
-                      />
                     }
                     onToggle={() => {
                       toggleExpandedId(
@@ -1781,6 +1838,37 @@ export function DatabaseExplorer({
               })}
             </span>
           ) : null}
+        </ToolWindowSearchRow>
+      ) : activeProjectEnvironmentId &&
+        activeProjectEnvironmentView === "analyses" ? (
+        <ToolWindowSearchRow>
+          <div className="tw:min-w-0 tw:flex-1">
+            <TreeSearch
+              value={analysisFilter}
+              placeholder={t("analysis.filterPlaceholder")}
+              clearLabel={t("common.close")}
+              onChange={setAnalysisFilter}
+              onEscape={() => setAnalysisFilter("")}
+            />
+          </div>
+          <div className="tw:w-[112px] tw:shrink-0">
+            <SelectInput
+              density="compact"
+              aria-label={t("analysis.stateFilterLabel")}
+              value={analysisStateFilter}
+              onChange={(event) =>
+                setAnalysisStateFilter(
+                  event.target.value as "all" | AnalysisArticleState,
+                )
+              }
+            >
+              <option value="all">{t("analysis.filterAll")}</option>
+              <option value="draft">{t("analysis.stateDraft")}</option>
+              <option value="review">{t("analysis.stateReview")}</option>
+              <option value="live">{t("analysis.stateLive")}</option>
+              <option value="archived">{t("analysis.stateArchived")}</option>
+            </SelectInput>
+          </div>
         </ToolWindowSearchRow>
       ) : null}
 

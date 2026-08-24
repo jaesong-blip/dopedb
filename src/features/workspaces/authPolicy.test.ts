@@ -21,6 +21,7 @@ import {
   resetWorkspaceResourceQueries,
   resumePendingWorkspaceResourceQueries,
 } from "../../lib/queryClient";
+import { sharedWorkspaceScopeAvailable } from "../../lib/queries";
 import {
   shouldRevalidateWorkspaceAuth,
   WORKSPACE_AUTH_RECHECK_MS,
@@ -569,6 +570,18 @@ describe("workspace auth lifecycle", () => {
 
     const analyticsWorkspaceId = "20000000-0000-4000-8000-000000000001";
     const analyticsActorId = "20000000-0000-4000-8000-000000000002";
+    expect(sharedWorkspaceScopeAvailable({
+      workspaceKind: "personal",
+      accountScope: analyticsActorId,
+    })).toBe(false);
+    expect(sharedWorkspaceScopeAvailable({
+      workspaceKind: "team",
+      accountScope: null,
+    })).toBe(false);
+    expect(sharedWorkspaceScopeAvailable({
+      workspaceKind: "team",
+      accountScope: analyticsActorId,
+    })).toBe(true);
     const personalAnalyticsContext = productAnalyticsWorkspaceContext({
       key: "personal-ready",
       ready: true,

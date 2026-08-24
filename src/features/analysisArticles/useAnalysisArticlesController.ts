@@ -13,7 +13,6 @@ import type {
 import {
   mergeAnalysisFragments,
   type AnalysisArticleRecord,
-  type AnalysisArticleState,
   type AnalysisDefinitionRunReceipt,
   type AnalysisParameterValue,
   type AnalysisRunnerChanged,
@@ -121,10 +120,6 @@ export function useAnalysisArticlesController({
   });
   const [selectedId, setSelectedId] = useState<string | null>(focusId ?? null);
   const [tab, setTab] = useState<AnalysisArticleDetailTab>("article");
-  const [filter, setFilter] = useState("");
-  const [stateFilter, setStateFilter] = useState<
-    "all" | AnalysisArticleState
-  >("all");
   const [editorArticle, setEditorArticle] =
     useState<AnalysisArticleRecord | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -141,17 +136,6 @@ export function useAnalysisArticlesController({
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [runnerState, setRunnerState] =
     useState<AnalysisRunnerChanged | null>(null);
-
-  const filtered = useMemo(() => {
-    const needle = filter.trim().toLocaleLowerCase();
-    return (articles.data ?? []).filter(
-      (article) =>
-        (stateFilter === "all" || article.state === stateFilter) &&
-        (!needle ||
-          article.definition.title.toLocaleLowerCase().includes(needle) ||
-          article.definition.question.toLocaleLowerCase().includes(needle)),
-    );
-  }, [articles.data, filter, stateFilter]);
 
   useEffect(() => {
     if (focusId && articles.data?.some((article) => article.id === focusId)) {
@@ -456,8 +440,6 @@ export function useAnalysisArticlesController({
     editorArticle,
     effectiveRunId,
     execute,
-    filter,
-    filtered,
     parameterValues,
     recoveredResult,
     remove,
@@ -471,15 +453,11 @@ export function useAnalysisArticlesController({
     saveArticle,
     selected,
     setEditorArticle,
-    setFilter,
     setParameterValues,
-    setSelectedId,
     setSelectedRunId,
-    setStateFilter,
     setTab,
     sharedResult,
     startRun,
-    stateFilter,
     tab,
     transfer,
     transition,

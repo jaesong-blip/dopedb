@@ -68,6 +68,13 @@ export type CatalogScope = {
   error?: unknown;
   recover?: () => Promise<void>;
 };
+
+export function sharedWorkspaceScopeAvailable(
+  scope: Pick<CatalogScope, "accountScope" | "workspaceKind">,
+): boolean {
+  return scope.workspaceKind === "team" && scope.accountScope !== null;
+}
+
 /** Surface and recover cold scope failures instead of disabling catalog reads forever. */
 export async function readCatalogInScope<T>(
   scope: CatalogScope | undefined,

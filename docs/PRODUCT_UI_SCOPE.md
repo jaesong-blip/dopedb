@@ -26,7 +26,9 @@ DopeDB의 제품 축, 실제 사용자 작업, 접근성, 운영 안전성, 지�
   계층과 실제 catalog를 소유한다. 아직 Environment에 묶이지 않은 연결은
   `Unassigned`에만 표시하고, 그 행을 원하는 Environment로 끌어 놓으면 기존
   environment-connection binding command로 이동한다. 이미 묶인 연결을 암묵적으로
-  재배치하거나 복제하지 않는다.
+  재배치하거나 복제하지 않는다. Analysis collection의 문자·상태 필터와 Article
+  선택도 Explorer가 소유하며, 중앙 Analysis document는 선택한 Article만 표시하고
+  별도의 collection rail을 만들지 않는다.
 - 중앙 document surface는 welcome, query, data, schema, analysis처럼 현재 작업
   하나를 소유한다.
 - 오른쪽 Agent surface는 exact Project·Environment·connection revision에 고정된

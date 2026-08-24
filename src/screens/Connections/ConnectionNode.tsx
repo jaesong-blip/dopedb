@@ -28,7 +28,7 @@ import type {
 } from "../../ipc/types";
 import { useI18n } from "../../lib/i18n";
 import type { SchemaConnectionGroup } from "../../lib/schemaDiff";
-import { SchemaDiffBadge } from "./schemaDiffPresentation";
+import { SchemaDiffTrigger } from "./schemaDiffPresentation";
 import CatalogTree from "./CatalogTree";
 import type { CatalogTreeSearchResult } from "./CatalogTree";
 import type { DropTarget } from "../../features/catalogExplorer/catalogDomain";
@@ -92,6 +92,7 @@ type Props = {
   onWorkspaceDialog: (mode: "copy" | "credentials") => void;
   onRefresh: () => void;
   onDelete: () => void;
+  onOpenSchemaDiff?: () => void;
   onOpenTable: (table: CatalogTable) => void;
   onRequestOverview: (database: string) => void;
   onForgetOverview: (database: string) => void;
@@ -147,6 +148,7 @@ export default function ConnectionNode(props: Props) {
       : availableSchemas.filter((schema) => scopedSchemas.includes(schema))
           .length;
   const connectionTreeKey = `connection:${connection.id}`;
+  const schemaGroup = props.groupByConnectionId.get(connection.id);
 
   return (
     <div className="tw:relative">
@@ -306,13 +308,12 @@ export default function ConnectionNode(props: Props) {
             </span>
           </span>
         )}
-        {(!props.nested || !connection.env) && (
-          <SchemaDiffBadge
-            connection={connection}
-            groupsByConnectionId={props.groupByConnectionId}
-            catalogs={props.catalogs}
-          />
-        )}
+        <SchemaDiffTrigger
+          connection={connection}
+          groupsByConnectionId={props.groupByConnectionId}
+          catalogs={props.catalogs}
+          onOpen={props.onOpenSchemaDiff}
+        />
         <div
           className="db-menu tw:pointer-events-none tw:absolute tw:top-1/2 tw:right-1 tw:-translate-y-1/2 tw:opacity-0 tw:transition-opacity tw:group-hover:pointer-events-auto tw:group-hover:opacity-100 tw:group-focus-within:pointer-events-auto tw:group-focus-within:opacity-100 tw:focus-within:pointer-events-auto tw:focus-within:opacity-100 tw:data-[open=true]:pointer-events-auto tw:data-[open=true]:z-[var(--ds-z-popover)] tw:data-[open=true]:opacity-100"
           data-open={props.openMenuId === connection.id}
@@ -397,6 +398,18 @@ export default function ConnectionNode(props: Props) {
                   {props.refreshingId === connection.id
                     ? t("common.working")
                     : t("connections.refreshSchema")}
+                </PopupMenuItem>
+              ) : null}
+              {schemaGroup &&
+              schemaGroup.connections.length > 1 &&
+              props.onOpenSchemaDiff ? (
+                <PopupMenuItem
+                  onClick={() => {
+                    props.onOpenMenu(null);
+                    props.onOpenSchemaDiff?.();
+                  }}
+                >
+                  {t("schemaDiff.open")}
                 </PopupMenuItem>
               ) : null}
               <PopupMenuCheckbox
