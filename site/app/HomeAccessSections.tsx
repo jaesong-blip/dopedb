@@ -1,10 +1,10 @@
 // Stable acquisition and trust sections render from typed bilingual content.
 import Image from "next/image";
-import { ArrowDown, ArrowUpRight, Download, LockKeyhole, Network, SquareTerminal } from "lucide-react";
+import { ArrowDown, ArrowUpRight, LockKeyhole, Network, SquareTerminal } from "lucide-react";
 import { MarketingButton } from "./MarketingButton";
 import { AccessTopology, SectionLabel } from "./HomePrimitives";
+import { RecommendedMarketingDownload } from "./PlatformDownloads";
 import {
-  releasesUrl,
   workspaceUrls,
   type HomeCopy,
   type Lang,
@@ -36,15 +36,11 @@ export function HomeAccessSections({ c, lang }: { c: HomeCopy; lang: Lang }) {
             className="tw:mt-9 tw:flex tw:flex-wrap tw:gap-3 tw:animate-[landing-rise_.8s_.24s_ease-out_both] tw:[animation-fill-mode:both] tw:motion-reduce:animate-none tw:max-[620px]:grid tw:max-[620px]:grid-cols-1"
             data-primary-flow
           >
-            <MarketingButton
-              variant="primary"
-              href={releasesUrl}
-              event="Download Clicked"
-              properties={{ source: "hero", target: "latest_release" }}
-            >
-              <Download size={16} />
-              {c.hero.primary}
-            </MarketingButton>
+            <RecommendedMarketingDownload
+              copy={c.download}
+              fallbackLabel={c.hero.primary}
+              source="hero"
+            />
             <MarketingButton
               variant="secondary"
               href={workspaceUrls[lang]}

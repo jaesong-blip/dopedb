@@ -5,21 +5,36 @@
 import { track } from "@vercel/analytics";
 import type { AnchorHTMLAttributes, ReactNode } from "react";
 
-type DownloadTrackingProperties =
-  | {
-      source: "header" | "hero" | "download_section";
-      target: "latest_release";
-    }
-  | {
-      source: "platform_grid";
-      target: "windows_x64_installer" | "macos_arm64_dmg" | "macos_x64_dmg";
-    };
+export type DownloadSource =
+  | "header"
+  | "hero"
+  | "download_section"
+  | "platform_grid";
+
+export type DownloadTarget =
+  | "latest_release"
+  | "windows_x64_installer"
+  | "macos_arm64_dmg"
+  | "macos_x64_dmg";
+
+type DownloadTrackingProperties = {
+  source: DownloadSource;
+  target: DownloadTarget;
+  selection: "detected" | "manual" | "fallback";
+};
 
 export type TrackedLinkTrackingProps =
   | { event?: never; properties?: never }
   | {
       event: "Download Clicked";
       properties: DownloadTrackingProperties;
+    }
+  | {
+      event: "Download Options Opened";
+      properties: {
+        source: Exclude<DownloadSource, "platform_grid">;
+        detected: "macos" | "unsupported";
+      };
     }
   | {
       event: "Workspace Opened";

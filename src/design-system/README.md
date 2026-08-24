@@ -236,6 +236,11 @@ Elevation은 세 단계만 허용한다.
   event와 동일한 반응형 폭·상태를 소유하며 page에서 CTA utility를 복사하지
   않는다. 사이트 전용 색·배경·그림자는 `site/app/globals.css`의 theme token만
   소유하고 화면 selector는 두지 않는다.
+- `site/app/PlatformDownloads`: 공개 사이트의 header·hero·download CTA가 공유하는
+  OS/CPU 추천 경계. Windows와 브라우저가 확실히 밝힌 Mac architecture만 안정된
+  latest-download 별칭으로 직접 연결하고, Mac CPU가 숨겨지거나 지원하지 않는
+  기기에서는 Apple Silicon/Intel/Windows 선택 surface로 이동한다. 추천과 수동
+  선택 analytics를 구분하며 user-agent 추측으로 잘못된 DMG를 자동 선택하지 않는다.
 - `workspace-cloud/app/components/Controls`: workspace 관리 화면의
   `ControlButton`, `ControlLink`, field/input/select/textarea 밀도를 함께 소유한다.
   외부 관리 콘솔로 이동하는 action도 화면에서 button utility를 복사하지 않고

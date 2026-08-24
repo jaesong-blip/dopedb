@@ -1,20 +1,20 @@
 // Stable workflow, FAQ, download, and documentation sections own their composition.
 import {
-  ArrowDown,
   ArrowRight,
   ArrowUpRight,
   ChevronRight,
-  Download,
   ExternalLink,
   LockKeyhole,
   SquareTerminal,
 } from "lucide-react";
 import { MarketingButton } from "./MarketingButton";
+import {
+  PlatformDownloadOptions,
+  RecommendedMarketingDownload,
+} from "./PlatformDownloads";
 import { TrackedLink } from "./TrackedLink";
 import { SectionLabel } from "./HomePrimitives";
 import {
-  downloadUrls,
-  releasesUrl,
   repoUrl,
   type HomeCopy,
 } from "./homeContent";
@@ -124,15 +124,11 @@ export function HomeActionSections({ c }: { c: HomeCopy }) {
 
         <div data-primary-flow>
           <div className="tw:flex tw:flex-wrap tw:gap-3 tw:max-[620px]:grid tw:max-[620px]:grid-cols-1">
-            <MarketingButton
-              variant="primary"
-              href={releasesUrl}
-              event="Download Clicked"
-              properties={{ source: "download_section", target: "latest_release" }}
-            >
-              <Download size={16} />
-              {c.download.primary}
-            </MarketingButton>
+            <RecommendedMarketingDownload
+              copy={c.download}
+              fallbackLabel={c.download.primary}
+              source="download_section"
+            />
             <MarketingButton
               variant="secondary"
               href={`${repoUrl}/blob/main/docs/PROJECT.md#development`}
@@ -146,36 +142,7 @@ export function HomeActionSections({ c }: { c: HomeCopy }) {
             {c.download.sourceNote}
           </p>
 
-          <div className="tw:mt-5 tw:grid tw:grid-cols-3 tw:gap-px tw:bg-hairline tw:max-[620px]:grid-cols-1">
-            {([
-              {
-                href: downloadUrls.windows,
-                label: c.download.windows,
-                target: "windows_x64_installer",
-              },
-              {
-                href: downloadUrls.macApple,
-                label: c.download.macApple,
-                target: "macos_arm64_dmg",
-              },
-              {
-                href: downloadUrls.macIntel,
-                label: c.download.macIntel,
-                target: "macos_x64_dmg",
-              },
-            ] as const).map((platform) => (
-              <TrackedLink
-                className="tw:flex tw:min-h-[72px] tw:items-center tw:justify-between tw:gap-3 tw:bg-night-raised tw:px-4 tw:font-mono tw:text-[10px] tw:font-medium tw:leading-relaxed tw:tracking-[0.06em] tw:text-cream-muted tw:uppercase tw:transition-colors tw:hover:bg-night-soft tw:hover:text-cream"
-                href={platform.href}
-                event="Download Clicked"
-                properties={{ source: "platform_grid", target: platform.target }}
-                key={platform.target}
-              >
-                {platform.label}
-                <ArrowDown className="tw:shrink-0 tw:text-signal" size={14} />
-              </TrackedLink>
-            ))}
-          </div>
+          <PlatformDownloadOptions copy={c.download} />
 
           <div className="tw:mt-5 tw:grid tw:grid-cols-2 tw:gap-3 tw:max-[760px]:grid-cols-1">
             {[

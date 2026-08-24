@@ -1,8 +1,9 @@
 // Landing chrome owns navigation, language switching, and footer links.
-import { ArrowUpRight, GitBranch } from "lucide-react";
+import { GitBranch } from "lucide-react";
 import { DopeDBMark } from "./DopeDBMark";
+import { RecommendedHeaderDownload } from "./PlatformDownloads";
 import { TrackedLink } from "./TrackedLink";
-import { releasesUrl, repoUrl, workspaceUrls, type HomeCopy, type Lang } from "./homeContent";
+import { repoUrl, workspaceUrls, type HomeCopy, type Lang } from "./homeContent";
 
 export function HomeHeader({ c, lang }: { c: HomeCopy; lang: Lang }) {
   const otherLang = lang === "ko" ? "en" : "ko";
@@ -60,15 +61,10 @@ export function HomeHeader({ c, lang }: { c: HomeCopy; lang: Lang }) {
             >
               {c.nav.workspace}
             </TrackedLink>
-            <TrackedLink
-              className="tw:hidden tw:min-h-9 tw:items-center tw:gap-2 tw:bg-signal tw:px-3.5 tw:font-mono tw:text-[10px] tw:font-semibold tw:tracking-[0.08em] tw:text-night tw:uppercase tw:transition-colors tw:hover:bg-signal-strong tw:min-[720px]:inline-flex"
-              href={releasesUrl}
-              event="Download Clicked"
-              properties={{ source: "header", target: "latest_release" }}
-            >
-              {c.nav.download}
-              <ArrowUpRight size={13} />
-            </TrackedLink>
+            <RecommendedHeaderDownload
+              copy={c.download}
+              fallbackLabel={c.nav.download}
+            />
           </div>
         </div>
     </header>
