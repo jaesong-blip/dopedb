@@ -10,6 +10,7 @@ export const PROVIDER_IMPORT_POSTGRES_HARNESS_SOURCE_LIMITS = Object.freeze({
   "lib/provider-import-postgres-harness/fixture.ts": 380,
   "lib/provider-import-postgres-harness/assertions.ts": 200,
   "lib/provider-import-postgres-harness/authority-provider-scenarios.ts": 380,
+  "lib/provider-import-postgres-harness/connection-versioning-scenarios.ts": 54,
   "lib/provider-import-postgres-harness/analysis-local-result-scenarios.ts": 140,
   "lib/provider-import-postgres-harness/analysis-lifecycle-scenarios.ts": 900,
   "lib/provider-import-postgres-harness/analysis-member-removal-scenarios.ts": 370,

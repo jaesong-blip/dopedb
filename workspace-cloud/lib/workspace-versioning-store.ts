@@ -589,7 +589,7 @@ export async function commitConnectionMutation({
       INSERT INTO "workspace_control"."workspace_resource_version"
         ("id", "organization_id", "resource_type", "resource_id", "revision", "base_revision",
          "parent_version_id", "branch", "operation", "payload", "payload_hash", "created_by_user_id")
-      SELECT gen_random_uuid(), ${organizationId}, 'connection', updated."id", updated."content_revision",
+      SELECT gen_random_uuid(), ${organizationId}, 'connection', updated."id", updated."contentRevision",
         ${expectedContentRevision}, parent."id", 'main', ${operation}, ${JSON.stringify(mutation.payload)}::jsonb,
         ${canonicalHash(mutation.payload)}, ${authority.userId}
       FROM updated JOIN parent ON TRUE
@@ -601,7 +601,7 @@ export async function commitConnectionMutation({
       SELECT ${organizationId}, ${authority.userId}, ${action}, 'connection', updated."id"::text,
         jsonb_build_object(
           'name', updated."name",
-          'revision', updated."content_revision",
+          'revision', updated."contentRevision",
           'allowWrites', updated."allowWrites"
         ), ${requestId}::uuid
       FROM updated JOIN version ON TRUE

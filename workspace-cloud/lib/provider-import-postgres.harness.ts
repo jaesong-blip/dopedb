@@ -7,6 +7,7 @@ import {
 import { runAnalysisLifecycleScenarios } from "./provider-import-postgres-harness/analysis-lifecycle-scenarios";
 import { runAnalysisMemberRemovalScenarios } from "./provider-import-postgres-harness/analysis-member-removal-scenarios";
 import { runAuthorityProviderScenarios } from "./provider-import-postgres-harness/authority-provider-scenarios";
+import { runConnectionVersioningScenarios } from "./provider-import-postgres-harness/connection-versioning-scenarios";
 import { runPersonalKnowledgeScenarios } from "./provider-import-postgres-harness/personal-knowledge-scenarios";
 import {
   openProviderImportPostgresHarness,
@@ -52,6 +53,7 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
       await runAnalysisMemberRemovalScenarios(fixture, provider, analysis);
       await runSyncScenarios(fixture, provider);
       await runProviderOperationScenarios(fixture, provider);
+      await runConnectionVersioningScenarios(fixture);
       await runWorkspaceLifecycleScenarios(fixture, support);
       await assertProviderSecretIsNotDurable(fixture);
     } finally {
