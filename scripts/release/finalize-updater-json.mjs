@@ -262,7 +262,9 @@ function allowedNonUpdaterAsset(name, version) {
     "DopeDB-macos-arm64.dmg",
     "DopeDB-macos-x64.dmg",
     `DopeDB_${version}_aarch64.dmg`,
+    `DopeDB_${version}_aarch64.macos-trust.json`,
     `DopeDB_${version}_x64.dmg`,
+    `DopeDB_${version}_x64.macos-trust.json`,
   ]).has(name);
 }
 
