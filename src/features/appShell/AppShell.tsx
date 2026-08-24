@@ -1,19 +1,16 @@
 // Desktop workbench shell: composes bounded workspace, tool-window, search,
 // and connection-pinned Agent controllers into the persistent IDE frame.
-import {
-  useCallback,
-  useEffect,
-  useState,
-} from "react";
+import { useCallback, useEffect, useState } from "react";
 
-import { errMessage } from "../../ipc/types";
 import { ToastProvider, useToast } from "../../components/Toast";
+import { errMessage } from "../../ipc/types";
 import ActionSearch from "../actionSearch/ActionSearch";
 import { useActionSearchDialog } from "../actionSearch/useActionSearchDialog";
 import { useActionSearchItems } from "../actionSearch/useActionSearchItems";
 import type { BackgroundTask } from "../backgroundTasks/domain";
 import { useBackgroundTasks } from "../backgroundTasks/useBackgroundTasks";
 import type { AgentComposerRequest } from "../agents/domain";
+import { useGuidedDemoCommands } from "../onboarding/useGuidedDemoCommands";
 import { useQueryServices } from "../queryServices/useQueryServices";
 import SkillStartupGate from "../skills/SkillStartupGate";
 import { useSkillStartupObserver } from "../skills/useSkillStartupObserver";
@@ -22,10 +19,7 @@ import {
   type WorkspaceManualTransaction,
 } from "../queries/useWorkspaceManualTransactions";
 import { useI18n } from "../../lib/i18n";
-import {
-  OperationActivityProvider,
-  useOperationActivity,
-} from "../../lib/operationActivity";
+import { OperationActivityProvider, useOperationActivity } from "../../lib/operationActivity";
 import { useCatalogScope } from "../../lib/queries";
 import { useWorkspaceResourceQueryRecovery } from "../../lib/queryClient";
 import { useAppUpdater } from "../updater/useAppUpdater";
@@ -61,10 +55,7 @@ function Shell() {
   useSkillStartupObserver();
 
   const toolWindows = useToolWindowLayout();
-  const {
-    closeServices,
-    servicesOpen,
-  } = toolWindows;
+  const { closeServices, servicesOpen } = toolWindows;
   const {
     agentOverlay,
     compact: compactShell,
@@ -128,11 +119,7 @@ function Shell() {
     agentDock.open && !!connections.selected && route.editing === null;
 
   useEffect(() => {
-    if (
-      compactShell &&
-      showAgentDock &&
-      servicesOpen
-    ) {
+    if (compactShell && showAgentDock && servicesOpen) {
       closeServices();
     }
   }, [
@@ -204,6 +191,14 @@ function Shell() {
     if (!showAgentDock) agentDock.show(returnFocus);
     focusActiveAgentControl();
   }
+
+  const guidedDemo = useGuidedDemoCommands({
+    scope: catalogScope,
+    connection: connections.selected,
+    openTable: commands.documents.openTable,
+    openAgentTask,
+    openSafety: () => commands.route.openSettings("safety"),
+  });
 
   async function cancelBackgroundTask(task: BackgroundTask) {
     try {
@@ -329,6 +324,7 @@ function Shell() {
           loadError: connections.loadError,
           supportsSql: connections.supportsSql,
           creatingDemo: connections.creatingDemo,
+          guidedDemoAvailable: catalogScope.workspaceKind === "personal",
           safety: safety.value,
           safetyError: safety.error,
         },
@@ -362,6 +358,7 @@ function Shell() {
           refresh: updater.refresh,
           install: updater.install,
         },
+        guidedDemo,
       }}
     />
   );

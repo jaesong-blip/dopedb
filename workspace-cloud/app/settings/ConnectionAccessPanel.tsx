@@ -308,7 +308,7 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
           method: "PATCH",
           headers: {
             "content-type": "application/json",
-            "if-match": `"${selected.revision}"`,
+            "x-dopedb-expected-revision": String(selected.revision),
           },
           body: JSON.stringify({
             name: selected.name,
@@ -386,13 +386,15 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
           deleted
             ? {
                 method: "DELETE",
-                headers: { "if-match": `"${conflict.current.revision}"` },
+                headers: {
+                  "x-dopedb-expected-revision": String(conflict.current.revision),
+                },
               }
             : {
                 method: "PATCH",
                 headers: {
                   "content-type": "application/json",
-                  "if-match": `"${conflict.current.revision}"`,
+                  "x-dopedb-expected-revision": String(conflict.current.revision),
                 },
                 body: JSON.stringify(payload),
               },

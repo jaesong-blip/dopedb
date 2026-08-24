@@ -186,6 +186,24 @@ pub(crate) struct AcpTableContext {
     pub(crate) row: Option<serde_json::Value>,
 }
 
+/// Closed UI-language choice supplied by Desktop for each Agent turn.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum AgentResponseLanguage {
+    #[default]
+    En,
+    Ko,
+}
+
+impl AgentResponseLanguage {
+    pub(crate) const fn instruction_name(self) -> &'static str {
+        match self {
+            Self::En => "English",
+            Self::Ko => "Korean",
+        }
+    }
+}
+
 /// Optional editor context supplied by the frontend. The connection identity is
 /// never accepted here; it comes from the backend-pinned ACP session.
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -195,6 +213,8 @@ pub(crate) struct AcpPromptContext {
     pub(crate) document_name: Option<String>,
     pub(crate) document_text: Option<String>,
     pub(crate) table: Option<AcpTableContext>,
+    #[serde(default)]
+    pub(crate) response_language: AgentResponseLanguage,
 }
 
 #[cfg(test)]
@@ -241,4 +261,17 @@ pub(crate) fn assert_agent_event_wire_contract() {
         legacy_turn_end,
         AcpSessionEventPayload::TurnEnd { stop_reason } if stop_reason == "end_turn"
     ));
+
+    let korean_context: AcpPromptContext = serde_json::from_value(serde_json::json!({
+        "database": null,
+        "documentName": null,
+        "documentText": null,
+        "table": null,
+        "responseLanguage": "ko"
+    }))
+    .expect("read the closed Agent response language");
+    assert_eq!(korean_context.response_language, AgentResponseLanguage::Ko);
+    let legacy_context: AcpPromptContext =
+        serde_json::from_value(serde_json::json!({})).expect("read legacy Agent context");
+    assert_eq!(legacy_context.response_language, AgentResponseLanguage::En);
 }

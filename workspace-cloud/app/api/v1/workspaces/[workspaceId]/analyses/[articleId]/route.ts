@@ -11,6 +11,7 @@ import {
   jsonError,
   mutationAllowed,
   privateJson,
+  privateRevisionMutationJson,
 } from "../../../../../../../lib/http";
 import {
   workspaceAnalysisArticleRevision,
@@ -71,11 +72,11 @@ function articleInput(article: {
 async function expectedRevision(request: Request) {
   try {
     const value = parseExpectedRevision(request);
-    if (value === null) return { error: jsonError("If-Match is required", 428) } as const;
+    if (value === null) return { error: jsonError("Expected revision is required", 428) } as const;
     return { value } as const;
   } catch (error) {
     return {
-      error: jsonError(error instanceof Error ? error.message : "Invalid If-Match", 400),
+      error: jsonError(error instanceof Error ? error.message : "Invalid expected revision", 400),
     } as const;
   }
 }
@@ -229,7 +230,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       409,
     );
   }
-  return privateJson({
+  return privateRevisionMutationJson(request, {
     article: publicAnalysisArticle({
       ...updated,
       graphRevisionIds: nextArticle.graphRevisionIds,
@@ -269,5 +270,8 @@ export async function DELETE(request: Request, context: RouteContext) {
     operation: "delete",
   });
   if (!deleted) return jsonError("Analysis Article authority changed. Retry deletion.", 409);
-  return privateJson({ deleted: true, revision: deleted.revision });
+  return privateRevisionMutationJson(request, {
+    deleted: true,
+    revision: deleted.revision,
+  });
 }

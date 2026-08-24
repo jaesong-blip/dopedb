@@ -9,6 +9,8 @@ import {
   jsonError,
   mutationAllowed,
   privateJson,
+  privateRevisionMutationJson,
+  privateRevisionMutationResponse,
 } from "../../../../../../../lib/http";
 import { revokeActiveLeases } from "../../../../../../../lib/provider-integrations";
 import {
@@ -183,9 +185,9 @@ export async function PATCH(request: Request, context: RouteContext) {
   try {
     expectedRevision = parseExpectedRevision(request);
   } catch (error) {
-    return jsonError(error instanceof Error ? error.message : "Invalid If-Match", 400);
+    return jsonError(error instanceof Error ? error.message : "Invalid expected revision", 400);
   }
-  if (expectedRevision === null) return jsonError("If-Match is required", 428);
+  if (expectedRevision === null) return jsonError("Expected revision is required", 428);
   const existing = await db.query.workspaceConnection.findFirst({
     where: and(
       eq(workspaceConnection.id, connectionId),
@@ -335,7 +337,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     await abandonClaim(claim);
     return jsonError("Connection access changed concurrently. Retry the update.", 409);
   }
-  return privateJson({
+  return privateRevisionMutationJson(request, {
     connection: publicConnection(
       updated,
       authorization.role,
@@ -360,9 +362,9 @@ export async function DELETE(request: Request, context: RouteContext) {
   try {
     expectedRevision = parseExpectedRevision(request);
   } catch (error) {
-    return jsonError(error instanceof Error ? error.message : "Invalid If-Match", 400);
+    return jsonError(error instanceof Error ? error.message : "Invalid expected revision", 400);
   }
-  if (expectedRevision === null) return jsonError("If-Match is required", 428);
+  if (expectedRevision === null) return jsonError("Expected revision is required", 428);
   const existing = await db.query.workspaceConnection.findFirst({
     where: and(
       eq(workspaceConnection.id, connectionId),
@@ -427,8 +429,7 @@ export async function DELETE(request: Request, context: RouteContext) {
     await abandonClaim(claim);
     return jsonError("Connection access changed concurrently. Retry deletion.", 409);
   }
-  return new Response(null, {
+  return privateRevisionMutationResponse(request, null, {
     status: 204,
-    headers: { "cache-control": "private, no-store" },
   });
 }

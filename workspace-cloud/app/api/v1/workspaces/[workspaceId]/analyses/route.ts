@@ -7,6 +7,7 @@ import {
   jsonError,
   mutationAllowed,
   privateJson,
+  privateRevisionMutationJson,
 } from "../../../../../../lib/http";
 import { authorizeWorkspace } from "../../../../../../lib/workspace-authorization";
 import {
@@ -67,10 +68,10 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     expectedRevision = parseExpectedRevision(request);
   } catch (error) {
-    return jsonError(error instanceof Error ? error.message : "Invalid If-Match", 400);
+    return jsonError(error instanceof Error ? error.message : "Invalid expected revision", 400);
   }
-  if (expectedRevision === null) return jsonError("If-Match is required", 428);
-  if (expectedRevision !== 0) return jsonError("New Analysis Articles require If-Match: \"0\"", 409);
+  if (expectedRevision === null) return jsonError("Expected revision is required", 428);
+  if (expectedRevision !== 0) return jsonError("New Analysis Articles require expected revision 0", 409);
   const body = await boundedJsonBody(request, 1024 * 1024);
   if (!body.ok) return jsonError("Invalid Analysis Article request", 400);
   let article;
@@ -96,7 +97,7 @@ export async function POST(request: Request, context: RouteContext) {
         409,
       );
     }
-    return privateJson({
+    return privateRevisionMutationJson(request, {
       article: publicAnalysisArticle({
         ...created,
         graphRevisionIds: article.graphRevisionIds,

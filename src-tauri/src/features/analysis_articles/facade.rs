@@ -1,6 +1,8 @@
 //! Analysis Article application facade. It depends only on feature-owned ports;
 //! SQLite, connection runtimes, and hosted HTTP remain in concrete adapters.
 
+use std::time::Duration;
+
 use crate::error::AppResult;
 
 use super::domain::{AnalysisDefinitionRunReceipt, AnalysisDefinitionRunRequest};
@@ -11,6 +13,8 @@ use super::ports::{
 };
 use super::runner::AnalysisArticleRunner;
 use super::validation::validate_shared_create;
+
+const LOCAL_RESULT_SAVE_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone)]
 pub(crate) struct AnalysisArticlesFeature<L, E, H> {
@@ -182,18 +186,32 @@ where
         let receipt = self.runner.run_definition(request).await?;
         if persist_local_result {
             if let Some(workspace_id) = workspace_id {
-                if let Err(error) = self
-                    .local
-                    .save_result(workspace_id, &receipt, retention_days)
+                // Local recovery is an optional device cache. Never hold the
+                // immutable hosted completion receipt behind a locked keychain,
+                // slow disk, or repairable cache-schema error.
+                let local = self.local.clone();
+                let cached_receipt = receipt.clone();
+                tokio::spawn(async move {
+                    match tokio::time::timeout(
+                        LOCAL_RESULT_SAVE_TIMEOUT,
+                        local.save_result(workspace_id, &cached_receipt, retention_days),
+                    )
                     .await
-                {
-                    tracing::warn!(
-                        error_kind = error.kind(),
-                        article_id = %receipt.article_id,
-                        run_id = %receipt.run_id,
-                        "Analysis Article local recovery save deferred"
-                    );
-                }
+                    {
+                        Ok(Ok(())) => {}
+                        Ok(Err(error)) => tracing::warn!(
+                            error_kind = error.kind(),
+                            article_id = %cached_receipt.article_id,
+                            run_id = %cached_receipt.run_id,
+                            "Analysis Article local recovery save deferred"
+                        ),
+                        Err(_) => tracing::warn!(
+                            article_id = %cached_receipt.article_id,
+                            run_id = %cached_receipt.run_id,
+                            "Analysis Article local recovery save exceeded its deadline"
+                        ),
+                    }
+                });
             }
         }
         Ok(receipt)

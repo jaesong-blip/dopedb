@@ -125,8 +125,17 @@ export function defaultSchemaBaseline(group: SchemaConnectionGroup): ConnectionP
 }
 
 export function compareCatalogs(current: Catalog, baseline: Catalog): SchemaDiffSummary {
-  const currentTables = new Map(current.tables.map((table) => [tableKey(table), table]));
-  const baselineTables = new Map(baseline.tables.map((table) => [tableKey(table), table]));
+  // A schema group intentionally compares equivalent databases from different
+  // environments. Their database names commonly differ (`app_dev` vs
+  // `app_prod`), so database cannot be part of the cross-catalog identity. Keep
+  // the full tableKey for Explorer lookups below, but match relations by the
+  // namespace and object name that are meaningful inside each database.
+  const currentTables = new Map(
+    current.tables.map((table) => [schemaComparisonTableKey(table), table]),
+  );
+  const baselineTables = new Map(
+    baseline.tables.map((table) => [schemaComparisonTableKey(table), table]),
+  );
   const addedTables: CatalogTable[] = [];
   const missingTables: CatalogTable[] = [];
   const changedTables: CatalogTable[] = [];
@@ -137,8 +146,9 @@ export function compareCatalogs(current: Catalog, baseline: Catalog): SchemaDiff
   let changedColumns = 0;
   let relationChangedTables = 0;
 
-  for (const [key, table] of currentTables) {
-    const base = baselineTables.get(key);
+  for (const [comparisonKey, table] of currentTables) {
+    const key = tableKey(table);
+    const base = baselineTables.get(comparisonKey);
     if (!base) {
       addedTables.push(table);
       const object = tableObjectDiff(table, "added");
@@ -161,8 +171,9 @@ export function compareCatalogs(current: Catalog, baseline: Catalog): SchemaDiff
     }
   }
 
-  for (const [key, table] of baselineTables) {
-    if (currentTables.has(key)) continue;
+  for (const [comparisonKey, table] of baselineTables) {
+    if (currentTables.has(comparisonKey)) continue;
+    const key = tableKey(table);
     missingTables.push(table);
     const object = tableObjectDiff(table, "missing");
     const diff = emptyTableDiff(key, { missing: true });
@@ -185,6 +196,10 @@ export function compareCatalogs(current: Catalog, baseline: Catalog): SchemaDiff
     tableDiffs,
     objects,
   };
+}
+
+function schemaComparisonTableKey(table: CatalogTable): string {
+  return `${table.schema ?? ""}.${table.name}`;
 }
 
 export function tableDiffTone(

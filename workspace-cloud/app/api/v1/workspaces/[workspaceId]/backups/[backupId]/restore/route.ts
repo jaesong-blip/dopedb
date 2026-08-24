@@ -5,7 +5,12 @@ import { timingSafeEqual } from "node:crypto";
 
 import { db } from "../../../../../../../../lib/db";
 import { env } from "../../../../../../../../lib/env";
-import { isUuid, jsonError, mutationAllowed, privateJson } from "../../../../../../../../lib/http";
+import {
+  isUuid,
+  jsonError,
+  mutationAllowed,
+  privateRevisionMutationJson,
+} from "../../../../../../../../lib/http";
 import { workspaceMetadataBackup } from "../../../../../../../../lib/schema";
 import {
   openWorkspaceMetadataBackup,
@@ -38,9 +43,9 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     expectedRevision = parseExpectedRevision(request);
   } catch (error) {
-    return jsonError(error instanceof Error ? error.message : "Invalid If-Match", 400);
+    return jsonError(error instanceof Error ? error.message : "Invalid expected revision", 400);
   }
-  if (expectedRevision === null) return jsonError("If-Match is required", 428);
+  if (expectedRevision === null) return jsonError("Expected revision is required", 428);
   const backup = await db.query.workspaceMetadataBackup.findFirst({
     where: and(
       eq(workspaceMetadataBackup.id, backupId),
@@ -94,5 +99,8 @@ export async function POST(request: Request, context: RouteContext) {
     snapshot,
   });
   if (!restored) return jsonError("Workspace metadata changed concurrently. Retry restore.", 409);
-  return privateJson({ restored: restored.restored, conflictIds: restored.conflictIds }, { status: 201 });
+  return privateRevisionMutationJson(request, {
+    restored: restored.restored,
+    conflictIds: restored.conflictIds,
+  }, { status: 201 });
 }

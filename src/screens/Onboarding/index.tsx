@@ -7,6 +7,8 @@ import { ProductAnalyticsConsentPrompt } from "../../features/productAnalytics/C
 export default function Onboarding({
   connectionName,
   creatingDemo = false,
+  guidedDemoAvailable = false,
+  guidedDemo,
   onCreateDemoDatabase,
   onNewConnection,
   onNewQuery,
@@ -14,6 +16,14 @@ export default function Onboarding({
 }: {
   connectionName?: string;
   creatingDemo?: boolean;
+  guidedDemoAvailable?: boolean;
+  guidedDemo?: {
+    writeEnabled: boolean;
+    onBrowseOrders: () => void;
+    onAnalyzeRevenue: () => void;
+    onPracticeApproval: () => void;
+    onOpenSafety: () => void;
+  };
   onCreateDemoDatabase?: () => void;
   onNewConnection: () => void;
   onNewQuery?: () => void;
@@ -22,6 +32,29 @@ export default function Onboarding({
   const { t } = useI18n();
   const connected = Boolean(connectionName);
   const commands = [
+    ...(guidedDemo
+      ? [
+          {
+            id: "demo-browse-orders",
+            label: t("onboarding.demoBrowseOrders"),
+            onClick: guidedDemo.onBrowseOrders,
+          },
+          {
+            id: "demo-analyze-revenue",
+            label: t("onboarding.demoAnalyzeRevenue"),
+            onClick: guidedDemo.onAnalyzeRevenue,
+          },
+          {
+            id: "demo-practice-approval",
+            label: guidedDemo.writeEnabled
+              ? t("onboarding.demoPracticeApproval")
+              : t("onboarding.demoEnableWrites"),
+            onClick: guidedDemo.writeEnabled
+              ? guidedDemo.onPracticeApproval
+              : guidedDemo.onOpenSafety,
+          },
+        ]
+      : []),
     ...(connected && onNewQuery
       ? [
           {
@@ -41,8 +74,16 @@ export default function Onboarding({
           {
             id: "create-demo-sqlite",
             label: creatingDemo
-              ? t("connections.demoCreating")
-              : t("connections.demoSqlite"),
+              ? t(
+                  guidedDemoAvailable
+                    ? "onboarding.demoStarting"
+                    : "connections.demoCreating",
+                )
+              : t(
+                  guidedDemoAvailable
+                    ? "onboarding.demoStart"
+                    : "connections.demoSqlite",
+                ),
             disabled: creatingDemo,
             onClick: onCreateDemoDatabase,
           },
@@ -62,9 +103,13 @@ export default function Onboarding({
         <main className="tw:w-full tw:max-w-[320px]">
           <h1 className="tw:sr-only">{t("onboarding.title")}</h1>
           <ProductAnalyticsConsentPrompt />
-          {!connected ? (
+          {!connected || guidedDemo ? (
             <p className="tw:mt-0 tw:mb-3 tw:text-center tw:text-sm tw:leading-body tw:text-muted-foreground">
-              {t("onboarding.firstRunLead")}
+              {t(
+                guidedDemo
+                  ? "onboarding.demoLead"
+                  : "onboarding.firstRunLead",
+              )}
             </p>
           ) : null}
           <div className="tw:grid tw:gap-1" aria-label={t("onboarding.title")}>

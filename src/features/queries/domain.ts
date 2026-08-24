@@ -1,6 +1,7 @@
 // Query's public DTOs are generated from the Rust model/receipt contracts.  Keeping this
 // module as the only frontend owner preserves existing imports without a hand-written mirror.
 import { retainSqlStreamBatch } from "./resultPageCache";
+import type { OperationState } from "../../ipc/generated/protocol-contracts";
 
 export type {
   Classification,
@@ -12,6 +13,20 @@ export type {
   SqlInspection,
   SqlOperationProposal,
 } from "./generated/contracts";
+
+/** Trusted local payload rendered before an Agent-created SQL operation is decided. */
+export type SqlApprovalReview = {
+  operationId: string;
+  connectionId: string;
+  payloadHash: string;
+  state: OperationState;
+  riskLevel: "low" | "medium" | "high" | "critical";
+  sql: string;
+  database: string;
+  namespace: string | null;
+  affected: number | null;
+  expiresAt: string | null;
+};
 
 // Desktop-only channel payload. Broker, CLI, and bounded Analysis Article receipts
 // deliberately keep their bounded materialized contract.

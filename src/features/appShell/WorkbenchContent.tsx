@@ -11,7 +11,10 @@ import { useI18n } from "../../lib/i18n";
 import type { SchemaConnectionGroup } from "../../lib/schemaDiff";
 import Onboarding from "../../screens/Onboarding";
 import type { ConnectionProfile } from "../connections/domain";
-import type { ConnectionLaunchPreset } from "../connections/presets";
+import {
+  isDemoSqliteConnection,
+  type ConnectionLaunchPreset,
+} from "../connections/presets";
 import type { KnowledgeEnvironmentFocus } from "../knowledge/domain";
 import type { QueryServiceSession } from "../queryServices/domain";
 import type { SqlResolveMode } from "../queries/resolveMode";
@@ -64,6 +67,7 @@ type WorkbenchContentModel = {
     loadError: string | null;
     supportsSql: boolean;
     creatingDemo: boolean;
+    guidedDemoAvailable: boolean;
     safety: SafetySettings | null;
     safetyError: string | null;
   };
@@ -127,6 +131,12 @@ type WorkbenchContentCommands = {
     refresh: () => Promise<void>;
     install: () => Promise<void>;
   };
+  guidedDemo: {
+    browseOrders: () => void;
+    analyzeRevenue: () => void;
+    practiceApproval: () => void;
+    openSafety: () => void;
+  } | null;
 };
 
 type Props = {
@@ -160,6 +170,18 @@ function WorkbenchContentResolved({ model, commands }: Props) {
     selected && connection.safety
       ? effectiveSafetySettings(selected, connection.safety)
       : null;
+  const guidedDemo =
+    selected &&
+    isDemoSqliteConnection(selected) &&
+    commands.guidedDemo
+      ? {
+          writeEnabled: Boolean(effectiveSafety?.allowWrites),
+          onBrowseOrders: commands.guidedDemo.browseOrders,
+          onAnalyzeRevenue: commands.guidedDemo.analyzeRevenue,
+          onPracticeApproval: commands.guidedDemo.practiceApproval,
+          onOpenSafety: commands.guidedDemo.openSafety,
+        }
+      : undefined;
   const settingsDialog = route.settingsOpen ? (
     <Settings
       connection={selected}
@@ -251,6 +273,7 @@ function WorkbenchContentResolved({ model, commands }: Props) {
     return withSettings(
       <Onboarding
         creatingDemo={connection.creatingDemo}
+        guidedDemoAvailable={connection.guidedDemoAvailable}
         onCreateDemoDatabase={commands.connections.createDemo}
         onNewConnection={() => commands.connections.new()}
         onActionSearch={commands.documents.actionSearch}
@@ -309,6 +332,7 @@ function WorkbenchContentResolved({ model, commands }: Props) {
         ) : activeDocument.kind === "welcome" ? (
           <Onboarding
             connectionName={selected.name || selected.database}
+            guidedDemo={guidedDemo}
             onNewConnection={() => commands.connections.new()}
             onNewQuery={commands.documents.newQuery}
             onActionSearch={commands.documents.actionSearch}

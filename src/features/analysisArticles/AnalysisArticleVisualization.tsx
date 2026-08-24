@@ -735,7 +735,7 @@ export function AnalysisArticleVisualization({
               <h3 className="tw:m-0 tw:text-sm tw:font-semibold">{block.title}</h3>
             ) : null}
             {narrative}
-            {control ? (
+            {narrative ? null : control ? (
               <ControlBlock
                 block={block}
                 definition={definition}

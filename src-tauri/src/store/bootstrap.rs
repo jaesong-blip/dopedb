@@ -26,7 +26,9 @@ use sqlx::Acquire;
 /// Version 21 adds the bounded raw-source descriptors captured by resumable ACP
 /// sessions. It is intentionally separate from version 12 so databases that had
 /// already crossed that migration before the field existed are repaired.
-pub(super) const LOCAL_SCHEMA_VERSION: i64 = 21;
+/// Version 22 repairs upgraded databases whose version-18 path created signal
+/// samples but omitted the encrypted Analysis Article local-result cache table.
+pub(super) const LOCAL_SCHEMA_VERSION: i64 = 22;
 
 pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
     let version: i64 = sqlx::query_scalar("PRAGMA user_version")
@@ -154,6 +156,11 @@ pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
     if version < 21 {
         ensure_agent_acp_knowledge_sources(pool).await?;
         set_local_schema_version(pool, 21).await?;
+        migrated = true;
+    }
+    if version < 22 {
+        ensure_analysis_article_local_results_schema(pool).await?;
+        set_local_schema_version(pool, 22).await?;
         migrated = true;
     }
     Ok(migrated)
@@ -484,6 +491,36 @@ async fn ensure_analysis_signal_runtime_schema(pool: &SqlitePool) -> AppResult<(
            ON CONFLICT(key) DO NOTHING;
          DELETE FROM app_settings
            WHERE key IN ('signal_runner_device_id', 'signal_runner_background_allowed');",
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+async fn ensure_analysis_article_local_results_schema(pool: &SqlitePool) -> AppResult<()> {
+    sqlx::raw_sql(
+        "CREATE TABLE IF NOT EXISTS analysis_article_local_results (
+             workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+             account_scope TEXT NOT NULL CHECK(account_scope <> ''),
+             article_id TEXT NOT NULL,
+             article_revision INTEGER NOT NULL CHECK(article_revision > 0),
+             run_id TEXT NOT NULL,
+             result_hash TEXT NOT NULL
+                 CHECK(length(result_hash) = 64
+                   AND result_hash NOT GLOB '*[^0-9a-f]*'),
+             nonce BLOB NOT NULL CHECK(length(nonce) = 24),
+             ciphertext BLOB NOT NULL
+                 CHECK(length(ciphertext) > 16 AND length(ciphertext) <= 17825792),
+             created_at TEXT NOT NULL,
+             expires_at TEXT NOT NULL,
+             PRIMARY KEY (workspace_id, account_scope, article_id, run_id)
+         );
+         CREATE INDEX IF NOT EXISTS idx_analysis_article_local_result_latest
+           ON analysis_article_local_results(
+             workspace_id, account_scope, article_id, created_at DESC
+           );
+         CREATE INDEX IF NOT EXISTS idx_analysis_article_local_result_expiry
+           ON analysis_article_local_results(expires_at);",
     )
     .execute(pool)
     .await?;

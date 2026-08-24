@@ -396,7 +396,11 @@ second BI model cannot continue accumulating.
   recorded as an immutable conflict branch; a new opaque conflict id is the only client
   handle. Backup create/list/restore/delete require the server-side Admin/Owner `manage`
   capability and each action writes a redacted audit event.
-- Shared connection writes require a quoted `If-Match` revision (`"0"` for a new row).
+- Shared connection writes use `x-dopedb-expected-revision` (`0` for a new row).
+  The server temporarily accepts quoted `If-Match` revisions and echoes that
+  validator as a non-cacheable response ETag for released Desktop compatibility;
+  new clients must use the dedicated header so hosting-layer HTTP precondition
+  handling cannot replace an already-applied mutation response with 412.
   A stale offline update or delete never overwrites the current projection: the server
   persists its redacted candidate plus parent/base revision and returns HTTP 409 with an
   opaque conflict id. Connection version history is append-only at the database boundary.
@@ -423,7 +427,8 @@ All endpoints are under `/api/v1/workspaces/:workspaceId/backups`, require an ac
 server-verified Admin/Owner membership, and return `private, no-store` responses. `GET /`
 lists only backup metadata (`id`, source revision, key reference/version, hash, timestamp);
 `POST /` creates a ciphertext-only snapshot; `DELETE /:backupId` creates a retention
-tombstone; and `POST /:backupId/restore` requires a quoted `If-Match` workspace revision.
+tombstone; and `POST /:backupId/restore` requires an
+`x-dopedb-expected-revision` workspace revision.
 `GET /key-rotation` returns only version/count/progress metadata. Owner-only
 `POST /key-rotation` requires an opaque UUID `requestId`, resumes an interrupted rotation,
 and is idempotent after a lost response. Repeated POSTs advance bounded batches until the

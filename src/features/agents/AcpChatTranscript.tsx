@@ -23,7 +23,9 @@ import {
   StatusDot,
 } from "../../design-system/components/Status";
 import { useI18n } from "../../lib/i18n";
+import type { ConnectionEngine } from "../connections/domain";
 import { reportRenderFailure } from "../monitoring/client";
+import AcpSqlApproval from "./AcpSqlApproval";
 import AcpStructuredResult from "./AcpStructuredResult";
 import {
   agentSessionErrorLabel,
@@ -42,16 +44,14 @@ import {
   toolStatusTone,
 } from "./acpTranscriptPresentation";
 import type { AcpPermissionOption, AgentProvider } from "./domain";
+import { findAgentSqlProposal, isSqlProposalTool } from "./sqlProposal";
 import {
   closedBeforeTurnCompleted,
   type AcpTranscriptItem,
 } from "./transcript";
 import type { AcpChatController } from "./useAcpChatController";
 
-type AcpChatTranscriptProps = Pick<
-  AcpChatController,
-  "session" | "setup"
-> & {
+type AcpChatTranscriptProps = Pick<AcpChatController, "session" | "setup"> & {
   viewport: Pick<
     AcpChatController["viewport"],
     "transcriptRef" | "onTranscriptScroll"
@@ -60,6 +60,7 @@ type AcpChatTranscriptProps = Pick<
     AcpChatController["commands"],
     "setup" | "permission" | "links"
   >;
+  connectionEngine: ConnectionEngine;
   onOpenKnowledgeAnalysis: (environmentId: string, articleId?: string) => void;
 };
 
@@ -68,6 +69,7 @@ export default function AcpChatTranscript({
   setup,
   viewport,
   commands,
+  connectionEngine,
   onOpenKnowledgeAnalysis,
 }: AcpChatTranscriptProps) {
   const { t } = useI18n();
@@ -235,6 +237,8 @@ export default function AcpChatTranscript({
                 onPermission={commands.permission.respond}
                 onOpenLink={commands.links.openMessage}
                 onOpenKnowledgeAnalysis={onOpenKnowledgeAnalysis}
+                expectedConnectionId={active.connectionId}
+                expectedConnectionEngine={connectionEngine}
               />
             </Fragment>
           ))}
@@ -351,6 +355,8 @@ const TranscriptItemView = memo(function TranscriptItemView({
   onPermission,
   onOpenLink,
   onOpenKnowledgeAnalysis,
+  expectedConnectionId,
+  expectedConnectionEngine,
 }: {
   item: AcpTranscriptItem;
   revision: number;
@@ -362,6 +368,8 @@ const TranscriptItemView = memo(function TranscriptItemView({
   onPermission: (requestId: string, optionId: string | null) => void;
   onOpenLink: (href: string) => void;
   onOpenKnowledgeAnalysis: (environmentId: string, articleId?: string) => void;
+  expectedConnectionId: string;
+  expectedConnectionEngine: ConnectionEngine;
 }) {
   const { t } = useI18n();
   if (item.kind === "user") {
@@ -437,6 +445,8 @@ const TranscriptItemView = memo(function TranscriptItemView({
         data={item.data}
         debugDetails={debugDetails}
         onOpenKnowledgeAnalysis={onOpenKnowledgeAnalysis}
+        expectedConnectionId={expectedConnectionId}
+        expectedConnectionEngine={expectedConnectionEngine}
       />
     );
   }
@@ -553,10 +563,14 @@ function ToolCallCard({
   data,
   debugDetails,
   onOpenKnowledgeAnalysis,
+  expectedConnectionId,
+  expectedConnectionEngine,
 }: {
   data: Record<string, unknown>;
   debugDetails: boolean;
   onOpenKnowledgeAnalysis: (environmentId: string, articleId?: string) => void;
+  expectedConnectionId: string;
+  expectedConnectionEngine: ConnectionEngine;
 }) {
   const { t } = useI18n();
   const status = recordString(data, "status") ?? "pending";
@@ -568,6 +582,9 @@ function ToolCallCard({
   const rawOutput = data.rawOutput;
   const rawInput = data.rawInput;
   const article = findAnalysisArticle(rawOutput ?? data.content);
+  const sqlProposal = isSqlProposalTool(data)
+    ? findAgentSqlProposal(rawOutput ?? data.content)
+    : null;
   if (!debugDetails) {
     return (
       <div className="tw:grid tw:gap-2">
@@ -590,6 +607,13 @@ function ToolCallCard({
             <Icon name="chart" />
             {t("agent.acpReviewArticleDraft")}
           </Button>
+        ) : null}
+        {sqlProposal ? (
+          <AcpSqlApproval
+            proposal={sqlProposal}
+            expectedConnectionId={expectedConnectionId}
+            expectedConnectionEngine={expectedConnectionEngine}
+          />
         ) : null}
       </div>
     );
@@ -638,6 +662,13 @@ function ToolCallCard({
             <Icon name="chart" />
             {t("agent.acpReviewArticleDraft")}
           </Button>
+        ) : null}
+        {sqlProposal ? (
+          <AcpSqlApproval
+            proposal={sqlProposal}
+            expectedConnectionId={expectedConnectionId}
+            expectedConnectionEngine={expectedConnectionEngine}
+          />
         ) : null}
       </div>
     </AgentToolCallCard>

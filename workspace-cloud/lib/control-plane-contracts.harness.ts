@@ -13,6 +13,7 @@ import {
   parseWorkspaceSyncPage,
 } from "./control-plane-contracts";
 import { candidateConflictResolution } from "./connection-conflict-decision";
+import { privateRevisionMutationJson } from "./http";
 import {
   acceptsProductAnalyticsContract,
   parseProductAnalyticsEnvelope,
@@ -26,6 +27,8 @@ import { parseSharedAnalysisArticleCreate } from "./workspace-analysis-articles"
 import { workspaceSchedulerBoundedWakeAt } from "./workspace-background-scheduler";
 import {
   connectionLeaseRevocationScope,
+  EXPECTED_REVISION_HEADER,
+  parseExpectedRevision,
   type ConnectionVersionPayload,
 } from "./workspace-versioning";
 
@@ -150,6 +153,39 @@ describe("Connection conflict decisions", () => {
       currentMatchesServer: false,
       currentMatchesCandidate: false,
     })).toBe("candidate");
+  });
+});
+
+describe("Optimistic revision transport", () => {
+  it("uses a dedicated header without triggering HTTP conditional response handling", () => {
+    const request = new Request("https://app.dopedb.dev/example", {
+      headers: { [EXPECTED_REVISION_HEADER]: "7" },
+    });
+    expect(parseExpectedRevision(request)).toBe(7);
+    expect(privateRevisionMutationJson(request, { revision: 8 }).headers.get("etag"))
+      .toBeNull();
+  });
+
+  it("keeps legacy If-Match clients working by matching their non-cacheable response ETag", () => {
+    const request = new Request("https://app.dopedb.dev/example", {
+      headers: { "if-match": '"7"' },
+    });
+    expect(parseExpectedRevision(request)).toBe(7);
+    const response = privateRevisionMutationJson(request, { revision: 8 });
+    expect(response.headers.get("etag")).toBe('"7"');
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
+
+  it("rejects ambiguous or malformed expected revisions", () => {
+    expect(() => parseExpectedRevision(new Request("https://app.dopedb.dev/example", {
+      headers: {
+        [EXPECTED_REVISION_HEADER]: "7",
+        "if-match": '"8"',
+      },
+    }))).toThrow("disagree");
+    expect(() => parseExpectedRevision(new Request("https://app.dopedb.dev/example", {
+      headers: { [EXPECTED_REVISION_HEADER]: '"7"' },
+    }))).toThrow(EXPECTED_REVISION_HEADER);
   });
 });
 

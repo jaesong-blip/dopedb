@@ -23,4 +23,5 @@ pub(crate) fn compose(store: Store) -> AgentsFeature {
 #[cfg(test)]
 pub(crate) fn assert_agent_cli_probe_contract() {
     adapters::assert_agent_cli_probe_contract();
+    transport::assert_agent_transport_contract();
 }

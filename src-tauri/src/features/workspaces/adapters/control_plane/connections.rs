@@ -205,7 +205,7 @@ pub(super) async fn share_connection(
             "{origin}/api/v1/workspaces/{workspace_id}/connections"
         ))
         .bearer_auth(token.as_str())
-        .header("if-match", "\"0\"")
+        .header(crate::hosted_control_plane::EXPECTED_REVISION_HEADER, "0")
         .json(&request)
         .send()
         .await
@@ -263,7 +263,10 @@ pub(super) async fn update_connection(
             profile.id
         ))
         .bearer_auth(token.as_str())
-        .header("if-match", format!("\"{expected_revision}\""))
+        .header(
+            crate::hosted_control_plane::EXPECTED_REVISION_HEADER,
+            expected_revision,
+        )
         .json(&request)
         .send()
         .await
@@ -305,7 +308,10 @@ pub(super) async fn delete_connection(
             "{origin}/api/v1/workspaces/{workspace_id}/connections/{connection_id}"
         ))
         .bearer_auth(token.as_str())
-        .header("if-match", format!("\"{expected_revision}\""))
+        .header(
+            crate::hosted_control_plane::EXPECTED_REVISION_HEADER,
+            expected_revision,
+        )
         .send()
         .await
         .map_err(|error| request_error("deleting shared connection", error))?;

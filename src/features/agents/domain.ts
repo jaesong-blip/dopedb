@@ -232,4 +232,5 @@ export interface AcpPromptContext {
   documentName: string | null;
   documentText: string | null;
   table: AcpTableContext | null;
+  responseLanguage?: "en" | "ko";
 }

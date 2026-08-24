@@ -53,9 +53,9 @@ import {
   knowledgeSyncProgressQuery,
   knowledgeSyncRemainingFiles,
 } from "../../features/knowledge/syncProgress";
+import { bindKnowledgeEnvironmentConnectionWithRefresh } from "../../features/knowledge/bindEnvironmentConnection";
 import {
   beginKnowledgeGithubInstall,
-  bindKnowledgeEnvironmentConnection,
   connectKnowledgeGithubSource,
   connectKnowledgeLocalFolder,
   decideKnowledgeMapping,
@@ -671,7 +671,7 @@ export default function Knowledge({
     onSuccess: () => setActionError(null),
   });
   const bindConnection = useMutation({
-    mutationFn: bindKnowledgeEnvironmentConnection,
+    mutationFn: bindKnowledgeEnvironmentConnectionWithRefresh,
     onMutate: (input) => {
       const context = productAnalyticsWorkspaceContext(catalogScope);
       const connection = connections.data?.find(

@@ -5,11 +5,12 @@
 //! A zeroizing process-session cache avoids reopening the OS credential store for
 //! every query or membership request. The OS store remains the at-rest authority.
 //!
-//! PRODUCTION REQUIRES A SIGNED BUILD. Unsigned / ad-hoc builds hit
+//! PRODUCTION REQUIRES A SIGNED BUILD. Unsigned / ad-hoc builds can both hit
 //! platform credential-store failures (for example macOS `errSecMissingEntitlement
-//! (-34018)`). So in DEBUG builds only we fall back to an obfuscated file under the
-//! app data dir.
-//! That fallback is NOT real security; it exists solely so unsigned dev builds run.
+//! (-34018)`) and accidentally prompt for the installed production app's items.
+//! DEBUG builds therefore use only an obfuscated file under the isolated dev app
+//! data dir and never open the production credential-store namespace.
+//! That store is NOT real security; it exists solely so unsigned dev builds run.
 //! Packaged benchmark builds never open the OS credential store. Their synthetic
 //! credentials use the benchmark's isolated temporary data root instead.
 
@@ -26,7 +27,9 @@ use crate::error::{AppError, AppResult};
 use crate::kernel::sync::lock_unpoisoned;
 
 /// Credential-store service name (bundle id). Must match the signed bundle identifier.
-#[cfg(not(feature = "packaged-benchmark"))]
+#[cfg(all(debug_assertions, not(feature = "packaged-benchmark")))]
+const SERVICE: &str = "dev.dopedb.desktop.dev";
+#[cfg(all(not(debug_assertions), not(feature = "packaged-benchmark")))]
 const SERVICE: &str = "dev.dopedb.desktop";
 const LEGACY_WORKSPACE_SESSION_ACCOUNT: &str = "workspace-session";
 const ANALYSIS_RESULT_CACHE_KEY_ACCOUNT: &str = "analysis-result-cache-key:v1";
@@ -74,14 +77,10 @@ fn entry(account: &str) -> AppResult<Entry> {
 /// Store (or replace) the secret for a connection.
 pub fn store_secret(connection_id: &Uuid, secret: &str) -> AppResult<()> {
     let account = connection_id.to_string();
-    #[cfg(feature = "packaged-benchmark")]
+    #[cfg(any(debug_assertions, feature = "packaged-benchmark"))]
     file_store(&account, secret)?;
-    #[cfg(not(feature = "packaged-benchmark"))]
-    match entry(&account)?.set_password(secret) {
-        Ok(()) => Ok(()),
-        Err(e) if should_fallback(&e) => file_store(&account, secret),
-        Err(e) => Err(e.into()),
-    }?;
+    #[cfg(all(not(debug_assertions), not(feature = "packaged-benchmark")))]
+    entry(&account)?.set_password(secret)?;
     remember_secret(&account, secret);
     Ok(())
 }
@@ -90,21 +89,19 @@ pub fn store_secret(connection_id: &Uuid, secret: &str) -> AppResult<()> {
 pub fn fetch_secret(connection_id: &Uuid) -> AppResult<String> {
     let account = connection_id.to_string();
     read_cached_secret(&account, || {
-        #[cfg(feature = "packaged-benchmark")]
+        #[cfg(any(debug_assertions, feature = "packaged-benchmark"))]
         return file_fetch(&account).map_err(|error| match error {
             AppError::NotFound(_) => {
                 AppError::NotFound(format!("no secret for connection {connection_id}"))
             }
             error => error,
         });
-        #[cfg(not(feature = "packaged-benchmark"))]
+        #[cfg(all(not(debug_assertions), not(feature = "packaged-benchmark")))]
         match entry(&account)?.get_password() {
             Ok(s) => Ok(s),
-            Err(keyring::Error::NoEntry) if cfg!(debug_assertions) => file_fetch(&account),
             Err(keyring::Error::NoEntry) => Err(AppError::NotFound(format!(
                 "no secret for connection {connection_id}"
             ))),
-            Err(e) if should_fallback(&e) => file_fetch(&account),
             Err(e) => Err(e.into()),
         }
     })
@@ -114,16 +111,12 @@ pub fn fetch_secret(connection_id: &Uuid) -> AppResult<String> {
 pub fn delete_secret(connection_id: &Uuid) -> AppResult<()> {
     let account = connection_id.to_string();
     forget_secret(&account);
-    #[cfg(feature = "packaged-benchmark")]
+    #[cfg(any(debug_assertions, feature = "packaged-benchmark"))]
     return file_delete(&account);
-    #[cfg(not(feature = "packaged-benchmark"))]
+    #[cfg(all(not(debug_assertions), not(feature = "packaged-benchmark")))]
     match entry(&account)?.delete_credential() {
         Ok(()) => Ok(()),
-        Err(keyring::Error::NoEntry) => {
-            let _ = file_delete(&account);
-            Ok(())
-        }
-        Err(e) if should_fallback(&e) => file_delete(&account),
+        Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(e.into()),
     }
 }
@@ -135,14 +128,10 @@ fn workspace_session_account(user_id: &str) -> AppResult<String> {
 }
 
 fn store_workspace_session_account(account: &str, token: &str) -> AppResult<()> {
-    #[cfg(feature = "packaged-benchmark")]
+    #[cfg(any(debug_assertions, feature = "packaged-benchmark"))]
     file_store(account, token)?;
-    #[cfg(not(feature = "packaged-benchmark"))]
-    match entry(account)?.set_password(token) {
-        Ok(()) => Ok(()),
-        Err(e) if should_fallback(&e) => file_store(account, token),
-        Err(e) => Err(e.into()),
-    }?;
+    #[cfg(all(not(debug_assertions), not(feature = "packaged-benchmark")))]
+    entry(account)?.set_password(token)?;
     remember_secret(account, token);
     Ok(())
 }
@@ -151,26 +140,16 @@ fn fetch_workspace_session_account(account: &str) -> AppResult<Option<String>> {
     if let Some(token) = cached_secret(account) {
         return Ok(Some(token));
     }
-    #[cfg(feature = "packaged-benchmark")]
+    #[cfg(any(debug_assertions, feature = "packaged-benchmark"))]
     let token = match file_fetch(account) {
         Ok(token) => Some(token),
         Err(AppError::NotFound(_)) => None,
         Err(error) => return Err(error),
     };
-    #[cfg(not(feature = "packaged-benchmark"))]
+    #[cfg(all(not(debug_assertions), not(feature = "packaged-benchmark")))]
     let token = match entry(account)?.get_password() {
         Ok(token) => Some(token),
-        Err(keyring::Error::NoEntry) if cfg!(debug_assertions) => match file_fetch(account) {
-            Ok(token) => Some(token),
-            Err(AppError::NotFound(_)) => None,
-            Err(error) => return Err(error),
-        },
         Err(keyring::Error::NoEntry) => None,
-        Err(e) if should_fallback(&e) => match file_fetch(account) {
-            Ok(token) => Some(token),
-            Err(AppError::NotFound(_)) => None,
-            Err(error) => return Err(error),
-        },
         Err(e) => return Err(e.into()),
     };
     if let Some(token) = token.as_deref() {
@@ -181,16 +160,12 @@ fn fetch_workspace_session_account(account: &str) -> AppResult<Option<String>> {
 
 fn delete_workspace_session_account(account: &str) -> AppResult<()> {
     forget_secret(account);
-    #[cfg(feature = "packaged-benchmark")]
+    #[cfg(any(debug_assertions, feature = "packaged-benchmark"))]
     return file_delete(account);
-    #[cfg(not(feature = "packaged-benchmark"))]
+    #[cfg(all(not(debug_assertions), not(feature = "packaged-benchmark")))]
     match entry(account)?.delete_credential() {
         Ok(()) => Ok(()),
-        Err(keyring::Error::NoEntry) => {
-            let _ = file_delete(account);
-            Ok(())
-        }
-        Err(e) if should_fallback(&e) => file_delete(account),
+        Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(e.into()),
     }
 }
@@ -518,26 +493,17 @@ pub(crate) fn delete_knowledge_source_root(source_id: Uuid) -> AppResult<()> {
     delete_workspace_session_account(&knowledge_source_root_account(source_id))
 }
 
-/// True when the OS credential store is structurally unavailable (for example an
-/// unsigned dev build) AND we are in a debug build permitted to use the file fallback.
-#[cfg(not(feature = "packaged-benchmark"))]
-fn should_fallback(e: &keyring::Error) -> bool {
-    cfg!(debug_assertions)
-        && matches!(
-            e,
-            keyring::Error::PlatformFailure(_) | keyring::Error::NoStorageAccess(_)
-        )
-}
-
 // ---------------------------------------------------------------------------
-// DEBUG-ONLY file fallback. Obfuscated, NOT encrypted with a real key.
+// DEBUG-ONLY credential store. Obfuscated, NOT encrypted with a real key.
 // ponytail: XOR-with-static-key obfuscation. Ceiling: not secure against anyone
 // with file read access — it only stops a casual `cat`. Upgrade path is a signed
 // build so the OS credential store works and this whole section is dead.
 // ---------------------------------------------------------------------------
 
+#[cfg(any(debug_assertions, feature = "packaged-benchmark"))]
 const OBFUSCATION_KEY: &[u8] = b"dopedb-dev-only-not-secure-v1";
 
+#[cfg(any(debug_assertions, feature = "packaged-benchmark"))]
 fn fallback_dir() -> AppResult<std::path::PathBuf> {
     let dir = crate::app_paths::data_root()?.join("dev-secrets");
     std::fs::create_dir_all(&dir)?;
@@ -549,6 +515,7 @@ fn fallback_dir() -> AppResult<std::path::PathBuf> {
     Ok(dir)
 }
 
+#[cfg(any(debug_assertions, feature = "packaged-benchmark"))]
 fn fallback_path_in(dir: &std::path::Path, account: &str) -> std::path::PathBuf {
     // Connection ids were historically stored as their UUID filename. Preserve that
     // debug-only layout, but encode namespaced session accounts because `:` is not a
@@ -562,6 +529,7 @@ fn fallback_path_in(dir: &std::path::Path, account: &str) -> std::path::PathBuf 
     dir.join(format!("{filename}.secret"))
 }
 
+#[cfg(any(debug_assertions, feature = "packaged-benchmark"))]
 fn xor(bytes: &[u8]) -> Vec<u8> {
     bytes
         .iter()
@@ -570,10 +538,12 @@ fn xor(bytes: &[u8]) -> Vec<u8> {
         .collect()
 }
 
+#[cfg(any(debug_assertions, feature = "packaged-benchmark"))]
 fn file_store(account: &str, secret: &str) -> AppResult<()> {
     file_store_at(&fallback_dir()?, account, secret)
 }
 
+#[cfg(any(debug_assertions, feature = "packaged-benchmark"))]
 fn file_store_at(dir: &std::path::Path, account: &str, secret: &str) -> AppResult<()> {
     let obfuscated = hex::encode(xor(secret.as_bytes()));
     let path = fallback_path_in(dir, account);
@@ -595,10 +565,12 @@ fn file_store_at(dir: &std::path::Path, account: &str, secret: &str) -> AppResul
     Ok(())
 }
 
+#[cfg(any(debug_assertions, feature = "packaged-benchmark"))]
 fn file_fetch(account: &str) -> AppResult<String> {
     file_fetch_at(&fallback_dir()?, account)
 }
 
+#[cfg(any(debug_assertions, feature = "packaged-benchmark"))]
 fn file_fetch_at(dir: &std::path::Path, account: &str) -> AppResult<String> {
     let path = fallback_path_in(dir, account);
     let raw = std::fs::read_to_string(&path)
@@ -608,10 +580,12 @@ fn file_fetch_at(dir: &std::path::Path, account: &str) -> AppResult<String> {
     String::from_utf8(xor(&bytes)).map_err(|e| AppError::Config(format!("corrupt dev secret: {e}")))
 }
 
+#[cfg(any(debug_assertions, feature = "packaged-benchmark"))]
 fn file_delete(account: &str) -> AppResult<()> {
     file_delete_at(&fallback_dir()?, account)
 }
 
+#[cfg(any(debug_assertions, feature = "packaged-benchmark"))]
 fn file_delete_at(dir: &std::path::Path, account: &str) -> AppResult<()> {
     let path = fallback_path_in(dir, account);
     if path.exists() {

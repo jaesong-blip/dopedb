@@ -2,12 +2,7 @@
 // into the existing tool-window views. Session/query/effect ownership lives in
 // useAcpChatController; transcript interpretation lives in its presentation model.
 
-import {
-  useLayoutEffect,
-  useRef,
-  type ReactNode,
-  type RefObject,
-} from "react";
+import { useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
 
 import { Icon } from "../../components/Icon";
 import ToolbarMenu, {
@@ -250,6 +245,7 @@ function AcpChatPanelContent({
         setup={setup}
         viewport={viewport}
         commands={commands}
+        connectionEngine={connection.engine}
         onOpenKnowledgeAnalysis={onOpenKnowledgeAnalysis}
       />
       <AcpChatComposer

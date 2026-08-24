@@ -278,6 +278,7 @@ pub fn run() {
             features::catalog::transport::get_database_table_ddl,
             features::queries::transport::inspect_sql,
             features::queries::transport::propose_sql,
+            features::queries::transport::review_agent_sql_proposal,
             features::queries::transport::get_manual_transaction,
             features::queries::transport::list_manual_transactions,
             features::queries::transport::begin_manual_transaction,

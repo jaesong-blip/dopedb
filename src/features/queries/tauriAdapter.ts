@@ -11,6 +11,7 @@ import type {
 } from "../../ipc/types";
 import type {
   SqlInspection,
+  SqlApprovalReview,
   ManualTransactionStatus,
   SqlOperationProposal,
   SqlStreamBatchWire,
@@ -114,6 +115,18 @@ export function proposeSql(
     database: database ?? null,
     namespace: namespace ?? null,
     origin: origin ?? null,
+  });
+}
+
+export function reviewAgentSqlProposal(
+  operationId: string,
+  connectionId: string,
+  payloadHash: string,
+): Promise<SqlApprovalReview> {
+  return invoke("review_agent_sql_proposal", {
+    operationId,
+    connectionId,
+    payloadHash,
   });
 }
 

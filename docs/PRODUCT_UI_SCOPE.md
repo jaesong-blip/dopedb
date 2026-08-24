@@ -31,6 +31,13 @@ DopeDB의 제품 축, 실제 사용자 작업, 접근성, 운영 안전성, 지�
   별도의 collection rail을 만들지 않는다.
 - 중앙 document surface는 welcome, query, data, schema, analysis처럼 현재 작업
   하나를 소유한다.
+- Personal Workspace의 첫 Welcome은 실제 파일 기반 SQLite, 로컬 Project와
+  development Environment, 그 연결의 versioned binding을 한 번에 준비하는
+  `가이드 데모` command 하나를 제공할 수 있다. 이 명령은 재실행해도 같은 데모
+  자원을 재사용하고 team membership, 공유 credential, 권한을 꾸며내지 않는다.
+  준비된 Welcome은 sample table 탐색, exact Environment에 고정된 Agent 읽기,
+  `Settings → Safety`를 거치는 Agent 쓰기 승인의 실제 command 세 개만 flat
+  목록으로 보여준다.
 - 오른쪽 Agent surface는 exact Project·Environment·connection revision에 고정된
   대화, 도구 진행, 승인과 복구를 소유한다.
 - 하단 Services surface는 실행, result, output, job, background task를 관찰하고

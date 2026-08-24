@@ -105,6 +105,36 @@ export const homeCopy = {
         "DopeDB Desktop showing the bundled Demo SQLite orders table in the local data workbench",
       captureLabel: "Captured from DopeDB Desktop",
       captureDetail: "Bundled demo data · no customer data",
+      demoPickerLabel: "Three verified product flows",
+      demos: [
+        {
+          index: "01",
+          title: "Compare Development with Production",
+          body:
+            "One schema group surfaces the exact table, column, and index drift between two verified connections.",
+          duration: "00:08 · REAL UI",
+          src: "/guided-demo/01-workspace-schema-diff.mp4",
+          poster: "/guided-demo/01-workspace-schema-diff.jpg",
+        },
+        {
+          index: "02",
+          title: "Review and share an Analysis Article",
+          body:
+            "A live, versioned analysis keeps its evidence and exposes only the reviewed blocks selected for sharing.",
+          duration: "00:08 · REAL UI",
+          src: "/guided-demo/02-agent-analysis-article.mp4",
+          poster: "/guided-demo/02-agent-analysis-article.jpg",
+        },
+        {
+          index: "03",
+          title: "Stop a write at the exact SQL",
+          body:
+            "The guided demo queues the first Agent task, verifies the target row, and waits for a human before one row changes.",
+          duration: "00:30 · REAL UI",
+          src: "/guided-demo/03-exact-write-approval.mp4",
+          poster: "/guided-demo/03-exact-write-approval.jpg",
+        },
+      ],
       labels: [
         { title: "Control plane", body: "Identity · policy · revisions" },
         { title: "Local boundary", body: "Credentials · queries · recovery" },
@@ -354,6 +384,36 @@ receipt         pending human decision`,
         "로컬 데이터 워크벤치에서 번들 Demo SQLite 주문 테이블을 보여주는 실제 DopeDB Desktop 화면",
       captureLabel: "실제 DopeDB Desktop 캡처",
       captureDetail: "번들 데모 데이터 · 고객 데이터 없음",
+      demoPickerLabel: "검증한 핵심 플로우 3가지",
+      demos: [
+        {
+          index: "01",
+          title: "Development와 Production 비교",
+          body:
+            "하나의 schema group에서 검증된 두 연결 사이의 table·column·index 차이를 정확히 보여줍니다.",
+          duration: "00:08 · 실제 UI",
+          src: "/guided-demo/01-workspace-schema-diff.mp4",
+          poster: "/guided-demo/01-workspace-schema-diff.jpg",
+        },
+        {
+          index: "02",
+          title: "Analysis Article 검토와 공유",
+          body:
+            "Live·versioned 분석이 근거를 보존하고, 공유할 때는 사람이 고른 검토 완료 block만 내보냅니다.",
+          duration: "00:08 · 실제 UI",
+          src: "/guided-demo/02-agent-analysis-article.mp4",
+          poster: "/guided-demo/02-agent-analysis-article.jpg",
+        },
+        {
+          index: "03",
+          title: "정확한 SQL에서 write 중단",
+          body:
+            "Guided demo가 첫 Agent 작업을 자동 전송하고 대상 행을 검증한 뒤, 한 행을 바꾸기 전에 사람의 승인을 기다립니다.",
+          duration: "00:30 · 실제 UI",
+          src: "/guided-demo/03-exact-write-approval.mp4",
+          poster: "/guided-demo/03-exact-write-approval.jpg",
+        },
+      ],
       labels: [
         { title: "Control plane", body: "Identity · policy · revisions" },
         { title: "Local boundary", body: "Credentials · queries · recovery" },

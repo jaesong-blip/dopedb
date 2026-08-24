@@ -18,8 +18,9 @@ mod terminal_run;
 mod terminal_support;
 
 pub(crate) use desktop_contracts::{
-    DesktopSqlInspectionError, DesktopSqlInspectionReceipt, DesktopSqlProposalReceipt,
-    DesktopSqlRunError, DesktopSqlRunReceipt, DesktopSqlStreamReceipt,
+    DesktopSqlApprovalReview, DesktopSqlInspectionError, DesktopSqlInspectionReceipt,
+    DesktopSqlProposalReceipt, DesktopSqlRunError, DesktopSqlRunReceipt, DesktopSqlStreamReceipt,
+    StoredDesktopSqlPayload, DESKTOP_SQL_PAYLOAD_SCHEMA_VERSION,
 };
 pub(crate) use desktop_result_store::DesktopSqlResultAuthority;
 #[cfg(feature = "packaged-benchmark")]

@@ -72,7 +72,17 @@ pub async fn start_agent_acp_session(
 ) -> AppResult<AcpSessionFocus> {
     state.wait_for_post_paint_recovery().await?;
     if project_environment_id.is_some() {
-        state.services.knowledge.reconcile_current_access().await?;
+        let connection = state
+            .services
+            .knowledge
+            .pin_connection_for_read(Uuid::from(connection_id))
+            .await?;
+        if agent_session_requires_hosted_knowledge_reconciliation(
+            project_environment_id,
+            connection.scope.selected_account_id.as_deref(),
+        ) {
+            state.services.knowledge.reconcile_current_access().await?;
+        }
     }
     let ports = DesktopAcpRuntimePorts::new(app, state.agent_plugins.clone());
     state
@@ -85,6 +95,13 @@ pub async fn start_agent_acp_session(
             ports,
         )
         .await
+}
+
+fn agent_session_requires_hosted_knowledge_reconciliation(
+    project_environment_id: Option<Uuid>,
+    selected_account_id: Option<&str>,
+) -> bool {
+    project_environment_id.is_some() && selected_account_id.is_some()
 }
 
 /// List exact Project Environments available through this connection revision.
@@ -207,6 +224,23 @@ pub async fn set_agent_acp_config_option(
 pub async fn detect_agent_clis(state: State<'_, AppState>) -> AppResult<Vec<AgentCliInfo>> {
     let agents = state.services.agents.clone();
     Ok(agents.detect_clis().await)
+}
+
+#[cfg(test)]
+pub(crate) fn assert_agent_transport_contract() {
+    let environment_id = Uuid::new_v4();
+    assert!(!agent_session_requires_hosted_knowledge_reconciliation(
+        Some(environment_id),
+        None,
+    ));
+    assert!(agent_session_requires_hosted_knowledge_reconciliation(
+        Some(environment_id),
+        Some("account-1"),
+    ));
+    assert!(!agent_session_requires_hosted_knowledge_reconciliation(
+        None,
+        Some("account-1"),
+    ));
 }
 
 /// List the read-only archive left by the retired in-app Agent chat.

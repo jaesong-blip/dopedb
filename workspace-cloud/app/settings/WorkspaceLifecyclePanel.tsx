@@ -414,7 +414,12 @@ export function WorkspaceLifecyclePanel({
                   <ControlButton onClick={() => void mutate(
                     `restore:${backup.id}`,
                     `/backups/${backup.id}/restore`,
-                    { method: "POST", headers: { "if-match": `\"${lifecycle.revision}\"` } },
+                    {
+                      method: "POST",
+                      headers: {
+                        "x-dopedb-expected-revision": String(lifecycle.revision),
+                      },
+                    },
                     copy.restoreConfirm,
                   )} disabled={mutation !== ""}>
                     {mutation === `restore:${backup.id}` ? copy.restoring : copy.restore}

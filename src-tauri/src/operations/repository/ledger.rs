@@ -3,6 +3,25 @@
 use super::*;
 
 impl OperationRepository {
+    /// Return the bounded row-count receipt from the terminal success event. This
+    /// is a read-only projection used after restart; it never reissues execution
+    /// authority or trusts renderer-provided result bytes.
+    pub(crate) async fn succeeded_row_count(&self, operation_id: Uuid) -> AppResult<Option<u64>> {
+        let event_json = sqlx::query_scalar::<_, String>(
+            "SELECT event_json FROM operation_events
+             WHERE operation_id = ?1 AND event_kind = 'succeeded'
+             ORDER BY sequence DESC LIMIT 1",
+        )
+        .bind(operation_id.to_string())
+        .fetch_optional(&self.pool)
+        .await?;
+        let Some(event_json) = event_json else {
+            return Ok(None);
+        };
+        let details = parse_canonical_json(&event_json)?;
+        Ok(details.get("rowCount").and_then(Value::as_u64))
+    }
+
     /// Record bounded progress without changing the current projection state.
     pub(crate) async fn append_progress(
         &self,

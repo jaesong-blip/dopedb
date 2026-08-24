@@ -4,7 +4,10 @@ import EngineMark from "../../components/EngineMark";
 import { EnvironmentBadge } from "../../design-system/components/EnvironmentBadge";
 import { Icon } from "../../components/Icon";
 import { Button } from "../../design-system/components/Button";
-import type { ConnectionProfile } from "../connections/domain";
+import {
+  databaseDisplayLabel,
+  type ConnectionProfile,
+} from "../connections/domain";
 import { ProviderTargetLabel } from "../connections/ProviderTargetLabel";
 import { useI18n } from "../../lib/i18n";
 import {
@@ -14,7 +17,9 @@ import {
 
 function connectionEndpoint(connection: ConnectionProfile) {
   if (connection.engine === "sqlite") {
-    return connection.database || connection.host || "sqlite";
+    return databaseDisplayLabel(connection.engine, connection.database)
+      || connection.host
+      || "sqlite";
   }
   return `${connection.host}${connection.port ? `:${connection.port}` : ""}`;
 }
@@ -35,13 +40,16 @@ export default function ConnectionPicker({
 
   function renderConnectionCard(connection: ConnectionProfile, grouped = false) {
     const name = connection.name || t("app.unnamed");
+    const databaseLabel =
+      databaseDisplayLabel(connection.engine, connection.database)
+      || t("common.unknown");
     return (
       <button
         key={connection.id}
         type="button"
         className="tw:flex tw:min-h-[92px] tw:min-w-0 tw:cursor-pointer tw:flex-col tw:items-stretch tw:justify-between tw:gap-3 tw:rounded-lg tw:border tw:border-border-subtle tw:bg-card tw:p-3 tw:font-sans tw:text-left tw:text-foreground tw:shadow-panel tw:transition-[border-color,background,box-shadow] tw:duration-150 tw:hover:border-border-strong tw:hover:bg-selection/40 tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
         onClick={() => onSelect(connection.id)}
-        title={`${connection.engine} · ${connectionEndpoint(connection)} · ${connection.database}`}
+        title={`${connection.engine} · ${connectionEndpoint(connection)} · ${databaseLabel}`}
         aria-label={t("app.openConnection", { name })}
       >
         <span className="tw:flex tw:min-w-0 tw:items-center tw:gap-2">
@@ -56,7 +64,7 @@ export default function ConnectionPicker({
           ) : null}
         </span>
         <span className="tw:flex tw:min-w-0 tw:items-center tw:gap-2 tw:text-sm tw:text-muted-foreground tw:[&>span:not(.ds-meta-dot)]:min-w-0 tw:[&>span:not(.ds-meta-dot)]:overflow-hidden tw:[&>span:not(.ds-meta-dot)]:text-ellipsis tw:[&>span:not(.ds-meta-dot)]:whitespace-nowrap">
-          <span>{connection.database || t("common.unknown")}</span>
+          <span>{databaseLabel}</span>
           {connection.providerTarget ? (
             <>
               <span className="ds-meta-dot tw:shrink-0" />

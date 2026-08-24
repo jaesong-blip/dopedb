@@ -18,7 +18,7 @@ runtime과 성능 수치로 수행한다.
 | --- | --- | --- | --- |
 | App shell/chrome | `complete` | `features/appShell`, design-system chrome primitives | packaged macOS·Windows에서 keyboard launcher와 compact window를 정기 확인 |
 | Action Search | `complete` | `features/actionSearch` | cached catalog scope, `/` action mode, focus 복구와 bounded top-k를 유지 |
-| Welcome document | `complete` | `screens/Onboarding` | 연결 전/후 실제 command 집합이 달라지는지 packaged smoke에서 확인 |
+| Welcome document | `complete` | `screens/Onboarding`, `features/onboarding` | Personal 가이드 데모의 idempotent DB·Project·Environment·binding 준비와 연결 전/후 실제 command 집합을 packaged smoke에서 확인 |
 | Database Explorer | `complete` | `screens/Connections/DatabaseExplorer`, `features/catalogExplorer` | DB 행에만 조용한 Environment marker와 같은 schema group의 Diff 진입점을 유지하고, Unassigned→Environment binding drag·loaded-only 객체 검색·대형 catalog selection/scroll을 packaged smoke에서 확인 |
 | Connection editor | `complete` | `features/connections/useConnectionEditorController` | 연결 identity·접속 옵션만 소유하고 쓰기 실행 제어는 Settings → Safety 단일 경계를 유지 |
 | Provider account access | `complete` | `workspace-cloud/features/providerAccess`, provider application modules | 실제 계정 OAuth/CLI 실패·recovery 및 revoke 검수 |
@@ -49,13 +49,19 @@ runtime과 성능 수치로 수행한다.
 
 ### 1. 처음 연결
 
-1. Welcome에서 새 연결을 연다.
-2. engine을 고르고 검증된 최소 필드만 입력한다.
+1. 실제 데이터 소스는 Welcome에서 새 연결을 열고 engine과 검증된 최소 필드만
+   입력한다. 제품을 먼저 체험하려면 Personal Workspace에서 가이드 데모를 한 번
+   실행한다.
+2. 가이드 데모는 파일 기반 Demo SQLite를 검증하고 `DopeDB Demo → Sandbox`의
+   로컬 Environment와 exact binding을 준비한다. 다시 실행해도 기존 자원을
+   재사용한다.
 3. Test가 실패하면 입력 가까이에서 원인과 recovery를 본다.
-4. Apply/OK 후 Explorer와 새 query가 같은 connection identity를 사용한다.
+4. Apply/OK 또는 데모 준비 후 Explorer, table, query, Agent가 같은 connection
+   identity와 Environment binding을 사용한다.
 
 Acceptance: 임의 고급 옵션, 계획 중 provider, 저장되지 않는 가짜 control이 없어야
-하며 장기 secret은 shared record에 들어가지 않는다.
+하며 장기 secret은 shared record에 들어가지 않는다. 데모도 team membership,
+credential, 공유 권한을 꾸며내지 않고 실제 local command만 사용한다.
 
 ### 2. 공유 연결 사용
 

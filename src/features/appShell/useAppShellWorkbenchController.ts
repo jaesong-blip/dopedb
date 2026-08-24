@@ -3,7 +3,6 @@ import {
   useMemo,
   useReducer,
   useRef,
-  useState,
   type Dispatch,
   type SetStateAction,
 } from "react";
@@ -13,7 +12,6 @@ import type { CatalogTable } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
 import { useToast } from "../../components/Toast";
 import { hasCapability, isDocumentEngine } from "../../lib/capabilities";
-import { useI18n } from "../../lib/i18n";
 import { resetConnectionResourceQueries } from "../../lib/queryClient";
 import {
   driversQuery,
@@ -22,16 +20,9 @@ import {
 } from "../../lib/queries";
 import { buildConnectionSections } from "../../lib/schemaDiff";
 import type { ConnectionProfile } from "../connections/domain";
-import {
-  createDemoSqlite,
-  upsertConnection,
-} from "../connections/tauriAdapter";
-import {
-  demoSqliteConnection,
-  findDemoSqliteConnection,
-  type ConnectionLaunchPreset,
-} from "../connections/presets";
+import type { ConnectionLaunchPreset } from "../connections/presets";
 import type { KnowledgeEnvironmentView } from "../knowledge/domain";
+import { useGuidedDemoSetup } from "../onboarding/useGuidedDemoSetup";
 import { connectionCanEnterWritePath } from "../safetySettings/policy";
 import type { SettingsSection } from "../settings/domain";
 import type { SqlDocument } from "../sqlDocuments/domain";
@@ -84,7 +75,6 @@ export function useAppShellWorkbenchController({
   mobileExplorer,
   activity,
 }: WorkbenchControllerInput) {
-  const { t } = useI18n();
   const toast = useToast();
   const queryClient = useQueryClient();
   const {
@@ -107,7 +97,6 @@ export function useAppShellWorkbenchController({
     accept: acceptSafety,
     clear: clearSafety,
   } = useSafetySettings(selectedId);
-  const [creatingDemo, setCreatingDemo] = useState(false);
   const { legacyAuditOpen, restoredDocumentKind } = useRestoredWorkbenchState();
   const selected =
     connections.find((connection) => connection.id === selectedId) ?? null;
@@ -205,6 +194,14 @@ export function useAppShellWorkbenchController({
   function showWorkbench() {
     navigate({ type: "showWorkbench" });
   }
+
+  const guidedDemo = useGuidedDemoSetup({
+    scope,
+    connections,
+    refreshConnections: refresh,
+    selectConnection: setSelectedId,
+    showWorkbench,
+  });
 
   function openSettings(section?: SettingsSection) {
     navigate({ type: "openSettings", section });
@@ -356,25 +353,6 @@ export function useAppShellWorkbenchController({
     }
   }
 
-  async function createDemoDatabase() {
-    if (creatingDemo) return;
-    setCreatingDemo(true);
-    try {
-      const path = await createDemoSqlite();
-      const existing = findDemoSqliteConnection(connections, path);
-      const saved =
-        existing ?? (await upsertConnection(demoSqliteConnection(path)));
-      if (!existing) await refresh();
-      setSelectedId(saved.id);
-      showWorkbench();
-      toast(t("connections.demoCreated"));
-    } catch (error) {
-      toast(errMessage(error), "error");
-    } finally {
-      setCreatingDemo(false);
-    }
-  }
-
   async function connectionSaved(
     profile: ConnectionProfile,
     closeEditor: boolean,
@@ -430,7 +408,7 @@ export function useAppShellWorkbenchController({
       selectedId,
       loadError,
       supportsSql,
-      creatingDemo,
+      creatingDemo: guidedDemo.creating,
     },
     safety: {
       value: safety,
@@ -468,7 +446,7 @@ export function useAppShellWorkbenchController({
         save: connectionSaved,
         delete: deletedConnection,
         update: updateConnection,
-        createDemo: () => void createDemoDatabase(),
+        createDemo: () => void guidedDemo.create(),
       },
       safety: {
         refresh: refreshSafety,

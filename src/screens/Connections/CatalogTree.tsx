@@ -16,9 +16,10 @@ import type {
   CatalogOverview,
   CatalogTable,
 } from "../../ipc/types";
-import type {
-  ConnectionAccessIssue,
-  ConnectionProfile,
+import {
+  databaseDisplayLabel,
+  type ConnectionAccessIssue,
+  type ConnectionProfile,
 } from "../../features/connections/domain";
 import { Icon } from "../../components/Icon";
 import { TreeSectionButton } from "../../design-system/components/TreeControls";
@@ -1080,13 +1081,10 @@ export default function CatalogTree(props: Props) {
     return rows;
   }
 
-  function databaseDisplayName() {
-    const value = connection.database.trim();
-    if (!value) return connection.name || t("connections.database");
-    if (connection.engine !== "sqlite") return value;
-    const segments = value.split(/[\\/]/).filter(Boolean);
-    return segments[segments.length - 1] ?? value;
-  }
+  const databaseDisplayName =
+    databaseDisplayLabel(connection.engine, connection.database)
+    || connection.name
+    || t("connections.database");
 
   function toggleDatabase() {
     const next = !databaseOpen;
@@ -1118,7 +1116,7 @@ export default function CatalogTree(props: Props) {
           }}
           onToggle={toggleDatabase}
         >
-          {databaseDisplayName()}
+          {databaseDisplayName}
         </TreeSectionButton>
         {databaseVisible ? (
           <div className="tw:flex tw:flex-col tw:gap-px tw:pl-3">

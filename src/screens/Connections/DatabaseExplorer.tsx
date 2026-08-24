@@ -37,8 +37,8 @@ import type {
   KnowledgeProject,
   KnowledgeSource,
 } from "../../features/knowledge/domain";
+import { bindKnowledgeEnvironmentConnectionWithRefresh } from "../../features/knowledge/bindEnvironmentConnection";
 import {
-  bindKnowledgeEnvironmentConnection,
   listKnowledgeEnvironmentConnections,
   listKnowledgeProjects,
   listKnowledgeSources,
@@ -226,7 +226,8 @@ export function DatabaseExplorer({
   const catalogScopeKeyRef = useRef(catalogScope.key);
   const knowledgeEnabled =
     catalogScope.ready &&
-    catalogScope.accountScope !== null;
+    (catalogScope.workspaceKind === "personal" ||
+      catalogScope.accountScope !== null);
   const sharedKnowledgeWorkspace =
     knowledgeEnabled && sharedWorkspaceScopeAvailable(catalogScope);
   const knowledgeProjects = useQuery({
@@ -455,7 +456,7 @@ export function DatabaseExplorer({
       .find((candidate) => candidate.id === environmentId);
     if (!environment) return;
     try {
-      const binding = await bindKnowledgeEnvironmentConnection({
+      const binding = await bindKnowledgeEnvironmentConnectionWithRefresh({
         projectEnvironmentId: environmentId,
         connectionId: connection.id,
         role: "primary",

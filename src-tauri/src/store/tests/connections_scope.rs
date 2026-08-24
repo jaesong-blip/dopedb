@@ -810,6 +810,42 @@ async fn assert_current_store_migration_is_write_free() {
         super::super::bootstrap::LOCAL_SCHEMA_VERSION
     );
 
+    let v21_pool = memory_pool().await;
+    sqlx::raw_sql(migrations::SCHEMA)
+        .execute(&v21_pool)
+        .await
+        .unwrap();
+    sqlx::raw_sql(
+        "DROP TABLE analysis_article_local_results;
+         PRAGMA user_version = 21;",
+    )
+    .execute(&v21_pool)
+    .await
+    .unwrap();
+    assert!(super::super::bootstrap::migrate_local_store(&v21_pool)
+        .await
+        .unwrap());
+    let repaired_local_result_schema: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sqlite_master
+         WHERE (type = 'table' AND name = 'analysis_article_local_results')
+            OR (type = 'index' AND name IN (
+                'idx_analysis_article_local_result_latest',
+                'idx_analysis_article_local_result_expiry'
+            ))",
+    )
+    .fetch_one(&v21_pool)
+    .await
+    .unwrap();
+    assert_eq!(repaired_local_result_schema, 3);
+    let repaired_v21_version: i64 = sqlx::query_scalar("PRAGMA user_version")
+        .fetch_one(&v21_pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        repaired_v21_version,
+        super::super::bootstrap::LOCAL_SCHEMA_VERSION
+    );
+
     let gate = crate::startup::PostPaintRecoveryGate::new();
     assert!(gate.claim_start());
     assert!(!gate.claim_start());

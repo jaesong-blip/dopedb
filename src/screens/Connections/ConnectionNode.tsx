@@ -16,6 +16,7 @@ import {
 } from "../../design-system/components/PopupMenu";
 import {
   connectionAccessIssue,
+  databaseDisplayLabel,
   type ConnectionProfile,
 } from "../../features/connections/domain";
 import { ProviderTargetLabel } from "../../features/connections/ProviderTargetLabel";
@@ -127,9 +128,13 @@ export default function ConnectionNode(props: Props) {
   const usesManagedCredentials =
     Boolean(accessLabelBase) && connection.credentialMode === "managed";
   const accessIssue = connectionAccessIssue(connection);
+  const databaseLabel = databaseDisplayLabel(
+    connection.engine,
+    connection.database,
+  );
   const description = `${connection.engine} · ${connection.host}${
     connection.engine !== "sqlite" ? `:${connection.port}` : ""
-  } · ${connection.database}`;
+  } · ${databaseLabel}`;
   const isDropTarget =
     props.dropTarget?.kind === "connection" &&
     props.dropTarget.id === connection.id;
@@ -237,7 +242,7 @@ export default function ConnectionNode(props: Props) {
                     className="tw:shrink-0 tw:text-muted-foreground"
                   />
                   <strong className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-sm tw:text-ellipsis tw:whitespace-nowrap">
-                    {connection.database}
+                    {databaseLabel}
                   </strong>
                   <span className="tw:text-xs tw:text-muted-foreground">
                     {t("connections.discoveredSchemaCount", {

@@ -116,6 +116,10 @@ impl OperationRuntime {
         self.repository.get(operation_id).await
     }
 
+    pub(crate) async fn succeeded_row_count(&self, operation_id: Uuid) -> AppResult<Option<u64>> {
+        self.repository.succeeded_row_count(operation_id).await
+    }
+
     pub(crate) async fn approve_exact(
         &self,
         authority: &LocalApprovalAuthority,

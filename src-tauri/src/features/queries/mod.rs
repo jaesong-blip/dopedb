@@ -8,9 +8,10 @@ mod ports;
 pub(crate) mod transport;
 
 use crate::connection::ConnectionManager;
-use crate::kernel::identity::OperationId;
+use crate::error::{AppError, AppResult};
+use crate::kernel::identity::{ConnectionId, OperationId};
 use crate::kernel::TerminalAuthority;
-use crate::operations::{OperationRuntime, OperationState};
+use crate::operations::{OperationActorKind, OperationKind, OperationRuntime, OperationState};
 use crate::store::Store;
 
 impl From<domain::QueryDomainError> for crate::error::AppError {
@@ -35,9 +36,10 @@ use adapters::{
     DesktopStreamCleanupRuntime, PreparedAgentQueryRun,
 };
 pub(crate) use adapters::{
-    DesktopSqlInspectionError, DesktopSqlInspectionReceipt, DesktopSqlProposalReceipt,
-    DesktopSqlRunError, DesktopSqlRunReceipt, DesktopSqlStreamReceipt,
+    DesktopSqlApprovalReview, DesktopSqlInspectionError, DesktopSqlInspectionReceipt,
+    DesktopSqlProposalReceipt, DesktopSqlRunError, DesktopSqlRunReceipt, DesktopSqlStreamReceipt,
 };
+use adapters::{StoredDesktopSqlPayload, DESKTOP_SQL_PAYLOAD_SCHEMA_VERSION};
 use application::QueryUseCases;
 pub(crate) use domain::{
     project_query_service_session_snapshot, validate_query_service_session_snapshot,
@@ -80,6 +82,78 @@ impl QueriesFeature {
 
     pub(crate) fn manual_transactions(&self) -> ManualTransactionRuntime {
         self.manual_transactions.clone()
+    }
+
+    /// Reloads the trusted SQL behind one exact Agent-created proposal for review.
+    pub(crate) async fn review_agent_sql_proposal(
+        &self,
+        operation_id: OperationId,
+        connection_id: ConnectionId,
+        expected_payload_hash: String,
+    ) -> AppResult<DesktopSqlApprovalReview> {
+        let planned = self.operation.get(operation_id.into()).await?;
+        self.store
+            .get_connection(uuid::Uuid::from(connection_id))
+            .await?;
+        let active_workspace_id = self.store.active_workspace_id().await?;
+        let active_account_scope = self.store.active_local_scope().await?;
+        if planned.connection_id != uuid::Uuid::from(connection_id)
+            || planned.payload_hash != expected_payload_hash
+            || planned.terminal_session_id.is_none()
+            || planned.actor.kind != OperationActorKind::Agent
+            || planned.workspace_id != active_workspace_id
+            || planned.account_scope != active_account_scope
+        {
+            return Err(AppError::Blocked {
+                reason: "the Agent proposal does not match this Desktop session".into(),
+            });
+        }
+        if planned.payload_schema_version != DESKTOP_SQL_PAYLOAD_SCHEMA_VERSION
+            || !matches!(
+                planned.kind,
+                OperationKind::WriteSql | OperationKind::Ddl | OperationKind::Privilege
+            )
+        {
+            return Err(AppError::Blocked {
+                reason: "the operation is not a reviewable Agent SQL proposal".into(),
+            });
+        }
+        let payload: StoredDesktopSqlPayload = serde_json::from_value(planned.payload.clone())?;
+        let state = if planned.state == OperationState::PendingApproval
+            && planned
+                .expires_at
+                .is_some_and(|expires_at| expires_at <= chrono::Utc::now())
+        {
+            OperationState::Expired
+        } else {
+            planned.state
+        };
+        // Final receipts remain inspectable after restart, but every state that
+        // could still approve or execute stays bound to the creating runtime.
+        if !state.is_terminal() && planned.runtime_id != self.operation.runtime_id() {
+            return Err(AppError::Blocked {
+                reason: "the Agent proposal does not match this Desktop session".into(),
+            });
+        }
+        let affected = if state == OperationState::Succeeded {
+            self.operation
+                .succeeded_row_count(operation_id.into())
+                .await?
+        } else {
+            None
+        };
+        Ok(DesktopSqlApprovalReview {
+            operation_id,
+            connection_id,
+            payload_hash: planned.payload_hash,
+            state,
+            risk_level: planned.risk_level,
+            sql: payload.sql,
+            database: payload.database,
+            namespace: payload.namespace,
+            affected,
+            expires_at: planned.expires_at,
+        })
     }
 
     pub(crate) async fn shutdown_manual_transactions(&self) {

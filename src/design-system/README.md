@@ -461,8 +461,11 @@ Elevation은 세 단계만 허용한다.
   중복 배치하지 않으며, tab용 feature CSS나 style map을 만들지 않는다.
   Welcome 본문도 logo·page title·설명 card를 만들지 않고 `Button`의 flat
   `menuItem` projection으로 실제 AppShell command만 나열한다. 연결 전에는 첫
-  데이터 소스 선택에 필요한 한 줄만 허용하며 범위 밖 IDE command나 비활성
-  placeholder는 표시하지 않는다.
+  데이터 소스 선택에 필요한 한 줄만 허용한다. Personal 첫 실행의 가이드 데모는
+  실제 local DB·Project·Environment·binding을 준비하는 command 하나로 진입하며,
+  준비 뒤에는 table 탐색·Environment-pinned Agent 읽기·Safety를 거친 쓰기 승인
+  세 command를 같은 flat 목록으로 투영할 수 있다. 설명 card, 가짜 team 상태,
+  범위 밖 IDE command나 비활성 placeholder는 표시하지 않는다.
 
 chrome 높이, panel gutter, 화면별 검수 순서와 기능 결정은
 [`docs/PRODUCT_UI_SCOPE.md`](../../docs/PRODUCT_UI_SCOPE.md)를 따른다. 이 값은

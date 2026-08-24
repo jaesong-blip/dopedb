@@ -228,7 +228,14 @@ export default function AnalysisArticles({
                 article={selected}
                 running={running?.articleId === selected.id}
                 busy={transition.isPending || remove.isPending || execute.isPending}
-                canPublish={selected.state === "review" && selected.latestSuccessfulRunId !== null}
+                canPublish={selected.state === "review" && Boolean(
+                  selected.latestSuccessfulRunId
+                  && runs.data?.runs.some((run) =>
+                    run.id === selected.latestSuccessfulRunId
+                    && run.articleRevision === selected.revision
+                    && run.state === "succeeded"
+                  ),
+                )}
                 onEdit={() => setEditorArticle(selected)}
                 onRun={() => startRun(selected)}
                 onCancel={() => running && cancel.mutate(running)}
@@ -245,7 +252,7 @@ export default function AnalysisArticles({
                     onParameterChange={(id, value) => setParameterValues((current) => ({ ...current, [id]: value }))}
                     runId={effectiveRunId}
                     loadingResult={recoveredResult.isFetching || sharedResult.isFetching}
-                    resultError={sharedResult.error}
+                    resultError={blockData.size > 0 ? null : sharedResult.error}
                     runs={runs.data?.runs ?? []}
                     selectedRunId={effectiveRunId}
                     onSelectRun={setSelectedRunId}

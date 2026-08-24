@@ -7,6 +7,11 @@ use crate::error::{AppError, AppResult};
 use super::super::domain::ProviderCredentialCleanup;
 use super::super::ports::ProviderCredentialVault;
 
+#[cfg(feature = "packaged-benchmark")]
+const SERVICE: &str = "dev.dopedb.desktop.benchmark";
+#[cfg(all(debug_assertions, not(feature = "packaged-benchmark")))]
+const SERVICE: &str = "dev.dopedb.desktop.dev";
+#[cfg(all(not(debug_assertions), not(feature = "packaged-benchmark")))]
 const SERVICE: &str = "dev.dopedb.desktop";
 
 /// Production credential vault. It deliberately never invokes the connection

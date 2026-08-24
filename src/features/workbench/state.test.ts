@@ -52,6 +52,13 @@ import {
   demoSqliteConnection,
   findDemoSqliteConnection,
 } from "../connections/presets";
+import {
+  ensureGuidedDemoEnvironment,
+  GUIDED_DEMO_ENVIRONMENT_NAME,
+  GUIDED_DEMO_PROJECT_NAME,
+  selectGuidedDemoEnvironment,
+} from "../onboarding/demoSetup";
+import { findAgentSqlProposal, isSqlProposalTool } from "../agents/sqlProposal";
 import { AnalysisSnapshotParameterField } from "../analysisArticles/AnalysisArticleVisualization";
 import { actionSearchShortcutTargetIsEditable } from "../actionSearch/useActionSearchDialog";
 import { tabFocusTargetIndex } from "../../design-system/tabKeyboard";
@@ -66,6 +73,7 @@ import {
   ModalTitleBar,
 } from "../../design-system/components/Modal";
 import { queryResultPhase } from "../../lib/queryResultPhase";
+import { compareCatalogs, diffCounts } from "../../lib/schemaDiff";
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -320,7 +328,7 @@ describe("workbench state ownership", () => {
     expect(closed.activeDocumentId).toBe("db-1:welcome");
   });
 
-  it("applies a successful save through the one state reducer", () => {
+  it("applies a successful save through the one state reducer", async () => {
     const query = queryDocument("db-1", "sql", "SELECT 0;");
     const state = workbenchReducer(emptyWorkbenchState, {
       type: "activate",
@@ -519,6 +527,199 @@ describe("workbench state ownership", () => {
 
     const demo = demoSqliteConnection("/tmp/demos/dopedb-demo-v1.sqlite");
     expect(findDemoSqliteConnection([demo], demo.database)).toBe(demo);
+
+    let createdProjects = 0;
+    let boundConnections = 0;
+    let agentEnvironments: Array<{
+      id: string;
+      projectName: string;
+      name: string;
+      riskClass: "development";
+      graphRevisionCount: number;
+    }> = [];
+    const guidedDemoGateway = {
+      listAgentEnvironments: async () => agentEnvironments,
+      listProjects: async () => [],
+      createProject: async () => {
+        createdProjects += 1;
+        return {
+          id: "project-demo",
+          name: GUIDED_DEMO_PROJECT_NAME,
+          revision: 1,
+          environments: [
+            {
+              id: "environment-demo",
+              name: GUIDED_DEMO_ENVIRONMENT_NAME,
+              riskClass: "development" as const,
+              revision: 1,
+            },
+          ],
+        };
+      },
+      createEnvironment: async () => {
+        throw new Error("the default Environment should already exist");
+      },
+      bindConnection: async (input: {
+        projectEnvironmentId: string;
+        connectionId: string;
+        role: string;
+        alias: string;
+      }) => {
+        boundConnections += 1;
+        agentEnvironments = [
+          {
+            id: input.projectEnvironmentId,
+            projectName: GUIDED_DEMO_PROJECT_NAME,
+            name: GUIDED_DEMO_ENVIRONMENT_NAME,
+            riskClass: "development",
+            graphRevisionCount: 0,
+          },
+        ];
+        return {
+          id: "binding-demo",
+          projectEnvironmentId: input.projectEnvironmentId,
+          environmentRevision: 1,
+          connectionId: input.connectionId,
+          remoteConnectionId: null,
+          connectionRevision: 1,
+          currentConnectionRevision: 1,
+          connectionName: demo.name,
+          role: input.role,
+          alias: input.alias,
+          stale: false,
+        };
+      },
+    };
+    const firstDemoSetup = await ensureGuidedDemoEnvironment(
+      demo,
+      guidedDemoGateway,
+    );
+    const repeatedDemoSetup = await ensureGuidedDemoEnvironment(
+      demo,
+      guidedDemoGateway,
+    );
+    expect(firstDemoSetup).toMatchObject({
+      environmentId: "environment-demo",
+      createdEnvironmentId: "environment-demo",
+      binding: { id: "binding-demo", alias: "commerce", role: "primary" },
+    });
+    expect(repeatedDemoSetup).toEqual({
+      environmentId: "environment-demo",
+      createdEnvironmentId: null,
+      binding: null,
+    });
+    expect(createdProjects).toBe(1);
+    expect(boundConnections).toBe(1);
+    expect(
+      selectGuidedDemoEnvironment([
+        {
+          id: "environment-other",
+          projectName: "Other",
+          name: "Production",
+          riskClass: "production",
+          graphRevisionCount: 2,
+        },
+        ...agentEnvironments,
+      ])?.id,
+    ).toBe("environment-demo");
+    const sqlProposalTool = {
+      title: "mcp__dopedb-desktop-session__sql_propose",
+      rawOutput: JSON.stringify({
+        operationId: "e4ec6fa8-edf8-4c66-a8cc-da3bfbeb58a2",
+        connectionId: "eeeda2b1-47d9-404e-a143-3dd3b2f96d65",
+        state: "pending_approval",
+        payloadHash: "9a78926da9bc47dc62ba35d6fb0f375012e225c2e28b6a755f158e0765ad6c18",
+      }),
+    };
+    expect(isSqlProposalTool(sqlProposalTool)).toBe(true);
+    expect(findAgentSqlProposal(sqlProposalTool.rawOutput)).toMatchObject({
+      operationId: "e4ec6fa8-edf8-4c66-a8cc-da3bfbeb58a2",
+      connectionId: "eeeda2b1-47d9-404e-a143-3dd3b2f96d65",
+      state: "pending_approval",
+    });
+    expect(findAgentSqlProposal("not JSON")).toBeNull();
+
+    const relation = (
+      database: string,
+      columns: CatalogTable["columns"],
+      indexes: CatalogTable["indexes"] = [],
+    ) => ({
+      database,
+      schema: "public",
+      name: "orders",
+      kind: "table",
+      nativeId: null,
+      comment: null,
+      partitionParent: null,
+      partitionChildren: [],
+      columns,
+      foreignKeys: [],
+      constraints: [],
+      indexes,
+      rowEstimate: null,
+    }) satisfies CatalogTable;
+    const baseColumns: CatalogTable["columns"] = [
+      {
+        name: "id",
+        dataType: "bigint",
+        nullable: false,
+        pk: true,
+        ordinal: 1,
+        length: null,
+        precision: null,
+        scale: null,
+        defaultExpression: null,
+        generatedExpression: null,
+        identity: false,
+        autoIncrement: false,
+        collation: null,
+        comment: null,
+      },
+    ];
+    const environmentDiff = compareCatalogs(
+      {
+        tables: [
+          relation("commerce_dev", [
+            ...baseColumns,
+            {
+              ...baseColumns[0],
+              name: "fulfillment_channel",
+              dataType: "text",
+              nullable: true,
+              pk: false,
+              ordinal: 2,
+            },
+          ], [
+            {
+              name: "orders_status_idx",
+              columns: ["status"],
+              unique: false,
+              method: "btree",
+              keys: [],
+              includedColumns: [],
+              predicate: null,
+              valid: true,
+            },
+          ]),
+        ],
+        objects: [],
+      },
+      {
+        tables: [relation("commerce_prod", baseColumns)],
+        objects: [],
+      },
+    );
+    expect(diffCounts(environmentDiff)).toEqual({
+      added: 2,
+      missing: 0,
+      changed: 0,
+    });
+    expect(environmentDiff.addedTables).toHaveLength(0);
+    expect(environmentDiff.changedTables).toHaveLength(1);
+    expect(environmentDiff.objects.map(({ path }) => path)).toEqual([
+      "commerce_dev.public.orders.fulfillment_channel",
+      "commerce_dev.public.orders.orders_status_idx",
+    ]);
 
     const snapshotParameter = renderToStaticMarkup(
       createElement(AnalysisSnapshotParameterField, {

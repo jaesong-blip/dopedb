@@ -8,11 +8,11 @@ use crate::error::AppResult;
 use crate::state::AppState;
 
 use super::{
-    DesktopPreviewIntent, DesktopSqlInspectionError, DesktopSqlInspectionReceipt,
-    DesktopSqlInspectionRequest, DesktopSqlProposalReceipt, DesktopSqlProposalRequest,
-    DesktopSqlResultExportFormat, DesktopSqlResultExportProgress, DesktopSqlResultExportReceipt,
-    DesktopSqlRunError, DesktopSqlRunReceipt, DesktopSqlStreamBatch, DesktopSqlStreamReady,
-    DesktopSqlStreamReceipt, DesktopSqlStreamSinkError,
+    DesktopPreviewIntent, DesktopSqlApprovalReview, DesktopSqlInspectionError,
+    DesktopSqlInspectionReceipt, DesktopSqlInspectionRequest, DesktopSqlProposalReceipt,
+    DesktopSqlProposalRequest, DesktopSqlResultExportFormat, DesktopSqlResultExportProgress,
+    DesktopSqlResultExportReceipt, DesktopSqlRunError, DesktopSqlRunReceipt, DesktopSqlStreamBatch,
+    DesktopSqlStreamReady, DesktopSqlStreamReceipt, DesktopSqlStreamSinkError,
 };
 
 const MAX_SQL_FORMAT_INPUT_BYTES: usize = 2 * 1024 * 1024;
@@ -56,6 +56,21 @@ pub(crate) async fn format_sql_fragment(sql: String, language: String) -> AppRes
     })
     .await
     .map_err(|_| crate::AppError::Config("the SQL formatter worker stopped unexpectedly".into()))?
+}
+
+/// Loads the immutable local SQL payload instead of trusting provider-rendered tool text.
+#[tauri::command]
+pub(crate) async fn review_agent_sql_proposal(
+    state: State<'_, AppState>,
+    operation_id: Uuid,
+    connection_id: Uuid,
+    payload_hash: String,
+) -> AppResult<DesktopSqlApprovalReview> {
+    state
+        .services
+        .queries
+        .review_agent_sql_proposal(operation_id.into(), connection_id.into(), payload_hash)
+        .await
 }
 
 #[tauri::command]

@@ -1297,7 +1297,7 @@ describe("provider credential Tauri adapter", () => {
     expect(workspaceMessagesSource).toContain("Create no-change plan");
     expect(workspaceMessagesSource).toContain("변경 없는 계획 만들기");
     expect(sharedDatabaseControllerSource).toContain('method: "DELETE"');
-    expect(sharedDatabaseControllerSource).toContain('"if-match"');
+    expect(sharedDatabaseControllerSource).toContain('"x-dopedb-expected-revision"');
     expect(sharedDatabasePanelSource).toContain("copy.remove");
     expect(workspaceMessagesSource).toContain("Remove shared database");
     expect(workspaceMessagesSource).toContain("공유 DB 제거");

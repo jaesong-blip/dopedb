@@ -16,6 +16,7 @@ use zeroize::Zeroizing;
 use crate::error::{AppError, AppResult};
 
 const DEFAULT_CONTROL_PLANE_ORIGIN: &str = "https://app.dopedb.dev";
+pub(crate) const EXPECTED_REVISION_HEADER: &str = "x-dopedb-expected-revision";
 
 static CONTROL_PLANE_CLIENT: OnceLock<Client> = OnceLock::new();
 

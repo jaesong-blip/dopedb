@@ -3,14 +3,14 @@
 use crate::connection::{ConnectionLease, ConnectionOperationScope};
 use crate::error::AppError;
 use crate::kernel::access::PinnedConnection;
-use crate::kernel::identity::OperationId;
+use crate::kernel::identity::{ConnectionId, OperationId};
 use crate::model::{Classification, ExecOutcome, PreviewReport};
-use crate::operations::OperationState;
+use crate::operations::{OperationRiskLevel, OperationState};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-pub(super) const DESKTOP_SQL_PAYLOAD_SCHEMA_VERSION: u32 = 3;
+pub(crate) const DESKTOP_SQL_PAYLOAD_SCHEMA_VERSION: u32 = 3;
 
 /// Exact immutable proposal rendered by the desktop before approval or execution.
 #[derive(Debug, Clone, Serialize)]
@@ -29,12 +29,28 @@ pub(crate) struct DesktopSqlProposalReceipt {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(super) struct StoredDesktopSqlPayload {
-    pub(super) sql: String,
-    pub(super) history_origin: String,
-    pub(super) database: String,
+pub(crate) struct StoredDesktopSqlPayload {
+    pub(crate) sql: String,
+    pub(crate) history_origin: String,
+    pub(crate) database: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(super) namespace: Option<String>,
+    pub(crate) namespace: Option<String>,
+}
+
+/// Trusted Desktop projection of the immutable SQL bytes behind an Agent proposal.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DesktopSqlApprovalReview {
+    pub(crate) operation_id: OperationId,
+    pub(crate) connection_id: ConnectionId,
+    pub(crate) payload_hash: String,
+    pub(crate) state: OperationState,
+    pub(crate) risk_level: OperationRiskLevel,
+    pub(crate) sql: String,
+    pub(crate) database: String,
+    pub(crate) namespace: Option<String>,
+    pub(crate) affected: Option<u64>,
+    pub(crate) expires_at: Option<chrono::DateTime<Utc>>,
 }
 
 /// Authority retained by an impact preview. Pre-connection skipped reports keep

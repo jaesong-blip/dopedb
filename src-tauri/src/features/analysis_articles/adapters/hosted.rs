@@ -25,6 +25,7 @@ use crate::connection::keychain::{
 use crate::error::{AppError, AppResult};
 use crate::hosted_control_plane::{
     bounded_json_response, client, origin, request_error, response_error as oauth_error,
+    EXPECTED_REVISION_HEADER,
 };
 use crate::operations::canonical_hash;
 
@@ -1012,7 +1013,7 @@ pub(crate) async fn create_analysis_article(
             origin()?
         ))
         .bearer_auth(token.as_str())
-        .header("if-match", "\"0\"")
+        .header(EXPECTED_REVISION_HEADER, "0")
         .json(article)
         .send()
         .await
@@ -1067,7 +1068,7 @@ pub(crate) async fn mutate_analysis_article(
             origin()?
         ))
         .bearer_auth(token.as_str())
-        .header("if-match", format!("\"{expected_revision}\""))
+        .header(EXPECTED_REVISION_HEADER, expected_revision)
         .json(&body)
         .send()
         .await
@@ -1096,7 +1097,7 @@ pub(crate) async fn delete_analysis_article(
             origin()?
         ))
         .bearer_auth(token.as_str())
-        .header("if-match", format!("\"{expected_revision}\""))
+        .header(EXPECTED_REVISION_HEADER, expected_revision)
         .send()
         .await
         .map_err(|error| request_error("deleting an Analysis Article", error))?;
@@ -1651,7 +1652,7 @@ pub(crate) async fn update_analysis_signal(
             origin()?
         ))
         .bearer_auth(token.as_str())
-        .header("if-match", format!("\"{expected_revision}\""))
+        .header(EXPECTED_REVISION_HEADER, expected_revision)
         .json(&json!({
             "action": "update",
             "articleRevision": request.article_revision,
@@ -1697,7 +1698,7 @@ pub(crate) async fn set_analysis_signal_enabled(
             origin()?
         ))
         .bearer_auth(token.as_str())
-        .header("if-match", format!("\"{expected_revision}\""))
+        .header(EXPECTED_REVISION_HEADER, expected_revision)
         .json(&json!({ "action": if enabled { "enable" } else { "disable" } }))
         .send()
         .await
@@ -1732,7 +1733,7 @@ pub(crate) async fn delete_analysis_signal(
             origin()?
         ))
         .bearer_auth(token.as_str())
-        .header("if-match", format!("\"{expected_revision}\""))
+        .header(EXPECTED_REVISION_HEADER, expected_revision)
         .send()
         .await
         .map_err(|error| request_error("deleting an Analysis signal", error))?;

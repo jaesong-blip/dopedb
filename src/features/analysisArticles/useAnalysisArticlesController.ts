@@ -199,6 +199,7 @@ export function useAnalysisArticlesController({
     enabled: Boolean(
       selected &&
         effectiveRunId &&
+        running?.runId !== effectiveRunId &&
         localResult?.runId !== effectiveRunId &&
         (selected.liveRunId === effectiveRunId || selected.state === "review"),
     ),

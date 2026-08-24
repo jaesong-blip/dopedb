@@ -70,6 +70,21 @@ export interface ConnectionProfile {
   providerTarget: ConnectionProviderTarget | null;
 }
 
+/**
+ * Keep local filesystem ownership out of ordinary database labels. The exact
+ * SQLite path remains available in connection settings, while shared chrome,
+ * Agent receipts, and Explorer accessibility labels use only the file name.
+ */
+export function databaseDisplayLabel(
+  engine: ConnectionEngine,
+  database: string,
+): string {
+  const value = database.trim();
+  if (engine !== "sqlite" || !value) return value;
+  const segments = value.split(/[\\/]/).filter(Boolean);
+  return segments[segments.length - 1] ?? value;
+}
+
 export type ConnectionTestFailureCode =
   | "timeoutNetwork"
   | "authentication"

@@ -9,6 +9,7 @@ import {
   jsonError,
   mutationAllowed,
   privateJson,
+  privateRevisionMutationJson,
 } from "../../../../../../lib/http";
 import {
   workspaceConnection,
@@ -117,10 +118,10 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     expectedRevision = parseExpectedRevision(request);
   } catch (error) {
-    return jsonError(error instanceof Error ? error.message : "Invalid If-Match", 400);
+    return jsonError(error instanceof Error ? error.message : "Invalid expected revision", 400);
   }
-  if (expectedRevision === null) return jsonError("If-Match is required", 428);
-  if (expectedRevision !== 0) return jsonError("New connections require If-Match: \"0\"", 409);
+  if (expectedRevision === null) return jsonError("Expected revision is required", 428);
+  if (expectedRevision !== 0) return jsonError("New connections require expected revision 0", 409);
   let input;
   try {
     const body = await boundedJsonBody(request, 64 * 1_024);
@@ -140,7 +141,7 @@ export async function POST(request: Request, context: RouteContext) {
     input: connectionVersionPayload(input),
   });
   if (!created) return jsonError("Connection changed concurrently. Retry creation.", 409);
-  return privateJson({
+  return privateRevisionMutationJson(request, {
     connection: publicConnection(created, authorization.role, authorization.accessMode),
   }, { status: 201 });
 }

@@ -87,6 +87,12 @@ const AGENT_SETUP_URL: Record<AgentProvider, string> = {
   codex: "https://help.openai.com/en/articles/11096431",
 };
 const AUTO_SCROLL_THRESHOLD_PX = 96;
+const EMPTY_PROMPT_CONTEXT: AcpPromptContext = {
+  database: null,
+  documentName: null,
+  documentText: null,
+  table: null,
+};
 
 export type AcpChatControllerInput = {
   connection: ConnectionProfile;
@@ -111,7 +117,7 @@ export function useAcpChatController({
   width,
   onWidthChange,
 }: AcpChatControllerInput) {
-  const { t } = useI18n();
+  const { lang, t } = useI18n();
   const catalogScope = useCatalogScope();
   const sessionSnapshot = useAcpSessionSnapshot(catalogScope.key);
   const { selection } = useAgentSelection();
@@ -383,42 +389,6 @@ export function useAcpChatController({
   ]);
 
   useEffect(() => {
-    if (
-      composerRequest === null ||
-      composerRequest.connectionId !== connection.id ||
-      consumedComposerRequestRef.current === composerRequest.id ||
-      !knowledgeEnvironmentsQuery.isSuccess
-    ) {
-      return;
-    }
-    consumedComposerRequestRef.current = composerRequest.id;
-    const environment = availableKnowledgeEnvironments.find(
-      (candidate) => candidate.id === composerRequest.projectEnvironmentId,
-    );
-    if (!environment) {
-      setError(t("agent.acpEnvironmentRequiredBody"));
-      return;
-    }
-    if (active?.projectEnvironmentId !== environment.id) {
-      selectActiveSession(null);
-    }
-    setSelectedEnvironmentId(environment.id);
-    setPrompt(composerRequest.prompt.slice(0, MAX_PROMPT_CHARS));
-    setHistoryOpen(false);
-    setError(null);
-    setComposerExpanded(false);
-    setIncludeEditorContext(false);
-  }, [
-    active?.projectEnvironmentId,
-    availableKnowledgeEnvironments,
-    composerRequest,
-    connection.id,
-    knowledgeEnvironmentsQuery.isSuccess,
-    selectActiveSession,
-    t,
-  ]);
-
-  useEffect(() => {
     if (enabledProviders.includes(selectedProvider)) return;
     const next = enabledProviders[0];
     if (next) void changeProvider(next);
@@ -501,6 +471,98 @@ export function useAcpChatController({
     sessionsLoading: sessionSnapshot.loading,
   });
 
+  const submitPromptText = useCallback(
+    async (submitted: string, submittedContext: AcpPromptContext) => {
+      if (starting || !submitted.trim()) return false;
+      if (!prerequisitesReady || !environmentScopeReady) return false;
+      let session = active;
+      if (
+        !session ||
+        session.lifecycle === "closed" ||
+        session.lifecycle === "failed"
+      ) {
+        const focus = await startSession(selectedProvider);
+        session = focus?.session ?? null;
+      }
+      if (!session || session.lifecycle !== "ready") return false;
+      const stopObservingTurn = observeAgentTurnOutcome(
+        catalogScope,
+        session.id,
+        session.provider,
+      );
+      try {
+        await promptAgentAcpSession(session.id, submitted, {
+          ...submittedContext, responseLanguage: lang,
+        });
+      } catch (reason) {
+        stopObservingTurn?.();
+        throw reason;
+      }
+      return true;
+    }, [
+      active,
+      catalogScope,
+      environmentScopeReady, lang,
+      prerequisitesReady,
+      selectedProvider,
+      startSession,
+      starting,
+    ],
+  );
+
+  useEffect(() => {
+    if (
+      composerRequest === null ||
+      composerRequest.connectionId !== connection.id ||
+      consumedComposerRequestRef.current === composerRequest.id ||
+      !knowledgeEnvironmentsQuery.isSuccess
+    ) return;
+    const environment = availableKnowledgeEnvironments.find(
+      (candidate) => candidate.id === composerRequest.projectEnvironmentId,
+    );
+    if (!environment) {
+      consumedComposerRequestRef.current = composerRequest.id;
+      setError(t("agent.acpEnvironmentRequiredBody"));
+      return;
+    }
+    if (selectedEnvironmentId !== environment.id) return;
+    if (active?.projectEnvironmentId && active.projectEnvironmentId !== environment.id) {
+      selectActiveSession(null);
+      return;
+    }
+    if (
+      starting ||
+      !prerequisitesReady ||
+      (active !== null && !["ready", "closed", "failed"].includes(active.lifecycle))
+    ) return;
+    consumedComposerRequestRef.current = composerRequest.id;
+    const submitted = composerRequest.prompt.slice(0, MAX_PROMPT_CHARS);
+    setPrompt(submitted);
+    setHistoryOpen(false);
+    setError(null);
+    setComposerExpanded(false);
+    setIncludeEditorContext(false);
+    void submitPromptText(submitted, EMPTY_PROMPT_CONTEXT)
+      .then((sent) => {
+        if (sent) setPrompt("");
+      })
+      .catch((reason) => {
+        setError(t("agent.acpSendFailed", { error: errMessage(reason) }));
+      });
+  }, [
+    active,
+    availableKnowledgeEnvironments,
+    composerRequest,
+    connection.id,
+    knowledgeEnvironmentsQuery.isSuccess,
+    prerequisitesReady,
+    selectActiveSession,
+    selectedEnvironmentId,
+    starting,
+    submitPromptText,
+    t,
+  ]);
+
   function beginNewChat() {
     if (starting) return;
     selectActiveSession(null);
@@ -550,21 +612,9 @@ export function useAcpChatController({
 
   async function sendPrompt(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (starting || !prompt.trim()) return;
-    if (!prerequisitesReady || !environmentScopeReady) return;
     const submitted = prompt;
     setError(null);
     try {
-      let session = active;
-      if (
-        !session ||
-        session.lifecycle === "closed" ||
-        session.lifecycle === "failed"
-      ) {
-        const focus = await startSession(selectedProvider);
-        session = focus?.session ?? null;
-      }
-      if (!session || session.lifecycle !== "ready") return;
       const submittedContext: AcpPromptContext = includeEditorContext
         ? buildAcpPromptContext(
             connection,
@@ -572,24 +622,8 @@ export function useAcpChatController({
             selectedTable,
             selection,
           )
-        : {
-            database: null,
-            documentName: null,
-            documentText: null,
-            table: null,
-          };
-      const stopObservingTurn = observeAgentTurnOutcome(
-        catalogScope,
-        session.id,
-        session.provider,
-      );
-      try {
-        await promptAgentAcpSession(session.id, submitted, submittedContext);
-      } catch (reason) {
-        stopObservingTurn?.();
-        throw reason;
-      }
-      setPrompt("");
+        : EMPTY_PROMPT_CONTEXT;
+      if (await submitPromptText(submitted, submittedContext)) setPrompt("");
     } catch (reason) {
       setError(t("agent.acpSendFailed", { error: errMessage(reason) }));
     }

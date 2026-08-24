@@ -10,6 +10,7 @@ import {
   jsonError,
   mutationAllowed,
   privateJson,
+  privateRevisionMutationJson,
 } from "../../../../../../../../../lib/http";
 import { workspaceAnalysisSignal } from "../../../../../../../../../lib/schema";
 import { authorizeWorkspace } from "../../../../../../../../../lib/workspace-authorization";
@@ -48,10 +49,10 @@ async function expectedRevision(request: Request) {
   try {
     const revision = parseExpectedRevision(request);
     return revision === null
-      ? { error: jsonError("If-Match is required", 428) } as const
+      ? { error: jsonError("Expected revision is required", 428) } as const
       : { value: revision } as const;
   } catch (error) {
-    return { error: jsonError(error instanceof Error ? error.message : "Invalid If-Match", 400) } as const;
+    return { error: jsonError(error instanceof Error ? error.message : "Invalid expected revision", 400) } as const;
   }
 }
 
@@ -161,7 +162,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     authority: authority(authorization),
   });
   if (!updated) return jsonError("Analysis signal authority changed", 409);
-  return privateJson({ signal: updated });
+  return privateRevisionMutationJson(request, { signal: updated });
 }
 
 export async function DELETE(request: Request, context: RouteContext) {
@@ -197,5 +198,8 @@ export async function DELETE(request: Request, context: RouteContext) {
     authority: authority(authorization),
   });
   if (!deleted) return jsonError("Analysis signal authority changed", 409);
-  return privateJson({ deleted: true, revision: Number(deleted.revision) });
+  return privateRevisionMutationJson(request, {
+    deleted: true,
+    revision: Number(deleted.revision),
+  });
 }

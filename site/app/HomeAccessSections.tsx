@@ -1,6 +1,6 @@
 // Stable acquisition and trust sections render from typed bilingual content.
-import Image from "next/image";
-import { ArrowDown, ArrowUpRight, LockKeyhole, Network, SquareTerminal } from "lucide-react";
+import { ArrowDown, ArrowUpRight, LockKeyhole } from "lucide-react";
+import { HomeDemoShowcase } from "./HomeDemoShowcase";
 import { MarketingButton } from "./MarketingButton";
 import { AccessTopology, SectionLabel } from "./HomePrimitives";
 import { RecommendedMarketingDownload } from "./PlatformDownloads";
@@ -143,52 +143,7 @@ export function HomeAccessSections({ c, lang }: { c: HomeCopy; lang: Lang }) {
           </p>
         </div>
 
-        <div className="tw:relative tw:mt-[clamp(52px,7vw,94px)] tw:mx-auto tw:max-w-[1320px]">
-          <div className="tw:relative tw:border tw:border-hairline-strong tw:bg-night-raised tw:p-2 tw:shadow-stage">
-            <div className="tw:overflow-hidden tw:border tw:border-hairline tw:bg-night">
-              <Image
-                className="tw:block tw:h-auto tw:w-full"
-                src="/dopedb-desktop.png"
-                alt={c.product.imageAlt}
-                width={2400}
-                height={1536}
-                priority={false}
-              />
-            </div>
-            <div className="tw:flex tw:min-h-9 tw:items-center tw:justify-between tw:gap-4 tw:px-2 tw:pt-2 tw:font-mono tw:text-[9px] tw:font-medium tw:tracking-[0.1em] tw:text-cream-muted tw:uppercase tw:max-[560px]:items-start tw:max-[560px]:gap-1 tw:max-[560px]:flex-col">
-              <span>{c.product.captureLabel}</span>
-              <span className="tw:text-cream/45">{c.product.captureDetail}</span>
-            </div>
-          </div>
-
-          <div className="tw:absolute tw:-top-16 tw:-left-5 tw:grid tw:max-w-[260px] tw:grid-cols-[34px_1fr] tw:gap-3 tw:border tw:border-hairline-strong tw:bg-night/92 tw:p-3 tw:shadow-stage tw:backdrop-blur-lg tw:max-[760px]:static tw:max-[760px]:mt-3 tw:max-[760px]:max-w-none">
-            <span className="tw:grid tw:size-[34px] tw:place-items-center tw:bg-electric tw:text-night">
-              <Network size={16} />
-            </span>
-            <div>
-              <p className="tw:font-mono tw:text-[9px] tw:font-semibold tw:tracking-[0.1em] tw:text-electric tw:uppercase">
-                {c.product.labels[0].title}
-              </p>
-              <p className="tw:mt-1 tw:text-xs tw:text-cream-muted">
-                {c.product.labels[0].body}
-              </p>
-            </div>
-          </div>
-
-          <div className="tw:absolute tw:-right-5 tw:-bottom-16 tw:grid tw:max-w-[280px] tw:grid-cols-[34px_1fr] tw:gap-3 tw:border tw:border-signal/40 tw:bg-night/92 tw:p-3 tw:shadow-stage tw:backdrop-blur-lg tw:max-[760px]:static tw:max-[760px]:mt-3 tw:max-[760px]:max-w-none">
-            <span className="tw:grid tw:size-[34px] tw:place-items-center tw:bg-signal tw:text-night">
-              <SquareTerminal size={16} />
-            </span>
-            <div>
-              <p className="tw:font-mono tw:text-[9px] tw:font-semibold tw:tracking-[0.1em] tw:text-signal tw:uppercase">
-                {c.product.labels[1].title}
-              </p>
-              <p className="tw:mt-1 tw:text-xs tw:text-cream-muted">
-                {c.product.labels[1].body}
-              </p>
-            </div>
-          </div>
-        </div>
+        <HomeDemoShowcase product={c.product} />
       </div>
     </section>
 

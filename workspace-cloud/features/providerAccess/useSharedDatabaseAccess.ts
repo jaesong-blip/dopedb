@@ -293,7 +293,9 @@ export function useSharedDatabaseAccess(
         + `/connections/${encodeURIComponent(connection.id)}`,
         {
           method: "DELETE",
-          headers: { "if-match": `"${connection.revision}"` },
+          headers: {
+            "x-dopedb-expected-revision": String(connection.revision),
+          },
         },
       ).catch(() => null);
       if (!response?.ok) {

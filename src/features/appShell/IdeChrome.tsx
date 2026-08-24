@@ -5,7 +5,10 @@ import type { ReactNode, RefObject } from "react";
 import type { CatalogTable } from "../../ipc/types";
 import BackgroundTasksMenu from "../backgroundTasks/BackgroundTasksMenu";
 import type { BackgroundTask } from "../backgroundTasks/domain";
-import type { ConnectionProfile } from "../connections/domain";
+import {
+  databaseDisplayLabel,
+  type ConnectionProfile,
+} from "../connections/domain";
 import { providerTargetDisplayName } from "../connections/ProviderTargetLabel";
 import type { WorkbenchDocument } from "../workbench/domain";
 import ManualTransactionsMenu from "../queries/ManualTransactionsMenu";
@@ -246,7 +249,7 @@ export function IdeStatusBar({
     if (selectedDatabase) {
       breadcrumbs.push({
         id: `database:${selectedDatabase}`,
-        label: selectedDatabase,
+        label: databaseDisplayLabel(selected.engine, selectedDatabase),
         onSelect: onRevealDatabaseContext,
       });
     }
