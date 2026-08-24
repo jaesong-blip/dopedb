@@ -36,7 +36,8 @@ connection revision, process, and local policy.
 - [Product positioning](https://github.com/json-choi/dopedb/blob/main/docs/PRODUCT_POSITIONING.md): Audience, competitive boundary, claims, and priorities
 - [Project guide](https://github.com/json-choi/dopedb/blob/main/docs/PROJECT.md): Architecture, safety model, development, and release flow
 - [Workspace roadmap](https://github.com/json-choi/dopedb/blob/main/docs/WORKSPACE_ROADMAP.md): Shipped milestones and remaining exit criteria
-- [English README](https://github.com/json-choi/dopedb/blob/main/README.en.md): Installation and usage
+- [English README](https://github.com/json-choi/dopedb/blob/main/README.md): Installation and usage
+- [Korean README](https://github.com/json-choi/dopedb/blob/main/README.ko.md): 설치 및 사용 안내
 - [Korean README](https://github.com/json-choi/dopedb/blob/main/README.md): 설치 및 사용법
 - [Latest release](https://github.com/json-choi/dopedb/releases/latest): Current macOS and Windows builds
 
