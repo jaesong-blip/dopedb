@@ -29,6 +29,7 @@ import {
 } from "../../../../../../../lib/workspace-connections";
 import { hasWorkspaceCapability } from "../../../../../../../lib/workspace-permissions";
 import {
+  connectionLeaseRevocationScope,
   connectionVersionPayload,
   parseExpectedRevision,
   persistedConnectionVersionPayload,
@@ -193,10 +194,19 @@ export async function PATCH(request: Request, context: RouteContext) {
     ),
     columns: {
       id: true,
+      name: true,
       engine: true,
       provider: true,
+      driverId: true,
+      host: true,
+      port: true,
+      databaseName: true,
+      sslmode: true,
+      readonlyDefault: true,
       credentialMode: true,
       allowWrites: true,
+      environment: true,
+      schemaGroup: true,
       providerResourceId: true,
       revision: true,
       contentRevision: true,
@@ -251,12 +261,13 @@ export async function PATCH(request: Request, context: RouteContext) {
     ...input,
     provider: (existing.credentialMode === "managed" ? existing.provider : input.provider) as typeof input.provider,
   };
+  const normalizedPayload = connectionVersionPayload(normalized);
   if (expectedRevision !== existing.contentRevision) {
     const conflictId = await conflictConnectionCandidate({
       organizationId: workspaceId,
       connectionId,
       expectedRevision,
-      payload: connectionVersionPayload(normalized),
+      payload: normalizedPayload,
       authority,
     }).catch(() => null);
     if (!conflictId) return jsonError("Connection changed concurrently. Retry the update.", 409);
@@ -279,26 +290,38 @@ export async function PATCH(request: Request, context: RouteContext) {
     ).catch(() => false);
     return jsonError("Connection changed concurrently. Retry the update.", 409);
   }
-  let revocation;
-  try {
-    revocation = await revokeActiveLeases({
-      organizationId: workspaceId,
-      connectionId,
-    });
-  } catch (error) {
-    await abandonClaim(claim);
-    throw error;
+  const leaseRevocationScope = connectionLeaseRevocationScope(
+    persistedConnectionVersionPayload(existing),
+    normalizedPayload,
+  );
+  let revocation = { revoked: 0, deferred: 0 };
+  if (leaseRevocationScope !== "none") {
+    try {
+      revocation = await revokeActiveLeases({
+        organizationId: workspaceId,
+        connectionId,
+        ...(leaseRevocationScope === "write" ? { accessMode: "write" as const } : {}),
+      });
+    } catch (error) {
+      await abandonClaim(claim);
+      throw error;
+    }
   }
   if (revocation.deferred > 0) {
     await abandonClaim(claim);
-    return jsonError("Active database access could not be revoked. Retry the update.", 409);
+    return jsonError(
+      leaseRevocationScope === "write"
+        ? "Active write access cannot be revoked until its short-lived credential expires. Retry shortly."
+        : "Active database access could not be revoked. Retry the update.",
+      409,
+    );
   }
   const updated = await commitConnectionMutation({
     organizationId: workspaceId, connectionId, expectedContentRevision: existing.contentRevision,
     expectedAuthorityRevision: expectedClaimRevision, claimId: claim.claimId, authority,
     requireWorkspaceManager: input.allowWrites !== existing.allowWrites,
     mutation: {
-      kind: "update", payload: connectionVersionPayload(normalized), name: normalized.name,
+      kind: "update", payload: normalizedPayload, name: normalized.name,
       engine: normalized.engine, provider: normalized.provider, driverId: normalized.driverId,
       host: normalized.host, port: normalized.port, databaseName: normalized.database, sslmode: normalized.sslmode,
       readonlyDefault: normalized.readonlyDefault, allowWrites: normalized.allowWrites,

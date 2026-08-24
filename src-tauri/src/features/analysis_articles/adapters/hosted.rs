@@ -34,6 +34,8 @@ const MAX_DEFINITION_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_RESULT_RESPONSE_BYTES: usize = 18 * 1024 * 1024;
 const MAX_INLINE_COMPLETION_REQUEST_BYTES: usize = 4 * 1024 * 1024;
 const RESULT_UPLOAD_ATTEMPTS: usize = 3;
+const ANALYSIS_RESULT_PROTOCOL_HEADER: &str = "x-dopedb-analysis-result-protocol";
+const STAGED_ANALYSIS_RESULT_PROTOCOL: &str = "staged-v1";
 const ANALYSIS_RUNNER_CAPABILITY_HEADER: &str = "x-dopedb-analysis-runner-capability";
 const ANALYSIS_RUNNER_CAPABILITY_VERSION_HEADER: &str =
     "x-dopedb-analysis-runner-capability-version";
@@ -734,6 +736,18 @@ pub(crate) fn assert_hosted_mutation_error_contract() {
     assert!(matches!(
         classify_article_mutation_error(StatusCode::BAD_GATEWAY, upstream()),
         AppError::Network(_)
+    ));
+    assert!(should_use_inline_completion_fallback(
+        StatusCode::BAD_REQUEST,
+        None,
+    ));
+    assert!(!should_use_inline_completion_fallback(
+        StatusCode::BAD_REQUEST,
+        Some(STAGED_ANALYSIS_RESULT_PROTOCOL),
+    ));
+    assert!(!should_use_inline_completion_fallback(
+        StatusCode::CONFLICT,
+        None,
     ));
 }
 
@@ -2106,6 +2120,10 @@ enum CompletionOutcome {
     InlineCompatibility,
 }
 
+fn should_use_inline_completion_fallback(status: StatusCode, protocol: Option<&str>) -> bool {
+    status == StatusCode::BAD_REQUEST && protocol != Some(STAGED_ANALYSIS_RESULT_PROTOCOL)
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "completion replay validation keeps every exact run identity explicit"
@@ -2136,7 +2154,15 @@ async fn patch_analysis_completion(
             .send()
             .await;
         let (retryable, result) = match sent {
-            Ok(raw) if allow_inline_fallback && raw.status() == StatusCode::BAD_REQUEST => {
+            Ok(raw)
+                if allow_inline_fallback
+                    && should_use_inline_completion_fallback(
+                        raw.status(),
+                        raw.headers()
+                            .get(ANALYSIS_RESULT_PROTOCOL_HEADER)
+                            .and_then(|value| value.to_str().ok()),
+                    ) =>
+            {
                 return Ok(CompletionOutcome::InlineCompatibility);
             }
             Ok(raw) => {
@@ -2181,26 +2207,36 @@ async fn patch_analysis_completion(
     Err(last_error.unwrap_or_else(|| AppError::Network("completing an Analysis run failed".into())))
 }
 
-async fn fail_staged_analysis_upload(
+async fn fail_analysis_result_delivery(
     user_id: &str,
     workspace_id: Uuid,
     article_id: Uuid,
     run_id: Uuid,
     token: &str,
     runner_capability: &str,
+    inline_compatibility: bool,
 ) {
     let error = Some(AnalysisRunError {
         kind: "result_upload_failed".into(),
-        message: "Analysis result upload failed after bounded retries".into(),
+        message: "Analysis result delivery failed after bounded retries".into(),
     });
-    let payload = serde_json::to_vec(&CompleteRunRequest {
-        state: AnalysisRunState::Failed,
-        query_receipts: &[],
-        fragment_manifest: &[],
-        error: &error,
-    });
+    let payload = if inline_compatibility {
+        serde_json::to_vec(&InlineCompleteRunRequest {
+            state: AnalysisRunState::Failed,
+            query_receipts: &[],
+            fragments: &[],
+            error: &error,
+        })
+    } else {
+        serde_json::to_vec(&CompleteRunRequest {
+            state: AnalysisRunState::Failed,
+            query_receipts: &[],
+            fragment_manifest: &[],
+            error: &error,
+        })
+    };
     if let Ok(payload) = payload {
-        let _ = patch_analysis_completion(
+        if let Err(failure) = patch_analysis_completion(
             user_id,
             workspace_id,
             article_id,
@@ -2211,7 +2247,14 @@ async fn fail_staged_analysis_upload(
             &payload,
             false,
         )
-        .await;
+        .await
+        {
+            tracing::warn!(
+                run_id = %run_id,
+                error_kind = failure.kind(),
+                "Analysis run could not be recovered after result delivery failure"
+            );
+        }
     }
 }
 
@@ -2256,13 +2299,14 @@ pub(crate) async fn complete_analysis_run(
                 break;
             }
             Err(upload_error) => {
-                fail_staged_analysis_upload(
+                fail_analysis_result_delivery(
                     user_id,
                     workspace_id,
                     article_id,
                     run_id,
                     token.as_str(),
                     runner_capability,
+                    false,
                 )
                 .await;
                 return Err(upload_error);
@@ -2299,14 +2343,15 @@ pub(crate) async fn complete_analysis_run(
                         return Ok(run);
                     }
                 }
-                if state == AnalysisRunState::Succeeded {
-                    fail_staged_analysis_upload(
+                if state != AnalysisRunState::Failed {
+                    fail_analysis_result_delivery(
                         user_id,
                         workspace_id,
                         article_id,
                         run_id,
                         token.as_str(),
                         runner_capability,
+                        false,
                     )
                     .await;
                 }
@@ -2322,13 +2367,14 @@ pub(crate) async fn complete_analysis_run(
             error,
         })?;
         if inline_payload.len() > MAX_INLINE_COMPLETION_REQUEST_BYTES {
-            fail_staged_analysis_upload(
+            fail_analysis_result_delivery(
                 user_id,
                 workspace_id,
                 article_id,
                 run_id,
                 token.as_str(),
                 runner_capability,
+                true,
             )
             .await;
             return Err(AppError::Network(
@@ -2355,6 +2401,18 @@ pub(crate) async fn complete_analysis_run(
                     if run.state == state && run.finished_at.is_some() {
                         return Ok(run);
                     }
+                }
+                if state != AnalysisRunState::Failed {
+                    fail_analysis_result_delivery(
+                        user_id,
+                        workspace_id,
+                        article_id,
+                        run_id,
+                        token.as_str(),
+                        runner_capability,
+                        true,
+                    )
+                    .await;
                 }
                 return Err(completion_error);
             }

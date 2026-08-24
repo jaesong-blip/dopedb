@@ -554,7 +554,7 @@ export async function commitAnalysisRunCompletion(input: {
           ${input.completion.state} <> 'succeeded'
           OR ${fragments.length} > 0
           OR NOT (
-            article."live_revision" = run."article_revision"
+            COALESCE(article."live_revision" = run."article_revision", FALSE)
             OR (article."revision" = run."article_revision"
               AND article."state" = 'review'
               AND revision."payload" #>> '{definition,refresh,shareReviewedResults}' = 'true')
@@ -571,36 +571,43 @@ export async function commitAnalysisRunCompletion(input: {
           (${input.completion.state} <> 'succeeded'
             AND NOT EXISTS (SELECT 1 FROM requested_fragment))
           OR (${input.completion.state} = 'succeeded'
-            AND NOT EXISTS (
-              SELECT 1
-              FROM jsonb_array_elements(
-                COALESCE(revision."payload" #> '{definition,blocks}', '[]'::jsonb)
-              ) block
-              WHERE block ->> 'sourceNodeId' IS NOT NULL
-                AND NOT EXISTS (
-                  SELECT 1 FROM requested_fragment requested
-                  WHERE requested.block_id = block ->> 'id'
-                )
-            )
-            AND NOT EXISTS (
-              SELECT 1 FROM requested_fragment requested
-              WHERE NOT EXISTS (
+            AND (
+              NOT (
+                COALESCE(article."live_revision" = run."article_revision", FALSE)
+                OR (article."revision" = run."article_revision"
+                  AND article."state" = 'review'
+                  AND revision."payload" #>> '{definition,refresh,shareReviewedResults}' = 'true')
+              )
+              OR (NOT EXISTS (
                 SELECT 1
                 FROM jsonb_array_elements(
                   COALESCE(revision."payload" #> '{definition,blocks}', '[]'::jsonb)
                 ) block
                 WHERE block ->> 'sourceNodeId' IS NOT NULL
-                  AND block ->> 'id' = requested.block_id
+                  AND NOT EXISTS (
+                    SELECT 1 FROM requested_fragment requested
+                    WHERE requested.block_id = block ->> 'id'
+                  )
               )
-            )
-            AND NOT EXISTS (
-              SELECT 1
-              FROM requested_fragment requested
-              GROUP BY requested.block_id
-              HAVING min(requested.ordinal) <> 0
-                OR max(requested.ordinal) <> count(DISTINCT requested.ordinal) - 1
-                OR count(*) <> count(DISTINCT requested.ordinal)
-            ))
+              AND NOT EXISTS (
+                SELECT 1 FROM requested_fragment requested
+                WHERE NOT EXISTS (
+                  SELECT 1
+                  FROM jsonb_array_elements(
+                    COALESCE(revision."payload" #> '{definition,blocks}', '[]'::jsonb)
+                  ) block
+                  WHERE block ->> 'sourceNodeId' IS NOT NULL
+                    AND block ->> 'id' = requested.block_id
+                )
+              )
+              AND NOT EXISTS (
+                SELECT 1
+                FROM requested_fragment requested
+                GROUP BY requested.block_id
+                HAVING min(requested.ordinal) <> 0
+                  OR max(requested.ordinal) <> count(DISTINCT requested.ordinal) - 1
+                  OR count(*) <> count(DISTINCT requested.ordinal)
+              ))))
         )
       FOR UPDATE OF run, runner, article, revision
     ), requested_receipt AS MATERIALIZED (
@@ -819,6 +826,8 @@ async function replayAnalysisRunCompletion(input: {
         AND run."error_message" IS NOT DISTINCT FROM ${input.completion.error?.message ?? null}
         AND (
           (${input.completion.state} <> 'succeeded'
+            AND NOT EXISTS (SELECT 1 FROM requested_fragment))
+          OR (${input.completion.state} = 'succeeded'
             AND NOT EXISTS (SELECT 1 FROM requested_fragment))
           OR (${input.completion.state} = 'succeeded'
             AND NOT EXISTS (

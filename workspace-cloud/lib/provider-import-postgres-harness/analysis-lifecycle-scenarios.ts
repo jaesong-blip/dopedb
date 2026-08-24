@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { expect } from "vitest";
 
+import { returnDraftAndVerifyLocalOnlyCompletion } from "./analysis-local-result-scenarios";
 import { expectRfc3339Timestamp } from "./assertions";
 import type { AuthorityProviderScenarioResult } from "./authority-provider-scenarios";
 import type { ProviderImportPostgresHarness } from "./fixture";
@@ -610,6 +611,7 @@ export async function runAnalysisLifecycleScenarios(
     error: null,
   };
   const sqlBoundaryCases = [
+    [],
     missingBlockManifest,
     gapManifest,
     unknownBlockManifest,
@@ -788,16 +790,18 @@ export async function runAnalysisLifecycleScenarios(
   `;
   expect(cancelledReceipts[0]?.count).toBe(0);
 
-  const returnedDraft = await commitAnalysisArticleMutation({
-    organizationId,
+  await returnDraftAndVerifyLocalOnlyCompletion({
+    fixture,
+    articleId,
     article: revisedArticle,
-    expectedRevision: 3,
-    state: "draft",
-    ownerMemberId: memberId,
-    authority,
-    operation: "return_draft",
+    queryReceipt,
+    runnerId: analysisRunnerId,
+    runnerCapabilityHash: analysisRunnerCapabilityHash,
+    createRun: createAnalysisRun,
+    mutateArticle: commitAnalysisArticleMutation,
+    runStore,
+    runContract,
   });
-  expect(returnedDraft).toMatchObject({ revision: 4, state: "draft" });
   const privateArticleInput = articleContract.parseSharedAnalysisArticleCreate({
     ...revisedArticle,
     definition: {

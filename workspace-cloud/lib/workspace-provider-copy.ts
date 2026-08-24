@@ -17,6 +17,10 @@ const koreanByEnglish: Readonly<Record<string, string>> = {
     "Neon API 키로 접근 가능한 프로젝트가 없습니다. 프로젝트 범위와 조직 권한을 확인하세요.",
   "Neon API request limit was reached. Try again shortly.":
     "Neon API 요청 한도에 도달했습니다. 잠시 뒤 다시 시도하세요.",
+  "Active write access cannot be revoked until its short-lived credential expires. Retry shortly.":
+    "현재 사용 중인 쓰기 자격 증명은 만료 전 강제로 폐기할 수 없습니다. 잠시 뒤 다시 시도하세요.",
+  "Active database access could not be revoked. Retry the update.":
+    "현재 사용 중인 단기 DB 자격 증명을 폐기하지 못했습니다. 자격 증명이 만료된 뒤 다시 시도하세요.",
 };
 
 const englishByKorean: Readonly<Record<string, string>> = {

@@ -13,6 +13,8 @@ export type ConnectionVersionPayload = ConnectionInput & {
   deleted: boolean;
 };
 
+export type ConnectionLeaseRevocationScope = "none" | "write" | "all";
+
 function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize);
   if (value && typeof value === "object") {
@@ -29,6 +31,24 @@ export function canonicalJson(value: unknown): string {
 
 export function canonicalHash(value: unknown): string {
   return createHash("sha256").update(canonicalJson(value)).digest("hex");
+}
+
+/**
+ * Existing read credentials do not gain write authority when the administrator
+ * enables the write policy. A downgrade must retire only write credentials;
+ * identity, transport, and deletion changes still invalidate every lease.
+ */
+export function connectionLeaseRevocationScope(
+  current: ConnectionVersionPayload,
+  next: ConnectionVersionPayload,
+): ConnectionLeaseRevocationScope {
+  const currentAtNextWritePolicy = {
+    ...current,
+    allowWrites: next.allowWrites,
+  };
+  if (canonicalHash(currentAtNextWritePolicy) !== canonicalHash(next)) return "all";
+  if (current.allowWrites === next.allowWrites || next.allowWrites) return "none";
+  return "write";
 }
 
 export function connectionVersionPayload(

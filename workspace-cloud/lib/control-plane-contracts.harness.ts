@@ -23,6 +23,10 @@ import {
 } from "./product-analytics";
 import { parseSharedAnalysisArticleCreate } from "./workspace-analysis-articles";
 import { workspaceSchedulerBoundedWakeAt } from "./workspace-background-scheduler";
+import {
+  connectionLeaseRevocationScope,
+  type ConnectionVersionPayload,
+} from "./workspace-versioning";
 
 type Fixture = Readonly<{
   schemaVersion: number;
@@ -174,6 +178,34 @@ describe("Desktop control-plane contracts", () => {
     expect(lease.lease.connector?.kind).toBe("gcpCloudSqlAuthProxy");
     expect(parseSharedAnalysisArticleCreate(fixture.analysisArticleCreate))
       .toEqual(fixture.analysisArticleCreate);
+
+    const connectionVersion = {
+      name: "Primary",
+      engine: "postgres",
+      provider: "gcpCloudSql",
+      driverId: null,
+      host: "127.0.0.1",
+      port: 5432,
+      database: "app",
+      sslmode: "disable",
+      readonlyDefault: true,
+      allowWrites: false,
+      env: "prod",
+      schemaGroup: null,
+      deleted: false,
+    } as const satisfies ConnectionVersionPayload;
+    expect(connectionLeaseRevocationScope(
+      connectionVersion,
+      { ...connectionVersion, allowWrites: true },
+    )).toBe("none");
+    expect(connectionLeaseRevocationScope(
+      { ...connectionVersion, allowWrites: true },
+      connectionVersion,
+    )).toBe("write");
+    expect(connectionLeaseRevocationScope(
+      connectionVersion,
+      { ...connectionVersion, host: "10.0.0.2" },
+    )).toBe("all");
 
     for (const acceptance of fixture.analysisArticleAcceptances) {
       const candidate = applySemanticMutations(

@@ -392,6 +392,12 @@ export function analysisResultFragmentsAreComplete(
   });
 }
 
+/**
+ * Parses terminal evidence without deciding where results may be stored. An
+ * empty successful manifest is the valid Desktop-only form; the route and the
+ * PostgreSQL commit independently enforce whether this exact run is local-only
+ * or must provide a complete shared fragment set.
+ */
 export function parseAnalysisRunCompletion(
   value: unknown,
   definition: AnalysisArticleDefinition,
@@ -450,7 +456,8 @@ export function parseAnalysisRunCompletion(
   const resultFragments = stagedRow ? fragmentManifest : inlineFragments;
   if ((succeeded && (receipts.length !== definition.queries.length
     || receipts.some((receipt) => receipt.state !== "succeeded") || error !== null
-    || !analysisResultFragmentsAreComplete(definition, resultFragments)))
+    || (resultFragments.length > 0
+      && !analysisResultFragmentsAreComplete(definition, resultFragments))))
     || (!succeeded && error === null)
     || (!succeeded && (fragmentManifest.length > 0 || inlineFragments.length > 0))) {
     throw new Error("Analysis Article completion state is inconsistent");

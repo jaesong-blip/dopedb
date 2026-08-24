@@ -48,6 +48,17 @@ type RouteContext = {
   params: Promise<{ workspaceId: string; articleId: string; runId: string }>;
 };
 
+const stagedResultProtocolHeaders = {
+  "x-dopedb-analysis-result-protocol": "staged-v1",
+};
+
+function completionError(message: string, status: number) {
+  return privateJson({ error: message }, {
+    status,
+    headers: stagedResultProtocolHeaders,
+  });
+}
+
 function authority(authorization: {
   role: string;
   session: { session: { id: string }; user: { id: string } };
@@ -131,18 +142,18 @@ export async function GET(request: Request, context: RouteContext) {
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
-  if (!mutationAllowed(request, env.appOrigin())) return jsonError("Invalid request origin", 403);
+  if (!mutationAllowed(request, env.appOrigin())) return completionError("Invalid request origin", 403);
   if (!isAnalysisDesktopBearerRequest(request)) {
-    return jsonError("Analysis run completion requires a Desktop bearer session", 401);
+    return completionError("Analysis run completion requires a Desktop bearer session", 401);
   }
   const { workspaceId, articleId, runId } = await context.params;
   if (!isUuid(workspaceId) || !isUuid(articleId) || !isUuid(runId)) {
-    return jsonError("Invalid Analysis Article run scope", 400);
+    return completionError("Invalid Analysis Article run scope", 400);
   }
   const authorization = await authorizeWorkspace(request, workspaceId, "view");
-  if (!authorization.ok) return jsonError(authorization.error, authorization.status);
+  if (!authorization.ok) return completionError(authorization.error, authorization.status);
   const runnerCapability = parseAnalysisRunnerCapability(request);
-  if (!runnerCapability) return jsonError(
+  if (!runnerCapability) return completionError(
     "Invalid Analysis runner capability",
     request.headers.has(analysisRunnerCapabilityHeader) ? 403 : 428,
   );
@@ -154,9 +165,9 @@ export async function PATCH(request: Request, context: RouteContext) {
       eq(workspaceAnalysisArticleRun.id, runId),
     ),
   });
-  if (!run) return jsonError("Analysis Article run not found", 404);
+  if (!run) return completionError("Analysis Article run not found", 404);
   const revision = await runRevision(workspaceId, articleId, run.articleRevision);
-  if (!revision) return jsonError("Analysis Article revision is unavailable", 409);
+  if (!revision) return completionError("Analysis Article revision is unavailable", 409);
   const articleProjection = await db.query.workspaceAnalysisArticle.findFirst({
     where: and(
       eq(workspaceAnalysisArticle.organizationId, workspaceId),
@@ -165,18 +176,27 @@ export async function PATCH(request: Request, context: RouteContext) {
     columns: { revision: true, state: true, liveRevision: true, deletedAt: true },
   });
   if (!articleProjection || articleProjection.deletedAt) {
-    return jsonError("Analysis Article is unavailable", 409);
+    return completionError("Analysis Article is unavailable", 409);
   }
+  const mayStoreSharedResults = articleProjection.liveRevision === run.articleRevision
+    || (
+      articleProjection.revision === run.articleRevision
+      && articleProjection.state === "review"
+      && revision.definition.refresh.shareReviewedResults
+    );
   // New clients send only a small staged-fragment manifest. Keep a bounded
   // temporary inline path so Desktop and cloud can roll independently; payloads
   // above Vercel's buffered request ceiling require the staged protocol.
   const body = await boundedJsonBody(request, 4 * 1024 * 1024);
-  if (!body.ok) return jsonError("Invalid Analysis Article completion", 400);
+  if (!body.ok) return completionError("Invalid Analysis Article completion", 400);
   let completion;
   try {
     completion = parseAnalysisRunCompletion(body.value, revision.definition);
   } catch (error) {
-    return jsonError(error instanceof Error ? error.message : "Invalid Analysis Article completion", 400);
+    return completionError(
+      error instanceof Error ? error.message : "Invalid Analysis Article completion",
+      400,
+    );
   }
   const connectionByRole = new Map(revision.connections.map((connection) => [connection.role, connection]));
   const queryById = new Map(revision.definition.queries.map((query) => [query.id, query]));
@@ -186,8 +206,15 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (!query || !connection || receipt.connectionId !== connection.connectionId
       || receipt.connectionRevision !== connection.connectionRevision
       || receipt.queryHash !== canonicalHash({ sql: query.sql, parameterValues: run.parameterValues })) {
-      return jsonError("Analysis Article query receipt does not match the immutable revision", 409);
+      return completionError("Analysis Article query receipt does not match the immutable revision", 409);
     }
+  }
+  if (run.state === "running" && !mayStoreSharedResults
+    && (completion.fragmentManifest.length > 0 || completion.inlineFragments.length > 0)) {
+    return completionError(
+      "Draft and private review results stay on Desktop until shared result storage is enabled",
+      409,
+    );
   }
   if (run.state !== "running") {
     const replayManifest = completion.inlineFragments.length > 0
@@ -207,9 +234,9 @@ export async function PATCH(request: Request, context: RouteContext) {
       fragmentManifest: replayManifest,
       authority: authority(authorization),
     });
-    if (!replayed) return jsonError("Analysis Article run is already terminal", 409);
+    if (!replayed) return completionError("Analysis Article run is already terminal", 409);
     return privateJson({ run: replayed }, {
-      headers: { "x-dopedb-analysis-result-protocol": "staged-v1" },
+      headers: stagedResultProtocolHeaders,
     });
   }
   let fragmentManifest = completion.fragmentManifest;
@@ -224,7 +251,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         columns = null;
       }
       if (!columns?.length || canonicalHash(fragment.columns) !== canonicalHash(columns)) {
-        return jsonError("Analysis Article result schema does not match its block source", 409);
+        return completionError("Analysis Article result schema does not match its block source", 409);
       }
     }
     const preflight = await canStageAnalysisRunFragment({
@@ -236,7 +263,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       authority: authority(authorization),
     });
     if (!preflight) {
-      return jsonError("Analysis result staging authority changed", 409);
+      return completionError("Analysis result staging authority changed", 409);
     }
     const expiresAt = new Date(
       (run.startedAt ?? run.createdAt).valueOf()
@@ -262,7 +289,10 @@ export async function PATCH(request: Request, context: RouteContext) {
         authority: authority(authorization),
       });
       if (!staged || staged.payloadHash !== fragment.payloadHash) {
-        return jsonError("Analysis result staging authority changed or its budget was exceeded", 409);
+        return completionError(
+          "Analysis result staging authority changed or its budget was exceeded",
+          409,
+        );
       }
       stagedManifest.push({
         blockId: String(staged.blockId),
@@ -272,21 +302,16 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
     fragmentManifest = stagedManifest;
   }
-  const mayStoreSharedResults = articleProjection.liveRevision === run.articleRevision
-    || (
-      articleProjection.revision === run.articleRevision
-      && articleProjection.state === "review"
-      && revision.definition.refresh.shareReviewedResults
-    );
   if (fragmentManifest.length > 0 && !mayStoreSharedResults) {
-    return jsonError(
+    return completionError(
       "Draft and private review results stay on Desktop until shared result storage is enabled",
       409,
     );
   }
   if (completion.state === "succeeded"
+    && mayStoreSharedResults
     && !analysisResultFragmentsAreComplete(revision.definition, fragmentManifest)) {
-    return jsonError("Analysis Article shared results are incomplete", 409);
+    return completionError("Analysis Article shared results are incomplete", 409);
   }
   const updated = await commitAnalysisRunCompletion({
     organizationId: workspaceId,
@@ -298,8 +323,8 @@ export async function PATCH(request: Request, context: RouteContext) {
     fragmentManifest,
     authority: authority(authorization),
   });
-  if (!updated) return jsonError("Analysis run authority changed before completion", 409);
+  if (!updated) return completionError("Analysis run authority changed before completion", 409);
   return privateJson({ run: updated }, {
-    headers: { "x-dopedb-analysis-result-protocol": "staged-v1" },
+    headers: stagedResultProtocolHeaders,
   });
 }

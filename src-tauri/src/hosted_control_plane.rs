@@ -8,7 +8,7 @@ use std::net::IpAddr;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use reqwest::{redirect::Policy, Client, Response, Url};
+use reqwest::{redirect::Policy, Client, Response, StatusCode, Url};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use zeroize::Zeroizing;
@@ -78,6 +78,14 @@ pub(crate) fn client() -> AppResult<&'static Client> {
 
 pub(crate) fn request_error(action: &str, error: reqwest::Error) -> AppError {
     AppError::Network(format!("{action} failed: {error}"))
+}
+
+fn response_source(status: StatusCode) -> &'static str {
+    if status == StatusCode::UNAUTHORIZED {
+        "workspace authentication"
+    } else {
+        "workspace service"
+    }
 }
 
 fn is_json_media_type(value: Option<&str>) -> bool {
@@ -171,9 +179,8 @@ pub(crate) async fn response_error(response: Response) -> AppError {
             !value.is_empty() && value.len() <= 512 && !value.chars().any(char::is_control)
         })
         .unwrap_or("the control plane rejected the request");
-    AppError::Network(format!(
-        "workspace authentication returned {status}: {detail}"
-    ))
+    let source = response_source(status);
+    AppError::Network(format!("{source} returned {status}: {detail}"))
 }
 
 #[cfg(test)]
@@ -186,4 +193,12 @@ pub(crate) fn assert_shared_http_client_contract() {
         "application/problem+json; charset=utf-8"
     )));
     assert!(!is_json_media_type(Some("text/html; charset=utf-8")));
+    assert_eq!(
+        response_source(StatusCode::UNAUTHORIZED),
+        "workspace authentication"
+    );
+    assert_eq!(
+        response_source(StatusCode::BAD_REQUEST),
+        "workspace service"
+    );
 }

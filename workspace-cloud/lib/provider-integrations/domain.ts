@@ -11,7 +11,10 @@ import {
   parseGcpCloudSqlResource,
   type GcpCloudSqlResource,
 } from "../providers/gcp-cloud-sql-core";
-import type { ProviderResourceItem } from "../providers/provider-types";
+import type {
+  ManagedAccessMode,
+  ProviderResourceItem,
+} from "../providers/provider-types";
 
 export type ManagedProviderResource =
   | PlanetScaleResource
@@ -24,6 +27,7 @@ export type LeaseRevocationFilter = {
   userId?: string;
   connectionId?: string;
   integrationId?: string;
+  accessMode?: ManagedAccessMode;
 };
 
 export type LeaseRevocationResult = {
