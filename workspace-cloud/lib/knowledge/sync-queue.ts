@@ -533,7 +533,7 @@ export async function recordGithubSourceRevisions(
   const rows = await neonSql.query(
     `WITH requested AS MATERIALIZED (
        SELECT *
-       FROM jsonb_to_recordset($1::jsonb) AS item(
+       FROM jsonb_to_recordset($1::text::jsonb) AS item(
          "organizationId" text, "sourceId" text, "deliveryId" text,
          "beforeCommitSha" text, "afterCommitSha" text
        )

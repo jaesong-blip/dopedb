@@ -819,7 +819,7 @@ async fn knowledge_sources_for_scope(
     {
         (projects, sources, true)
     } else if scope.workspace_kind == WorkspaceKind::Team {
-        let account = selected_team_account(&scope)?;
+        let account = selected_team_account(scope)?;
         let projects = state
             .services
             .knowledge
