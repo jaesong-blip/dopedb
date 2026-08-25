@@ -15,6 +15,11 @@ import {
 import { candidateConflictResolution } from "./connection-conflict-decision";
 import { privateRevisionMutationJson } from "./http";
 import {
+  githubInstallationUserAuthorizationUrl,
+  parseGithubInstallationUserAuthorizationState,
+  verifyGithubInstallationUserAccess,
+} from "./knowledge/github-app";
+import {
   acceptsProductAnalyticsContract,
   parseProductAnalyticsEnvelope,
   productAnalyticsEnvelopeBudgetPlan,
@@ -186,6 +191,61 @@ describe("Optimistic revision transport", () => {
     expect(() => parseExpectedRevision(new Request("https://app.dopedb.dev/example", {
       headers: { [EXPECTED_REVISION_HEADER]: '"7"' },
     }))).toThrow(EXPECTED_REVISION_HEADER);
+  });
+});
+
+describe("GitHub installation authorization state", () => {
+  it("binds the setup nonce and installation id to an exact PKCE callback", async () => {
+    vi.stubEnv("BETTER_AUTH_URL", "https://app.dopedb.dev");
+    vi.stubEnv("GITHUB_KNOWLEDGE_CLIENT_ID", "Iv1.dopedbtestclient01");
+    vi.stubEnv(
+      "GITHUB_KNOWLEDGE_CLIENT_SECRET",
+      "0123456789abcdef0123456789abcdef01234567",
+    );
+    try {
+      const setupState = "a".repeat(43);
+      const authorizationUrl = new URL(
+        githubInstallationUserAuthorizationUrl(setupState, 123n),
+      );
+      expect(authorizationUrl.origin).toBe("https://github.com");
+      expect(authorizationUrl.pathname).toBe("/login/oauth/authorize");
+      expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
+        "https://app.dopedb.dev/api/v1/knowledge/github/callback",
+      );
+      expect(authorizationUrl.searchParams.get("code_challenge_method")).toBe("S256");
+      const signedState = authorizationUrl.searchParams.get("state") ?? "";
+      const parsedState = parseGithubInstallationUserAuthorizationState(signedState);
+      expect(parsedState).toMatchObject({ setupState, installationId: 123n });
+      expect(() => parseGithubInstallationUserAuthorizationState(
+        signedState.replace(".123.", ".124."),
+      )).toThrow("Invalid GitHub installation authorization state");
+      const fetchSpy = vi.spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(new Response(JSON.stringify({
+          access_token: `ghu_${"t".repeat(36)}`,
+          token_type: "bearer",
+        }), { headers: { "content-type": "application/json" } }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({
+          total_count: 1,
+          installations: [{ id: 123 }],
+        }), { headers: { "content-type": "application/json" } }));
+      await expect(verifyGithubInstallationUserAccess(
+        "b".repeat(40),
+        parsedState,
+      )).resolves.toBe(true);
+      expect(String(fetchSpy.mock.calls[0]?.[0])).toBe(
+        "https://github.com/login/oauth/access_token",
+      );
+      expect(new URLSearchParams(
+        String(fetchSpy.mock.calls[0]?.[1]?.body),
+      ).get("code_verifier")).toBe(parsedState.codeVerifier);
+      expect(String(fetchSpy.mock.calls[1]?.[0])).toContain(
+        "/user/installations?per_page=100&page=1",
+      );
+      fetchSpy.mockRestore();
+    } finally {
+      vi.restoreAllMocks();
+      vi.unstubAllEnvs();
+    }
   });
 });
 

@@ -96,11 +96,30 @@ GitHub App and selects repositories through GitHub's installation screen; ordina
 workspace members do not paste a token, create a webhook, or keep a Desktop online.
 The App needs only repository **Contents: read** permission and the `push`,
 `installation`, `installation_repositories`, and `repository` events. Configure its
-webhook once, centrally, at:
+OAuth Callback URL, post-install Setup URL, and webhook once, centrally, at:
 
 ```text
-https://app.dopedb.dev/api/v1/knowledge/github/webhook
+Callback URL: https://app.dopedb.dev/api/v1/knowledge/github/callback
+Setup URL: https://app.dopedb.dev/api/v1/knowledge/github/callback
+Webhook URL: https://app.dopedb.dev/api/v1/knowledge/github/webhook
 ```
+
+Keep callback wildcard matching off and keep **Request user authorization (OAuth) during
+installation** off; DopeDB starts the PKCE-protected GitHub user authorization itself only
+after validating the one-time setup state. Enable **Redirect on update** for the Setup
+URL. GitHub otherwise returns after a new installation but leaves an existing
+installation's repository update on GitHub, so the workspace state cannot be bound to
+that update.
+
+`GITHUB_KNOWLEDGE_CLIENT_ID` and `GITHUB_KNOWLEDGE_CLIENT_SECRET` are required in addition
+to the App id, slug, private key, and webhook secret. The callback exchanges the one-time
+code in function-local memory, verifies that the GitHub user can access the claimed
+installation, and never stores or returns the user token. This prevents a spoofed
+`installation_id` from binding another tenant's installation. Desktop refreshes only the
+GitHub repository inventory when its window regains focus after this explicit flow; it
+does not poll in the background. If the external browser has no DopeDB session, the
+callback routes through the normal Google sign-in page and resumes the same one-time
+setup state instead of discarding the installation attempt.
 
 The default path does not build or persist a graph. The control plane pins each source
 to an exact commit and exposes only bounded repository-relative tree search and UTF-8

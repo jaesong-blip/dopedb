@@ -11,8 +11,11 @@ import {
 import { env } from "../env";
 
 const GITHUB_API = "https://api.github.com";
+const GITHUB_OAUTH_AUTHORIZE = "https://github.com/login/oauth/authorize";
+const GITHUB_OAUTH_ACCESS_TOKEN = "https://github.com/login/oauth/access_token";
 const GITHUB_API_VERSION = "2026-03-10";
 const MAX_REPOSITORIES = 1_000;
+const MAX_USER_INSTALLATIONS = 1_000;
 const MAX_SOURCE_FILES = 100_000;
 const MAX_SOURCE_BYTES = 2 * 1024 * 1024 * 1024;
 const MAX_SOURCE_FILE_BYTES = 16 * 1024 * 1024;
@@ -74,9 +77,30 @@ function githubAppConfiguration() {
   return { appId, appSlug, privateKey };
 }
 
+function githubOauthConfiguration() {
+  const clientId = env.githubKnowledgeClientId();
+  const clientSecret = env.githubKnowledgeClientSecret();
+  if (
+    !clientId
+    || !/^[A-Za-z0-9._-]{10,128}$/.test(clientId)
+    || !clientSecret
+    || clientSecret.length < 20
+    || clientSecret.length > 512
+    || /[\u0000-\u001f\u007f-\u009f]/.test(clientSecret)
+  ) {
+    throw new Error("GitHub Knowledge OAuth is not configured");
+  }
+  return { clientId, clientSecret };
+}
+
+function githubOauthCallbackUrl() {
+  return new URL("/api/v1/knowledge/github/callback", env.appOrigin()).toString();
+}
+
 export function githubKnowledgeConfigured() {
   try {
     githubAppConfiguration();
+    githubOauthConfiguration();
     const webhookSecret = env.githubKnowledgeWebhookSecret();
     return Boolean(webhookSecret && webhookSecret.length >= 32);
   } catch {
@@ -92,6 +116,109 @@ export function githubInstallationUrl(state: string) {
   const url = new URL(`https://github.com/apps/${appSlug}/installations/new`);
   url.searchParams.set("state", state);
   return url.toString();
+}
+
+function githubOauthStateSignature(
+  setupState: string,
+  installationId: bigint,
+  clientSecret: string,
+) {
+  return createHmac("sha256", clientSecret)
+    .update(`dopedb-github-installation-oauth-state\0${setupState}\0${installationId}`)
+    .digest("base64url");
+}
+
+function githubOauthCodeVerifier(
+  setupState: string,
+  installationId: bigint,
+  clientSecret: string,
+) {
+  return createHmac("sha256", clientSecret)
+    .update(`dopedb-github-installation-oauth-pkce\0${setupState}\0${installationId}`)
+    .digest("base64url");
+}
+
+export type GithubInstallationUserAuthorizationState = Readonly<{
+  setupState: string;
+  installationId: bigint;
+  codeVerifier: string;
+}>;
+
+export function githubInstallationUserAuthorizationUrl(
+  setupState: string,
+  installationId: bigint,
+) {
+  if (
+    !/^[A-Za-z0-9_-]{32,256}$/.test(setupState)
+    || installationId <= 0n
+    || installationId > BigInt(Number.MAX_SAFE_INTEGER)
+  ) {
+    throw new Error("Invalid GitHub installation authorization input");
+  }
+  const { clientId, clientSecret } = githubOauthConfiguration();
+  const signature = githubOauthStateSignature(
+    setupState,
+    installationId,
+    clientSecret,
+  );
+  const codeVerifier = githubOauthCodeVerifier(
+    setupState,
+    installationId,
+    clientSecret,
+  );
+  const codeChallenge = createHash("sha256")
+    .update(codeVerifier)
+    .digest("base64url");
+  const url = new URL(GITHUB_OAUTH_AUTHORIZE);
+  url.searchParams.set("client_id", clientId);
+  url.searchParams.set("redirect_uri", githubOauthCallbackUrl());
+  url.searchParams.set(
+    "state",
+    `${setupState}.${installationId.toString()}.${signature}`,
+  );
+  url.searchParams.set("code_challenge", codeChallenge);
+  url.searchParams.set("code_challenge_method", "S256");
+  return url.toString();
+}
+
+export function parseGithubInstallationUserAuthorizationState(
+  value: string,
+): GithubInstallationUserAuthorizationState {
+  const parts = value.split(".");
+  if (
+    parts.length !== 3
+    || !/^[A-Za-z0-9_-]{32,256}$/.test(parts[0] ?? "")
+    || !/^[1-9][0-9]{0,19}$/.test(parts[1] ?? "")
+    || !/^[A-Za-z0-9_-]{43}$/.test(parts[2] ?? "")
+  ) {
+    throw new Error("Invalid GitHub installation authorization state");
+  }
+  const setupState = parts[0] ?? "";
+  const installationId = BigInt(parts[1] ?? "0");
+  if (installationId > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error("Invalid GitHub installation authorization state");
+  }
+  const { clientSecret } = githubOauthConfiguration();
+  const received = Buffer.from(parts[2] ?? "", "base64url");
+  const expected = Buffer.from(
+    githubOauthStateSignature(setupState, installationId, clientSecret),
+    "base64url",
+  );
+  if (
+    received.length !== expected.length
+    || !timingSafeEqual(received, expected)
+  ) {
+    throw new Error("Invalid GitHub installation authorization state");
+  }
+  return {
+    setupState,
+    installationId,
+    codeVerifier: githubOauthCodeVerifier(
+      setupState,
+      installationId,
+      clientSecret,
+    ),
+  };
 }
 
 function appJwt() {
@@ -110,28 +237,10 @@ function appJwt() {
   return `${input}.${signer.sign(privateKey).toString("base64url")}`;
 }
 
-async function githubJson<T>(
-  path: string,
-  authorization: string,
-  init: RequestInit = {},
-  maximumBytes = GITHUB_METADATA_RESPONSE_BYTES,
+async function boundedGithubJson<T>(
+  response: Response,
+  maximumBytes: number,
 ): Promise<T> {
-  if (!path.startsWith("/") || path.includes("\\") || path.includes("\0")) {
-    throw new Error("Invalid GitHub API path");
-  }
-  const response = await fetch(`${GITHUB_API}${path}`, {
-    ...init,
-    cache: "no-store",
-    signal: AbortSignal.timeout(GITHUB_REQUEST_TIMEOUT_MS),
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${authorization}`,
-      "X-GitHub-Api-Version": GITHUB_API_VERSION,
-      "User-Agent": "DopeDB-Project-Knowledge",
-      ...(init.body ? { "Content-Type": "application/json" } : {}),
-      ...init.headers,
-    },
-  });
   if (!response.ok) {
     throw new GithubKnowledgeRequestError(response.status);
   }
@@ -170,6 +279,109 @@ async function githubJson<T>(
     throw new Error("GitHub returned invalid UTF-8 JSON");
   }
   return JSON.parse(text) as T;
+}
+
+async function githubJson<T>(
+  path: string,
+  authorization: string,
+  init: RequestInit = {},
+  maximumBytes = GITHUB_METADATA_RESPONSE_BYTES,
+): Promise<T> {
+  if (!path.startsWith("/") || path.includes("\\") || path.includes("\0")) {
+    throw new Error("Invalid GitHub API path");
+  }
+  const response = await fetch(`${GITHUB_API}${path}`, {
+    ...init,
+    cache: "no-store",
+    signal: AbortSignal.timeout(GITHUB_REQUEST_TIMEOUT_MS),
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${authorization}`,
+      "X-GitHub-Api-Version": GITHUB_API_VERSION,
+      "User-Agent": "DopeDB-Project-Knowledge",
+      ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...init.headers,
+    },
+  });
+  return await boundedGithubJson<T>(response, maximumBytes);
+}
+
+async function githubUserAccessToken(code: string, codeVerifier: string) {
+  if (
+    !/^[A-Za-z0-9_-]{16,256}$/.test(code)
+    || !/^[A-Za-z0-9_-]{43,128}$/.test(codeVerifier)
+  ) {
+    throw new Error("Invalid GitHub user authorization response");
+  }
+  const { clientId, clientSecret } = githubOauthConfiguration();
+  const response = await fetch(GITHUB_OAUTH_ACCESS_TOKEN, {
+    method: "POST",
+    cache: "no-store",
+    signal: AbortSignal.timeout(GITHUB_REQUEST_TIMEOUT_MS),
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
+      "User-Agent": "DopeDB-Project-Knowledge",
+    },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      code,
+      redirect_uri: githubOauthCallbackUrl(),
+      code_verifier: codeVerifier,
+    }),
+  });
+  const result = await boundedGithubJson<{
+    access_token?: unknown;
+    token_type?: unknown;
+  }>(response, GITHUB_METADATA_RESPONSE_BYTES);
+  if (
+    typeof result.access_token !== "string"
+    || !result.access_token.startsWith("ghu_")
+    || result.access_token.length < 24
+    || result.access_token.length > 512
+    || typeof result.token_type !== "string"
+    || result.token_type.toLowerCase() !== "bearer"
+  ) {
+    throw new Error("GitHub returned an invalid user access token");
+  }
+  return result.access_token;
+}
+
+export async function verifyGithubInstallationUserAccess(
+  code: string,
+  authorizationState: GithubInstallationUserAuthorizationState,
+) {
+  const accessToken = await githubUserAccessToken(
+    code,
+    authorizationState.codeVerifier,
+  );
+  for (let page = 1; page <= Math.ceil(MAX_USER_INSTALLATIONS / 100); page += 1) {
+    const response = await githubJson<{
+      total_count: number;
+      installations: Array<{ id: number }>;
+    }>(`/user/installations?per_page=100&page=${page}`, accessToken);
+    if (
+      !Number.isSafeInteger(response.total_count)
+      || response.total_count < 0
+      || response.total_count > MAX_USER_INSTALLATIONS
+      || !Array.isArray(response.installations)
+      || response.installations.length > 100
+    ) {
+      throw new Error("GitHub returned an invalid user installation inventory");
+    }
+    if (response.installations.some((installation) => (
+      Number.isSafeInteger(installation?.id)
+      && BigInt(installation.id) === authorizationState.installationId
+    ))) {
+      return true;
+    }
+    if (
+      response.installations.length < 100
+      || page * 100 >= response.total_count
+    ) break;
+  }
+  return false;
 }
 
 export async function inspectGithubInstallation(installationId: bigint) {

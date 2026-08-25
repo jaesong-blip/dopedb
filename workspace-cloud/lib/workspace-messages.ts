@@ -70,6 +70,14 @@ const en = {
     completeDenied: "Request denied.",
     completeBody: "Return to the DopeDB app. You can close this browser window.",
   },
+  githubInstallation: {
+    connectedEyebrow: "GITHUB CONNECTED",
+    failedEyebrow: "GITHUB NOT CONNECTED",
+    connectedTitle: "Repositories are ready.",
+    failedTitle: "The connection was not completed.",
+    connectedBody: "Return to the DopeDB app. The repository list refreshes when the app becomes active.",
+    failedBody: "Return to the DopeDB app and try the GitHub repository selection again. This browser window can be closed.",
+  },
   invitation: {
     eyebrow: "VERIFIED INVITATION",
     title: "Workspace invitation",
@@ -825,6 +833,14 @@ const ko: DeepStringShape<typeof en> = {
     completeAuthorized: "연결되었습니다.",
     completeDenied: "요청을 거절했습니다.",
     completeBody: "DopeDB 앱으로 돌아가세요. 이 브라우저 창은 닫아도 됩니다.",
+  },
+  githubInstallation: {
+    connectedEyebrow: "GITHUB CONNECTED",
+    failedEyebrow: "GITHUB NOT CONNECTED",
+    connectedTitle: "저장소 연결을 마쳤습니다.",
+    failedTitle: "연결을 완료하지 못했습니다.",
+    connectedBody: "DopeDB 앱으로 돌아가세요. 앱이 다시 활성화되면 저장소 목록을 새로고침합니다.",
+    failedBody: "DopeDB 앱으로 돌아가 GitHub 저장소 선택을 다시 시도하세요. 이 브라우저 창은 닫아도 됩니다.",
   },
   invitation: {
     eyebrow: "VERIFIED INVITATION",

@@ -152,6 +152,8 @@ export const env = {
   googleClientSecret: () => required("GOOGLE_CLIENT_SECRET"),
   githubKnowledgeAppId: () => optional("GITHUB_KNOWLEDGE_APP_ID"),
   githubKnowledgeAppSlug: () => optional("GITHUB_KNOWLEDGE_APP_SLUG"),
+  githubKnowledgeClientId: () => optional("GITHUB_KNOWLEDGE_CLIENT_ID"),
+  githubKnowledgeClientSecret: () => optional("GITHUB_KNOWLEDGE_CLIENT_SECRET"),
   githubKnowledgePrivateKey,
   githubKnowledgeWebhookSecret: () => optional("GITHUB_KNOWLEDGE_WEBHOOK_SECRET"),
   knowledgeGraphBuildsEnabled,

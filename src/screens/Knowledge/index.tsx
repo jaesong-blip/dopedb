@@ -115,6 +115,8 @@ type PendingKnowledgeSyncAnalytics = {
   syncReason: "initial" | "manual";
 };
 
+type GithubInstallState = "idle" | "waiting" | "returned-empty";
+
 function captureKnowledgeSyncOutcome(
   attempt: PendingKnowledgeSyncAnalytics | null | undefined,
   outcome: "success" | "failed",
@@ -210,6 +212,7 @@ export default function Knowledge({
     enabled: githubAvailable,
     retry: false,
   });
+  const refetchRepositories = repositories.refetch;
   const connections = useQuery(connectionsQuery(catalogScope.key));
   const repositoryPhase = queryResultPhase(
     repositories.data,
@@ -226,6 +229,8 @@ export default function Knowledge({
   const [refName, setRefName] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
+  const [githubInstallState, setGithubInstallState] =
+    useState<GithubInstallState>("idle");
   const [searchQuery, setSearchQuery] = useState("");
   const [connectionId, setConnectionId] = useState("");
   const [connectionRole, setConnectionRole] = useState("primary");
@@ -243,6 +248,10 @@ export default function Knowledge({
     engine: ProductAnalyticsEngine;
     accessMode: "local" | "managed";
   } | null>(null);
+  const githubInstallStateRef = useRef<GithubInstallState>("idle");
+  const githubInstallAttempt = useRef(0);
+  const githubExternalWindowActive = useRef(false);
+  const githubRefreshInFlight = useRef(false);
   const [sourceActivity, setSourceActivity] = useState(
     new Map<
       string,
@@ -323,7 +332,101 @@ export default function Knowledge({
     setView("sources");
     setProvider(githubProviderVisible ? "github" : "local_folder");
     setActionError(null);
+    githubInstallAttempt.current += 1;
+    githubInstallStateRef.current = "idle";
+    githubExternalWindowActive.current = false;
+    githubRefreshInFlight.current = false;
+    setGithubInstallState("idle");
   }, [catalogScope.key, githubProviderVisible]);
+
+  useEffect(() => {
+    let disposed = false;
+    let refreshTimer: number | null = null;
+    const refreshAfterGithubReturn = () => {
+      if (
+        githubInstallStateRef.current !== "waiting"
+        || githubRefreshInFlight.current
+      ) return;
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      const attempt = githubInstallAttempt.current;
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null;
+        if (
+          disposed
+          || attempt !== githubInstallAttempt.current
+          || githubInstallStateRef.current !== "waiting"
+          || githubRefreshInFlight.current
+        ) return;
+        githubRefreshInFlight.current = true;
+        void (async () => {
+          try {
+            const result = await refetchRepositories();
+            if (disposed || attempt !== githubInstallAttempt.current) return;
+            if (result.error) {
+              githubInstallStateRef.current = "idle";
+              setGithubInstallState("idle");
+              return;
+            }
+            const nextState: GithubInstallState = result.data?.length
+              ? "idle"
+              : "returned-empty";
+            githubInstallStateRef.current = nextState;
+            setGithubInstallState(nextState);
+            if (nextState === "idle") setActionError(null);
+          } catch (error) {
+            if (disposed || attempt !== githubInstallAttempt.current) return;
+            githubInstallStateRef.current = "idle";
+            setGithubInstallState("idle");
+            setActionError(errMessage(error));
+          } finally {
+            githubRefreshInFlight.current = false;
+          }
+        })();
+      }, 300);
+    };
+    const onBlur = () => {
+      if (githubInstallStateRef.current === "waiting") {
+        githubExternalWindowActive.current = true;
+      }
+    };
+    const onFocus = () => {
+      if (!githubExternalWindowActive.current) return;
+      githubExternalWindowActive.current = false;
+      refreshAfterGithubReturn();
+    };
+    const onVisibilityChange = () => {
+      if (
+        document.visibilityState !== "visible"
+        && githubInstallStateRef.current === "waiting"
+      ) {
+        githubExternalWindowActive.current = true;
+        return;
+      }
+      if (
+        document.visibilityState === "visible"
+        && githubExternalWindowActive.current
+      ) {
+        githubExternalWindowActive.current = false;
+        refreshAfterGithubReturn();
+      }
+    };
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      disposed = true;
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [refetchRepositories]);
+
+  useEffect(() => {
+    if (!repositories.data?.length || githubInstallStateRef.current === "idle") return;
+    githubInstallStateRef.current = "idle";
+    setGithubInstallState("idle");
+  }, [repositories.data]);
 
   useEffect(() => {
     if (!projects.data?.length || projectId) return;
@@ -941,17 +1044,37 @@ export default function Knowledge({
                   })}
                 </InlineNotice>
               ) : null}
+              {githubInstallState === "returned-empty" && !repositories.error ? (
+                <InlineNotice
+                  tone="warning"
+                  icon="info"
+                  role="status"
+                >
+                  {t("knowledge.githubAccessIncomplete")}
+                </InlineNotice>
+              ) : null}
               <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-3">
-                <span className="tw:text-sm tw:text-muted-foreground">{t("knowledge.githubAccessHint")}</span>
-                <Button onClick={async () => {
+                {githubInstallState === "waiting" ? (
+                  <LoadingLabel>{t("knowledge.githubAccessWaiting")}</LoadingLabel>
+                ) : (
+                  <span className="tw:text-sm tw:text-muted-foreground">{t("knowledge.githubAccessHint")}</span>
+                )}
+                <Button disabled={githubInstallState === "waiting"} onClick={async () => {
                   try {
                     setActionError(null);
-                    await openUrl(await beginKnowledgeGithubInstall());
+                    const authorizationUrl = await beginKnowledgeGithubInstall();
+                    githubInstallAttempt.current += 1;
+                    githubInstallStateRef.current = "waiting";
+                    githubExternalWindowActive.current = false;
+                    setGithubInstallState("waiting");
+                    await openUrl(authorizationUrl);
                   } catch (error) {
+                    githubInstallStateRef.current = "idle";
+                    setGithubInstallState("idle");
                     setActionError(errMessage(error));
                   }
                 }}>{t("knowledge.githubAccessAction")}</Button>
-                <Button variant="ghost" onClick={() => void repositories.refetch()}><Icon name="refresh" />{t("knowledge.refresh")}</Button>
+                <Button variant="ghost" onClick={() => void refetchRepositories()}><Icon name="refresh" />{t("knowledge.refresh")}</Button>
               </div>
               </>
             ) : (

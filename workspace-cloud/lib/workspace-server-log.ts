@@ -76,6 +76,27 @@ const KNOWLEDGE_MUTATIONS = new Set([
   "environment_create",
   "personal_scope_sync",
 ]);
+const GITHUB_KNOWLEDGE_SETUP_STAGES = new Set([
+  "request_validation",
+  "setup_lookup",
+  "workspace_authorization",
+  "state_consumption",
+  "installation_inspection",
+  "installation_validation",
+  "user_authorization",
+  "installation_persistence",
+]);
+const GITHUB_KNOWLEDGE_SETUP_FAILURE_KINDS = new Set([
+  "invalid_request",
+  "expired_or_unknown_state",
+  "unauthorized",
+  "authority_changed",
+  "provider_request",
+  "invalid_installation",
+  "installation_not_authorized",
+  "database",
+  "unexpected",
+]);
 
 type SafeLogScalar = string | number | boolean | null;
 
@@ -196,6 +217,20 @@ export function logKnowledgeMutationFailure(input: {
 }) {
   emitServerFailure("knowledge_mutation_failed", {
     operation: category(input.operation, KNOWLEDGE_MUTATIONS),
+    databaseKind: databaseFailureKind(input.databaseCode),
+  });
+}
+
+export function logGithubKnowledgeSetupFailure(input: {
+  stage: unknown;
+  kind: unknown;
+  status: unknown;
+  databaseCode: unknown;
+}) {
+  emitServerFailure("github_knowledge_setup_failed", {
+    stage: category(input.stage, GITHUB_KNOWLEDGE_SETUP_STAGES),
+    kind: category(input.kind, GITHUB_KNOWLEDGE_SETUP_FAILURE_KINDS),
+    status: safeStatus(input.status),
     databaseKind: databaseFailureKind(input.databaseCode),
   });
 }

@@ -26,7 +26,7 @@ runtime과 성능 수치로 수행한다.
 | Result/Data grid | `complete` | `features/queryResults`, Rust result artifact | 30열·50,000행 selection/filter/export와 메모리 경계 검수 |
 | Services/Jobs | `complete` | `features/queryServices`, `features/jobs` | background cancel과 복원된 result handle packaged 검수 |
 | Agent tool window | `complete` | `features/agents`, ACP Rust runtime | 공식 adapter 설치·로그아웃·permission·resume, 첫 prompt 단일 제출과 동일 권한 focus-refresh 연속성, 실제 권한·process 중단 사유와 복구의 OS별 검수 |
-| Knowledge graph | `complete` | Rust `features/knowledge`, frontend Knowledge projection | GitHub/Local source revision, publish, mapping과 exact grant 검수 |
+| Knowledge graph | `complete` | Rust `features/knowledge`, frontend Knowledge projection | packaged GitHub 설치·기존 설치 업데이트 복귀, Local source revision, publish, mapping과 exact grant 검수 |
 | Analysis Article | `partial` | `features/analysisArticles`, cloud analysis application | Explorer 소유 문자·상태 필터와 단일 중앙 document, raw run timestamp의 RFC3339 응답 계약을 유지하고 production runner·publication·metric signal을 실제 환경에서 검수 |
 | Settings | `complete` | `features/settings`, `features/safetySettings` | 선택 연결의 단일 쓰기 제어, 관리자용 workspace 상한 + 기기 gate의 fail-closed 저장, compact viewport 검수 |
 | Diagnostics/Recovery | `complete` | design-system diagnostics, feature recovery boundaries | failure injection에서 오류 owner와 retry가 유지되는지 확인 |

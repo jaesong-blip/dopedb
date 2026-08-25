@@ -83,6 +83,12 @@ export async function runProviderImportSupportAssertions() {
       operation: "credential-value",
       databaseCode: "password-value",
     });
+    serverLog.logGithubKnowledgeSetupFailure({
+      stage: "credential-value",
+      kind: "secret-value",
+      status: 999,
+      databaseCode: "password-value",
+    });
     expect(serverLog.databaseErrorCode({ cause: { code: "23505" } })).toBe("23505");
     expect(serverLog.databaseErrorCode({ cause: { code: "password-value" } })).toBeNull();
     expect(logSpy.mock.calls).toEqual([
@@ -120,6 +126,12 @@ export async function runProviderImportSupportAssertions() {
       }],
       ["knowledge_mutation_failed", {
         operation: "other",
+        databaseKind: null,
+      }],
+      ["github_knowledge_setup_failed", {
+        stage: "other",
+        kind: "other",
+        status: 0,
         databaseKind: null,
       }],
     ]);

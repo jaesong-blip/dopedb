@@ -5,6 +5,8 @@ export const knowledgeCatalog = defineCatalog(
   {
     "knowledge.githubAccessAction": "Choose repositories on GitHub",
     "knowledge.githubAccessHint": "Choose which repositories this workspace can read. GitHub Desktop is not required.",
+    "knowledge.githubAccessWaiting": "Finish selecting repositories in GitHub, then return here. DopeDB will refresh this list automatically.",
+    "knowledge.githubAccessIncomplete": "GitHub returned, but no repositories are available yet. Confirm that the selection was saved, then try again.",
     "knowledge.githubSignInHint": "Your Personal Workspace stays local. Signing in adds only GitHub repositories owned by that account.",
     "knowledge.githubSignInTitle": "Sign in to connect GitHub",
     "knowledge.viewDatabases": "Databases",
@@ -112,6 +114,8 @@ export const knowledgeCatalog = defineCatalog(
   {
     "knowledge.githubAccessAction": "GitHub에서 저장소 선택",
     "knowledge.githubAccessHint": "이 워크스페이스가 읽을 저장소를 선택하세요. GitHub Desktop은 설치하지 않아도 됩니다.",
+    "knowledge.githubAccessWaiting": "GitHub에서 저장소 선택을 마친 뒤 이 창으로 돌아오세요. 목록을 자동으로 새로고침합니다.",
+    "knowledge.githubAccessIncomplete": "GitHub에서 돌아왔지만 사용할 수 있는 저장소가 아직 없습니다. 선택 내용을 저장했는지 확인한 뒤 다시 시도하세요.",
     "knowledge.githubSignInHint": "개인 워크스페이스는 로컬에 유지되고 로그인한 계정의 GitHub 저장소만 연결됩니다.",
     "knowledge.githubSignInTitle": "GitHub 연결을 위해 로그인하세요",
     "knowledge.viewDatabases": "데이터베이스",
