@@ -25,6 +25,7 @@ import {
   revokeNeonLease,
 } from "../providers/neon";
 import type { NeonResource } from "../providers/neon-core";
+import { revokeVaultLease } from "../providers/vault";
 import { ProviderRequestError } from "../providers/provider-types";
 import {
   CLEANUP_CLAIM_STALE_SECONDS,
@@ -37,6 +38,7 @@ import {
 import {
   currentPlanetScaleAccessToken,
   neonCredential,
+  vaultCredential,
 } from "./integration";
 
 type LeaseCleanupRow = {
@@ -312,13 +314,28 @@ async function revokeLeaseRows(
             resource as NeonResource,
             lease.credentialId,
           );
+        } else if (
+          integration.provider === "vault"
+          && lease.credentialKind === "role"
+        ) {
+          await revokeVaultLease(
+            vaultCredential(integration),
+            lease.credentialId,
+          );
         } else if (integration.provider !== "gcpCloudSql") {
           throw new Error("Lease provider is unavailable");
         }
       }
       if (await markLeaseRevoked(lease)) revoked += 1;
     } catch (error) {
-      if (error instanceof ProviderRequestError && error.status === 404) {
+      // A Vault 404 may come from AppRole login or a moved auth/database mount,
+      // not from the exact lease-revoke call. Never report that credential as
+      // revoked until Vault accepted the synchronous revoke request.
+      if (
+        lease.provider !== "vault"
+        && error instanceof ProviderRequestError
+        && error.status === 404
+      ) {
         if (await markLeaseRevoked(lease)) revoked += 1;
         continue;
       }

@@ -2,6 +2,7 @@
 // over HTTPS exactly once and is absent from all database and audit writes.
 import { and, count, eq, gt, isNull, sql } from "drizzle-orm";
 import {
+  LEGACY_MANAGED_LEASE_CONTRACT_VERSION,
   managedLeaseResponse,
   MANAGED_LEASE_CONTRACT_VERSION,
   parseManagedLeaseRequest,
@@ -21,6 +22,7 @@ import {
 } from "../../../../../../../../lib/provider-integrations";
 import { vercelOidcToken } from "../../../../../../../../lib/providers/gcp-cloud-sql";
 import { ProviderRequestError } from "../../../../../../../../lib/providers/provider-types";
+import type { VaultManagedResource } from "../../../../../../../../lib/providers/vault";
 import { consumeRateLimit } from "../../../../../../../../lib/rate-limit";
 import { managedLeaseStillDeliverable } from "../../../../../../../../lib/revocation-gates";
 import {
@@ -78,9 +80,12 @@ export async function POST(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId) || !isUuid(connectionId)) {
     return jsonError("Invalid workspace or connection id", 400);
   }
+  const managedLeaseContract = request.headers.get(
+    "x-dopedb-managed-lease-contract",
+  );
   if (
-    request.headers.get("x-dopedb-managed-lease-contract")
-    !== MANAGED_LEASE_CONTRACT_VERSION
+    managedLeaseContract !== MANAGED_LEASE_CONTRACT_VERSION
+    && managedLeaseContract !== LEGACY_MANAGED_LEASE_CONTRACT_VERSION
   ) {
     return jsonError(
       "Update DopeDB to use managed database access safely",
@@ -115,6 +120,11 @@ export async function POST(request: Request, context: RouteContext) {
     columns: {
       id: true,
       engine: true,
+      provider: true,
+      host: true,
+      port: true,
+      databaseName: true,
+      sslmode: true,
       allowWrites: true,
       credentialMode: true,
       providerIntegrationId: true,
@@ -135,6 +145,21 @@ export async function POST(request: Request, context: RouteContext) {
     connection.providerIntegrationId,
   );
   if (!integration) return jsonError("Provider integration not found", 404);
+  const expectedConnectionProvider = integration.provider === "vault"
+    ? "generic"
+    : integration.provider;
+  if (connection.provider !== expectedConnectionProvider) {
+    return jsonError("Managed database provider does not match the connection", 409);
+  }
+  if (
+    integration.provider === "vault"
+    && managedLeaseContract !== MANAGED_LEASE_CONTRACT_VERSION
+  ) {
+    return jsonError(
+      "Update DopeDB to use brokered database access safely",
+      426,
+    );
+  }
   const canonicalResource = await db.query.workspaceProviderResource.findFirst({
     where: and(
       eq(workspaceProviderResource.id, connection.providerResourceId),
@@ -159,6 +184,17 @@ export async function POST(request: Request, context: RouteContext) {
   }
   if (resource.engine !== connection.engine) {
     return jsonError("Managed database engine does not match the connection", 409);
+  }
+  if (integration.provider === "vault") {
+    const target = resource as VaultManagedResource;
+    if (
+      target.host !== connection.host
+      || target.port !== connection.port
+      || target.database !== connection.databaseName
+      || target.sslmode !== connection.sslmode
+    ) {
+      return jsonError("Brokered database target does not match the connection", 409);
+    }
   }
   const metadata = canonicalResource.redactedMetadata
     && typeof canonicalResource.redactedMetadata === "object"
@@ -215,6 +251,7 @@ export async function POST(request: Request, context: RouteContext) {
       sessionId: authorization.session.session.id,
       role: authorization.role,
       connectionRevision: connection.revision,
+      connectionProvider: connection.provider,
       providerResourceId: connection.providerResourceId,
       engine: resource.engine,
       production,
@@ -267,6 +304,7 @@ export async function POST(request: Request, context: RouteContext) {
       engine: resource.engine,
       integrationId: integration.id,
       integrationGeneration: integration.generation,
+      connectionProvider: connection.provider,
       provider: integration.provider,
       accessMode,
     }, lease, lease.providerAuditId);
@@ -286,7 +324,7 @@ export async function POST(request: Request, context: RouteContext) {
     return privateJson(managedLeaseResponse({
       lease: {
         id: lease.leaseId,
-        provider: integration.provider,
+        provider: connection.provider,
         engine: resource.engine,
         host: lease.host,
         port: lease.port,

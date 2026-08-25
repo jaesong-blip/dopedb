@@ -6,6 +6,7 @@ export const providerKinds = [
   "gcpCloudSql",
   "neon",
   "planetScale",
+  "vault",
 ] as const;
 
 export type ProviderKind = (typeof providerKinds)[number];
@@ -15,7 +16,7 @@ export interface ProviderDescriptor {
   name: string;
   supportedEngines: readonly string[];
   leaseSeconds: number | null;
-  setupKind: "oauth" | "apiKey";
+  setupKind: "oauth" | "apiKey" | "appRole";
   resourceLevels: readonly [
     { key: string; kind: string; label: string },
     { key: string; kind: string; label: string },
@@ -63,6 +64,19 @@ export const providerCatalog: readonly ProviderDescriptor[] = [
       { key: "database", kind: "databases", label: "DB" },
     ],
     note: "프로젝트 범위 API 키로 15분 제한 역할을 만들고 만료·회수합니다.",
+  },
+  {
+    id: "vault",
+    name: "HashiCorp Vault",
+    supportedEngines: ["postgres", "mysql"],
+    leaseSeconds: 15 * 60,
+    setupKind: "appRole",
+    resourceLevels: [
+      { key: "broker", kind: "brokers", label: "브로커" },
+      { key: "target", kind: "targets", label: "대상" },
+      { key: "database", kind: "databases", label: "DB" },
+    ],
+    note: "허용된 Vault AppRole로 구성원별 15분 이하 동적 DB 자격증명을 발급·회수합니다.",
   },
 ] as const;
 

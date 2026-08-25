@@ -411,6 +411,17 @@ pub(crate) trait KnowledgeRepositoryPort:
         &self,
         value: &ProjectDefinition,
     ) -> impl Future<Output = AppResult<()>> + Send;
+    fn delete_knowledge_project(
+        &self,
+        workspace_id: Uuid,
+        project_id: Uuid,
+        expected_revision: u64,
+    ) -> impl Future<Output = AppResult<()>> + Send;
+    fn retain_knowledge_projects(
+        &self,
+        workspace_id: Uuid,
+        project_ids: &[Uuid],
+    ) -> impl Future<Output = AppResult<()>> + Send;
     fn pin_connection_for_read(
         &self,
         connection_id: Uuid,
@@ -510,6 +521,13 @@ pub(crate) trait HostedKnowledgeAuthorityPort: Clone + Send + Sync + 'static {
         workspace_id: Uuid,
         request: &CreateKnowledgeProjectRequest,
     ) -> impl Future<Output = AppResult<RemoteKnowledgeProject>> + Send;
+    fn delete_project(
+        &self,
+        account_id: &str,
+        workspace_id: Uuid,
+        project_id: Uuid,
+        expected_revision: u64,
+    ) -> impl Future<Output = AppResult<()>> + Send;
     fn create_environment(
         &self,
         account_id: &str,

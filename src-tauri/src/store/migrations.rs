@@ -71,6 +71,9 @@ CREATE TABLE IF NOT EXISTS knowledge_environment_connections (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_knowledge_environment_connection_active
     ON knowledge_environment_connections(project_environment_id, connection_id)
     WHERE revoked_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_knowledge_environment_connection_workspace_active
+    ON knowledge_environment_connections(workspace_id, connection_id)
+    WHERE revoked_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_knowledge_environment_connection_scope
     ON knowledge_environment_connections(workspace_id, project_environment_id, revoked_at);
 

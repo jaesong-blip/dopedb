@@ -1,7 +1,5 @@
-// The ACP tool-window controller owns session selection, focus generations,
-// asynchronous commands, external queries, composer state, and viewport effects.
-// Its return value is grouped by view responsibility so rendering modules do not
-// receive a single flat bag of unrelated state and callbacks.
+// ACP Chat owns session selection, lifecycle, permissions, composer state, and
+// viewport effects while returning state grouped by view responsibility.
 
 import {
   useCallback,
@@ -21,7 +19,6 @@ import { createFrameCoalescer } from "../../lib/frameCoalescer";
 import { useI18n } from "../../lib/i18n";
 import { useCatalogScope } from "../../lib/queries";
 import type { ConnectionProfile } from "../connections/domain";
-import { knowledgeQueryKeys } from "../knowledge/queryKeys";
 import {
   openAgentSetup,
   useEnabledAgentProviders,
@@ -72,13 +69,13 @@ import {
   cancelAgentAcpSession,
   closeAgentAcpSession,
   focusAgentAcpSession,
-  listAgentKnowledgeEnvironments,
   promptAgentAcpSession,
   respondAgentAcpPermission,
   resumeAgentAcpSession,
   setAgentAcpConfigOption,
 } from "./tauriAdapter";
 import { visibleAcpTranscriptItems } from "./transcript";
+import { useAgentEnvironmentInventory } from "./useAgentEnvironmentInventory";
 import { useAcpSessionStartup } from "./useAcpSessionStartup";
 
 const MAX_PROMPT_CHARS = 8 * 1024;
@@ -159,18 +156,12 @@ export function useAcpChatController({
     ...agentPluginStatusQuery(),
     refetchOnWindowFocus: false,
   });
-  const knowledgeEnvironmentsQuery = useQuery({
-    queryKey: knowledgeQueryKeys.agentEnvironments(
-      connection.id,
-      catalogScope.key,
-    ),
-    queryFn: () => listAgentKnowledgeEnvironments(connection.id),
-    refetchOnWindowFocus: false,
+  const environmentInventory = useAgentEnvironmentInventory({
+    catalogScopeKey: catalogScope.key,
+    connection,
+    onError: setError,
   });
-  const availableKnowledgeEnvironments = useMemo(
-    () => knowledgeEnvironmentsQuery.data ?? [],
-    [knowledgeEnvironmentsQuery.data],
-  );
+  const availableKnowledgeEnvironments = environmentInventory.available;
   const enabledProviders = useMemo(
     () =>
       configuredProviders.filter((provider) => {
@@ -253,7 +244,7 @@ export function useAcpChatController({
     : selectedCliStatus?.detectionError ?? null;
   const selectedPluginReady = enabledProviders.includes(selectedProvider);
   const prerequisitesReady = selectedCliReady && selectedPluginReady;
-  const selectedKnowledgeEnvironment = knowledgeEnvironmentsQuery.data?.find(
+  const selectedKnowledgeEnvironment = availableKnowledgeEnvironments.find(
     (environment) => environment.id === selectedEnvironmentId,
   );
   const newEnvironmentScopeReady =
@@ -270,9 +261,7 @@ export function useAcpChatController({
         error: errMessage(sessionSnapshot.error),
       })
     : null;
-  const environmentLoadError = knowledgeEnvironmentsQuery.isError
-    ? errMessage(knowledgeEnvironmentsQuery.error)
-    : null;
+  const environmentLoadError = environmentInventory.loadError;
 
   const selectActiveSession = useCallback((next: AcpSessionId | null) => {
     if (activeIdRef.current === next) return;
@@ -515,7 +504,7 @@ export function useAcpChatController({
       composerRequest === null ||
       composerRequest.connectionId !== connection.id ||
       consumedComposerRequestRef.current === composerRequest.id ||
-      !knowledgeEnvironmentsQuery.isSuccess
+      !environmentInventory.success
     ) return;
     const environment = availableKnowledgeEnvironments.find(
       (candidate) => candidate.id === composerRequest.projectEnvironmentId,
@@ -554,7 +543,7 @@ export function useAcpChatController({
     availableKnowledgeEnvironments,
     composerRequest,
     connection.id,
-    knowledgeEnvironmentsQuery.isSuccess,
+    environmentInventory.success,
     prerequisitesReady,
     selectActiveSession,
     selectedEnvironmentId,
@@ -626,6 +615,16 @@ export function useAcpChatController({
       if (await submitPromptText(submitted, submittedContext)) setPrompt("");
     } catch (reason) {
       setError(t("agent.acpSendFailed", { error: errMessage(reason) }));
+    }
+  }
+
+  async function selectEnvironment(environmentId: string | null) {
+    if (starting || active || environmentInventory.updatingEnvironmentId) return;
+    setSelectedEnvironmentId(environmentId);
+    setError(null);
+    if (!environmentId) return;
+    if (!(await environmentInventory.ensureAvailable(environmentId))) {
+      setSelectedEnvironmentId(null);
     }
   }
 
@@ -774,12 +773,13 @@ export function useAcpChatController({
       pluginPending: pluginStatusQuery.isPending,
       copiedSetupCommand,
       knowledge: {
-        environments: availableKnowledgeEnvironments,
+        environments: environmentInventory.choices,
         selectedEnvironmentId,
-        pending: knowledgeEnvironmentsQuery.isPending,
-        success: knowledgeEnvironmentsQuery.isSuccess,
+        pending: environmentInventory.pending,
+        success: environmentInventory.success,
         loadError: environmentLoadError,
         newScopeReady: newEnvironmentScopeReady,
+        reconfirmingEnvironmentId: environmentInventory.updatingEnvironmentId,
       },
     },
     composer: {
@@ -812,7 +812,7 @@ export function useAcpChatController({
         toggleExpanded: () => setComposerExpanded((current) => !current),
         toggleEditorContext: () =>
           setIncludeEditorContext((current) => !current),
-        selectEnvironment: setSelectedEnvironmentId,
+        selectEnvironment,
         changeConfigOption,
       },
       setup: {
@@ -822,7 +822,7 @@ export function useAcpChatController({
         copyLoginCommand,
         refreshCli: () => cliStatusQuery.refetch(),
         refreshKnowledgeEnvironments: () =>
-          knowledgeEnvironmentsQuery.refetch(),
+          environmentInventory.refresh(),
       },
       permission: {
         respond: respondPermission,

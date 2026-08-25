@@ -532,9 +532,13 @@ DopeDB의 실제 작업 흐름과 접근성, supported viewport를 위한 제품
   필터를 함께 소유하고, 중앙 document는 선택한 Article만 표시해 두 번째 collection
   rail을 만들지 않는다. Explorer의 단일 command strip에서 Project와 Environment
   생성 action을 구분하고, Project 생성 dialog는 기본 `main` Environment를 함께
-  설정한다. Project 행의 hover/focus `plus`는 해당 Project에 Environment를 추가하되
-  시각적 folder를 만들지 않고 Project의 `Databases`와 새 Environment binding
-  상세를 연다. `Databases` folder의 `plus`는 기존 connection editor를,
+  설정한다. Project 행의 hover/focus `plus`는 해당 Project에 Environment를 추가하고
+  시각적 folder를 만들지 않은 채 Project의 `Databases`와 새 Environment binding
+  상세를 연다. 같은 action rail의 `trash`는 2단계 확인 뒤 Project를 제거한다. 이때 workspace의
+  database connection은 삭제하지 않고 `Unassigned`로 돌려보내며, active Analysis
+  Article이 있으면 Article history를 보존하기 위해 Project 삭제를 차단한다. 삭제된
+  Project의 source sync와 Agent grant는 즉시 폐기하고 해당 Environment에 고정된 실행 중
+  Agent session도 중단한다. `Databases` folder의 `plus`는 기존 connection editor를,
   `Data sources` folder의 `plus`는 현재 exact Environment의 source 연결 상세를,
   `Analyses` folder는 Agent가 제안한 Article draft collection을 열며 수동 빈 draft
   `plus`를 제공하지 않는다. collection의 유일한 생성 action은 현재 Environment와
@@ -547,7 +551,10 @@ DopeDB의 실제 작업 흐름과 접근성, supported viewport를 위한 제품
   대상은 drag 중 semantic border와 surface로 표시한다. 대상 Environment에 DB가
   아직 없거나 키보드를 사용하는 경우에는 기존 Environment database binding 화면을
   사용한다. 이 shortcut은 기존 environment binding command를 재사용하며, 이미 묶인
-  연결의 암묵적 이동이나 복제를 허용하지 않는다. 같은 schema group의 DB는 단일
+  연결의 암묵적 이동이나 복제를 허용하지 않는다. 한 workspace에서 동일한 connection은
+  하나의 Project Environment에만 active binding을 가질 수 있다. 배정된 DB 행의 메뉴는
+  전역 connection 삭제 대신 `프로젝트에서 제거`를 제공하고 exact binding만 해제한다.
+  같은 schema group의 DB는 단일
   `Databases` 목록 안에서 각 DB row의 `diff` command와 connection menu로 동일한
   Schema Diff workbench를 열 수 있어야 한다. 중앙 환경 상세나 AI Chat 안내에 같은
   생성 form을 중복하지 않는다. Dashboard, Funnel Analysis, Agent Report는 별도

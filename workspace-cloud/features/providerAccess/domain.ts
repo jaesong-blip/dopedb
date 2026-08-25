@@ -5,7 +5,7 @@ export type Provider = {
   configured: boolean;
   note: string;
   leaseSeconds: number | null;
-  setupKind: "oauth" | "apiKey";
+  setupKind: "oauth" | "apiKey" | "appRole";
   supportedEngines: string[];
   resourceLevels: [ResourceLevel, ResourceLevel, ResourceLevel];
 };
@@ -115,6 +115,24 @@ export type NeonConfiguration = {
   apiKey: string;
   projectId: string;
   organizationId: string;
+};
+
+export type VaultConfiguration = {
+  address: string;
+  namespace: string;
+  authMount: string;
+  roleId: string;
+  secretId: string;
+  databaseMount: string;
+  databaseConnection: string;
+  readRole: string;
+  writeRole: string;
+  host: string;
+  port: string;
+  database: string;
+  engine: "postgres" | "mysql";
+  sslmode: "verify-full";
+  production: boolean;
 };
 
 export type NeonEnvironmentClassification = "" | "development" | "production";
@@ -421,3 +439,46 @@ export const emptyNeon: NeonConfiguration = {
   projectId: "",
   organizationId: "",
 };
+
+export const emptyVault: VaultConfiguration = {
+  address: "",
+  namespace: "",
+  authMount: "approle",
+  roleId: "",
+  secretId: "",
+  databaseMount: "database",
+  databaseConnection: "",
+  readRole: "",
+  writeRole: "",
+  host: "",
+  port: "5432",
+  database: "",
+  engine: "postgres",
+  sslmode: "verify-full",
+  production: false,
+};
+
+export function vaultConfigurationPayload(configuration: VaultConfiguration) {
+  const port = Number(configuration.port);
+  return {
+    kind: "appRole" as const,
+    schemaVersion: 1 as const,
+    address: configuration.address.trim(),
+    namespace: configuration.namespace.trim() || null,
+    authMount: configuration.authMount.trim(),
+    roleId: configuration.roleId.trim(),
+    secretId: configuration.secretId.trim(),
+    databaseMount: configuration.databaseMount.trim(),
+    databaseConnection: configuration.databaseConnection.trim(),
+    readRole: configuration.readRole.trim(),
+    writeRole: configuration.writeRole.trim() || null,
+    target: {
+      host: configuration.host.trim(),
+      port,
+      database: configuration.database.trim(),
+      engine: configuration.engine,
+      sslmode: configuration.sslmode,
+      production: configuration.production,
+    },
+  };
+}

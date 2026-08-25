@@ -149,6 +149,24 @@ function lockAndRevalidate(tx: TransactionSql, input: {
           WHERE resource."organization_id" = ${input.organizationId}
             AND resource."id" = receipt_scope."resourceId"
         )
+        AND (
+          receipt_scope."provider" <> 'vault'
+          OR (
+            connection."provider" IN ('auto', 'generic')
+            AND connection."host" = (
+              SELECT resource."resource" ->> 'host'
+              FROM "workspace_control"."workspace_provider_resource" resource
+              WHERE resource."organization_id" = ${input.organizationId}
+                AND resource."id" = receipt_scope."resourceId"
+            )
+            AND connection."port" = (
+              SELECT (resource."resource" ->> 'port')::int
+              FROM "workspace_control"."workspace_provider_resource" resource
+              WHERE resource."organization_id" = ${input.organizationId}
+                AND resource."id" = receipt_scope."resourceId"
+            )
+          )
+        )
         AND connection."deleted_at" IS NULL
         AND connection."revocation_pending_at" IS NULL
         AND connection."revocation_claim_id" IS NULL
@@ -272,7 +290,7 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
         AND (
           resource."redacted_metadata" -> 'production' = 'false'::jsonb
           OR (
-            resource."provider" IN ('gcpCloudSql', 'planetScale', 'neon')
+            resource."provider" IN ('gcpCloudSql', 'planetScale', 'neon', 'vault')
             AND resource."redacted_metadata" -> 'production' = 'true'::jsonb
             AND ${input.productionApproved}
             AND (
@@ -313,6 +331,14 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
         AND connection."allow_writes" = FALSE
         AND connection."engine" = scope."resource" ->> 'engine'
         AND connection."database_name" = scope."resource" ->> 'database'
+        AND (
+          scope."provider" <> 'vault'
+          OR (
+            connection."provider" IN ('auto', 'generic')
+            AND connection."host" = scope."resource" ->> 'host'
+            AND connection."port" = (scope."resource" ->> 'port')::int
+          )
+        )
         AND connection."deleted_at" IS NULL
         AND connection."revocation_pending_at" IS NULL
         AND connection."revocation_claim_id" IS NULL
@@ -346,7 +372,10 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
        AND connection."credential_mode" IN ('managed', 'member_local')
        AND connection."provider_integration_id" = ${input.integrationId}::uuid
        AND connection."provider_resource_id" = scope."resourceId"
-       AND connection."provider" = scope."provider"
+       AND connection."provider" = CASE
+         WHEN scope."provider" = 'vault' THEN 'generic'
+         ELSE scope."provider"
+       END
        AND connection."provider_resource" = scope."resource"
        AND connection."readonly_default" = TRUE
        AND connection."deleted_at" IS NULL
@@ -380,9 +409,22 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
          "readonly_default", "allow_writes", "credential_mode", "provider_integration_id", "provider_resource_id",
          "provider_resource", "content_revision", "created_by_user_id")
       SELECT ${connectionId}::uuid, ${input.organizationId}, ${input.name}, source."resource" ->> 'engine',
-        source."provider", lower(source."provider") || '.managed.invalid',
-        CASE WHEN source."resource" ->> 'engine' = 'postgres' THEN 5432 ELSE 3306 END,
-        source."resource" ->> 'database', 'verify-full', TRUE, FALSE, 'managed', ${input.integrationId}::uuid,
+        CASE WHEN source."provider" = 'vault' THEN 'generic' ELSE source."provider" END,
+        CASE WHEN source."provider" = 'vault'
+          THEN source."resource" ->> 'host'
+          ELSE lower(source."provider") || '.managed.invalid'
+        END,
+        CASE WHEN source."provider" = 'vault'
+          THEN (source."resource" ->> 'port')::int
+          WHEN source."resource" ->> 'engine' = 'postgres' THEN 5432
+          ELSE 3306
+        END,
+        source."resource" ->> 'database',
+        CASE WHEN source."provider" = 'vault'
+          THEN source."resource" ->> 'sslmode'
+          ELSE 'verify-full'
+        END,
+        TRUE, FALSE, 'managed', ${input.integrationId}::uuid,
         source."resourceId", source."resource", 1, ${input.authority.userId} FROM fresh source
       JOIN claimed ON claimed."id" = source."receiptId"
       WHERE NOT ${replacing}
@@ -392,12 +434,25 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
         "credential_mode" AS "credentialMode", "content_revision" AS "contentRevision", "updated_at" AS "updatedAt"
     ), updated AS MATERIALIZED (
       UPDATE "workspace_control"."workspace_connection" connection
-      SET "provider" = source."provider",
+      SET "provider" = CASE
+          WHEN source."provider" = 'vault' THEN 'generic'
+          ELSE source."provider"
+        END,
         "driver_id" = NULL,
-        "host" = lower(source."provider") || '.managed.invalid',
-        "port" = CASE WHEN source."resource" ->> 'engine' = 'postgres' THEN 5432 ELSE 3306 END,
+        "host" = CASE WHEN source."provider" = 'vault'
+          THEN source."resource" ->> 'host'
+          ELSE lower(source."provider") || '.managed.invalid'
+        END,
+        "port" = CASE WHEN source."provider" = 'vault'
+          THEN (source."resource" ->> 'port')::int
+          WHEN source."resource" ->> 'engine' = 'postgres' THEN 5432
+          ELSE 3306
+        END,
         "database_name" = source."resource" ->> 'database',
-        "sslmode" = 'verify-full',
+        "sslmode" = CASE WHEN source."provider" = 'vault'
+          THEN source."resource" ->> 'sslmode'
+          ELSE 'verify-full'
+        END,
         "readonly_default" = TRUE,
         "allow_writes" = FALSE,
         "credential_mode" = 'managed',
@@ -456,7 +511,7 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
         || ',"provider":' || to_json(changed."provider")::text
         || ',"readonlyDefault":true,"schemaGroup":'
         || COALESCE(to_json(changed."schemaGroup")::text, 'null')
-        || ',"sslmode":"verify-full"}' AS "text"
+        || ',"sslmode":' || to_json(changed."sslmode")::text || '}' AS "text"
       FROM changed JOIN fresh ON TRUE
       JOIN change_gate ON change_gate."id" = changed."id"
     ), version AS MATERIALIZED (

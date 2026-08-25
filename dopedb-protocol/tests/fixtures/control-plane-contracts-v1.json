@@ -48,7 +48,7 @@
     }
   },
   "managedLease": {
-    "contractHeader": "access-v2",
+    "contractHeader": "access-v3",
     "request": {
       "accessMode": "read"
     },

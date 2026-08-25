@@ -39,8 +39,10 @@ import type {
 } from "../../features/knowledge/domain";
 import { bindKnowledgeEnvironmentConnectionWithRefresh } from "../../features/knowledge/bindEnvironmentConnection";
 import {
+  deleteKnowledgeProject,
   listKnowledgeEnvironmentConnections,
   onKnowledgeSourceChanged,
+  revokeKnowledgeEnvironmentConnection,
 } from "../../features/knowledge/tauriAdapter";
 import { knowledgeInventoryQuery } from "../../features/knowledge/inventory";
 import { captureProductEvent } from "../../features/productAnalytics/client";
@@ -112,6 +114,7 @@ import { useTreeKeyboardNavigation } from "../../design-system/treeKeyboard";
 import WorkspaceConnectionDialog from "../../features/workspaces/components/WorkspaceConnectionDialog";
 import { deleteWorkspaceConnection } from "../../features/workspaces/tauriAdapter";
 import { useToast } from "../../components/Toast";
+import ConfirmButton from "../../components/ConfirmButton";
 import { useI18n } from "../../lib/i18n";
 import { queryResultPhase } from "../../lib/queryResultPhase";
 import ConnectionNode from "./ConnectionNode";
@@ -295,6 +298,9 @@ export function DatabaseExplorer({
   const [projectSetupOpen, setProjectSetupOpen] = useState(false);
   const [environmentSetupProjectId, setEnvironmentSetupProjectId] =
     useState<string | null>(null);
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(
+    null,
+  );
   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(
     new Set(),
   );
@@ -328,6 +334,9 @@ export function DatabaseExplorer({
   const treeRootRef = useRef<HTMLDivElement>(null);
   const treeKeyboard = useTreeKeyboardNavigation(treeRootRef);
   const [savingScopeId, setSavingScopeId] = useState<string | null>(null);
+  const [unbindingBindingId, setUnbindingBindingId] = useState<string | null>(
+    null,
+  );
   const [localRevealRequest, setLocalRevealRequest] = useState(0);
   const [providerCredentialsOpen, setProviderCredentialsOpen] =
     useState<ProviderKind | null>(null);
@@ -847,6 +856,102 @@ export function DatabaseExplorer({
     }
   }
 
+  async function removeEnvironmentConnection(
+    binding: EnvironmentConnection,
+  ) {
+    if (unbindingBindingId !== null) return;
+    commands.patch({ openMenuId: null });
+    setUnbindingBindingId(binding.id);
+    try {
+      await revokeKnowledgeEnvironmentConnection(
+        binding.projectEnvironmentId,
+        binding.id,
+      );
+      toast(
+        t("connections.environmentConnectionRemoved", {
+          connection: binding.alias || binding.connectionName,
+        }),
+      );
+    } catch (error) {
+      toast(errMessage(error), "error");
+    } finally {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: knowledgeQueryKeys.environmentConnections(),
+          refetchType: "active",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: knowledgeQueryKeys.agentEnvironments(),
+          refetchType: "active",
+        }),
+      ]);
+      setUnbindingBindingId(null);
+    }
+  }
+
+  async function removeProject(project: KnowledgeProject) {
+    if (deletingProjectId !== null) return;
+    setDeletingProjectId(project.id);
+    try {
+      await deleteKnowledgeProject(project.id, project.revision);
+      const environmentIds = new Set(
+        project.environments.map((environment) => environment.id),
+      );
+      if (
+        activeProjectEnvironmentId !== null
+        && environmentIds.has(activeProjectEnvironmentId)
+      ) {
+        onOpenProjectEnvironment(null, "databases");
+      }
+      if (environmentSetupProjectId === project.id) {
+        setEnvironmentSetupProjectId(null);
+      }
+      setExpandedProjectIds((current) => {
+        const next = new Set(current);
+        next.delete(project.id);
+        return next;
+      });
+      setExpandedResourceKeys((current) => {
+        const next = new Set(current);
+        next.delete(projectResourceKey(project.id, "databases"));
+        next.delete(projectResourceKey(project.id, "sources"));
+        next.delete(projectResourceKey(project.id, "analyses"));
+        return next;
+      });
+      for (const environmentId of environmentIds) {
+        queryClient.removeQueries({
+          queryKey: analysisQueryKeys.articles(
+            catalogScope.key,
+            environmentId,
+          ),
+        });
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: knowledgeQueryKeys.inventory(catalogScope.key),
+          refetchType: "active",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: knowledgeQueryKeys.environmentConnections(),
+          refetchType: "active",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: knowledgeQueryKeys.agentEnvironments(),
+          refetchType: "active",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: knowledgeQueryKeys.sourceSyncProgress(catalogScope.key),
+          refetchType: "active",
+        }),
+      ]);
+      toast(t("connections.projectDeleted", { project: project.name }));
+    } catch (error) {
+      toast(errMessage(error), "error");
+    } finally {
+      setDeletingProjectId(null);
+    }
+  }
+
   async function setSchemaScope(
     connection: ConnectionProfile,
     schemas: string[],
@@ -906,6 +1011,7 @@ export function DatabaseExplorer({
     environmentBadge?: string | null,
     environmentDropId?: string,
     treeKey?: string,
+    binding?: EnvironmentConnection,
   ) {
     const schemaGroup = groupByConnectionId.get(connection.id);
     const openConnectionSchemaDiff =
@@ -970,6 +1076,12 @@ export function DatabaseExplorer({
         }
         onRefresh={() => void refreshSchema(connection.id)}
         onDelete={() => void removeConnection(connection)}
+        onUnbind={
+          binding
+            ? () => void removeEnvironmentConnection(binding)
+            : undefined
+        }
+        unbinding={binding?.id === unbindingBindingId}
         onOpenSchemaDiff={openConnectionSchemaDiff}
         onOpenTable={(table) => onOpenTable(connection, table)}
         onRequestDetails={(database) =>
@@ -1123,35 +1235,54 @@ export function DatabaseExplorer({
       dropTarget?.kind === "environment" &&
       dropTarget.id === environment.id;
     return (
-      <button
+      <div
         key={binding.id}
-        type="button"
         data-knowledge-environment-drop-id={environment.id}
         data-drop-target={isEnvironmentDropTarget}
-        className="tw:flex tw:min-h-[var(--ds-tree-row-height)] tw:w-full tw:min-w-0 tw:items-center tw:gap-1.5 tw:border-0 tw:bg-transparent tw:px-1 tw:py-[var(--ds-tree-row-padding-block)] tw:pl-5 tw:text-left tw:font-sans tw:text-sm tw:text-muted-foreground tw:data-[drop-target=true]:bg-muted tw:data-[drop-target=true]:ring-2 tw:data-[drop-target=true]:ring-ring tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
-        onClick={() =>
-          onOpenProjectEnvironment(
-            binding.projectEnvironmentId,
-            "databases",
-          )
-        }
-        title={t("connections.environmentDatabaseUnavailable")}
+        className="tw:group tw:relative tw:flex tw:min-h-[var(--ds-tree-row-height)] tw:min-w-0 tw:items-stretch tw:text-sm tw:text-muted-foreground tw:data-[drop-target=true]:bg-muted tw:data-[drop-target=true]:ring-2 tw:data-[drop-target=true]:ring-ring tw:hover:bg-muted"
         role="treeitem"
         aria-level={3}
         data-explorer-tree-item
         data-explorer-tree-key={`binding:${binding.id}`}
         data-explorer-tree-parent-key={treeParentKey}
-        data-tree-primary-action
         tabIndex={-1}
       >
-        <StatusDot tone="warning" />
-        <Icon name="database" className="tw:shrink-0" />
-        <span className="tw:min-w-0 tw:flex-1 tw:truncate">
-          {binding.alias || binding.connectionName}
-        </span>
-        <EnvironmentBadge environment={environmentLabel} />
-        <Icon name="alert" className="tw:shrink-0 tw:text-warning" />
-      </button>
+        <button
+          type="button"
+          className="tw:flex tw:min-w-0 tw:flex-1 tw:items-center tw:gap-1.5 tw:border-0 tw:bg-transparent tw:px-1 tw:py-[var(--ds-tree-row-padding-block)] tw:pl-5 tw:text-left tw:font-sans tw:text-inherit tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
+          onClick={() =>
+            onOpenProjectEnvironment(
+              binding.projectEnvironmentId,
+              "databases",
+            )
+          }
+          title={t("connections.environmentDatabaseUnavailable")}
+          data-tree-primary-action
+          tabIndex={-1}
+        >
+          <StatusDot tone="warning" />
+          <Icon name="database" className="tw:shrink-0" />
+          <span className="tw:min-w-0 tw:flex-1 tw:truncate">
+            {binding.alias || binding.connectionName}
+          </span>
+          <EnvironmentBadge environment={environmentLabel} />
+          <Icon name="alert" className="tw:shrink-0 tw:text-warning" />
+        </button>
+        <TreeRowActions>
+          <ConfirmButton
+            iconOnly
+            label={t("connections.removeFromProject")}
+            confirmLabel={t("connections.reallyRemoveFromProject")}
+            disabled={unbindingBindingId === binding.id}
+            size="xs"
+            tone="danger"
+            variant="dangerGhost"
+            onConfirm={() => void removeEnvironmentConnection(binding)}
+          >
+            <Icon name="trash" />
+          </ConfirmButton>
+        </TreeRowActions>
+      </div>
     );
   }
 
@@ -1319,6 +1450,7 @@ export function DatabaseExplorer({
                       knowledgeEnvironmentBadge(environment.riskClass),
                       environment.id,
                       `binding:${binding.id}:connection:${connection.id}`,
+                      binding,
                     )
                   : renderUnavailableBinding(
                       binding,
@@ -1571,10 +1703,23 @@ export function DatabaseExplorer({
           selected={activeEnvironmentBelongsToProject && !projectExpanded}
           actions={
             <TreeRowActions>
+              <ConfirmButton
+                iconOnly
+                label={t("connections.deleteProject")}
+                confirmLabel={t("connections.reallyDeleteProject")}
+                disabled={deletingProjectId !== null}
+                size="xs"
+                tone="danger"
+                variant="dangerGhost"
+                onConfirm={() => void removeProject(project)}
+              >
+                <Icon name="trash" />
+              </ConfirmButton>
               <Button
                 iconOnly
                 size="xs"
                 variant="ghost"
+                disabled={deletingProjectId !== null}
                 title={t("connections.addEnvironment")}
                 aria-label={t("connections.addEnvironment")}
                 tabIndex={-1}

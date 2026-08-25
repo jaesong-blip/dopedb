@@ -106,6 +106,12 @@ struct PersonalKnowledgeScopeRequest<'a> {
     projects: &'a [RemoteKnowledgeProject],
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeleteKnowledgeProjectRequest {
+    expected_revision: u64,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PersonalKnowledgeScopeResponse {
@@ -398,6 +404,29 @@ async fn create_knowledge_project(
         ));
     }
     Ok(project)
+}
+
+async fn delete_knowledge_project(
+    user_id: &str,
+    workspace_id: Uuid,
+    project_id: Uuid,
+    expected_revision: u64,
+) -> AppResult<()> {
+    let token = bearer(user_id).await?;
+    let response = client()?
+        .delete(format!(
+            "{}/api/v1/workspaces/{workspace_id}/knowledge/projects/{project_id}",
+            origin()?
+        ))
+        .bearer_auth(token.as_str())
+        .json(&DeleteKnowledgeProjectRequest { expected_revision })
+        .send()
+        .await
+        .map_err(|error| request_error("deleting a Project Knowledge scope", error))?;
+    if !response.status().is_success() {
+        return Err(oauth_error(response).await);
+    }
+    Ok(())
 }
 
 async fn create_knowledge_environment(
@@ -1244,6 +1273,16 @@ impl HostedKnowledgeAuthorityPort for HostedKnowledgeAuthority {
         request: &CreateKnowledgeProjectRequest,
     ) -> impl std::future::Future<Output = AppResult<RemoteKnowledgeProject>> + Send {
         create_knowledge_project(account_id, workspace_id, request)
+    }
+
+    fn delete_project(
+        &self,
+        account_id: &str,
+        workspace_id: Uuid,
+        project_id: Uuid,
+        expected_revision: u64,
+    ) -> impl std::future::Future<Output = AppResult<()>> + Send {
+        delete_knowledge_project(account_id, workspace_id, project_id, expected_revision)
     }
 
     fn create_environment(

@@ -96,6 +96,8 @@ type Props = {
   onWorkspaceDialog: (mode: "copy" | "credentials") => void;
   onRefresh: () => void;
   onDelete: () => void;
+  onUnbind?: () => void;
+  unbinding?: boolean;
   onOpenSchemaDiff?: () => void;
   onOpenTable: (table: CatalogTable) => void;
   onRequestOverview: (database: string) => void;
@@ -162,6 +164,11 @@ export default function ConnectionNode(props: Props) {
       : availableSchemas.filter((schema) => scopedSchemas.includes(schema))
           .length;
   const connectionTreeKey = props.treeKey ?? `connection:${connection.id}`;
+  const connectionMenuKey = props.treeKey ?? connection.id;
+  const connectionMenuId = `connection-menu-${connectionMenuKey.replace(
+    /[^A-Za-z0-9_-]/g,
+    "-",
+  )}`;
   const schemaGroup = props.groupByConnectionId.get(connection.id);
 
   return (
@@ -331,7 +338,7 @@ export default function ConnectionNode(props: Props) {
         />
         <div
           className="db-menu tw:pointer-events-none tw:absolute tw:top-1/2 tw:right-1 tw:-translate-y-1/2 tw:opacity-0 tw:transition-opacity tw:group-hover:pointer-events-auto tw:group-hover:opacity-100 tw:group-focus-within:pointer-events-auto tw:group-focus-within:opacity-100 tw:focus-within:pointer-events-auto tw:focus-within:opacity-100 tw:data-[open=true]:pointer-events-auto tw:data-[open=true]:z-[var(--ds-z-popover)] tw:data-[open=true]:opacity-100"
-          data-open={props.openMenuId === connection.id}
+          data-open={props.openMenuId === connectionMenuKey}
           onPointerDown={(event) => event.stopPropagation()}
           onPointerUp={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}
@@ -356,19 +363,21 @@ export default function ConnectionNode(props: Props) {
             variant="ghost"
             title={t("connections.connectionMenu")}
             aria-label={t("connections.connectionMenu")}
-            aria-expanded={props.openMenuId === connection.id}
-            aria-controls={`connection-menu-${connection.id}`}
+            aria-expanded={props.openMenuId === connectionMenuKey}
+            aria-controls={connectionMenuId}
             tabIndex={-1}
             onClick={() =>
               props.onOpenMenu(
-                props.openMenuId === connection.id ? null : connection.id,
+                props.openMenuId === connectionMenuKey
+                  ? null
+                  : connectionMenuKey,
               )
             }
           >
             <Icon name="moreVertical" />
           </Button>
-          {props.openMenuId === connection.id ? (
-            <PopupMenu id={`connection-menu-${connection.id}`}>
+          {props.openMenuId === connectionMenuKey ? (
+            <PopupMenu id={connectionMenuId}>
               {connection.workspaceAccess === "local" ||
               connection.workspaceAccess === "manage" ? (
                 <PopupMenuItem
@@ -435,8 +444,20 @@ export default function ConnectionNode(props: Props) {
               >
                 {t("connections.showRowCounts")}
               </PopupMenuCheckbox>
-              {connection.workspaceAccess === "local" ||
-              connection.workspaceAccess === "manage" ? (
+              {props.onUnbind ? (
+                <ConfirmButton
+                  confirmLabel={t("connections.reallyRemoveFromProject")}
+                  disabled={props.unbinding}
+                  presentation="menuItem"
+                  size="compact"
+                  tone="danger"
+                  variant="ghost"
+                  onConfirm={props.onUnbind}
+                >
+                  {t("connections.removeFromProject")}
+                </ConfirmButton>
+              ) : connection.workspaceAccess === "local" ||
+                connection.workspaceAccess === "manage" ? (
                 <ConfirmButton
                   confirmLabel={t(
                     isDemoSqliteConnection(connection)

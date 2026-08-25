@@ -27,7 +27,7 @@ export type ProviderImportProjection = Readonly<{
 }>;
 
 export interface ProviderImportAdapter<Resource> {
-  readonly provider: "neon" | "gcpCloudSql" | "planetScale";
+  readonly provider: "neon" | "gcpCloudSql" | "planetScale" | "vault";
   reconstruct(value: unknown): Resource;
   capabilities(resource: Resource): ProviderCapabilityManifest;
   importProjection(resource: Resource): ProviderImportProjection;
@@ -83,12 +83,12 @@ function assertNoSecretKeys(value: unknown): void {
 }
 
 export function providerResourceFingerprint(provider: string, resource: Record<string, unknown>) {
-  if (!/^(neon|gcpCloudSql|planetScale)$/.test(provider)) throw new Error("Invalid provider");
+  if (!/^(neon|gcpCloudSql|planetScale|vault)$/.test(provider)) throw new Error("Invalid provider");
   return createHash("sha256").update(`${provider}\n${canonical(resource)}`, "utf8").digest("hex");
 }
 
 export function providerProjection(input: Omit<ProviderImportProjection, "fingerprint"> & { provider: string }) {
-  if (!/^(neon|gcpCloudSql|planetScale)$/.test(input.provider)) throw new Error("Invalid provider");
+  if (!/^(neon|gcpCloudSql|planetScale|vault)$/.test(input.provider)) throw new Error("Invalid provider");
   assertNoSecretKeys(input.resource);
   assertNoSecretKeys(input.metadata);
   Object.values(input.resource).forEach((value) => assertSafeValue(value));

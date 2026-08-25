@@ -16,8 +16,16 @@ const PROOF_VERSION = 1;
 const PROOF_TTL_MS = 5 * 60 * 1_000;
 const MAX_PROOF_LENGTH = 16 * 1_024;
 const MAX_POSTGRES_BIGINT = 9_223_372_036_854_775_807n;
-const PROVIDERS = ["planetScale", "neon", "gcpCloudSql"] as const;
-const KINDS = ["organizations", "projects", "databases", "branches", "instances"] as const;
+const PROVIDERS = ["planetScale", "neon", "gcpCloudSql", "vault"] as const;
+const KINDS = [
+  "organizations",
+  "projects",
+  "databases",
+  "branches",
+  "instances",
+  "brokers",
+  "targets",
+] as const;
 const SELECTION_KEYS = [
   "organization",
   "project",
@@ -26,6 +34,8 @@ const SELECTION_KEYS = [
   "instance",
   "engine",
   "networkMode",
+  "broker",
+  "target",
 ] as const;
 
 type Provider = typeof PROVIDERS[number];
@@ -137,6 +147,11 @@ function expectedSelectionKeys(provider: Provider, kind: DiscoveryKind) {
     if (kind === "projects") return [] as const;
     if (kind === "instances") return ["project"] as const;
     if (kind === "databases") return ["project", "instance"] as const;
+  }
+  if (provider === "vault") {
+    if (kind === "brokers") return [] as const;
+    if (kind === "targets") return ["broker"] as const;
+    if (kind === "databases") return ["broker", "target"] as const;
   }
   return null;
 }

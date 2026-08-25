@@ -19,9 +19,9 @@ runtime과 성능 수치로 수행한다.
 | App shell/chrome | `complete` | `features/appShell`, design-system chrome primitives | packaged macOS·Windows에서 keyboard launcher와 compact window를 정기 확인 |
 | Action Search | `complete` | `features/actionSearch` | cached catalog scope, `/` action mode, focus 복구와 bounded top-k를 유지 |
 | Welcome document | `complete` | `screens/Onboarding`, `features/onboarding` | Personal 가이드 데모의 idempotent DB·Project·Environment·binding 준비와 연결 전/후 실제 command 집합을 packaged smoke에서 확인 |
-| Database Explorer | `complete` | `screens/Connections/DatabaseExplorer`, `features/catalogExplorer` | Project 바로 아래의 단일 Databases/Data sources/Analyses 계층, DB 행에만 보이는 exact Environment marker와 같은 schema group의 Diff 진입점을 유지하고, Unassigned→환경 DB 행 binding drag·loaded-only 객체 검색·대형 catalog selection/scroll을 packaged smoke에서 확인 |
+| Database Explorer | `complete` | `screens/Connections/DatabaseExplorer`, `features/catalogExplorer` | Project 바로 아래의 단일 Databases/Data sources/Analyses 계층, workspace당 connection 하나의 active Project binding, DB 행의 exact-binding 제거, connection 보존·source/grant 폐기·pinned Agent session 중단·active Article 차단을 지키는 Project 삭제, DB 행에만 보이는 Environment marker와 같은 schema group의 Diff 진입점을 유지하고, Unassigned→환경 DB 행 binding drag·loaded-only 객체 검색·대형 catalog selection/scroll을 packaged smoke에서 확인 |
 | Connection editor | `complete` | `features/connections/useConnectionEditorController` | 연결 identity·접속 옵션만 소유하고 쓰기 실행 제어는 Settings → Safety 단일 경계를 유지 |
-| Provider account access | `complete` | `workspace-cloud/features/providerAccess`, provider application modules | 실제 계정 OAuth/CLI 실패·recovery 및 revoke 검수 |
+| Provider account access | `complete` | `workspace-cloud/features/providerAccess`, provider application modules | 실제 계정 OAuth/CLI 실패·recovery와 allowlisted Vault AppRole의 role/lease/revoke packaged 검수를 유지 |
 | SQL editor/query workflow | `complete` | `features/queries`, `screens/Sql`, Rust query application | 수동 Run exact 승인, Agent 제안 분리, 10 KiB/100 KiB/1 MiB 입력과 cancel/transaction packaged 검수 |
 | Result/Data grid | `complete` | `features/queryResults`, Rust result artifact | 30열·50,000행 selection/filter/export와 메모리 경계 검수 |
 | Services/Jobs | `complete` | `features/queryServices`, `features/jobs` | background cancel과 복원된 result handle packaged 검수 |
@@ -66,7 +66,9 @@ credential, 공유 권한을 꾸며내지 않고 실제 local command만 사용�
 ### 2. 공유 연결 사용
 
 1. workspace의 redacted connection revision을 선택한다.
-2. 구성원은 member-local secret을 바인딩하거나 허용된 managed lease를 받는다.
+2. 구성원은 member-local secret을 바인딩하거나 허용된 provider/Vault broker의
+   구성원별 managed lease를 받는다. Vault AppRole과 공용 DB 비밀번호는 Desktop으로
+   전달되지 않는다.
 3. Explorer, query, Agent가 같은 workspace/account/connection revision을 사용한다.
 4. revoke나 revision 변경 뒤 stale cache와 실행 권한이 재사용되지 않는다.
 

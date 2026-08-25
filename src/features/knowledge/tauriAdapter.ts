@@ -74,6 +74,16 @@ export function createKnowledgeProject(
   return invoke("create_knowledge_project_command", { input });
 }
 
+export function deleteKnowledgeProject(
+  projectId: string,
+  expectedRevision: number,
+): Promise<void> {
+  return invoke("delete_knowledge_project_command", {
+    projectId,
+    expectedRevision,
+  });
+}
+
 export function createKnowledgeEnvironment(
   input: CreateKnowledgeEnvironmentInput,
 ): Promise<KnowledgeProject> {

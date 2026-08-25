@@ -131,6 +131,15 @@ where
             .save_knowledge_project(&project_definition(scope.workspace_id, project))
             .await?;
     }
+    repository
+        .retain_knowledge_projects(
+            scope.workspace_id,
+            &projects
+                .iter()
+                .map(|project| project.id)
+                .collect::<Vec<_>>(),
+        )
+        .await?;
     Ok(projects)
 }
 

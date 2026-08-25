@@ -1477,10 +1477,13 @@ export const knowledgeProject = workspaceControl.table(
     revision: bigint("revision", { mode: "number" }).notNull().default(1),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (table) => [
     uniqueIndex("knowledge_project_org_id_idx").on(table.organizationId, table.id),
-    uniqueIndex("knowledge_project_org_name_idx").on(table.organizationId, table.name),
+    uniqueIndex("knowledge_project_org_name_idx")
+      .on(table.organizationId, table.name)
+      .where(sql`${table.deletedAt} IS NULL`),
     check("knowledge_project_name_length", sql`char_length(${table.name}) BETWEEN 1 AND 512`),
     check("knowledge_project_revision_positive", sql`${table.revision} >= 1`),
   ],
@@ -1543,7 +1546,7 @@ export const knowledgeEnvironmentConnection = workspaceControl.table(
   },
   (table) => [
     uniqueIndex("knowledge_environment_connection_active_idx")
-      .on(table.projectEnvironmentId, table.connectionId)
+      .on(table.organizationId, table.connectionId)
       .where(sql`${table.revokedAt} IS NULL`),
     index("knowledge_environment_connection_scope_idx").on(
       table.organizationId,

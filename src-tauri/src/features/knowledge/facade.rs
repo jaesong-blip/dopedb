@@ -113,6 +113,27 @@ where
         self.repository.save_knowledge_project(value).await
     }
 
+    pub(crate) async fn delete_knowledge_project(
+        &self,
+        workspace_id: Uuid,
+        project_id: Uuid,
+        expected_revision: u64,
+    ) -> AppResult<()> {
+        self.repository
+            .delete_knowledge_project(workspace_id, project_id, expected_revision)
+            .await
+    }
+
+    pub(crate) async fn retain_knowledge_projects(
+        &self,
+        workspace_id: Uuid,
+        project_ids: &[Uuid],
+    ) -> AppResult<()> {
+        self.repository
+            .retain_knowledge_projects(workspace_id, project_ids)
+            .await
+    }
+
     pub(crate) async fn save_scope(
         &self,
         project: &Project,
@@ -382,6 +403,18 @@ where
     ) -> AppResult<RemoteKnowledgeProject> {
         self.authority
             .create_project(account_id, workspace_id, request)
+            .await
+    }
+
+    pub(crate) async fn delete_remote_project(
+        &self,
+        account_id: &str,
+        workspace_id: Uuid,
+        project_id: Uuid,
+        expected_revision: u64,
+    ) -> AppResult<()> {
+        self.authority
+            .delete_project(account_id, workspace_id, project_id, expected_revision)
             .await
     }
 

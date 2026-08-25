@@ -41,6 +41,39 @@ function optional(name: string): string | null {
   return process.env[name]?.trim() || null;
 }
 
+function vaultBrokerOrigins(): readonly string[] {
+  const raw = optional("VAULT_BROKER_ORIGINS");
+  if (!raw) return [];
+  const values = raw.split(",").map((value) => value.trim()).filter(Boolean);
+  if (values.length === 0 || values.length > 16) {
+    throw new Error("VAULT_BROKER_ORIGINS must contain 1 to 16 HTTPS origins");
+  }
+  const origins = values.map((value) => {
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch {
+      throw new Error("VAULT_BROKER_ORIGINS contains an invalid URL");
+    }
+    if (
+      url.protocol !== "https:"
+      || url.username
+      || url.password
+      || url.pathname !== "/"
+      || url.search
+      || url.hash
+      || url.port === "80"
+    ) {
+      throw new Error("VAULT_BROKER_ORIGINS accepts exact HTTPS origins only");
+    }
+    return url.origin;
+  });
+  if (new Set(origins).size !== origins.length) {
+    throw new Error("VAULT_BROKER_ORIGINS contains a duplicate origin");
+  }
+  return origins;
+}
+
 function githubKnowledgePrivateKey(): string | null {
   const value = optional("GITHUB_KNOWLEDGE_APP_PRIVATE_KEY");
   if (!value) return null;
@@ -163,6 +196,7 @@ export const env = {
   productAnalyticsCloudflareUrl,
   productAnalyticsRelayEnabled,
   resendApiKey: () => optional("RESEND_API_KEY"),
+  vaultBrokerOrigins,
   workspaceInvitationFrom: () => optional("WORKSPACE_INVITATION_FROM"),
   workspaceBackgroundSchedulerEnabled,
   workspaceBackgroundSchedulerToken,

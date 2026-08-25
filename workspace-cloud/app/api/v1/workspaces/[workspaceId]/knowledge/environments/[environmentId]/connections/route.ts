@@ -16,6 +16,7 @@ import {
 } from "@/lib/http";
 import {
   knowledgeEnvironmentConnection,
+  knowledgeProject,
   knowledgeProjectEnvironment,
   workspaceConnection,
 } from "@/lib/schema";
@@ -115,6 +116,10 @@ export async function POST(request: Request, context: RouteContext) {
         connection."revision" AS connection_revision,
         connection."name" AS connection_name
       FROM ${knowledgeProjectEnvironment} AS environment
+      JOIN ${knowledgeProject} AS project
+        ON project."organization_id" = environment."organization_id"
+       AND project."id" = environment."project_id"
+       AND project."deleted_at" IS NULL
       JOIN ${workspaceConnection} AS connection
         ON connection."organization_id" = environment."organization_id"
        AND connection."id" = ${body.connectionId}::uuid
@@ -126,7 +131,13 @@ export async function POST(request: Request, context: RouteContext) {
       CROSS JOIN actor_authority
       WHERE environment."organization_id" = ${workspaceId}
         AND environment."id" = ${environmentId}::uuid
-      FOR UPDATE OF environment, connection
+      FOR UPDATE OF project, environment, connection
+    ), active_assignment AS MATERIALIZED (
+      SELECT binding."project_environment_id"
+      FROM ${knowledgeEnvironmentConnection} AS binding
+      JOIN scope ON scope.connection_id = binding."connection_id"
+      WHERE binding."organization_id" = ${workspaceId}
+        AND binding."revoked_at" IS NULL
     ), updated AS MATERIALIZED (
       UPDATE ${knowledgeEnvironmentConnection} AS binding
       SET "environment_revision" = scope.environment_revision,
@@ -146,6 +157,7 @@ export async function POST(request: Request, context: RouteContext) {
         scope.connection_id, scope.connection_revision, ${body.role.trim()}, ${body.alias.trim()}
       FROM scope
       WHERE NOT EXISTS (SELECT 1 FROM updated)
+        AND NOT EXISTS (SELECT 1 FROM active_assignment)
       ON CONFLICT DO NOTHING
       RETURNING *
     )
@@ -163,7 +175,25 @@ export async function POST(request: Request, context: RouteContext) {
     FROM inserted JOIN scope ON scope."id" = inserted."project_environment_id"
   `);
   const binding = bindingResult.rows[0];
-  if (!binding) return jsonError("Environment or connection changed", 409);
+  if (!binding) {
+    const [activeAssignment] = await db.select({
+      projectEnvironmentId: knowledgeEnvironmentConnection.projectEnvironmentId,
+    }).from(knowledgeEnvironmentConnection).where(and(
+      eq(knowledgeEnvironmentConnection.organizationId, workspaceId),
+      eq(knowledgeEnvironmentConnection.connectionId, body.connectionId as string),
+      isNull(knowledgeEnvironmentConnection.revokedAt),
+    )).limit(1);
+    if (
+      activeAssignment
+      && activeAssignment.projectEnvironmentId !== environmentId
+    ) {
+      return jsonError(
+        "Connection is already assigned to another Project in this workspace",
+        409,
+      );
+    }
+    return jsonError("Environment or connection changed", 409);
+  }
   const { inserted, ...responseBinding } = binding;
   return privateJson({
     binding: {
@@ -197,6 +227,15 @@ export async function DELETE(request: Request, context: RouteContext) {
     isNull(knowledgeEnvironmentConnection.revokedAt),
     knowledgeMutationAuthoritySql(authority, workspaceId),
   )).returning({ id: knowledgeEnvironmentConnection.id });
-  if (updated.length !== 1) return jsonError("Environment connection binding not found", 404);
+  if (updated.length !== 1) {
+    const [existing] = await db.select({
+      id: knowledgeEnvironmentConnection.id,
+    }).from(knowledgeEnvironmentConnection).where(and(
+      eq(knowledgeEnvironmentConnection.organizationId, workspaceId),
+      eq(knowledgeEnvironmentConnection.projectEnvironmentId, environmentId),
+      eq(knowledgeEnvironmentConnection.id, body.bindingId),
+    )).limit(1);
+    if (!existing) return jsonError("Environment connection binding not found", 404);
+  }
   return privateJson({ removed: true });
 }

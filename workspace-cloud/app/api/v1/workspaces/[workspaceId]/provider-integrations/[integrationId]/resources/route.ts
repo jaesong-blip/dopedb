@@ -14,10 +14,12 @@ import {
   gcpCredential,
   recordProviderDiscoveryReceipt,
   revalidateProviderDiscoveryAuthority,
+  vaultCredential,
 } from "../../../../../../../../lib/provider-integrations";
 import { vercelOidcToken } from "../../../../../../../../lib/providers/gcp-cloud-sql";
 import { parseNeonResource } from "../../../../../../../../lib/providers/neon-core";
 import { ProviderRequestError } from "../../../../../../../../lib/providers/provider-types";
+import { vaultManagedResource } from "../../../../../../../../lib/providers/vault";
 import {
   neonBranchManagedAccessBoundaryFor,
   requireNeonBranchManagedAccessReady,
@@ -35,8 +37,16 @@ type RouteContext = {
   params: Promise<{ workspaceId: string; integrationId: string }>;
 };
 
-const providers = ["planetScale", "neon", "gcpCloudSql"] as const;
-const kinds = ["organizations", "projects", "databases", "branches", "instances"] as const;
+const providers = ["planetScale", "neon", "gcpCloudSql", "vault"] as const;
+const kinds = [
+  "organizations",
+  "projects",
+  "databases",
+  "branches",
+  "instances",
+  "brokers",
+  "targets",
+] as const;
 const selectionKeys = [
   "organization",
   "project",
@@ -45,6 +55,8 @@ const selectionKeys = [
   "instance",
   "engine",
   "networkMode",
+  "broker",
+  "target",
 ] as const;
 
 function providerName(value: string): value is typeof providers[number] {
@@ -104,6 +116,9 @@ function providerWriteAvailable(
   if (integration.provider === "planetScale") {
     return true;
   }
+  if (integration.provider === "vault") {
+    return vaultCredential(integration).writeRole !== null;
+  }
   return integration.provider === "gcpCloudSql"
     && gcpCredential(integration).writeServiceAccountEmail !== null;
 }
@@ -123,6 +138,9 @@ export async function GET(request: Request, context: RouteContext) {
   }
   const provider = integration.provider;
   const writeAvailable = providerWriteAvailable(integration);
+  const vaultResource = provider === "vault"
+    ? vaultManagedResource(vaultCredential(integration))
+    : undefined;
   const selection = canonicalProviderDiscoverySelection(
     provider,
     query.kind,
@@ -165,6 +183,7 @@ export async function GET(request: Request, context: RouteContext) {
           selection,
           item,
           writeAvailable,
+          vaultResource,
         });
         const canBootstrapNeon = provider === "neon"
           && query.kind === "databases"
@@ -264,6 +283,9 @@ export async function POST(request: Request, context: RouteContext) {
     authorization,
   );
   const writeAvailable = providerWriteAvailable(integration);
+  const vaultResource = integration.provider === "vault"
+    ? vaultManagedResource(vaultCredential(integration))
+    : undefined;
   try {
     // Never accept a raw external id from the browser. Re-run the exact sealed
     // query, then require the full sealed leaf to still appear unchanged.
@@ -292,6 +314,7 @@ export async function POST(request: Request, context: RouteContext) {
       selection: proof.selection,
       item,
       writeAvailable,
+      vaultResource,
     });
     if (!projection) {
       return jsonError("Provider resource is no longer importable", 409);

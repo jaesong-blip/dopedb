@@ -1,10 +1,14 @@
 "use client";
 
+// Provider integration list owns setup and removal controls for cloud accounts
+// and allowlisted dynamic-credential brokers; its controller owns their state.
+
 import {
   ControlButton,
   ControlField,
   ControlInput,
   ControlLink,
+  ControlSelect,
 } from "../../app/components/Controls";
 import type { ProviderAccountAccessController } from "./useProviderAccountAccess";
 import { useWorkspaceLocale } from "../../app/components/WorkspaceLocale";
@@ -26,11 +30,13 @@ export function ProviderIntegrationList({
     managedConnectionsLoaded,
     setupProvider,
     neonConfiguration,
+    vaultConfiguration,
     mutation,
     beginConnect,
     connect,
     disconnect,
     setNeonConfiguration,
+    setVaultConfiguration,
   } = controller;
   return (
     <div className="tw:grid tw:content-start tw:gap-7">
@@ -305,6 +311,231 @@ export function ProviderIntegrationList({
               placeholder="org-..."
             />
           </ControlField>
+          <div className="tw:col-span-full tw:flex tw:justify-end">
+            <ControlButton
+              type="submit"
+              tone="primary"
+              size="field"
+              disabled={mutation !== ""}
+            >
+              {copy.verifyConnect}
+            </ControlButton>
+          </div>
+        </form>
+      ) : null}
+
+      {setupProvider?.id === "vault" ? (
+        <form
+          className="tw:grid tw:grid-cols-1 tw:items-end tw:gap-3 tw:border-y tw:border-border tw:py-4 tw:md:grid-cols-2 tw:xl:grid-cols-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void connect(setupProvider);
+          }}
+        >
+          <aside className="tw:col-span-full tw:grid tw:gap-2 tw:rounded-control tw:border tw:border-border tw:bg-surface-inset tw:p-3.5">
+            <div className="tw:flex tw:flex-col tw:items-start tw:justify-between tw:gap-3 tw:sm:flex-row tw:sm:items-center">
+              <div className="tw:grid tw:gap-1">
+                <strong className="tw:text-xs tw:text-foreground">
+                  {copy.vaultGuide.title}
+                </strong>
+                <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                  {copy.vaultGuide.description}
+                </small>
+              </div>
+              <ControlLink
+                href="https://developer.hashicorp.com/vault/docs/secrets/databases"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {copy.vaultGuide.openDocs}
+              </ControlLink>
+            </div>
+            <p className="tw:m-0 tw:text-2xs tw:font-medium tw:leading-body tw:text-warning">
+              {copy.vaultGuide.caution}
+            </p>
+          </aside>
+
+          <ControlField label={copy.vaultAddress}>
+            <ControlInput
+              type="url"
+              value={vaultConfiguration.address}
+              onChange={(event) => setVaultConfiguration({
+                ...vaultConfiguration,
+                address: event.target.value,
+              })}
+              placeholder="https://vault.example.com"
+              required
+            />
+          </ControlField>
+          <ControlField label={copy.vaultNamespace}>
+            <ControlInput
+              value={vaultConfiguration.namespace}
+              onChange={(event) => setVaultConfiguration({
+                ...vaultConfiguration,
+                namespace: event.target.value,
+              })}
+              placeholder={copy.vaultOptional}
+            />
+          </ControlField>
+          <ControlField label={copy.vaultAuthMount}>
+            <ControlInput
+              value={vaultConfiguration.authMount}
+              onChange={(event) => setVaultConfiguration({
+                ...vaultConfiguration,
+                authMount: event.target.value,
+              })}
+              required
+            />
+          </ControlField>
+          <ControlField label={copy.vaultDatabaseMount}>
+            <ControlInput
+              value={vaultConfiguration.databaseMount}
+              onChange={(event) => setVaultConfiguration({
+                ...vaultConfiguration,
+                databaseMount: event.target.value,
+              })}
+              required
+            />
+          </ControlField>
+          <ControlField label={copy.vaultDatabaseConnection}>
+            <ControlInput
+              value={vaultConfiguration.databaseConnection}
+              onChange={(event) => setVaultConfiguration({
+                ...vaultConfiguration,
+                databaseConnection: event.target.value,
+              })}
+              placeholder="dopedb-postgres"
+              required
+            />
+          </ControlField>
+
+          <ControlField label={copy.vaultRoleId}>
+            <ControlInput
+              type="password"
+              autoComplete="off"
+              value={vaultConfiguration.roleId}
+              onChange={(event) => setVaultConfiguration({
+                ...vaultConfiguration,
+                roleId: event.target.value,
+              })}
+              required
+            />
+          </ControlField>
+          <ControlField label={copy.vaultSecretId}>
+            <ControlInput
+              type="password"
+              autoComplete="off"
+              value={vaultConfiguration.secretId}
+              onChange={(event) => setVaultConfiguration({
+                ...vaultConfiguration,
+                secretId: event.target.value,
+              })}
+              required
+            />
+          </ControlField>
+          <ControlField label={copy.vaultReadRole}>
+            <ControlInput
+              value={vaultConfiguration.readRole}
+              onChange={(event) => setVaultConfiguration({
+                ...vaultConfiguration,
+                readRole: event.target.value,
+              })}
+              placeholder="dopedb-read"
+              required
+            />
+          </ControlField>
+          <ControlField label={copy.vaultWriteRole}>
+            <ControlInput
+              value={vaultConfiguration.writeRole}
+              onChange={(event) => setVaultConfiguration({
+                ...vaultConfiguration,
+                writeRole: event.target.value,
+              })}
+              placeholder={copy.vaultOptional}
+            />
+          </ControlField>
+
+          <div className="tw:col-span-full tw:grid tw:gap-1 tw:border-t tw:border-border tw:pt-3">
+            <strong className="tw:text-xs tw:text-foreground">
+              {copy.vaultTargetTitle}
+            </strong>
+            <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+              {copy.vaultTargetDescription}
+            </small>
+          </div>
+          <ControlField label={copy.vaultEngine}>
+            <ControlSelect
+              value={vaultConfiguration.engine}
+              onChange={(event) => {
+                const engine = event.target.value as "postgres" | "mysql";
+                const previousDefault = vaultConfiguration.engine === "postgres"
+                  ? "5432"
+                  : "3306";
+                setVaultConfiguration({
+                  ...vaultConfiguration,
+                  engine,
+                  port: vaultConfiguration.port === previousDefault
+                    ? engine === "postgres" ? "5432" : "3306"
+                    : vaultConfiguration.port,
+                });
+              }}
+            >
+              <option value="postgres">PostgreSQL</option>
+              <option value="mysql">MySQL</option>
+            </ControlSelect>
+          </ControlField>
+          <ControlField label={copy.vaultHost}>
+            <ControlInput
+              value={vaultConfiguration.host}
+              onChange={(event) => setVaultConfiguration({
+                ...vaultConfiguration,
+                host: event.target.value,
+              })}
+              placeholder="db.internal.example.com"
+              required
+            />
+          </ControlField>
+          <ControlField label={copy.vaultPort}>
+            <ControlInput
+              type="number"
+              min={1}
+              max={65_535}
+              value={vaultConfiguration.port}
+              onChange={(event) => setVaultConfiguration({
+                ...vaultConfiguration,
+                port: event.target.value,
+              })}
+              required
+            />
+          </ControlField>
+          <ControlField label={copy.vaultDatabase}>
+            <ControlInput
+              value={vaultConfiguration.database}
+              onChange={(event) => setVaultConfiguration({
+                ...vaultConfiguration,
+                database: event.target.value,
+              })}
+              required
+            />
+          </ControlField>
+
+          <label className="tw:col-span-full tw:grid tw:grid-cols-[16px_minmax(0,1fr)] tw:items-start tw:gap-2 tw:border tw:border-border tw:bg-surface tw:p-3">
+            <input
+              className="tw:mt-0.5 tw:size-4 tw:accent-primary"
+              type="checkbox"
+              checked={vaultConfiguration.production}
+              onChange={(event) => setVaultConfiguration({
+                ...vaultConfiguration,
+                production: event.target.checked,
+              })}
+            />
+            <span className="tw:grid tw:gap-1 tw:text-xs tw:text-foreground">
+              {copy.vaultProduction}
+              <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                {copy.vaultProductionDescription}
+              </small>
+            </span>
+          </label>
           <div className="tw:col-span-full tw:flex tw:justify-end">
             <ControlButton
               type="submit"

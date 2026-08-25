@@ -32,8 +32,16 @@ DopeDB의 제품 축, 실제 사용자 작업, 접근성, 운영 안전성, 지�
   Environment에 이미 묶인 DB 행으로 끌어 놓으면 기존 environment-connection
   binding command로 이동한다. 대상 환경에 DB가 없으면 Environment database
   binding 화면을 사용하며, 이미 묶인 연결을 암묵적으로 재배치하거나 복제하지
-  않는다. Analysis collection의 문자·상태 필터와 Article 선택도 Explorer가
-  소유하며, 중앙 Analysis document는 선택한 Article만 표시하고 별도의 collection
+  않는다. 한 workspace의 DB 연결은 동시에 한 Project Environment에만 배정되며,
+  다른 Project로 옮기려면 DB 행의 명시적인 `프로젝트에서 제거` command로 기존
+  binding을 먼저 해제한다. 이 command는 공유 연결이나 구성원 자격 증명을 삭제하지
+  않는다. Project 행의 삭제 command도 connection 자체는 보존해 `Unassigned`로
+  돌려보내고 source sync·Agent grant를 폐기하며 해당 Environment에 고정된 실행 중
+  Agent session도 중단한다. active Analysis Article이 있는
+  Project는 Article을 명시적으로 삭제하기 전에는 삭제할 수 없으며, 삭제된 Article의
+  version history와 공개 snapshot은 보존한다. Analysis collection의 문자·상태
+  필터와 Article 선택도 Explorer가 소유하며, 중앙 Analysis document는 선택한
+  Article만 표시하고 별도의 collection
   rail을 만들지 않는다.
 - 중앙 document surface는 welcome, query, data, schema, analysis처럼 현재 작업
   하나를 소유한다.
@@ -112,7 +120,7 @@ DopeDB의 제품 축, 실제 사용자 작업, 접근성, 운영 안전성, 지�
 | PD-15 | project/files tool window | `범위 밖` | 일반 filesystem 탐색은 제품 밖이다. |
 | PD-16 | data source template lifecycle | `구현` | workspace가 redacted template과 grant를 공유하고 자격 증명은 member-local 또는 단기 managed lease로 분리한다. |
 | PD-17 | DDL file data source/mapping | `범위 밖` | 파일을 data source로 취급하지 않는다. |
-| PD-18 | DBMS/driver/cloud 범위 확장 | `구현 안 함` | 현재 검증된 engine과 provider를 완성하기 전 새 label, icon, placeholder를 만들지 않는다. |
+| PD-18 | 검증된 DBMS/driver/credential broker 확장 | `구현` | 실제 수요가 있고 discovery·발급·TTL·회수·drift·E2E 경계를 닫은 adapter만 추가한다. 일반 PostgreSQL/MySQL은 서버 allowlist의 HashiCorp Vault Database Secrets AppRole로 구성원별 15분 이하 동적 자격증명을 발급할 수 있으며, 공용 static DB 비밀번호 배포는 금지한다. |
 | PD-19 | 고급 connection/session option | `구현` | direct TLS와 시스템 OpenSSH Host alias 하나만 제공하며 키와 passphrase는 OS가 소유한다. |
 | PD-20 | Explorer object authoring | `구현 안 함` | DDL은 Agent가 작성하고 사람은 승인한다. |
 | PD-21 | Settings staged apply/scope | `구현 안 함` | 즉시 또는 section별 저장을 유지한다. |
@@ -126,7 +134,7 @@ DopeDB의 제품 축, 실제 사용자 작업, 접근성, 운영 안전성, 지�
 | PD-29 | engine별 native query cancellation | `구현 안 함` | exact operation signal, timeout, connection-close fallback과 unknown outcome 보존을 유지한다. |
 | PD-30 | disk-backed query result | `구현` | Rust가 bounded page artifact와 streaming CSV/JSON export를 소유한다. |
 | PD-31 | evidence-bound analysis narrative | `구현` | Analysis Article의 narrative/evidence block과 run lineage로 통합한다. |
-| PD-32 | enterprise shared-secret suite | `구현 안 함` | 중앙 vault·SSO·SCIM·self-hosted 묶음을 별도 수요 없이 예약하지 않는다. |
+| PD-32 | enterprise shared-secret suite | `구현 안 함` | 중앙 static secret 배포·SSO·SCIM·self-hosted 묶음을 별도 수요 없이 예약하지 않는다. PD-18의 좁은 Vault Database Secrets 동적 발급 adapter는 이 suite에 포함되지 않는다. |
 | PD-33 | general Plugin Platform | `구현 안 함` | app-owned driver, provider, ACP adapter의 닫힌 목록만 지원한다. |
 | PD-34 | realtime SQL CRDT/presence | `구현 안 함` | 일반 SQL text와 cursor는 로컬에 두고 공유 분석은 Analysis Article이 소유한다. |
 | PD-35 | Arrow/Parquet plugin export | `구현 안 함` | bounded native CSV/JSON sink의 정확성과 취소 경계를 유지한다. |

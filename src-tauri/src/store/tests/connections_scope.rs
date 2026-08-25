@@ -628,6 +628,61 @@ async fn assert_current_store_migration_is_write_free() {
             .graph_revision_id,
         artifact.graph_revision_id
     );
+    let connection_count_before_project_delete: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM connections")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(matches!(
+        knowledge
+            .delete_knowledge_project(personal_workspace_id, project.id, project.revision + 1)
+            .await,
+        Err(AppError::Blocked { .. })
+    ));
+    assert!(knowledge
+        .active_for_source(artifact.binding.source_id)
+        .await
+        .unwrap()
+        .is_some());
+    knowledge
+        .delete_knowledge_project(personal_workspace_id, project.id, project.revision)
+        .await
+        .unwrap();
+    assert!(!knowledge
+        .knowledge_environment_exists(personal_workspace_id, environment.id)
+        .await
+        .unwrap());
+    assert!(knowledge
+        .active_for_source(artifact.binding.source_id)
+        .await
+        .unwrap()
+        .is_none());
+    assert!(knowledge
+        .active_set(environment.id)
+        .await
+        .unwrap()
+        .is_empty());
+    assert!(knowledge
+        .knowledge_projects(personal_workspace_id)
+        .await
+        .unwrap()
+        .iter()
+        .all(|candidate| candidate.project.id != project.id));
+    let connection_count_after_project_delete: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM connections")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        connection_count_after_project_delete,
+        connection_count_before_project_delete
+    );
+    assert!(matches!(
+        knowledge
+            .delete_knowledge_project(personal_workspace_id, project.id, project.revision)
+            .await,
+        Err(AppError::NotFound(_))
+    ));
     let runner_account = Uuid::from_u128(0x991).to_string();
     let runner_workspace = Uuid::from_u128(0x992);
     let runner_device = store
@@ -1453,6 +1508,42 @@ async fn remote_template_sync_preserves_member_local_credential_binding() {
     .await
     .unwrap();
     let pinned = store.pin_connection_for_read(id).await.unwrap();
+    let duplicate_project_id = Uuid::new_v4();
+    let duplicate_environment_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO knowledge_projects
+             (id, workspace_id, name, revision, created_at, updated_at)
+         VALUES (?1, ?2, 'Duplicate target', 1, ?3, ?3)",
+    )
+    .bind(duplicate_project_id.to_string())
+    .bind(workspace_id.to_string())
+    .bind(Utc::now())
+    .execute(store.pool())
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO knowledge_project_environments
+             (id, project_id, name, production, risk_class, revision, created_at, updated_at)
+         VALUES (?1, ?2, 'QA', 0, 'test', 1, ?3, ?3)",
+    )
+    .bind(duplicate_environment_id.to_string())
+    .bind(duplicate_project_id.to_string())
+    .bind(Utc::now())
+    .execute(store.pool())
+    .await
+    .unwrap();
+    assert!(matches!(
+        knowledge
+            .bind_environment_connection(
+                Uuid::new_v4(),
+                &pinned,
+                duplicate_environment_id,
+                "primary",
+                "Duplicate",
+            )
+            .await,
+        Err(AppError::Blocked { .. })
+    ));
     let environments = knowledge
         .agent_knowledge_environments(&pinned)
         .await

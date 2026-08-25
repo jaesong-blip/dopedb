@@ -12,10 +12,18 @@ import { parseGcpCloudSqlResource, type GcpCloudSqlResource } from "./gcp-cloud-
 import { parseNeonResource, type NeonResource } from "./neon-core";
 import type { PlanetScaleResource } from "./planetscale";
 import type { NeonProviderResourceTarget } from "./provider-types";
+import {
+  parseVaultManagedResource,
+  type VaultManagedResource,
+} from "./vault";
 
-export type DiscoverableProviderResource = PlanetScaleResource | NeonResource | GcpCloudSqlResource;
-export type ImportProvider = "neon" | "gcpCloudSql" | "planetScale";
-const writeCapableProviders = new Set<string>(["neon", "gcpCloudSql", "planetScale"]);
+export type DiscoverableProviderResource =
+  | PlanetScaleResource
+  | NeonResource
+  | GcpCloudSqlResource
+  | VaultManagedResource;
+export type ImportProvider = "neon" | "gcpCloudSql" | "planetScale" | "vault";
+const writeCapableProviders = new Set<string>(["neon", "gcpCloudSql", "planetScale", "vault"]);
 
 function exactRecord(value: unknown, fields: readonly string[]) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -87,6 +95,10 @@ function parseGcpImportResource(value: unknown): GcpCloudSqlResource {
   };
 }
 
+function parseVaultImportResource(value: unknown): VaultManagedResource {
+  return parseVaultManagedResource(value);
+}
+
 function capabilities(managedLease: boolean): ProviderCapabilityManifest {
   return { discover: true, importReadOnly: true, managedLease, write: false };
 }
@@ -154,6 +166,37 @@ export const providerImportAdapters: Record<
       }, value.database, value.engine, this.capabilities(value));
     },
   },
+  vault: {
+    provider: "vault",
+    reconstruct: parseVaultImportResource,
+    capabilities(resource) {
+      const value = resource as VaultManagedResource;
+      return {
+        discover: true,
+        importReadOnly: true,
+        managedLease: true,
+        write: value.writeRole !== null,
+      };
+    },
+    importProjection(resource) {
+      const value = resource as VaultManagedResource;
+      return providerProjection({
+        provider: "vault",
+        resource: { ...value },
+        metadata: {
+          database: value.database,
+          engine: value.engine,
+          production: false,
+        },
+        capabilities: this.capabilities(value),
+        host: value.host,
+        port: value.port,
+        database: value.database,
+        engine: value.engine,
+        sslmode: value.sslmode,
+      });
+    },
+  },
 };
 
 export function providerImportProjection(
@@ -217,6 +260,17 @@ export function providerImportProjection(
         } : {}),
       },
     };
+  } else if (provider === "vault") {
+    if (typeof options.production !== "boolean") {
+      throw new Error("Vault target classification is incomplete");
+    }
+    projected = {
+      ...projected,
+      metadata: {
+        ...projected.metadata,
+        production: options.production,
+      },
+    };
   }
   if (!options.writeAvailable) return projected;
   if (!writeCapableProviders.has(provider)) {
@@ -242,6 +296,7 @@ export function allowDiscoveryImport(
     && (
       (provider !== "neon" && item.production === false)
       || (provider === "gcpCloudSql" && item.production === true)
+      || (provider === "vault" && item.production === true)
       || (
         provider === "planetScale"
         && item.production === true

@@ -202,8 +202,14 @@ export async function PUT(request: Request, context: RouteContext) {
         AND connection."credential_mode" IN ('managed', 'member_local')
         AND connection."readonly_default" = TRUE
         AND connection."allow_writes" = FALSE
-        AND connection."provider" = integration."provider"
-        AND connection."provider" = resource."provider"
+        AND resource."provider" = integration."provider"
+        AND (
+          connection."provider" = integration."provider"
+          OR (
+            integration."provider" = 'vault'
+            AND connection."provider" = 'generic'
+          )
+        )
         AND connection."provider_resource" = resource."resource"
         -- The import row is the receipt-derived immutable witness. Production
         -- approval is durable policy, while OAuth generation is revalidated by
@@ -220,7 +226,7 @@ export async function PUT(request: Request, context: RouteContext) {
         AND (
           resource."redacted_metadata" -> 'production' = 'false'::jsonb
           OR (
-            resource."provider" IN ('gcpCloudSql', 'planetScale')
+            resource."provider" IN ('gcpCloudSql', 'planetScale', 'neon', 'vault')
             AND resource."redacted_metadata" -> 'production' = 'true'::jsonb
             AND (
               resource."provider" <> 'planetScale'

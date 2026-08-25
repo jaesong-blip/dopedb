@@ -4,6 +4,7 @@ import adapterSource from "./tauriAdapter.ts?raw";
 import authRouteSource from "../../../workspace-cloud/app/api/auth/[...all]/route.ts?raw";
 import gcpBootstrapSource from "../../../workspace-cloud/lib/providers/gcp-cloud-bootstrap.ts?raw";
 import gcpCloudSqlSource from "../../../workspace-cloud/lib/providers/gcp-cloud-sql.ts?raw";
+import vaultProviderSource from "../../../workspace-cloud/lib/providers/vault.ts?raw";
 import boundedJsonResponseSource from "../../../workspace-cloud/lib/bounded-json-response.ts?raw";
 import neonSource from "../../../workspace-cloud/lib/providers/neon.ts?raw";
 import neonBranchesSource from "../../../workspace-cloud/lib/providers/neon-branches.ts?raw";
@@ -907,8 +908,13 @@ describe("provider credential Tauri adapter", () => {
     expect(providerCatalogSource).not.toMatch(
       /supportsReadWrite|availability|awsRds|oracleOci|mongodbAtlas/,
     );
-    expect(providerCatalogSource.match(/id: "(planetScale|gcpCloudSql|neon)"/g))
-      .toHaveLength(3);
+    expect(providerCatalogSource.match(/id: "(planetScale|gcpCloudSql|neon|vault)"/g))
+      .toHaveLength(4);
+    expect(providerIntegrationListSource).toContain("copy.vaultGuide.caution");
+    expect(vaultProviderSource).toContain("env.vaultBrokerOrigins().includes(url.origin)");
+    expect(vaultProviderSource).toContain('redirect: "error"');
+    expect(vaultProviderSource).toContain("VAULT_MAX_DATABASE_LEASE_SECONDS");
+    expect(vaultProviderSource).toContain('"auth/token/revoke-self"');
     expect(providerIntegrationRouteSource).toContain("id: provider.id");
     expect(providerIntegrationRouteSource).not.toContain("...provider,");
     expect(gcpOAuthSource).toContain('"/api/auth/callback/google"');
@@ -964,6 +970,7 @@ describe("provider credential Tauri adapter", () => {
     expect(providerLeaseCleanupSource).toContain(
       "'providerAuditId', deferred.\"provider_audit_id\"",
     );
+    expect(providerLeaseCleanupSource).toContain('lease.provider !== "vault"');
     expect(managedAccessTargetRouteSource).toContain(
       'action: "provider.provisioning.destroy_deferred"',
     );

@@ -31,6 +31,16 @@ import {
 import { parseSharedAnalysisArticleCreate } from "./workspace-analysis-articles";
 import { workspaceSchedulerBoundedWakeAt } from "./workspace-background-scheduler";
 import {
+  issueVaultLease,
+  parseVaultCredential,
+  revokeVaultLease,
+  VaultLeaseCleanupRequiredError,
+  vaultIntegrationIdentity,
+  vaultManagedResource,
+  vaultPolicyFingerprint,
+  verifyVaultCredential,
+} from "./providers/vault";
+import {
   connectionLeaseRevocationScope,
   EXPECTED_REVISION_HEADER,
   parseExpectedRevision,
@@ -194,6 +204,342 @@ describe("Optimistic revision transport", () => {
   });
 });
 
+describe("Vault dynamic database credential boundary", () => {
+  const configuredCredential = () => parseVaultCredential({
+    kind: "appRole",
+    schemaVersion: 1,
+    address: "https://vault.example.test:8200",
+    namespace: null,
+    authMount: "approle",
+    roleId: "role-id-1234",
+    secretId: "secret-id-1234",
+    databaseMount: "database",
+    databaseConnection: "dopedb-postgres",
+    readRole: "dopedb-read",
+    writeRole: null,
+    target: {
+      host: "postgres.internal.example.test",
+      port: 5432,
+      database: "app",
+      engine: "postgres",
+      sslmode: "verify-full",
+      production: false,
+    },
+  });
+
+  function withVaultOrigin<T>(run: () => T) {
+    const previous = process.env.VAULT_BROKER_ORIGINS;
+    process.env.VAULT_BROKER_ORIGINS = "https://vault.example.test:8200";
+    try {
+      return run();
+    } finally {
+      if (previous === undefined) delete process.env.VAULT_BROKER_ORIGINS;
+      else process.env.VAULT_BROKER_ORIGINS = previous;
+    }
+  }
+
+  it("accepts only an exact allowlisted HTTPS target and rejects unknown fields", () => {
+    withVaultOrigin(() => {
+      expect(configuredCredential().target.sslmode).toBe("verify-full");
+      const rotatedSecret = parseVaultCredential({
+        ...configuredCredential(),
+        roleId: "rotated-role-id",
+        secretId: "rotated-secret-id",
+      });
+      expect(vaultIntegrationIdentity(rotatedSecret).externalAccountId).toBe(
+        vaultIntegrationIdentity(configuredCredential()).externalAccountId,
+      );
+      expect(vaultPolicyFingerprint(rotatedSecret)).toBe(
+        vaultPolicyFingerprint(configuredCredential()),
+      );
+      const changedRole = parseVaultCredential({
+        ...configuredCredential(),
+        readRole: "dopedb-read-v2",
+      });
+      expect(vaultIntegrationIdentity(changedRole).externalAccountId).toBe(
+        vaultIntegrationIdentity(configuredCredential()).externalAccountId,
+      );
+      expect(vaultPolicyFingerprint(changedRole)).not.toBe(
+        vaultPolicyFingerprint(configuredCredential()),
+      );
+      const changedClassification = parseVaultCredential({
+        ...configuredCredential(),
+        target: {
+          ...configuredCredential().target,
+          production: true,
+        },
+      });
+      expect(vaultPolicyFingerprint(changedClassification)).not.toBe(
+        vaultPolicyFingerprint(configuredCredential()),
+      );
+      expect(() => parseVaultCredential({
+        ...configuredCredential(),
+        address: "https://other.example.test",
+      })).toThrow("Invalid Vault AppRole configuration");
+      expect(() => parseVaultCredential({
+        ...configuredCredential(),
+        unexpected: true,
+      })).toThrow("Invalid Vault AppRole configuration");
+      expect(() => parseVaultCredential({
+        ...configuredCredential(),
+        target: {
+          ...configuredCredential().target,
+          sslmode: "verify-ca",
+        },
+      })).toThrow("Invalid Vault AppRole configuration");
+      expect(() => parseVaultCredential({
+        ...configuredCredential(),
+        target: {
+          ...configuredCredential().target,
+          host: "/var/run/postgresql",
+        },
+      })).toThrow("Invalid Vault AppRole configuration");
+    });
+  });
+
+  it("issues and synchronously revokes a bounded credential without exposing the AppRole", async () => {
+    const previous = process.env.VAULT_BROKER_ORIGINS;
+    process.env.VAULT_BROKER_ORIGINS = "https://vault.example.test:8200";
+    const credential = configuredCredential();
+    const requests: Array<{ url: string; method: string; headers: Headers }> = [];
+    let credentialSequence = 0;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        const headers = new Headers(init?.headers);
+        requests.push({ url, method, headers });
+        if (url.endsWith("/v1/auth/approle/login")) {
+          return Response.json({
+            request_id: "vault-login-request",
+            auth: {
+              client_token: "vault-session-token",
+              lease_duration: 300,
+              token_type: "service",
+              token_policies: ["default", "dopedb-database-broker"],
+            },
+          });
+        }
+        if (url.endsWith("/v1/database/config/dopedb-postgres")) {
+          return Response.json({
+            request_id: "vault-connection-request",
+            data: {
+              plugin_name: "postgresql-database-plugin",
+              allowed_roles: ["dopedb-read"],
+              connection_details: {
+                connection_url: "postgresql://{{username}}:{{password}}@postgres.internal.example.test:5432/app?sslmode=verify-full",
+              },
+            },
+          });
+        }
+        if (url.endsWith("/v1/database/config/dopedb-mysql")) {
+          return Response.json({
+            request_id: "vault-mysql-connection-request",
+            data: {
+              plugin_name: "mysql-database-plugin",
+              allowed_roles: ["dopedb-read-mysql"],
+              connection_details: {
+                connection_url: "{{username}}:{{password}}@tcp(mysql.internal.example.test:3306)/app?tls=true",
+              },
+            },
+          });
+        }
+        if (url.endsWith("/v1/database/roles/dopedb-read")) {
+          return Response.json({
+            request_id: "vault-role-request",
+            data: {
+              default_ttl: 300,
+              max_ttl: 900,
+              db_name: "dopedb-postgres",
+              credential_type: "password",
+            },
+          });
+        }
+        if (url.endsWith("/v1/database/creds/dopedb-read")) {
+          credentialSequence += 1;
+          return Response.json({
+            request_id: `vault-credential-request-${credentialSequence}`,
+            lease_id: `database/creds/dopedb-read/lease-${credentialSequence}`,
+            lease_duration: 300,
+            data: {
+              username: `dopedb_member_${credentialSequence}`,
+              password: `database-secret-${credentialSequence}`,
+            },
+          });
+        }
+        if (url.endsWith("/v1/database/roles/dopedb-read-mysql")) {
+          return Response.json({
+            request_id: "vault-mysql-role-request",
+            data: {
+              default_ttl: 300,
+              max_ttl: 900,
+              db_name: "dopedb-mysql",
+              credential_type: "password",
+            },
+          });
+        }
+        if (url.endsWith("/v1/database/creds/dopedb-read-mysql")) {
+          return Response.json({
+            request_id: "vault-mysql-credential-request",
+            lease_id: "database/creds/dopedb-read-mysql/lease",
+            lease_duration: 300,
+            data: {
+              username: "dopedb_mysql_member",
+              password: "mysql-database-secret",
+            },
+          });
+        }
+        if (
+          url.endsWith("/v1/sys/leases/revoke")
+          || url.endsWith("/v1/auth/token/revoke-self")
+        ) {
+          return new Response(null, { status: 204 });
+        }
+        return new Response(null, { status: 404 });
+      },
+    );
+    try {
+      await verifyVaultCredential(credential);
+      const lease = await issueVaultLease({
+        credential,
+        resource: vaultManagedResource(credential),
+        accessMode: "read",
+      });
+      expect(lease).toMatchObject({
+        externalCredentialKind: "role",
+        username: "dopedb_member_2",
+        password: "database-secret-2",
+        sslmode: "verify-full",
+      });
+      // Revoking the issuing AppRole token here would also revoke the database
+      // credential before Desktop can use it. Only the setup-verification token
+      // has been revoked at this point.
+      expect(requests.filter((request) => (
+        request.url.endsWith("/v1/auth/token/revoke-self")
+      ))).toHaveLength(1);
+      await revokeVaultLease(credential, lease.externalCredentialId);
+      expect(requests.every((request) => (
+        request.url.startsWith("https://vault.example.test:8200/v1/")
+      ))).toBe(true);
+      expect(requests.filter((request) => (
+        request.url.endsWith("/v1/database/config/dopedb-postgres")
+      ))).toHaveLength(2);
+      expect(requests.filter((request) => (
+        request.url.endsWith("/v1/sys/leases/revoke")
+      ))).toHaveLength(2);
+      expect(requests.filter((request) => (
+        request.url.endsWith("/v1/auth/token/revoke-self")
+      ))).toHaveLength(2);
+      expect(requests.find((request) => (
+        request.url.endsWith("/v1/database/creds/dopedb-read")
+      ))?.headers.get("x-vault-token")).toBe("vault-session-token");
+      expect(JSON.stringify(requests)).not.toContain("secret-id-1234");
+      const mismatchedTarget = parseVaultCredential({
+        ...credential,
+        target: {
+          ...credential.target,
+          host: "other-postgres.internal.example.test",
+        },
+      });
+      await expect(verifyVaultCredential(mismatchedTarget)).rejects.toThrow(
+        "exact TLS-verified target",
+      );
+      const mysqlCredential = parseVaultCredential({
+        ...credential,
+        databaseConnection: "dopedb-mysql",
+        readRole: "dopedb-read-mysql",
+        target: {
+          ...credential.target,
+          host: "mysql.internal.example.test",
+          port: 3306,
+          engine: "mysql",
+        },
+      });
+      await expect(verifyVaultCredential(mysqlCredential)).resolves.toMatchObject({
+        providerAuditId: "vault-login-request",
+      });
+    } finally {
+      fetchMock.mockRestore();
+      if (previous === undefined) delete process.env.VAULT_BROKER_ORIGINS;
+      else process.env.VAULT_BROKER_ORIGINS = previous;
+    }
+  });
+
+  it("queues provider cleanup when an unsafe lease cannot be synchronously revoked", async () => {
+    const previous = process.env.VAULT_BROKER_ORIGINS;
+    process.env.VAULT_BROKER_ORIGINS = "https://vault.example.test:8200";
+    const credential = configuredCredential();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input) => {
+        const url = String(input);
+        if (url.endsWith("/v1/auth/approle/login")) {
+          return Response.json({
+            request_id: "vault-login-request",
+            auth: {
+              client_token: "vault-session-token",
+              lease_duration: 300,
+              token_type: "service",
+              token_policies: ["default", "dopedb-database-broker"],
+            },
+          });
+        }
+        if (url.endsWith("/v1/database/config/dopedb-postgres")) {
+          return Response.json({
+            request_id: "vault-connection-request",
+            data: {
+              plugin_name: "postgresql-database-plugin",
+              allowed_roles: ["dopedb-read"],
+              connection_details: {
+                connection_url: "postgresql://{{username}}:{{password}}@postgres.internal.example.test:5432/app?sslmode=verify-full",
+              },
+            },
+          });
+        }
+        if (url.endsWith("/v1/database/roles/dopedb-read")) {
+          return Response.json({
+            request_id: "vault-role-request",
+            data: {
+              default_ttl: 300,
+              max_ttl: 900,
+              db_name: "dopedb-postgres",
+              credential_type: "password",
+            },
+          });
+        }
+        if (url.endsWith("/v1/database/creds/dopedb-read")) {
+          return Response.json({
+            request_id: "vault-unsafe-request",
+            lease_id: "database/creds/dopedb-read/unsafe-lease",
+            lease_duration: 901,
+            data: { username: "unsafe_member", password: "unsafe-secret" },
+          });
+        }
+        if (url.endsWith("/v1/sys/leases/revoke")) {
+          return new Response(null, { status: 503 });
+        }
+        if (url.endsWith("/v1/auth/token/revoke-self")) {
+          return new Response(null, { status: 503 });
+        }
+        return new Response(null, { status: 404 });
+      },
+    );
+    try {
+      await expect(issueVaultLease({
+        credential,
+        resource: vaultManagedResource(credential),
+        accessMode: "read",
+      })).rejects.toMatchObject({
+        name: "VaultLeaseCleanupRequiredError",
+        externalCredentialId: "database/creds/dopedb-read/unsafe-lease",
+      } satisfies Partial<VaultLeaseCleanupRequiredError>);
+    } finally {
+      fetchMock.mockRestore();
+      if (previous === undefined) delete process.env.VAULT_BROKER_ORIGINS;
+      else process.env.VAULT_BROKER_ORIGINS = previous;
+    }
+  });
+});
+
 describe("GitHub installation authorization state", () => {
   it("binds the setup nonce and installation id to an exact PKCE callback", async () => {
     vi.stubEnv("BETTER_AUTH_URL", "https://app.dopedb.dev");
@@ -294,6 +640,12 @@ describe("Desktop control-plane contracts", () => {
     const lease = managedLeaseResponse(fixture.managedLease.response);
     expect(lease.lease.provider).toBe("gcpCloudSql");
     expect(lease.lease.connector?.kind).toBe("gcpCloudSqlAuthProxy");
+    const brokeredGeneric = structuredClone(
+      fixture.managedLease.response,
+    ) as { lease: Record<string, unknown> };
+    brokeredGeneric.lease.provider = "generic";
+    delete brokeredGeneric.lease.connector;
+    expect(managedLeaseResponse(brokeredGeneric).lease.provider).toBe("generic");
     expect(parseSharedAnalysisArticleCreate(fixture.analysisArticleCreate))
       .toEqual(fixture.analysisArticleCreate);
 

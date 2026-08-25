@@ -129,6 +129,11 @@ export const agentsCatalog = defineCatalog(
     "agent.acpEnvironmentRequiredBody":
       "In Explorer, place this database and source code inside a Project and Environment before starting the Agent.",
     "agent.acpSelectEnvironment": "Select Project / Environment",
+    "agent.acpEnvironmentReconfirm": "Reconfirm",
+    "agent.acpEnvironmentReconfirmFailed":
+      "The current connection revision could not be confirmed for this Project Environment.",
+    "agent.acpEnvironmentReconfirmFailedWithError":
+      "Could not reconfirm this Project Environment: {error}",
     "agent.acpProtocol": "ACP v1 · official Claude and Codex adapters",
     "agent.acpReadyBody":
       "Every verified database and source revision in this Project Environment is attached as one exact ACP scope.",
@@ -499,6 +504,11 @@ export const agentsCatalog = defineCatalog(
     "agent.acpEnvironmentRequiredBody":
       "Agent를 시작하기 전에 탐색기에서 이 DB와 소스 코드를 프로젝트와 환경 안에 배치하세요.",
     "agent.acpSelectEnvironment": "프로젝트 / 환경 선택",
+    "agent.acpEnvironmentReconfirm": "재확인",
+    "agent.acpEnvironmentReconfirmFailed":
+      "이 프로젝트 환경에서 현재 연결 리비전을 확인하지 못했습니다.",
+    "agent.acpEnvironmentReconfirmFailedWithError":
+      "프로젝트 환경을 재확인하지 못했습니다: {error}",
     "agent.acpProtocol": "ACP v1 · 공식 Claude·Codex 어댑터",
     "agent.acpReadyBody":
       "이 프로젝트 환경의 검증된 모든 DB와 소스 리비전을 하나의 정확한 ACP 범위로 첨부합니다.",

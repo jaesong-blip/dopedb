@@ -17,8 +17,9 @@ import type {
   Provider,
   Resource,
   SharedConnection,
+  VaultConfiguration,
 } from "./domain";
-import { emptyNeon, emptyNeonBootstrap } from "./domain";
+import { emptyNeon, emptyNeonBootstrap, emptyVault } from "./domain";
 
 export type ProviderAccessState = {
   providers: Provider[];
@@ -32,6 +33,7 @@ export type ProviderAccessState = {
   resourceOptions: Record<string, Resource[]>;
   setupProviderId: string;
   neonConfiguration: NeonConfiguration;
+  vaultConfiguration: VaultConfiguration;
   neonEnvironmentClassification: NeonEnvironmentClassification;
   neonBootstrap: NeonBootstrapState;
   neonPublicAclApproved: boolean;
@@ -77,6 +79,7 @@ export const initialProviderAccessState: ProviderAccessState = {
   resourceOptions: {},
   setupProviderId: "",
   neonConfiguration: emptyNeon,
+  vaultConfiguration: emptyVault,
   neonEnvironmentClassification: "",
   neonBootstrap: emptyNeonBootstrap,
   neonPublicAclApproved: false,

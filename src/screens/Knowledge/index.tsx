@@ -270,10 +270,10 @@ export default function Knowledge({
   );
   const environmentConnections = useQuery({
     queryKey: knowledgeQueryKeys.environmentConnections(
-      environmentId,
+      undefined,
       catalogScope.key,
     ),
-    queryFn: () => listKnowledgeEnvironmentConnections(environmentId),
+    queryFn: () => listKnowledgeEnvironmentConnections(),
     enabled: Boolean(environmentId),
   });
   const environmentConnectionsPhase = queryResultPhase(
@@ -301,6 +301,13 @@ export default function Knowledge({
   const selectedEnvironment = selectedProject?.environments.find(
     (environment) => environment.id === environmentId,
   ) ?? null;
+  const selectedEnvironmentConnections = useMemo(
+    () =>
+      (environmentConnections.data ?? []).filter(
+        (binding) => binding.projectEnvironmentId === environmentId,
+      ),
+    [environmentConnections.data, environmentId],
+  );
   const boundConnectionIds = useMemo(
     () => new Set(
       (environmentConnections.data ?? []).flatMap((binding) =>
@@ -825,8 +832,10 @@ export default function Knowledge({
   const unbindConnection = useMutation({
     mutationFn: ({ environmentId: id, bindingId }: { environmentId: string; bindingId: string }) =>
       revokeKnowledgeEnvironmentConnection(id, bindingId),
-    onSuccess: async () => {
+    onSuccess: () => {
       setActionError(null);
+    },
+    onSettled: async () => {
       await queryClient.invalidateQueries({
         queryKey: knowledgeQueryKeys.environmentConnections(),
       });
@@ -892,7 +901,7 @@ export default function Knowledge({
       <AnalysisArticles
         projectName={selectedProject.name}
         environment={selectedEnvironment}
-        bindings={environmentConnections.data ?? []}
+        bindings={selectedEnvironmentConnections}
         sharedWorkspace={sharedWorkspace}
         scopeKey={catalogScope.key}
         focusId={environmentFocus?.resourceId}
@@ -1339,18 +1348,36 @@ export default function Knowledge({
                 })}
               </InlineNotice>
             ) : null}
-            {environmentConnections.data.length === 0 ? (
+            {selectedEnvironmentConnections.length === 0 ? (
               <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">{t("knowledge.emptyDatabases")}</p>
             ) : (
             <div className="tw:grid tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle">
-              {environmentConnections.data?.map((binding) => (
+              {selectedEnvironmentConnections.map((binding) => (
                 <div key={binding.id} className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:items-center tw:gap-3 tw:border-b tw:border-border-subtle tw:px-3 tw:py-2 tw:last:border-b-0">
                   <span className="tw:grid tw:min-w-0 tw:gap-0.5">
                     <strong className="tw:truncate tw:text-sm">{binding.alias}</strong>
                     <span className="tw:truncate tw:text-xs tw:text-muted-foreground">{t("knowledge.bindingMeta", { name: binding.connectionName, role: binding.role, revision: binding.connectionRevision })}</span>
                   </span>
                   <span className="tw:flex tw:items-center tw:gap-2">
-                    {binding.stale ? <StatusBadge tone="warning">{t("knowledge.reconfirm")}</StatusBadge> : <StatusBadge tone="success">{t("knowledge.pinned")}</StatusBadge>}
+                    {binding.stale && binding.connectionId ? (
+                      <Button
+                        size="compact"
+                        variant="ghost"
+                        disabled={bindConnection.isPending}
+                        onClick={() => bindConnection.mutate({
+                          projectEnvironmentId: environmentId,
+                          connectionId: binding.connectionId!,
+                          role: binding.role,
+                          alias: binding.alias,
+                        })}
+                      >
+                        {t("knowledge.reconfirm")}
+                      </Button>
+                    ) : binding.stale ? (
+                      <StatusBadge tone="warning">{t("knowledge.reconfirm")}</StatusBadge>
+                    ) : (
+                      <StatusBadge tone="success">{t("knowledge.pinned")}</StatusBadge>
+                    )}
                     <ConfirmButton size="compact" variant="dangerGhost" disabled={unbindConnection.isPending} onConfirm={() => unbindConnection.mutate({ environmentId, bindingId: binding.id })}>{t("knowledge.remove")}</ConfirmButton>
                   </span>
                 </div>

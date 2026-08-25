@@ -120,6 +120,7 @@ export async function listLocalProviderAuthority(
     localVerificationTarget: workspaceProviderIntegration.localVerificationTarget,
   }).from(workspaceProviderIntegration).where(and(
     eq(workspaceProviderIntegration.organizationId, organizationId),
+    inArray(workspaceProviderIntegration.provider, PROVIDERS),
     inArray(workspaceProviderIntegration.status, STATUSES),
   ));
   return rows.map(projectLocalProviderAuthority);

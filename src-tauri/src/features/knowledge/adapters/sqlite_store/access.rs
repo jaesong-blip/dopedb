@@ -469,6 +469,27 @@ impl Store {
                 "the active workspace Project Environment".into(),
             ));
         };
+        let active_environment_id: Option<String> = sqlx::query_scalar(
+            "SELECT project_environment_id
+             FROM knowledge_environment_connections
+             WHERE workspace_id = ?1 AND connection_id = ?2
+               AND revoked_at IS NULL
+             LIMIT 1",
+        )
+        .bind(connection.scope.workspace_id.to_string())
+        .bind(connection.connection_id.to_string())
+        .fetch_optional(&mut *transaction)
+        .await?;
+        if active_environment_id
+            .as_deref()
+            .is_some_and(|id| id != project_environment_id.to_string())
+        {
+            transaction.rollback().await?;
+            return Err(AppError::Blocked {
+                reason: "this database connection is already assigned to another Project in this workspace; remove that assignment first"
+                    .into(),
+            });
+        }
         let now = Utc::now();
         sqlx::query(
             "UPDATE knowledge_environment_connections

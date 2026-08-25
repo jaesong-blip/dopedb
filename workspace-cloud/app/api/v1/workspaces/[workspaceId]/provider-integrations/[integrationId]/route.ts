@@ -77,8 +77,9 @@ export async function DELETE(request: Request, context: RouteContext) {
   if (phase === "claimed" || phase === "lease_cleanup_pending") {
     try {
       // Provider lease cleanup is idempotent: PlanetScale deletion treats 404 as
-      // success and Neon first sets NOLOGIN/missing-role success. It is safe to
-      // resume this exact claim after a worker crash.
+      // success, Neon first sets NOLOGIN/missing-role success, and Vault uses its
+      // synchronous lease-revoke endpoint. It is safe to resume this exact claim
+      // after a worker crash.
       revocation = await revokeActiveLeases({ organizationId: workspaceId, integrationId });
     } catch {
       await markProviderIntegrationLeaseCleanupPending({

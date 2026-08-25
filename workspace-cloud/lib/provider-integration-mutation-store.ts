@@ -44,7 +44,7 @@ export type LocalVerificationTarget = Readonly<{
 export type PersistProviderIntegrationInput = {
   authority: ProviderMutationAuthority;
   integrationId: string;
-  provider: "neon" | "gcpCloudSql" | "planetScale";
+  provider: "neon" | "gcpCloudSql" | "planetScale" | "vault";
   externalAccountId: string;
   displayName: string;
   encryptedCredential: string;

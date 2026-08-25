@@ -15,11 +15,16 @@ import type {
   ManagedAccessMode,
   ProviderResourceItem,
 } from "../providers/provider-types";
+import {
+  parseVaultManagedResource,
+  type VaultManagedResource,
+} from "../providers/vault";
 
 export type ManagedProviderResource =
   | PlanetScaleResource
   | NeonResource
-  | GcpCloudSqlResource;
+  | GcpCloudSqlResource
+  | VaultManagedResource;
 
 export type LeaseRevocationFilter = {
   organizationId: string;
@@ -90,6 +95,8 @@ export function parseManagedProviderResource(
       return parseNeonResource(value);
     case "gcpCloudSql":
       return parseGcpCloudSqlResource(value);
+    case "vault":
+      return parseVaultManagedResource(value);
     default:
       throw new Error("Managed credential provider is not available");
   }
@@ -103,6 +110,7 @@ export function discoveredProviderResource(input: {
   selection: Record<string, string>;
   item: ProviderResourceItem;
   writeAvailable?: boolean;
+  vaultResource?: VaultManagedResource;
 }) {
   if (!allowDiscoveryImport(input.provider, input.item)) return null;
   const engine = input.item.kind ?? input.selection.engine;
@@ -135,11 +143,19 @@ export function discoveredProviderResource(input: {
       networkMode: "PUBLIC",
       production: input.item.production,
     });
+  } else if (
+    input.provider === "vault"
+    && input.kind === "databases"
+    && input.vaultResource
+    && input.item.value === input.vaultResource.database
+    && input.item.kind === input.vaultResource.engine
+  ) {
+    resource = parseVaultManagedResource(input.vaultResource);
   } else {
     return null;
   }
   return providerImportProjection(
-    input.provider as "planetScale" | "neon" | "gcpCloudSql",
+    input.provider as "planetScale" | "neon" | "gcpCloudSql" | "vault",
     resource,
     {
       writeAvailable: input.writeAvailable === true,
@@ -151,6 +167,9 @@ export function discoveredProviderResource(input: {
         ...(engine === "mysql"
           ? { safeMigrations: input.item.safeMigrations }
           : {}),
+      } : {}),
+      ...(input.provider === "vault" ? {
+        production: input.item.production as boolean,
       } : {}),
     },
   );

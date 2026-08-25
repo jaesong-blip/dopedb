@@ -1,6 +1,6 @@
 # DopeDB Product Positioning
 
-Status: accepted product decision, updated 2026-08-17.
+Status: accepted product decision, updated 2026-08-26.
 
 This document owns DopeDB's market category, competitive boundary, and public
 message. Architecture documents prove how the promise is enforced; the landing
@@ -76,7 +76,7 @@ system:
 | Toggleable read-only mode | Workspace role + connection grant + DB privilege + local policy |
 | Query confirmation | Immutable proposal, exact approval, run claim, outcome receipt |
 | Local activity log | Local execution audit plus scoped collaboration audit |
-| Generic cloud connection | Provider-native discovery, issuance, revoke, drift, and lifecycle |
+| Generic cloud connection | Provider-native or approved broker discovery, issuance, revoke, drift, and lifecycle |
 | Generic dashboard builder | Versioned Analysis Article with exact-source lineage, bounded live results, human publication, and deterministic blocks |
 
 Analysis Article is the only BI collaboration domain. Dashboard, Funnel Analysis,
@@ -125,8 +125,10 @@ Public copy may describe these implemented foundations:
 
 - Personal and team workspaces, device sign-in, invitations, membership, and roles;
 - secretless shared connection templates with member-local credential binding;
-- managed PlanetScale, Neon, and GCP Cloud SQL access that returns expiring,
-  member-specific database credentials without persisting the issued secret;
+- managed PlanetScale, Neon, and GCP Cloud SQL access, plus allowlisted HashiCorp
+  Vault Database Secrets access for fixed generic PostgreSQL/MySQL targets, that
+  returns expiring member-specific database credentials without persisting the
+  issued secret or distributing the broker AppRole to Desktop;
 - official Claude and Codex ACP sessions pinned to workspace/account/connection
   revision and local policy;
 - read-only execution, exact write proposals and approvals, cancellation, manual
@@ -161,7 +163,8 @@ open roadmap work is complete:
 - the remaining Local Folder Project Knowledge and any paid/experimental graph product;
   GitHub exact-commit source browsing is the default source path, not a completed graph;
 - bundled Node and independently installed first-party ACP adapter distribution;
-- arbitrary cloud providers, database engines, or provider branching abstractions.
+- arbitrary cloud providers, database engines, credential brokers, or provider
+  branching abstractions beyond the closed adapters named above.
 
 ## Priority order
 

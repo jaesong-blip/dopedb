@@ -176,6 +176,27 @@ impl KnowledgeRepositoryPort for SqliteKnowledgeRepository {
         self.store.save_knowledge_project(value).await
     }
 
+    async fn delete_knowledge_project(
+        &self,
+        workspace_id: Uuid,
+        project_id: Uuid,
+        expected_revision: u64,
+    ) -> AppResult<()> {
+        self.store
+            .delete_knowledge_project(workspace_id, project_id, expected_revision)
+            .await
+    }
+
+    async fn retain_knowledge_projects(
+        &self,
+        workspace_id: Uuid,
+        project_ids: &[Uuid],
+    ) -> AppResult<()> {
+        self.store
+            .retain_knowledge_projects(workspace_id, project_ids)
+            .await
+    }
+
     async fn pin_connection_for_read(&self, connection_id: Uuid) -> AppResult<PinnedConnection> {
         self.store.pin_connection_for_read(connection_id).await
     }

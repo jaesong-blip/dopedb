@@ -28,7 +28,9 @@ use sqlx::Acquire;
 /// already crossed that migration before the field existed are repaired.
 /// Version 22 repairs upgraded databases whose version-18 path created signal
 /// samples but omitted the encrypted Analysis Article local-result cache table.
-pub(super) const LOCAL_SCHEMA_VERSION: i64 = 22;
+/// Version 23 enforces one active Project assignment per workspace connection;
+/// legacy duplicate rows remain operable until the user removes them explicitly.
+pub(super) const LOCAL_SCHEMA_VERSION: i64 = 23;
 
 pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
     let version: i64 = sqlx::query_scalar("PRAGMA user_version")
@@ -163,7 +165,53 @@ pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
         set_local_schema_version(pool, 22).await?;
         migrated = true;
     }
+    if version < 23 && ensure_workspace_unique_environment_connections(pool).await? {
+        set_local_schema_version(pool, 23).await?;
+        migrated = true;
+    }
     Ok(migrated)
+}
+
+async fn ensure_workspace_unique_environment_connections(pool: &SqlitePool) -> AppResult<bool> {
+    let table_exists: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM sqlite_master
+         WHERE type = 'table' AND name = 'knowledge_environment_connections'",
+    )
+    .fetch_one(pool)
+    .await?;
+    if table_exists == 0 {
+        // Compatibility fixtures and retired partial stores can legitimately omit
+        // the Knowledge domain. They cannot create a binding, so there is no
+        // authority surface to index.
+        return Ok(true);
+    }
+    let duplicate_groups: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM (
+           SELECT workspace_id, connection_id
+           FROM knowledge_environment_connections
+           WHERE revoked_at IS NULL
+           GROUP BY workspace_id, connection_id
+           HAVING COUNT(*) > 1
+         )",
+    )
+    .fetch_one(pool)
+    .await?;
+    if duplicate_groups > 0 {
+        // Do not guess which exact Environment grant the user intended. The
+        // normal UI stays available so each duplicate can be removed explicitly;
+        // the application guard prevents any new duplicate in the meantime.
+        return Ok(false);
+    }
+    sqlx::query(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_knowledge_environment_connection_workspace_active
+         ON knowledge_environment_connections(workspace_id, connection_id)
+         WHERE revoked_at IS NULL",
+    )
+    .execute(pool)
+    .await?;
+    Ok(true)
 }
 
 /// Current-schema connection rows are security-relevant authority inputs. Keep

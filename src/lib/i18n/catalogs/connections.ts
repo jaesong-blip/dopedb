@@ -61,6 +61,10 @@ export const connectionsCatalog = defineCatalog(
     "connections.projects": "Projects",
     "connections.addProject": "Add Project",
     "connections.addEnvironment": "Add Environment",
+    "connections.deleteProject": "Delete Project",
+    "connections.reallyDeleteProject": "Delete this Project?",
+    "connections.projectDeleted":
+      "Deleted {project}. Its database connections are now Unassigned.",
     "connections.createProject": "Create Project",
     "connections.createFirstProject": "Create your first Project",
     "connections.creatingProject": "Creating…",
@@ -93,6 +97,10 @@ export const connectionsCatalog = defineCatalog(
       "Could not load Environment databases",
     "connections.environmentConnectionMoved":
       "Moved {connection} to {environment}.",
+    "connections.environmentConnectionRemoved":
+      "Removed {connection} from the Project.",
+    "connections.removeFromProject": "Remove from Project",
+    "connections.reallyRemoveFromProject": "Remove from this Project?",
     "connections.environmentSourceLoadFailed":
       "Could not load Environment data sources",
     "connections.environmentAnalyses": "Analyses",
@@ -395,6 +403,10 @@ export const connectionsCatalog = defineCatalog(
     "connections.projects": "프로젝트",
     "connections.addProject": "프로젝트 추가",
     "connections.addEnvironment": "환경 추가",
+    "connections.deleteProject": "프로젝트 삭제",
+    "connections.reallyDeleteProject": "이 프로젝트를 삭제할까요?",
+    "connections.projectDeleted":
+      "{project} 프로젝트를 삭제했습니다. 데이터베이스 연결은 미분류로 이동했습니다.",
     "connections.createProject": "프로젝트 만들기",
     "connections.createFirstProject": "첫 프로젝트 만들기",
     "connections.creatingProject": "만드는 중…",
@@ -427,6 +439,10 @@ export const connectionsCatalog = defineCatalog(
       "환경 데이터베이스를 불러오지 못했습니다",
     "connections.environmentConnectionMoved":
       "{connection} 연결을 {environment} 환경으로 이동했습니다.",
+    "connections.environmentConnectionRemoved":
+      "{connection} 연결을 프로젝트에서 제거했습니다.",
+    "connections.removeFromProject": "프로젝트에서 제거",
+    "connections.reallyRemoveFromProject": "이 프로젝트에서 제거할까요?",
     "connections.environmentSourceLoadFailed":
       "환경 데이터 소스를 불러오지 못했습니다",
     "connections.environmentAnalyses": "분석",

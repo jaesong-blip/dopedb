@@ -45,6 +45,13 @@ import {
   gcpCloudAuthorizationUrl,
 } from "../../../../../../lib/providers/gcp-cloud-oauth";
 import { ProviderRequestError } from "../../../../../../lib/providers/provider-types";
+import { consumeRateLimit } from "../../../../../../lib/rate-limit";
+import {
+  parseVaultCredential,
+  vaultIntegrationIdentity,
+  verifyVaultCredential,
+  type VaultCredential,
+} from "../../../../../../lib/providers/vault";
 import {
   parseNeonCredential,
   type NeonCredential,
@@ -151,7 +158,9 @@ export async function GET(request: Request, context: RouteContext) {
           ? true
           : provider.id === "gcpCloudSql"
             ? Boolean(vercelOidcToken(request))
-            : false,
+            : provider.id === "vault"
+              ? env.vaultBrokerOrigins().length > 0
+              : false,
     })),
     // Server-held encrypted integration credentials are explicitly managed mode;
     // member-local/device secrets are intentionally absent from this API.
@@ -194,8 +203,19 @@ export async function POST(request: Request, context: RouteContext) {
     body?.provider !== "planetScale"
     && body?.provider !== "neon"
     && body?.provider !== "gcpCloudSql"
+    && body?.provider !== "vault"
   ) {
     return jsonError("Managed access for this provider is not available", 409);
+  }
+  if (
+    body.provider === "vault"
+    && !await consumeRateLimit({
+      namespace: "vault-integration-verify",
+      discriminator: `${workspaceId}:${authorization.session.user.id}`,
+      limit: 3,
+    })
+  ) {
+    return jsonError("Vault verification is being retried too quickly", 429);
   }
 
   let stage:
@@ -230,7 +250,10 @@ export async function POST(request: Request, context: RouteContext) {
       });
     }
 
-    let credential: NeonCredential | ReturnType<typeof parseGcpCloudSqlCredential>;
+    let credential:
+      | NeonCredential
+      | ReturnType<typeof parseGcpCloudSqlCredential>
+      | VaultCredential;
     let externalAccountId: string;
     let displayName: string;
     let grantedScope: string;
@@ -286,7 +309,7 @@ export async function POST(request: Request, context: RouteContext) {
         `projects:${info.projectCount}`,
         info.scopeFingerprint.slice(0, 16),
       ].join(":");
-    } else {
+    } else if (body.provider === "gcpCloudSql") {
       stage = "gcp_setup_ticket";
       if (
         typeof body.setupId !== "string"
@@ -339,6 +362,14 @@ export async function POST(request: Request, context: RouteContext) {
       grantedScope = credential.writeServiceAccountEmail
         ? "cloudsql.read cloudsql.write"
         : "cloudsql.read";
+    } else {
+      credential = parseVaultCredential(body.configuration);
+      await verifyVaultCredential(credential);
+      const identity = vaultIntegrationIdentity(credential);
+      externalAccountId = identity.externalAccountId;
+      displayName = identity.displayName;
+      grantedScope = identity.grantedScope;
+      production = credential.target.production;
     }
 
     const provider = body.provider;
@@ -350,6 +381,7 @@ export async function POST(request: Request, context: RouteContext) {
       revocationPendingAt: Date | null;
       generation: bigint;
       updatedAt: Date;
+      grantedScope?: string | null;
     };
     let existing: ExistingIntegration | undefined;
     if (provider === "gcpCloudSql" && gcpIdentity) {
@@ -490,6 +522,7 @@ export async function POST(request: Request, context: RouteContext) {
           revocationPendingAt: true,
           generation: true,
           updatedAt: true,
+          grantedScope: true,
         },
       });
       if (!existing && provider === "neon") {
@@ -525,6 +558,17 @@ export async function POST(request: Request, context: RouteContext) {
           }
         });
       }
+    }
+    if (
+      provider === "vault"
+      && existing
+      && !existing.revokedAt
+      && existing.grantedScope !== grantedScope
+    ) {
+      return jsonError(
+        "Disconnect the existing Vault target before changing its broker roles or mounts",
+        409,
+      );
     }
     const integrationId = existing?.id ?? crypto.randomUUID();
     stage = "credential_sealing";

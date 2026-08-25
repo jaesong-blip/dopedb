@@ -3,7 +3,8 @@
 // by Rust so independently deployed clients cannot drift silently.
 
 export const CONTROL_PLANE_CONTRACTS_SCHEMA_VERSION = 1 as const;
-export const MANAGED_LEASE_CONTRACT_VERSION = "access-v2" as const;
+export const LEGACY_MANAGED_LEASE_CONTRACT_VERSION = "access-v2" as const;
+export const MANAGED_LEASE_CONTRACT_VERSION = "access-v3" as const;
 
 export type ManagedAccessMode = "read" | "write";
 
@@ -35,7 +36,7 @@ export type ManagedLeaseConnector = Readonly<{
 
 export type ManagedLease = Readonly<{
   id: string;
-  provider: "neon" | "planetScale" | "gcpCloudSql";
+  provider: "neon" | "planetScale" | "gcpCloudSql" | "generic";
   engine: "postgres" | "mysql";
   host: string;
   port: number;
@@ -55,7 +56,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const RFC3339_INSTANT = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/u;
 const MANAGED_WHITESPACE = /[\s\u0085]/u;
 const MANAGED_ACCESS_MODES = ["read", "write"] as const;
-const MANAGED_LEASE_PROVIDERS = ["neon", "planetScale", "gcpCloudSql"] as const;
+const MANAGED_LEASE_PROVIDERS = [
+  "neon",
+  "planetScale",
+  "gcpCloudSql",
+  "generic",
+] as const;
 const MANAGED_LEASE_ENGINES = ["postgres", "mysql"] as const;
 const MANAGED_LEASE_SSL_MODES = ["verify-ca", "verify-full"] as const;
 const MANAGED_CONNECTOR_NETWORK_MODES = [

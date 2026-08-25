@@ -251,9 +251,15 @@ export default function AcpChatComposer({
           <span className="tw:max-w-[14rem]">
             <InlineSelect
               value={setup.knowledge.selectedEnvironmentId ?? ""}
-              disabled={session.starting || active !== null}
+              disabled={
+                session.starting ||
+                active !== null ||
+                setup.knowledge.reconfirmingEnvironmentId !== null
+              }
               onChange={(event) =>
-                commands.composer.selectEnvironment(event.target.value || null)
+                void commands.composer.selectEnvironment(
+                  event.target.value || null,
+                )
               }
               aria-label={t("agent.acpEnvironment")}
               title={t("agent.acpEnvironmentHint")}
@@ -264,6 +270,9 @@ export default function AcpChatComposer({
               {setup.knowledge.environments.map((environment) => (
                 <option key={environment.id} value={environment.id}>
                   {environment.projectName} / {environment.name}
+                  {environment.needsReconfirmation
+                    ? ` · ${t("agent.acpEnvironmentReconfirm")}`
+                    : ""}
                 </option>
               ))}
             </InlineSelect>

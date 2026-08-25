@@ -16,7 +16,12 @@ Copy `.env.example` to the ignored `workspace-cloud/.env.local` and provide the 
 pooler/unpooled URLs, Google OAuth web client credentials, a Better Auth secret, the
 exact Better Auth URL, and a random 32-byte base64url `WORKSPACE_CREDENTIAL_KEY`.
 PlanetScale managed access additionally requires `PLANETSCALE_CLIENT_ID` and
-`PLANETSCALE_CLIENT_SECRET`; Neon and GCP Cloud SQL do not add application
+`PLANETSCALE_CLIENT_SECRET`. Generic PostgreSQL/MySQL dynamic access through
+HashiCorp Vault requires `VAULT_BROKER_ORIGINS`, a comma-separated allowlist of
+exact HTTPS broker origins; workspace owners cannot point the server at any other
+host. Before removing an origin from that allowlist, disconnect its workspace
+integrations and let all durable lease revocations complete; removing it first
+deliberately makes future broker calls fail closed. Neon and GCP Cloud SQL do not add application
 environment secrets. Set a separate random `CRON_SECRET` for the authenticated
 credential-cleanup and Project Knowledge routes. Background work is coordinated by
 the separate `workspace-scheduler-cloudflare/` Worker: D1 holds only the two next-run
@@ -344,10 +349,32 @@ second BI model cannot continue accumulating.
   responses, SQL, identifiers, result rows, credentials, certificates, and raw error
   messages never cross that sink.
 - Member-local target-database credentials never enter this service. In optional
-  managed mode, reusable PlanetScale OAuth or Neon API authorization is AES-256-GCM
-  encrypted with record-bound AAD before database persistence; GCP stores only
-  non-secret WIF coordinates and service-account identities. The envelope key is held
-  separately in deployment configuration.
+  managed mode, reusable PlanetScale OAuth, Neon API authorization, or a dedicated
+  Vault AppRole is AES-256-GCM encrypted with record-bound AAD before database
+  persistence; GCP stores only non-secret WIF coordinates and service-account
+  identities. Vault origins are deployment-allowlisted, redirects are rejected, and
+  the AppRole material is never returned to a browser or Desktop. The envelope key is
+  held separately in deployment configuration.
+- A Vault operator owns the SQL privilege boundary behind each Database Secrets role.
+  DopeDB verifies the named connection's plugin, role allowlist, connection target,
+  password credential type, role identity, and maximum TTL before setup and every
+  issuance, but it does not proxy the database or infer arbitrary role creation SQL.
+  The configured read role must therefore be enforced as read-only by the database,
+  and any write role must be separate and least-privileged. The closed adapter accepts
+  one canonical TLS path per engine: PostgreSQL uses
+  `postgresql://{{username}}:{{password}}@host:port/database?sslmode=verify-full`,
+  while MySQL uses
+  `{{username}}:{{password}}@tcp(host:port)/database?tls=true`. PostgreSQL may add
+  non-identity connection parameters, but host/user/database query overrides and
+  multi-host URLs are rejected.
+- The dedicated Vault AppRole must issue a non-root service token with a 1–15 minute
+  TTL. An issuance token is never persisted or returned, but it remains valid until
+  the associated database lease is revoked or expires: Vault revokes dynamic secrets
+  when their issuing token is revoked, so eagerly revoking that token would invalidate
+  the credential before Desktop could use it. Error and explicit-release paths revoke
+  it synchronously when doing so cannot invalidate a successfully delivered lease.
+  Its SecretID must remain reusable; rotate it with an overlap by reconnecting DopeDB
+  before invalidating the old SecretID, so outstanding leases can still be revoked.
 - Managed target-database credentials are generated per member with a 15-minute TTL,
   returned once to an authenticated native Bearer client, and never inserted into the
   service database, audit stream, browser UI, or desktop store. The TTL bounds leaked
@@ -363,10 +390,11 @@ second BI model cannot continue accumulating.
   already delivered remain bounded by their actual Provider expiry of at most 15
   minutes, while the desktop retires its pool earlier when workspace authority changes.
 - Managed lease POSTs must send
-  `x-dopedb-managed-lease-contract: access-v2` and an explicit `read` or `write`
-  access mode. The service returns HTTP 426 to legacy clients instead of guessing
-  their authority. Deploy this control-plane change immediately before the matching
-  desktop release; managed access is intentionally fail-closed during that window.
+  `x-dopedb-managed-lease-contract: access-v3` and an explicit `read` or `write`
+  access mode. The service temporarily accepts `access-v2` for the three original
+  provider-backed connection types, but brokered generic connections fail with HTTP
+  426 unless the Desktop sends `access-v3`. This preserves existing access while the
+  control plane is deployed before the matching Desktop release.
 - Independently deployed Desktop and Workspace Cloud decode the same versioned
   `dopedb-protocol/tests/fixtures/control-plane-contracts-v1.json` golden for ordered
   workspace sync, managed lease request/response, and Analysis Article creation.

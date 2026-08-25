@@ -188,7 +188,8 @@ export async function ensurePersonalKnowledgeScope(input: {
        ON CONFLICT ("id") DO UPDATE SET
          "name" = EXCLUDED."name",
          "revision" = EXCLUDED."revision",
-         "updated_at" = now()
+         "updated_at" = now(),
+         "deleted_at" = NULL
        WHERE "workspace_control"."knowledge_project"."organization_id"
          = EXCLUDED."organization_id"
        RETURNING "id", "organization_id"

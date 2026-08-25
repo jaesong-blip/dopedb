@@ -21,6 +21,7 @@ import {
 import { enqueueInitialGithubKnowledgeSync } from "@/lib/knowledge/sync-queue";
 import {
   knowledgeGithubInstallation,
+  knowledgeProject,
   knowledgeProjectEnvironment,
   knowledgeSource,
 } from "@/lib/schema";
@@ -64,7 +65,14 @@ export async function POST(request: Request, context: RouteContext) {
     id: knowledgeProjectEnvironment.id,
     projectId: knowledgeProjectEnvironment.projectId,
     revision: knowledgeProjectEnvironment.revision,
-  }).from(knowledgeProjectEnvironment).where(and(
+  }).from(knowledgeProjectEnvironment).innerJoin(
+    knowledgeProject,
+    and(
+      eq(knowledgeProject.organizationId, knowledgeProjectEnvironment.organizationId),
+      eq(knowledgeProject.id, knowledgeProjectEnvironment.projectId),
+      isNull(knowledgeProject.deletedAt),
+    ),
+  ).where(and(
     eq(knowledgeProjectEnvironment.organizationId, workspaceId),
     eq(knowledgeProjectEnvironment.id, body.projectEnvironmentId),
     eq(knowledgeProjectEnvironment.projectId, body.projectId),
@@ -127,6 +135,10 @@ export async function POST(request: Request, context: RouteContext) {
         'shared_graph', installation."id", ${body.repositoryId}, ${repository.full_name},
         ${body.refName}, ${commitSha}, ${env.knowledgeGraphBuildsEnabled() ? "pending" : "ready"}
       FROM ${knowledgeProjectEnvironment} AS environment
+      JOIN ${knowledgeProject} AS project
+        ON project."organization_id" = environment."organization_id"
+       AND project."id" = environment."project_id"
+       AND project."deleted_at" IS NULL
       JOIN ${knowledgeGithubInstallation} AS installation
         ON installation."organization_id" = environment."organization_id"
        AND installation."id" = ${installation.id}::uuid

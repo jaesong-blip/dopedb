@@ -14,7 +14,7 @@ use zeroize::Zeroizing;
 pub const CONTROL_PLANE_CONTRACTS_SCHEMA_VERSION: u32 = 1;
 /// Desktop and Workspace Cloud must agree on this header before a managed
 /// credential can cross the HTTPS boundary.
-pub const MANAGED_LEASE_CONTRACT_VERSION: &str = "access-v2";
+pub const MANAGED_LEASE_CONTRACT_VERSION: &str = "access-v3";
 const JAVASCRIPT_MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
 
 /// Workspace sync cursors cross a JavaScript number boundary in Cloud and must
@@ -122,7 +122,7 @@ impl ManagedLeasePayload {
         valid_uuid_text(&self.id)
             && matches!(
                 self.provider.as_str(),
-                "neon" | "planetScale" | "gcpCloudSql"
+                "neon" | "planetScale" | "gcpCloudSql" | "generic"
             )
             && matches!(self.engine.as_str(), "postgres" | "mysql")
             && !self.host.is_empty()

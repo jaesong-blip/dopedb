@@ -731,6 +731,10 @@ Deliverables:
   outcome, and timestamps in the workspace audit stream.
 - Keep member-local execution available while expanding managed, short-lived issuers
   only where the provider can enforce identity, scope, TTL, and revocation.
+- Support one closed generic PostgreSQL/MySQL broker path through a deployment-
+  allowlisted HashiCorp Vault Database Secrets AppRole. The broker issues a distinct
+  maximum-15-minute lease per member; its AppRole and static database owner password
+  never cross into Desktop or shared connection metadata.
 
 Exit criteria:
 
@@ -751,14 +755,15 @@ Deliverables:
 
 - Add SSO/domain policy, SCIM, configurable retention, and export controls as demand
   requires.
-- Evaluate a shared-secret vault integration for teams that cannot issue individual
-  database accounts or require centrally enforced provider automation.
+- Keep centrally distributed static database passwords out of scope; the narrow
+  dynamic Vault Database Secrets adapter belongs to Milestone 6 rather than this
+  enterprise suite.
 - Evaluate end-to-end encryption and self-hosted control-plane packaging separately.
 
 Exit criteria:
 
-- Shared vault credentials are never returned to the UI or agent and can be revoked
-  centrally.
+- Any future enterprise secret feature must not return shared static credentials to
+  the UI or Agent and must support central revocation.
 - Enterprise controls do not weaken the default local-credential model.
 
 This milestone remains deferred by PD-32. Analysis Article result fragments and

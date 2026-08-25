@@ -4,7 +4,7 @@
 //! installation tokens remain in the control plane, and Local Folder paths stay
 //! behind this native command boundary and the OS credential store.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
 use dopedb_protocol::{
@@ -404,6 +404,17 @@ async fn persist_team_project_inventory(
             .save_knowledge_project(&project_definition(scope.workspace_id, project))
             .await?;
     }
+    state
+        .services
+        .knowledge
+        .retain_knowledge_projects(
+            scope.workspace_id,
+            &projects
+                .iter()
+                .map(|project| project.id)
+                .collect::<Vec<_>>(),
+        )
+        .await?;
     Ok(())
 }
 
@@ -595,6 +606,130 @@ pub(crate) async fn create_knowledge_project_command(
         .save_knowledge_project(&project_definition(scope.workspace_id, &project))
         .await?;
     Ok(project)
+}
+
+#[tauri::command]
+pub(crate) async fn delete_knowledge_project_command(
+    state: State<'_, AppState>,
+    project_id: Uuid,
+    expected_revision: u64,
+) -> AppResult<()> {
+    let scope = state.services.knowledge.active_resource_scope().await?;
+    let projects = active_project_inventory(&state, &scope).await?;
+    let project = projects
+        .iter()
+        .find(|project| project.id == project_id)
+        .ok_or_else(|| AppError::NotFound("the active workspace Project".into()))?;
+    if project.revision != expected_revision {
+        return Err(AppError::Blocked {
+            reason: "the Project revision changed before deletion".into(),
+        });
+    }
+    let project_environment_ids = project
+        .environments
+        .iter()
+        .map(|environment| environment.id)
+        .collect::<HashSet<_>>();
+    let project_sources = state
+        .services
+        .knowledge
+        .scopes(scope.workspace_id)
+        .await?
+        .into_iter()
+        .filter(|source| source.project.id == project_id)
+        .map(|source| (source.binding.source_id, source.binding.provider))
+        .collect::<Vec<_>>();
+
+    if scope.workspace_kind == WorkspaceKind::Personal {
+        let has_hosted_source = project_sources
+            .iter()
+            .any(|(_, provider)| *provider == KnowledgeSourceProvider::Github);
+        if has_hosted_source {
+            let account = selected_remote_account(&scope)?;
+            let remote = state
+                .services
+                .knowledge
+                .ensure_personal_scope(account.as_str(), &projects)
+                .await?;
+            state
+                .services
+                .knowledge
+                .delete_remote_project(
+                    account.as_str(),
+                    remote.workspace_id,
+                    project_id,
+                    expected_revision,
+                )
+                .await?;
+        }
+        if let Err(error) = state
+            .services
+            .knowledge
+            .delete_knowledge_project(scope.workspace_id, project_id, expected_revision)
+            .await
+        {
+            if has_hosted_source {
+                return Err(AppError::OutcomeUnknown(format!(
+                    "the hosted Project was deleted, but its local copy could not be removed: {error}"
+                )));
+            }
+            return Err(error);
+        }
+    } else {
+        let account = selected_team_account(&scope)?;
+        state
+            .services
+            .knowledge
+            .delete_remote_project(
+                account.as_str(),
+                scope.workspace_id,
+                project_id,
+                expected_revision,
+            )
+            .await?;
+        if let Err(error) = state
+            .services
+            .knowledge
+            .delete_knowledge_project(scope.workspace_id, project_id, expected_revision)
+            .await
+        {
+            // The hosted deletion is already authoritative and confirmed. A later
+            // inventory refresh will remove this bounded local cache entry, so do
+            // not misreport a successful deletion as retry-safe failure.
+            tracing::warn!(
+                workspace_id = %scope.workspace_id,
+                project_id = %project_id,
+                error_kind = error.kind(),
+                "deleted Project cache cleanup deferred"
+            );
+        }
+    }
+    for (source_id, provider) in project_sources {
+        state.knowledge_watches.stop(source_id);
+        if provider == KnowledgeSourceProvider::LocalFolder {
+            if let Err(error) = delete_knowledge_source_root(source_id) {
+                tracing::warn!(
+                    workspace_id = %scope.workspace_id,
+                    project_id = %project_id,
+                    source_id = %source_id,
+                    error_kind = error.kind(),
+                    "deleted Project local source credential cleanup deferred"
+                );
+            }
+        }
+    }
+    let interrupted = state
+        .agents_acp
+        .stop_project_environments(&project_environment_ids);
+    if interrupted > 0 {
+        tracing::info!(
+            workspace_id = %scope.workspace_id,
+            project_id = %project_id,
+            interrupted_sessions = interrupted,
+            "deleted Project Agent sessions interrupted"
+        );
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -1349,9 +1484,18 @@ pub(crate) async fn revoke_knowledge_environment_connection(
             )
             .await?;
     }
-    state
+    let local_result = state
         .services
         .knowledge
         .revoke_environment_connection(scope.workspace_id, binding_id)
-        .await
+        .await;
+    if scope.workspace_kind == WorkspaceKind::Team
+        && matches!(local_result, Err(AppError::NotFound(_)))
+    {
+        // The hosted binding is authoritative. A member may not have a local
+        // credential projection for it, so a successful remote DELETE must not
+        // be reported as a failed removal merely because the local cache is absent.
+        return Ok(());
+    }
+    local_result
 }

@@ -42,6 +42,17 @@ type ProjectRow = {
   environmentRevision: string | number;
 };
 
+type DeleteProjectRow = {
+  matched: boolean;
+  blockedByActiveAnalyses: boolean;
+  deleted: boolean;
+};
+
+export type DeleteKnowledgeProjectOutcome =
+  | "deleted"
+  | "active_analyses"
+  | "stale";
+
 function positiveRevision(value: string | number, field: string): number {
   const revision = Number(value);
   if (!Number.isSafeInteger(revision) || revision < 1) {
@@ -94,7 +105,8 @@ export async function insertKnowledgeProject(input: {
          ("organization_id", "name")
        SELECT ${input.organizationId}, ${input.name}
        FROM actor_authority
-       ON CONFLICT ("organization_id", "name") DO NOTHING
+       ON CONFLICT ("organization_id", "name") WHERE "deleted_at" IS NULL
+       DO NOTHING
        RETURNING "id", "name", "revision"
      ), inserted_environment AS MATERIALIZED (
        INSERT INTO "workspace_control"."knowledge_project_environment"
@@ -138,6 +150,7 @@ export async function appendKnowledgeEnvironment(input: {
        WHERE project."organization_id" = ${input.organizationId}
          AND project."id" = ${input.projectId}::uuid
          AND project."revision" = ${input.expectedProjectRevision}::bigint
+         AND project."deleted_at" IS NULL
          AND NOT EXISTS (
            SELECT 1
            FROM "workspace_control"."knowledge_project_environment" environment
@@ -182,4 +195,138 @@ export async function appendKnowledgeEnvironment(input: {
      ORDER BY environment."name", environment."id"
   `);
   return projectFromRows(result.rows);
+}
+
+/**
+ * Tombstone one Project and atomically revoke every live authority derived
+ * from it. Database connection profiles are workspace resources, so only their
+ * Project bindings are revoked. Analysis Articles must be removed explicitly;
+ * their version history and immutable publications are never cascaded here.
+ */
+export async function deleteKnowledgeProject(input: {
+  organizationId: string;
+  projectId: string;
+  expectedRevision: number;
+  authority: KnowledgeMutationAuthority;
+}): Promise<DeleteKnowledgeProjectOutcome> {
+  const requestId = crypto.randomUUID();
+  const result = await db.execute<DeleteProjectRow>(sql`
+    WITH actor_authority AS MATERIALIZED (
+      SELECT 1 WHERE ${knowledgeMutationAuthoritySql(input.authority, input.organizationId)}
+    ), eligible_project AS MATERIALIZED (
+      SELECT project."id", project."revision"
+      FROM "workspace_control"."knowledge_project" project
+      CROSS JOIN actor_authority
+      WHERE project."organization_id" = ${input.organizationId}
+        AND project."id" = ${input.projectId}::uuid
+        AND project."revision" = ${input.expectedRevision}::bigint
+        AND project."deleted_at" IS NULL
+      FOR UPDATE OF project
+    ), active_analysis AS MATERIALIZED (
+      SELECT 1
+      FROM "workspace_control"."workspace_analysis_article" article
+      JOIN "workspace_control"."knowledge_project_environment" environment
+        ON environment."organization_id" = article."organization_id"
+       AND environment."id" = article."project_environment_id"
+      JOIN eligible_project project ON project."id" = environment."project_id"
+      WHERE article."organization_id" = ${input.organizationId}
+        AND article."deleted_at" IS NULL
+      LIMIT 1
+    ), tombstoned_project AS MATERIALIZED (
+      UPDATE "workspace_control"."knowledge_project" project
+      SET "deleted_at" = now(),
+        "revision" = project."revision" + 1,
+        "updated_at" = now()
+      FROM eligible_project eligible
+      WHERE project."id" = eligible."id"
+        AND NOT EXISTS (SELECT 1 FROM active_analysis)
+      RETURNING project."id"
+    ), project_environment AS MATERIALIZED (
+      SELECT environment."id"
+      FROM "workspace_control"."knowledge_project_environment" environment
+      JOIN tombstoned_project project ON project."id" = environment."project_id"
+      WHERE environment."organization_id" = ${input.organizationId}
+    ), project_source AS MATERIALIZED (
+      SELECT source."id"
+      FROM "workspace_control"."knowledge_source" source
+      JOIN tombstoned_project project ON project."id" = source."project_id"
+      WHERE source."organization_id" = ${input.organizationId}
+    ), revoked_bindings AS MATERIALIZED (
+      UPDATE "workspace_control"."knowledge_environment_connection" binding
+      SET "revoked_at" = now()
+      FROM project_environment environment
+      WHERE binding."organization_id" = ${input.organizationId}
+        AND binding."project_environment_id" = environment."id"
+        AND binding."revoked_at" IS NULL
+      RETURNING binding."id"
+    ), revoked_sources AS MATERIALIZED (
+      UPDATE "workspace_control"."knowledge_source" source
+      SET "sync_state" = 'revoked',
+        "sync_revision" = source."sync_revision" + 1,
+        "revoked_at" = now(),
+        "updated_at" = now()
+      FROM project_source requested
+      WHERE source."organization_id" = ${input.organizationId}
+        AND source."id" = requested."id"
+        AND source."revoked_at" IS NULL
+      RETURNING source."id"
+    ), superseded_sync_jobs AS MATERIALIZED (
+      UPDATE "workspace_control"."knowledge_source_sync_job" job
+      SET "state" = 'superseded',
+        "failure_code" = 'project_deleted',
+        "worker_id" = NULL,
+        "claimed_at" = NULL,
+        "lease_expires_at" = NULL,
+        "finished_at" = now(),
+        "updated_at" = now()
+      FROM project_source source
+      WHERE job."organization_id" = ${input.organizationId}
+        AND job."source_id" = source."id"
+        AND job."state" IN ('queued', 'claimed')
+      RETURNING job."id"
+    ), failed_source_events AS MATERIALIZED (
+      UPDATE "workspace_control"."knowledge_source_event" event
+      SET "state" = 'failed', "consumed_at" = now()
+      FROM project_source source
+      WHERE event."organization_id" = ${input.organizationId}
+        AND event."source_id" = source."id"
+        AND event."state" IN ('pending', 'claimed')
+      RETURNING event."id"
+    ), revoked_grants AS MATERIALIZED (
+      UPDATE "workspace_control"."knowledge_grant" issued_grant
+      SET "revoked_at" = now()
+      FROM tombstoned_project project
+      WHERE issued_grant."organization_id" = ${input.organizationId}
+        AND issued_grant."project_id" = project."id"
+        AND issued_grant."revoked_at" IS NULL
+      RETURNING issued_grant."id"
+    ), audited AS MATERIALIZED (
+      INSERT INTO "workspace_control"."workspace_audit_event"
+        ("organization_id", "actor_user_id", "action", "resource_type",
+         "resource_id", "redacted_summary", "request_id")
+      SELECT ${input.organizationId}, ${input.authority.userId},
+        'knowledge.project.delete', 'knowledge_project', project."id"::text,
+        jsonb_build_object(
+          'bindingCount', (SELECT count(*) FROM revoked_bindings),
+          'sourceCount', (SELECT count(*) FROM revoked_sources),
+          'grantCount', (SELECT count(*) FROM revoked_grants),
+          'syncJobCount', (SELECT count(*) FROM superseded_sync_jobs),
+          'sourceEventCount', (SELECT count(*) FROM failed_source_events)
+        ), ${requestId}::uuid
+      FROM tombstoned_project project
+      RETURNING "id"
+    )
+    SELECT EXISTS (SELECT 1 FROM eligible_project) AS "matched",
+      EXISTS (SELECT 1 FROM active_analysis) AS "blockedByActiveAnalyses",
+      EXISTS (
+        SELECT 1 FROM tombstoned_project
+        WHERE EXISTS (SELECT 1 FROM audited)
+      ) AS "deleted"
+  `);
+  const outcome = result.rows[0];
+  if (outcome?.deleted) return "deleted";
+  if (outcome?.matched && outcome.blockedByActiveAnalyses) {
+    return "active_analyses";
+  }
+  return "stale";
 }

@@ -25,6 +25,12 @@ import {
 } from "../providers/gcp-cloud-sql";
 import type { GcpCloudSqlResource } from "../providers/gcp-cloud-sql-core";
 import {
+  issueVaultLease,
+  revokeVaultLease,
+  VaultLeaseCleanupRequiredError,
+  type VaultManagedResource,
+} from "../providers/vault";
+import {
   issueAfterFreshProviderAuthority,
   ProviderRequestError,
   verifiedProviderAuditId,
@@ -45,6 +51,7 @@ import {
   neonCredential,
   providerAccessToken,
   requiredOidcToken,
+  vaultCredential,
   verifiedNeonCredential,
 } from "./integration";
 import { cleanupExpiredManagedLeases } from "./lease-cleanup";
@@ -77,6 +84,14 @@ async function bestEffortRevokeLease(input: {
       input.resource as NeonResource,
       input.lease.externalCredentialId,
     );
+  } else if (
+    input.integration.provider === "vault"
+    && input.lease.externalCredentialKind === "role"
+  ) {
+    await revokeVaultLease(
+      vaultCredential(input.integration),
+      input.lease.externalCredentialId,
+    );
   }
   // Cloud SQL IAM access tokens have no token-revocation API. If the one-time
   // response was not delivered, it is unreachable and expires within 15 minutes.
@@ -90,6 +105,7 @@ export async function issueManagedLease(input: {
   sessionId: string;
   role: WorkspaceRoleName;
   connectionRevision: number;
+  connectionProvider: string;
   providerResourceId: string;
   engine: "postgres" | "mysql";
   production: boolean;
@@ -113,6 +129,7 @@ export async function issueManagedLease(input: {
     connectionId: input.connectionId,
     integrationId: input.integration.id,
     integrationGeneration: input.integration.generation,
+    connectionProvider: input.connectionProvider,
     provider: input.integration.provider,
     connectionRevision: input.connectionRevision,
     providerResourceId: input.providerResourceId,
@@ -272,6 +289,20 @@ export async function issueManagedLease(input: {
         );
         break;
       }
+      case "vault": {
+        const credential = vaultCredential(input.integration);
+        const issued = await issueVaultLease({
+          credential,
+          resource: input.resource as VaultManagedResource,
+          accessMode: input.accessMode,
+        });
+        providerAuditId = verifiedProviderAuditId(
+          "vault",
+          issued.providerAuditId,
+        );
+        lease = issued;
+        break;
+      }
       default:
         throw new Error("Managed credential provider is not available");
     }
@@ -290,17 +321,25 @@ export async function issueManagedLease(input: {
     if (
       error instanceof PlanetScaleLeaseCleanupRequiredError
       || error instanceof NeonLeaseCleanupRequiredError
+      || error instanceof VaultLeaseCleanupRequiredError
     ) {
       const provider = error instanceof NeonLeaseCleanupRequiredError
         ? "neon"
-        : "planetScale";
+        : error instanceof VaultLeaseCleanupRequiredError
+          ? "vault"
+          : "planetScale";
+      const cleanupAuditId = error instanceof VaultLeaseCleanupRequiredError
+        ? verifiedProviderAuditId("vault", error.providerAuditId)
+        : providerAuditId;
       const queued = await db.update(workspaceCredentialLease)
         .set({
           externalCredentialId: error.externalCredentialId,
           externalCredentialKind: error instanceof NeonLeaseCleanupRequiredError
             ? "role"
+            : error instanceof VaultLeaseCleanupRequiredError
+              ? "role"
             : error.externalCredentialKind,
-          providerAuditId,
+          providerAuditId: cleanupAuditId,
           expiresAt: new Date(),
         })
         .where(eq(workspaceCredentialLease.id, leaseId))
@@ -308,7 +347,7 @@ export async function issueManagedLease(input: {
       if (queued.length !== 1) {
         throw new ProviderRequestError(
           provider,
-          `${provider === "neon" ? "Neon" : "PlanetScale"} credential cleanup could not be queued`,
+          `${provider === "neon" ? "Neon" : provider === "vault" ? "Vault" : "PlanetScale"} credential cleanup could not be queued`,
           503,
         );
       }
@@ -345,9 +384,16 @@ export async function issueManagedLease(input: {
       // Leave failed Neon cleanup visible to the durable expiry sweeper.
     }
     await db.update(workspaceCredentialLease)
-      .set(input.integration.provider === "neon" && !revoked
-        ? { expiresAt: new Date(), providerAuditId }
-        : { revokedAt: new Date(), providerAuditId })
+      .set(input.integration.provider === "vault" && !revoked
+        ? {
+            externalCredentialId: lease.externalCredentialId,
+            externalCredentialKind: lease.externalCredentialKind,
+            expiresAt: new Date(),
+            providerAuditId,
+          }
+        : input.integration.provider === "neon" && !revoked
+          ? { expiresAt: new Date(), providerAuditId }
+          : { revokedAt: new Date(), providerAuditId })
       .where(eq(workspaceCredentialLease.id, leaseId))
       .catch(() => undefined);
     throw error;

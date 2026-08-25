@@ -32,7 +32,10 @@ export async function listKnowledgeProjects(workspaceId: string) {
       eq(knowledgeProjectEnvironment.organizationId, knowledgeProject.organizationId),
       eq(knowledgeProjectEnvironment.projectId, knowledgeProject.id),
     ),
-  ).where(eq(knowledgeProject.organizationId, workspaceId));
+  ).where(and(
+    eq(knowledgeProject.organizationId, workspaceId),
+    isNull(knowledgeProject.deletedAt),
+  ));
   const projects = new Map<string, {
     id: string;
     name: string;

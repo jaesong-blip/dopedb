@@ -4,13 +4,19 @@
 // OAuth-return setup flow without depending on shared connection inventory.
 import { useCallback, useEffect } from "react";
 
-import { emptyNeon, type Integration, type Provider } from "./domain";
+import {
+  emptyNeon, emptyVault, vaultConfigurationPayload, type Integration, type Provider,
+} from "./domain";
 import { useProviderAccessState } from "./state";
 import {
   fetchProviderAccessWithManagedConnections,
   fetchProviderAccountSnapshot,
   providerResponseError,
 } from "./transport";
+import {
+  connectProviderIntegration,
+  disconnectProviderIntegration,
+} from "./integrationMutations";
 import { useGcpProviderSetup } from "./useGcpProviderSetup";
 import { useWorkspaceLocale } from "../../app/components/WorkspaceLocale";
 import { workspaceMessages } from "../../lib/workspace-messages";
@@ -29,6 +35,7 @@ export function useProviderAccountAccess(
     managedConnectionsLoaded,
     setupProviderId,
     neonConfiguration,
+    vaultConfiguration,
     gcpSetupInventory,
     gcpSetupInstances,
     selectedGcpProjectId,
@@ -50,6 +57,7 @@ export function useProviderAccountAccess(
   const setManagedConnectionsLoaded = setField("managedConnectionsLoaded");
   const setSetupProviderId = setField("setupProviderId");
   const setNeonConfiguration = setField("neonConfiguration");
+  const setVaultConfiguration = setField("vaultConfiguration");
   const setGcpEnvironmentClassification = setField("gcpEnvironmentClassification");
   const setGcpProductionApproved = setField("gcpProductionApproved");
   const setGcpRestartApproved = setField("gcpRestartApproved");
@@ -109,12 +117,7 @@ export function useProviderAccountAccess(
   }, [loadAccountAccess]);
 
   const gcpSetup = useGcpProviderSetup({
-    workspaceId,
-    gcpSetupId,
-    locale,
-    copy,
-    state,
-    setField,
+    workspaceId, gcpSetupId, locale, copy, state, setField,
   });
 
   async function connect(provider: Provider, configuration?: object) {
@@ -122,14 +125,13 @@ export function useProviderAccountAccess(
     setMutation(`connect:${provider.id}`);
     setError("");
     try {
-      const response = await fetch(
-        `/api/v1/workspaces/${workspaceId}/provider-integrations`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ provider: provider.id, configuration }),
-        },
-      ).catch(() => null);
+      const response = await connectProviderIntegration(
+        workspaceId,
+        provider.id,
+        provider.id === "vault"
+          ? vaultConfigurationPayload(vaultConfiguration)
+          : configuration,
+      );
       if (!response?.ok) {
         setError(await providerResponseError(response, copy.connectError, locale));
         return;
@@ -144,6 +146,7 @@ export function useProviderAccountAccess(
         return;
       }
       setNeonConfiguration(emptyNeon);
+      setVaultConfiguration(emptyVault);
       setSetupProviderId("");
       await loadAccountAccess();
     } finally {
@@ -158,6 +161,7 @@ export function useProviderAccountAccess(
     }
     const next = setupProviderId === provider.id ? "" : provider.id;
     if (next !== "neon") setNeonConfiguration(emptyNeon);
+    if (next !== "vault") setVaultConfiguration(emptyVault);
     setSetupProviderId(next);
     setError("");
   }
@@ -171,10 +175,10 @@ export function useProviderAccountAccess(
     setMutation(`disconnect:${integration.id}`);
     setError("");
     try {
-      const response = await fetch(
-        `/api/v1/workspaces/${workspaceId}/provider-integrations/${integration.id}`,
-        { method: "DELETE" },
-      ).catch(() => null);
+      const response = await disconnectProviderIntegration(
+        workspaceId,
+        integration.id,
+      );
       if (!response?.ok) {
         setError(await providerResponseError(response, copy.disconnectError, locale));
         return;
@@ -185,11 +189,7 @@ export function useProviderAccountAccess(
     }
   }
 
-  const {
-    completeGcpSetup,
-    selectGcpInstance,
-    selectGcpProject,
-  } = gcpSetup;
+  const { completeGcpSetup, selectGcpInstance, selectGcpProject } = gcpSetup;
 
   return {
     providers,
@@ -198,6 +198,7 @@ export function useProviderAccountAccess(
     managedConnectionsLoaded,
     setupProvider,
     neonConfiguration,
+    vaultConfiguration,
     gcpSetupId,
     gcpSetupInventory,
     gcpSetupInstances,
@@ -225,6 +226,7 @@ export function useProviderAccountAccess(
     setGcpProductionApproved,
     setGcpRestartApproved,
     setNeonConfiguration,
+    setVaultConfiguration,
   };
 }
 

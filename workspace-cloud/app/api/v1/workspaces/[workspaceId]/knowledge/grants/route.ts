@@ -11,6 +11,7 @@ import {
   knowledgeGrant,
   knowledgeGrantGraphRevision,
   knowledgeGraphRevision,
+  knowledgeProject,
   knowledgeProjectEnvironment,
   knowledgeSource,
   member,
@@ -163,6 +164,13 @@ export async function POST(request: Request, context: RouteContext) {
     knowledgeProjectEnvironment,
     eq(knowledgeProjectEnvironment.organizationId, member.organizationId),
   ).innerJoin(
+    knowledgeProject,
+    and(
+      eq(knowledgeProject.organizationId, knowledgeProjectEnvironment.organizationId),
+      eq(knowledgeProject.id, knowledgeProjectEnvironment.projectId),
+      isNull(knowledgeProject.deletedAt),
+    ),
+  ).innerJoin(
     knowledgeEnvironmentHead,
     and(
       eq(knowledgeEnvironmentHead.organizationId, knowledgeProjectEnvironment.organizationId),
@@ -201,6 +209,10 @@ export async function POST(request: Request, context: RouteContext) {
     ), eligible_environment AS MATERIALIZED (
       SELECT environment."project_id", environment."revision"
       FROM ${knowledgeProjectEnvironment} AS environment
+      JOIN ${knowledgeProject} AS project
+        ON project."organization_id" = environment."organization_id"
+       AND project."id" = environment."project_id"
+       AND project."deleted_at" IS NULL
       CROSS JOIN actor_authority
       WHERE environment."organization_id" = ${workspaceId}
         AND environment."id" = ${projectEnvironmentId}::uuid
@@ -225,7 +237,7 @@ export async function POST(request: Request, context: RouteContext) {
               AND head."graph_revision_id" = requested.graph_revision_id
           )
         )
-      FOR UPDATE OF environment
+      FOR UPDATE OF project, environment
     ), revoked AS MATERIALIZED (
       UPDATE ${knowledgeGrant} AS previous
       SET "revoked_at" = now()

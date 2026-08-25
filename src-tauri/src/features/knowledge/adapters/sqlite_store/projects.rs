@@ -1,6 +1,7 @@
 //! Project and Project Environment persistence.
 
 use chrono::Utc;
+use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
@@ -329,4 +330,116 @@ impl Store {
         tx.commit().await?;
         Ok(())
     }
+
+    pub(in crate::features::knowledge::adapters) async fn delete_knowledge_project(
+        &self,
+        workspace_id: Uuid,
+        project_id: Uuid,
+        expected_revision: u64,
+    ) -> AppResult<()> {
+        let expected_revision = u64_to_i64(expected_revision, "project revision")?;
+        let mut tx = self.pool().begin().await?;
+        let current_revision: Option<i64> = sqlx::query_scalar(
+            "SELECT revision FROM knowledge_projects
+             WHERE id = ?1 AND workspace_id = ?2",
+        )
+        .bind(project_id.to_string())
+        .bind(workspace_id.to_string())
+        .fetch_optional(&mut *tx)
+        .await?;
+        let current_revision = current_revision
+            .ok_or_else(|| AppError::NotFound("the active workspace Project".into()))?;
+        if current_revision != expected_revision {
+            return Err(AppError::Blocked {
+                reason: "the Project revision changed before deletion".into(),
+            });
+        }
+        delete_project_cache(&mut tx, workspace_id, project_id, Some(expected_revision)).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Team Project inventory is an authoritative bounded snapshot. Removing
+    /// absent cached Projects keeps another member's deletion from leaving an
+    /// obsolete Agent scope on this device.
+    pub(in crate::features::knowledge::adapters) async fn retain_knowledge_projects(
+        &self,
+        workspace_id: Uuid,
+        project_ids: &[Uuid],
+    ) -> AppResult<()> {
+        if project_ids.len() > 1_000 {
+            return Err(AppError::Blocked {
+                reason: "the Project inventory exceeds the local cache boundary".into(),
+            });
+        }
+        let retained = project_ids
+            .iter()
+            .map(Uuid::to_string)
+            .collect::<HashSet<_>>();
+        let mut tx = self.pool().begin().await?;
+        let stored_ids: Vec<String> =
+            sqlx::query_scalar("SELECT id FROM knowledge_projects WHERE workspace_id = ?1")
+                .bind(workspace_id.to_string())
+                .fetch_all(&mut *tx)
+                .await?;
+        for stored_id in stored_ids {
+            if retained.contains(&stored_id) {
+                continue;
+            }
+            delete_project_cache(&mut tx, workspace_id, parse_uuid(stored_id)?, None).await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+}
+
+async fn delete_project_cache(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    workspace_id: Uuid,
+    project_id: Uuid,
+    expected_revision: Option<i64>,
+) -> AppResult<()> {
+    // Active-head immutability deliberately blocks graph deletion. Clear the
+    // head pointers first, then let Project cascades remove graphs, grants,
+    // mappings, sources, Environments, and connection bindings. Connections
+    // themselves are owned by the workspace and remain intact.
+    sqlx::query(
+        "DELETE FROM knowledge_environment_heads
+         WHERE project_environment_id IN (
+           SELECT environment.id
+           FROM knowledge_project_environments environment
+           JOIN knowledge_projects project ON project.id = environment.project_id
+           WHERE project.id = ?1 AND project.workspace_id = ?2
+         )",
+    )
+    .bind(project_id.to_string())
+    .bind(workspace_id.to_string())
+    .execute(&mut **tx)
+    .await?;
+    let deleted = if let Some(revision) = expected_revision {
+        sqlx::query(
+            "DELETE FROM knowledge_projects
+             WHERE id = ?1 AND workspace_id = ?2 AND revision = ?3",
+        )
+        .bind(project_id.to_string())
+        .bind(workspace_id.to_string())
+        .bind(revision)
+        .execute(&mut **tx)
+        .await?
+    } else {
+        sqlx::query(
+            "DELETE FROM knowledge_projects
+             WHERE id = ?1 AND workspace_id = ?2",
+        )
+        .bind(project_id.to_string())
+        .bind(workspace_id.to_string())
+        .execute(&mut **tx)
+        .await?
+    };
+    if deleted.rows_affected() != 1 {
+        return Err(AppError::Blocked {
+            reason: "the Project revision changed before deletion".into(),
+        });
+    }
+    Ok(())
 }

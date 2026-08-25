@@ -43,6 +43,10 @@ import {
   type ProviderResourceItem,
 } from "../providers/provider-types";
 import {
+  parseVaultCredential,
+  vaultManagedResource,
+} from "../providers/vault";
+import {
   type ActiveProviderIntegration,
   type ProviderMutationAuthority,
 } from "./authority";
@@ -269,6 +273,16 @@ export function gcpCredential(integration: ActiveProviderIntegration) {
   );
 }
 
+export function vaultCredential(integration: ActiveProviderIntegration) {
+  if (integration.provider !== "vault") {
+    throw new Error("Vault credential requested for another provider");
+  }
+  return parseVaultCredential(openProviderCredential<unknown>(
+    integration.id,
+    integration.encryptedCredential,
+  ));
+}
+
 /** Opens the server-only envelope and returns only the exact redacted target. */
 export function localGcpVerificationTarget(
   integration: Pick<ActiveProviderIntegration, "id" | "provider" | "encryptedCredential">,
@@ -309,9 +323,14 @@ export async function revokeProviderAuthorization(
     await revokePlanetScaleAuthorization(credential.refreshToken);
     return;
   }
-  if (integration.provider === "neon" || integration.provider === "gcpCloudSql") {
-    // Neon API keys and GCP trust are customer-owned and may be shared by another
-    // workspace. Disconnect scrubs our encrypted copy without deleting that trust.
+  if (
+    integration.provider === "neon"
+    || integration.provider === "gcpCloudSql"
+    || integration.provider === "vault"
+  ) {
+    // Neon API keys, GCP trust, and Vault AppRoles are customer-owned and may be
+    // shared by another workspace. Disconnect scrubs our encrypted copy without
+    // deleting that trust.
     return;
   }
   throw new Error("Managed credential provider is not available");
@@ -428,6 +447,46 @@ export async function discoverProviderResources(input: {
           selection.instance,
           instance.kind,
         )).map((item) => ({ ...item, production: instance.production }));
+      }
+      break;
+    }
+    case "vault": {
+      const credential = vaultCredential(integration);
+      const resource = vaultManagedResource(credential);
+      if (kind === "brokers" && Object.keys(selection).length === 0) {
+        return boundedDiscoveryResults([{
+          id: resource.targetFingerprint,
+          name: new URL(credential.address).hostname,
+          value: "configured",
+          ready: true,
+        }]);
+      }
+      if (
+        kind === "targets"
+        && selection.broker === "configured"
+        && Object.keys(selection).length === 1
+      ) {
+        return boundedDiscoveryResults([{
+          id: resource.targetFingerprint,
+          name: `${resource.host}:${resource.port}`,
+          value: "configured",
+          ready: true,
+        }]);
+      }
+      if (
+        kind === "databases"
+        && selection.broker === "configured"
+        && selection.target === "configured"
+        && Object.keys(selection).length === 2
+      ) {
+        return boundedDiscoveryResults([{
+          id: resource.targetFingerprint,
+          name: resource.database,
+          value: resource.database,
+          kind: resource.engine,
+          production: credential.target.production,
+          ready: true,
+        }]);
       }
       break;
     }

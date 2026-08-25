@@ -3,7 +3,7 @@
 // rows, credentials, certificates, provider messages, or Error objects cross it.
 import "server-only";
 
-const PROVIDERS = new Set(["planetScale", "neon", "gcpCloudSql"]);
+const PROVIDERS = new Set(["planetScale", "neon", "gcpCloudSql", "vault"]);
 const CONNECTION_STAGES = new Set([
   "provider_authorization",
   "gcp_setup_ticket",
@@ -73,6 +73,7 @@ const WORKSPACE_KMS_FAILURE_KINDS = new Set([
 ]);
 const KNOWLEDGE_MUTATIONS = new Set([
   "project_create",
+  "project_delete",
   "environment_create",
   "personal_scope_sync",
 ]);

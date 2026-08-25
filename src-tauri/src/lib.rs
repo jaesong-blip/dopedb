@@ -196,6 +196,7 @@ pub fn run() {
             features::knowledge::transport::list_knowledge_projects_command,
             features::knowledge::transport::list_knowledge_inventory_command,
             features::knowledge::transport::create_knowledge_project_command,
+            features::knowledge::transport::delete_knowledge_project_command,
             features::knowledge::transport::create_knowledge_environment_command,
             features::knowledge::transport::begin_knowledge_github_install_command,
             features::knowledge::transport::list_knowledge_github_repositories_command,

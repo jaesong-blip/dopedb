@@ -290,6 +290,7 @@ export type ManagedLeaseAuthority = {
   engine: "postgres" | "mysql";
   integrationId: string;
   integrationGeneration: bigint;
+  connectionProvider: string;
   provider: string;
   accessMode: ManagedAccessMode;
 };
@@ -348,7 +349,7 @@ function authorityPredicate(input: ManagedLeaseAuthority) {
     AND ${workspaceConnection.providerResourceId} = ${input.providerResourceId}::uuid
     AND ${workspaceConnection.revision} = ${input.connectionRevision}
     AND ${workspaceConnection.engine} = ${input.engine}
-    AND ${workspaceConnection.provider} = ${input.provider}
+    AND ${workspaceConnection.provider} = ${input.connectionProvider}
     AND ${workspaceProviderIntegration.id} = ${input.integrationId}::uuid
     AND ${workspaceProviderIntegration.organizationId} = ${input.organizationId}
     AND ${workspaceProviderIntegration.provider} = ${input.provider}

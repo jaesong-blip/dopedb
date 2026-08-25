@@ -15,6 +15,7 @@ import {
   knowledgeGrant,
   knowledgeGrantGraphRevision,
   knowledgeMappingProposal,
+  knowledgeProject,
   knowledgeProjectEnvironment,
   workspaceAnalysisArticle,
   workspaceAnalysisArticleConnection,
@@ -188,6 +189,10 @@ export async function commitAnalysisArticleCreate(input: {
         ON environment."organization_id" = member."organization_id"
        AND environment."id" = ${input.article.projectEnvironmentId}::uuid
        AND environment."revision" = ${input.article.environmentRevision}
+      JOIN ${knowledgeProject} project
+        ON project."organization_id" = environment."organization_id"
+       AND project."id" = environment."project_id"
+       AND project."deleted_at" IS NULL
       JOIN authority_lock ON TRUE
       WHERE session."id" = ${input.authority.sessionId}
         AND session."user_id" = ${input.authority.userId}
@@ -196,7 +201,7 @@ export async function commitAnalysisArticleCreate(input: {
         AND member."role" IN ('editor', 'admin', 'owner')
         AND member."revocation_pending_at" IS NULL
         AND member."revocation_claim_id" IS NULL
-      FOR UPDATE OF session, member, environment
+      FOR UPDATE OF session, member, project, environment
     ), knowledge_authority AS MATERIALIZED (
       SELECT authority."id"
       FROM authority
@@ -404,6 +409,10 @@ export async function commitAnalysisArticleMutation(input: {
         ON environment."organization_id" = member."organization_id"
        AND environment."id" = ${input.article.projectEnvironmentId}::uuid
        AND environment."revision" = ${input.article.environmentRevision}
+      JOIN ${knowledgeProject} project
+        ON project."organization_id" = environment."organization_id"
+       AND project."id" = environment."project_id"
+       AND (project."deleted_at" IS NULL OR ${deleted})
       JOIN authority_lock ON TRUE
       WHERE session."id" = ${input.authority.sessionId}
         AND session."user_id" = ${input.authority.userId}
@@ -412,7 +421,7 @@ export async function commitAnalysisArticleMutation(input: {
         AND member."role" IN ('editor', 'admin', 'owner')
         AND member."revocation_pending_at" IS NULL
         AND member."revocation_claim_id" IS NULL
-      FOR UPDATE OF session, member, environment
+      FOR UPDATE OF session, member, project, environment
     ), target_owner AS MATERIALIZED (
       SELECT owner."id"
       FROM "workspace_control"."member" owner

@@ -4,6 +4,7 @@
 //! module never opens its auth files, reads a token, refreshes credentials, or
 //! offers a login flow.
 
+mod authority;
 mod desktop;
 mod event_sink;
 mod knowledge_scope;
@@ -71,8 +72,6 @@ const MAX_PERMISSION_OPTION_BYTES: usize = 1024;
 const MAX_CONFIG_OPTIONS: usize = 64;
 const MAX_CONFIG_OPTION_ID_BYTES: usize = 256;
 const MAX_CONFIG_OPTION_VALUE_BYTES: usize = 1024;
-const WORKSPACE_AUTHORITY_CHANGED: &str = "workspace_authority_changed";
-const CONNECTION_AUTHORITY_CHANGED: &str = "connection_authority_changed";
 const AGENT_PROCESS_CLOSED: &str = "agent_process_closed";
 const AGENT_PROCESS_UNAVAILABLE: &str = "agent_process_unavailable";
 
@@ -653,44 +652,6 @@ impl AcpRuntime {
                 provider_name(session.summary().provider)
             ))
         })?
-    }
-
-    pub(crate) fn stop_connection(&self, connection_id: ConnectionId) -> usize {
-        let sessions = self
-            .sessions
-            .iter()
-            .filter_map(|entry| {
-                (entry.value().connection_id == connection_id
-                    && !matches!(
-                        entry.value().summary().lifecycle,
-                        AcpSessionLifecycle::Closed | AcpSessionLifecycle::Failed
-                    ))
-                .then_some(*entry.key())
-            })
-            .collect::<Vec<_>>();
-        for id in &sessions {
-            self.interrupt(*id, CONNECTION_AUTHORITY_CHANGED);
-        }
-        sessions.len()
-    }
-
-    /// Stop only after a proven active workspace/account authority transition.
-    /// Routine refreshes use the Broker verification gate and never call this.
-    pub(crate) fn interrupt_all_for_workspace_authority_change(&self) {
-        let ids = self
-            .sessions
-            .iter()
-            .filter_map(|entry| {
-                (!matches!(
-                    entry.value().summary().lifecycle,
-                    AcpSessionLifecycle::Closed | AcpSessionLifecycle::Failed
-                ))
-                .then_some(*entry.key())
-            })
-            .collect::<Vec<_>>();
-        for id in ids {
-            self.interrupt(id, WORKSPACE_AUTHORITY_CHANGED);
-        }
     }
 
     pub(crate) async fn stop_provider_and_wait(

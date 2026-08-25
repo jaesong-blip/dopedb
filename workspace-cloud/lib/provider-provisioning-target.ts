@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { db } from "./db";
-import { providerImportAdapters, type ImportProvider } from "./providers/import-projection";
+import { providerImportAdapters } from "./providers/import-projection";
 import {
   workspaceConnection,
   workspaceProviderImportRequest,
@@ -59,7 +59,7 @@ type TargetRow = {
   capabilityManifest: unknown;
 };
 
-function isProvider(value: string): value is ImportProvider {
+function isProvider(value: string): value is (typeof PROVIDERS)[number] {
   return (PROVIDERS as readonly string[]).includes(value);
 }
 

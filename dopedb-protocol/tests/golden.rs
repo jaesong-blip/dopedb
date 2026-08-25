@@ -513,6 +513,16 @@ fn public_protocol_goldens_match_pinned_agent_and_control_plane_contracts() {
         .expect("fixture connector")
         .access_token
         .is_empty());
+    let mut brokered_generic = contracts.managed_lease.response.clone();
+    brokered_generic["lease"]["provider"] = json!("generic");
+    brokered_generic["lease"]
+        .as_object_mut()
+        .expect("managed lease fixture")
+        .remove("connector");
+    let brokered_generic: ManagedLeaseResponse = serde_json::from_value(brokered_generic)
+        .expect("brokered generic managed lease must decode");
+    assert!(brokered_generic.validate());
+    assert_eq!(brokered_generic.lease.provider, "generic");
     let article: SharedAnalysisArticleCreate =
         serde_json::from_value(contracts.analysis_article_create.clone())
             .expect("Analysis Article create golden must decode");

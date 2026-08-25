@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import {
@@ -130,6 +130,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     eq(knowledgeProject.organizationId, workspaceId),
     eq(knowledgeProject.id, body.projectId),
     eq(knowledgeProject.revision, body.expectedRevision),
+    isNull(knowledgeProject.deletedAt),
     knowledgeMutationAuthoritySql(authority, workspaceId),
   )).returning({ id: knowledgeProject.id, revision: knowledgeProject.revision });
   if (updated.length !== 1) return jsonError("Project revision changed", 409);
