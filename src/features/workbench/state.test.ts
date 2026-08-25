@@ -67,6 +67,12 @@ import {
   virtualTreeFocusIndex,
 } from "../../design-system/treeKeyboard";
 import { filterLoadedCatalogObjects } from "../catalogExplorer/catalogDomain";
+import {
+  flattenProjectEnvironmentResources,
+  preferredProjectEnvironment,
+  projectResourceKey,
+} from "../catalogExplorer/projectResources";
+import { knowledgeEnvironmentBadge } from "../knowledge/presentation";
 import type { Catalog, CatalogObject, CatalogTable } from "../../ipc/types";
 import {
   modalMouseDownShouldReachNativeDragRegion,
@@ -610,6 +616,59 @@ describe("workbench state ownership", () => {
     });
     expect(createdProjects).toBe(1);
     expect(boundConnections).toBe(1);
+    const explorerProject = {
+      id: "project-commerce",
+      name: "Commerce",
+      revision: 2,
+      environments: [
+        {
+          id: "environment-development",
+          name: "Development",
+          riskClass: "development" as const,
+          revision: 3,
+        },
+        {
+          id: "environment-production",
+          name: "Production",
+          riskClass: "production" as const,
+          revision: 4,
+        },
+      ],
+    };
+    const projectDatabaseRows = flattenProjectEnvironmentResources(
+      explorerProject,
+      (environmentId) =>
+        environmentId === "environment-development"
+          ? [{ id: "database-development" }]
+          : [{ id: "database-production" }],
+    );
+    expect(projectResourceKey(explorerProject.id, "databases")).toBe(
+      "project-commerce:databases",
+    );
+    expect(
+      projectDatabaseRows.map(({ environment, resource }) => ({
+        environmentId: environment.id,
+        databaseId: resource.id,
+        badge: knowledgeEnvironmentBadge(environment.riskClass),
+      })),
+    ).toEqual([
+      {
+        environmentId: "environment-development",
+        databaseId: "database-development",
+        badge: "dev",
+      },
+      {
+        environmentId: "environment-production",
+        databaseId: "database-production",
+        badge: "prod",
+      },
+    ]);
+    expect(
+      preferredProjectEnvironment(
+        explorerProject,
+        "environment-production",
+      )?.id,
+    ).toBe("environment-production");
     expect(
       selectGuidedDemoEnvironment([
         {

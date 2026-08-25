@@ -22,13 +22,19 @@ DopeDB의 제품 축, 실제 사용자 작업, 접근성, 운영 안전성, 지�
 ### 화면 구조
 
 - 상단은 workspace와 현재 문맥, document tab, 실제 전역 command를 제공한다.
-- 왼쪽 Explorer는 Project → Environment → Databases/Data sources/Analyses의
-  계층과 실제 catalog를 소유한다. 아직 Environment에 묶이지 않은 연결은
-  `Unassigned`에만 표시하고, 그 행을 원하는 Environment로 끌어 놓으면 기존
-  environment-connection binding command로 이동한다. 이미 묶인 연결을 암묵적으로
-  재배치하거나 복제하지 않는다. Analysis collection의 문자·상태 필터와 Article
-  선택도 Explorer가 소유하며, 중앙 Analysis document는 선택한 Article만 표시하고
-  별도의 collection rail을 만들지 않는다.
+- 왼쪽 Explorer는 `Project → Databases / Data sources / Analyses`의 계층과 실제
+  catalog를 소유한다. Environment는 exact grant와 binding을 소유하는 domain으로
+  유지하되 Project 아래 시각적 folder로 반복하지 않는다. `Databases`는 Project의
+  모든 환경 binding을 한 목록으로 투영하고 각 DB 행에만 exact Environment의
+  dev/staging/prod marker를 표시한다. Data source와 Analysis Article 행은 같은
+  Project folder에 모으되 선택 시 원래 Environment identity를 보존한다. 아직
+  Environment에 묶이지 않은 연결은 `Unassigned`에만 표시하고, 그 행을 원하는
+  Environment에 이미 묶인 DB 행으로 끌어 놓으면 기존 environment-connection
+  binding command로 이동한다. 대상 환경에 DB가 없으면 Environment database
+  binding 화면을 사용하며, 이미 묶인 연결을 암묵적으로 재배치하거나 복제하지
+  않는다. Analysis collection의 문자·상태 필터와 Article 선택도 Explorer가
+  소유하며, 중앙 Analysis document는 선택한 Article만 표시하고 별도의 collection
+  rail을 만들지 않는다.
 - 중앙 document surface는 welcome, query, data, schema, analysis처럼 현재 작업
   하나를 소유한다.
 - Personal Workspace의 첫 Welcome은 실제 파일 기반 SQLite, 로컬 Project와

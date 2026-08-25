@@ -19,7 +19,7 @@ runtime과 성능 수치로 수행한다.
 | App shell/chrome | `complete` | `features/appShell`, design-system chrome primitives | packaged macOS·Windows에서 keyboard launcher와 compact window를 정기 확인 |
 | Action Search | `complete` | `features/actionSearch` | cached catalog scope, `/` action mode, focus 복구와 bounded top-k를 유지 |
 | Welcome document | `complete` | `screens/Onboarding`, `features/onboarding` | Personal 가이드 데모의 idempotent DB·Project·Environment·binding 준비와 연결 전/후 실제 command 집합을 packaged smoke에서 확인 |
-| Database Explorer | `complete` | `screens/Connections/DatabaseExplorer`, `features/catalogExplorer` | DB 행에만 조용한 Environment marker와 같은 schema group의 Diff 진입점을 유지하고, Unassigned→Environment binding drag·loaded-only 객체 검색·대형 catalog selection/scroll을 packaged smoke에서 확인 |
+| Database Explorer | `complete` | `screens/Connections/DatabaseExplorer`, `features/catalogExplorer` | Project 바로 아래의 단일 Databases/Data sources/Analyses 계층, DB 행에만 보이는 exact Environment marker와 같은 schema group의 Diff 진입점을 유지하고, Unassigned→환경 DB 행 binding drag·loaded-only 객체 검색·대형 catalog selection/scroll을 packaged smoke에서 확인 |
 | Connection editor | `complete` | `features/connections/useConnectionEditorController` | 연결 identity·접속 옵션만 소유하고 쓰기 실행 제어는 Settings → Safety 단일 경계를 유지 |
 | Provider account access | `complete` | `workspace-cloud/features/providerAccess`, provider application modules | 실제 계정 OAuth/CLI 실패·recovery 및 revoke 검수 |
 | SQL editor/query workflow | `complete` | `features/queries`, `screens/Sql`, Rust query application | 수동 Run exact 승인, Agent 제안 분리, 10 KiB/100 KiB/1 MiB 입력과 cancel/transaction packaged 검수 |

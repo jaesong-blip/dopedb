@@ -354,14 +354,16 @@ Elevation은 세 단계만 허용한다.
 - `SegmentedControl`: 속성 편집기의 소수 상호 배타 선택을 위한 compact
   radiogroup, keyboard focus와 semantic selection treatment.
 - `EnvironmentBadge`: database context에서 dev/staging/prod를 neutral 대문자와
-  작은 의미색 점으로 표시한다. Explorer에서는 DB connection row에만 두며,
-  Project의 Environment folder는 자체 이름이 이미 환경을 구분하므로 badge를
-  반복하지 않는다. production도 채운 danger pill로 강조하지 않는다.
+  작은 의미색 점으로 표시한다. Explorer에서는 Project의 단일 `Databases`
+  folder 아래 DB connection row에만 두고 Data source·Analysis Article·Project
+  행에는 반복하지 않는다. Environment는 Explorer folder가 아니라 exact binding
+  identity로 유지하며 production도 채운 danger pill로 강조하지 않는다.
 - `TreeSectionButton`, `TreeRowActions`, `TreeSearch`, `VirtualTreeRows`: 객체 트리의
   일반 문장형 hierarchy row, keyboard toggle, dense object search와 대형 leaf
-  row windowing. `TreeSectionButton`의 `selected`는 현재 Project Environment나
-  resource folder를 같은 tree selection 문법으로 표시하고 `trailing`은
-  environment badge 또는 실제 command만 받는다. 연결 개수는 folder 행에
+  row windowing. `TreeSectionButton`의 `selected`는 현재 Project나
+  resource folder를 같은 tree selection 문법으로 표시하고 `trailing`은 실제
+  command만 받는다. Environment badge는 DB connection row가 직접 소유하며 연결
+  개수는 folder 행에
   상시 표시하지 않는다. `TreeRowActions`는 행의
   실제 command만 받아 hover/focus에서 표시하고 title 폭을 상시 차지하지 않는다.
   toggle은 native button이고 interactive row action은 그 sibling이므로 nested
@@ -515,37 +517,41 @@ DopeDB의 실제 작업 흐름과 접근성, supported viewport를 위한 제품
   fullscreen projection만 `aria-modal="true"`, background `inert`, 공용 topmost
   modal focus·Tab·Escape 계약을 사용한다. 두 projection은 실제 opener를
   복원하고, 위에 열린 nested modal의 Escape를 먼저 소비하게 한다.
-- Workspace Explorer는 `Project → Environment → Databases / Data sources /
-  Analyses`를 실제 폴더 hierarchy로 표시한다. `Data sources`는 GitHub와 Local
-  Folder source binding을, `Analyses`는 해당 Environment에 고정된 종합
-  Analysis Article을 표시한다. 환경에 묶인 DB를 root에 중복 표시하지 않고,
-  아직 묶이지 않은 연결만 `Unassigned`에 둔다. 환경 상세는 선택한 resource
-  folder가 중앙 pane에 여는 내용이며 별도 Knowledge launcher, Dashboard 전용
+- Workspace Explorer는 `Project → Databases / Data sources / Analyses`를 실제
+  folder hierarchy로 표시한다. Environment는 exact grant와 binding identity로
+  유지하지만 Project 아래에 별도 folder를 만들지 않는다. `Databases`는 Project의
+  모든 Environment binding을 한 목록으로 투영하고 DB row에만 해당 Environment의
+  neutral badge를 표시한다. `Data sources`는 GitHub와 Local Folder source binding을,
+  `Analyses`는 Project의 종합 Analysis Article을 모아 표시하되 각 leaf action은
+  원래 Environment identity를 중앙 pane에 그대로 전달한다. 환경에 묶인 DB를
+  root에 중복 표시하지 않고, 아직 묶이지 않은 연결만 `Unassigned`에 둔다. 선택한
+  resource folder는 현재 선택된 Environment가 같은 Project에 있으면 그것을, 아니면 첫
+  Environment의 상세를 중앙 pane에 열며 별도 Knowledge launcher, Dashboard 전용
   sidebar, 중복 Project navigation을 만들지 않는다. `Analyses`가 현재 resource면
-  Explorer의 단일 contextual search row가 Article 문자·상태 필터를 함께 소유하고,
-  중앙 document는 선택한 Article만 표시해 두 번째 collection rail을 만들지 않는다.
-  Explorer의 단일 command
-  strip에서 Project와 Environment 생성 action을 구분하고, Project 생성 dialog는
-  기본 `main` Environment를 함께 설정한다. Project 행의 hover/focus `plus`는 해당
-  Project에 Environment를 추가하고, `Databases` folder의 `plus`는 기존 connection
-  editor를, `Data sources` folder의 `plus`는 기존 source 연결 상세를,
-  `Analyses` folder는 Agent가 제안한 Article draft collection을 연며 수동 빈
-  draft `plus`를 제공하지 않는다. collection의 유일한 생성 action은 현재
-  Environment와 연결 revision을 고정한 AI Chat composer로 이동해 분석 질문을
-  받은 뒤, Agent가 검증된 읽기 결과로 제안한 draft를 다시 collection에 넣는다.
-  Project가 없는
-  workspace에서는 설명만 표시하고 별도 생성 row를 누적하지 않으며, 생성 직후
-  새 Environment의 `Databases` folder를 연다. resource folder와 `Unassigned` 행에는
-  연결 개수 badge를 붙이지 않는다. `Unassigned` 연결 행은 pointer drag로 원하는
-  Environment에 놓을 수 있고, 유효한 대상은 drag 중 semantic border와 surface로
-  표시한다. 이 shortcut은 기존 environment binding command를 재사용하며, 이미
-  묶인 연결의 암묵적 이동이나 복제를 허용하지 않는다. 키보드 사용자는 기존
-  Environment database binding 화면을 그대로 사용한다. 같은 schema group의 DB는
-  서로 다른 Environment folder 아래에 있더라도 각 DB row의 `diff` command와
-  connection menu에서 동일한 Schema Diff workbench를 열 수 있어야 한다. 중앙 환경
-  상세나 AI Chat 안내에
-  같은 생성 form을 중복하지 않는다. Dashboard, Funnel Analysis, Agent Report는
-  별도 navigation이나 screen을 갖지 않는다.
+  Explorer의 단일 contextual search row가 Project collection의 Article 문자·상태
+  필터를 함께 소유하고, 중앙 document는 선택한 Article만 표시해 두 번째 collection
+  rail을 만들지 않는다. Explorer의 단일 command strip에서 Project와 Environment
+  생성 action을 구분하고, Project 생성 dialog는 기본 `main` Environment를 함께
+  설정한다. Project 행의 hover/focus `plus`는 해당 Project에 Environment를 추가하되
+  시각적 folder를 만들지 않고 Project의 `Databases`와 새 Environment binding
+  상세를 연다. `Databases` folder의 `plus`는 기존 connection editor를,
+  `Data sources` folder의 `plus`는 현재 exact Environment의 source 연결 상세를,
+  `Analyses` folder는 Agent가 제안한 Article draft collection을 열며 수동 빈 draft
+  `plus`를 제공하지 않는다. collection의 유일한 생성 action은 현재 Environment와
+  연결 revision을 고정한 AI Chat composer로 이동해 분석 질문을 받은 뒤, Agent가
+  검증된 읽기 결과로 제안한 draft를 다시 collection에 넣는다. Project가 없는
+  workspace에서는 설명만 표시하고 별도 생성 row를 누적하지 않으며, 생성 직후 새
+  Project의 `Databases` folder와 기본 Environment binding 상세를 연다. resource
+  folder와 `Unassigned` 행에는 연결 개수 badge를 붙이지 않는다. `Unassigned` 연결
+  행은 pointer drag로 원하는 Environment에 이미 묶인 DB row에 놓을 수 있고, 유효한
+  대상은 drag 중 semantic border와 surface로 표시한다. 대상 Environment에 DB가
+  아직 없거나 키보드를 사용하는 경우에는 기존 Environment database binding 화면을
+  사용한다. 이 shortcut은 기존 environment binding command를 재사용하며, 이미 묶인
+  연결의 암묵적 이동이나 복제를 허용하지 않는다. 같은 schema group의 DB는 단일
+  `Databases` 목록 안에서 각 DB row의 `diff` command와 connection menu로 동일한
+  Schema Diff workbench를 열 수 있어야 한다. 중앙 환경 상세나 AI Chat 안내에 같은
+  생성 form을 중복하지 않는다. Dashboard, Funnel Analysis, Agent Report는 별도
+  navigation이나 screen을 갖지 않는다.
 - 이 hierarchy의 Project prominence와 header action locality는 공개 Orca의
   `SidebarHeader`·`ProjectHeaderActions`·`WorktreeList`의 정보 구조를 재사용하되,
   행 높이, surface, icon, selection은 이 문서의 semantic primitive가 소유한다.

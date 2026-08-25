@@ -45,6 +45,9 @@ const EMPTY_CATALOGS: Record<string, Catalog> = {};
 
 type Props = {
   connection: ConnectionProfile;
+  environmentBadge?: string | null;
+  environmentDropId?: string;
+  treeKey?: string;
   nested: boolean;
   selected: boolean;
   selectedTableKey: string | null;
@@ -111,6 +114,10 @@ type Props = {
 export default function ConnectionNode(props: Props) {
   const { t } = useI18n();
   const { connection } = props;
+  const environmentBadge =
+    props.environmentBadge === undefined
+      ? connection.env
+      : props.environmentBadge;
   const accessLabelBase =
     connection.workspaceAccess === "view"
       ? t("workspace.accessView")
@@ -136,8 +143,10 @@ export default function ConnectionNode(props: Props) {
     connection.engine !== "sqlite" ? `:${connection.port}` : ""
   } · ${databaseLabel}`;
   const isDropTarget =
-    props.dropTarget?.kind === "connection" &&
-    props.dropTarget.id === connection.id;
+    (props.dropTarget?.kind === "connection" &&
+      props.dropTarget.id === connection.id) ||
+    (props.dropTarget?.kind === "environment" &&
+      props.dropTarget.id === props.environmentDropId);
   const availableSchemas = Array.from(
     new Set([
       ...(props.overview?.namespaces ?? []),
@@ -152,13 +161,14 @@ export default function ConnectionNode(props: Props) {
       ? availableSchemas.length
       : availableSchemas.filter((schema) => scopedSchemas.includes(schema))
           .length;
-  const connectionTreeKey = `connection:${connection.id}`;
+  const connectionTreeKey = props.treeKey ?? `connection:${connection.id}`;
   const schemaGroup = props.groupByConnectionId.get(connection.id);
 
   return (
     <div className="tw:relative">
       <div
         data-connection-id={connection.id}
+        data-knowledge-environment-drop-id={props.environmentDropId}
         data-nested={props.nested}
         data-dragging={props.draggingId === connection.id}
         data-drop-target={isDropTarget}
@@ -167,7 +177,7 @@ export default function ConnectionNode(props: Props) {
         aria-expanded={props.expanded}
         aria-level={props.treeLevel}
         aria-selected={props.selected}
-        aria-label={`${connection.name || t("app.unnamed")} · ${description}`}
+        aria-label={`${connection.name || t("app.unnamed")} · ${description}${environmentBadge ? ` · ${environmentBadge}` : ""}`}
         data-explorer-tree-item
         data-explorer-tree-key={connectionTreeKey}
         data-explorer-tree-parent-key={props.treeParentKey ?? undefined}
@@ -287,8 +297,8 @@ export default function ConnectionNode(props: Props) {
             </ToolbarMenu>
           </span>
         ) : null}
-        {connection.env ? (
-          <EnvironmentBadge environment={connection.env} />
+        {environmentBadge ? (
+          <EnvironmentBadge environment={environmentBadge} />
         ) : null}
         {accessLabel && (
           <span
