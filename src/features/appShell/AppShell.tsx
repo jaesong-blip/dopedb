@@ -98,7 +98,6 @@ function Shell() {
     connections: connections.items,
     queryServiceStore: queryServices.store,
     workspaceScopeKey: catalogScope.key,
-    knowledgeSyncEnabled: catalogScope.workspaceKind === "team",
   });
   const manualTransactions = useWorkspaceManualTransactions(connections.items);
   const {
@@ -428,7 +427,6 @@ function Shell() {
         commands={{
           workspace: {
             scopeChanged: commands.connections.reloadWorkspaceScope,
-            dataRefreshed: commands.connections.refreshWorkspaceData,
             newConnection: commands.connections.new,
             createDemo: commands.connections.createDemo,
             editConnection: commands.connections.edit,

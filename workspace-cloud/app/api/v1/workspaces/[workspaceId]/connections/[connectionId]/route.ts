@@ -20,10 +20,12 @@ import {
 } from "../../../../../../../lib/revocation-gates";
 import {
   workspaceConnection,
-  workspaceProviderIntegration,
   workspaceProviderResource,
 } from "../../../../../../../lib/schema";
-import { authorizeWorkspaceConnection } from "../../../../../../../lib/workspace-authorization";
+import {
+  authorizeWorkspaceConnection,
+  authorizeWorkspaceConnectionAction,
+} from "../../../../../../../lib/workspace-authorization";
 import {
   parseSharedConnection,
   providerResourceSupportsWrite,
@@ -79,59 +81,14 @@ export async function POST(request: Request, context: RouteContext) {
   if (body?.action !== "read" && body?.action !== "write") {
     return jsonError("Action must be read or write", 400);
   }
-  const authorization = await authorizeWorkspaceConnection(
+  const authorization = await authorizeWorkspaceConnectionAction(
     request,
     workspaceId,
     connectionId,
     "use",
   );
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
-  const [connection] = await db.select({
-    id: workspaceConnection.id,
-    revision: workspaceConnection.revision,
-    contentRevision: workspaceConnection.contentRevision,
-    readonlyDefault: workspaceConnection.readonlyDefault,
-    allowWrites: workspaceConnection.allowWrites,
-    credentialMode: workspaceConnection.credentialMode,
-    provider: workspaceConnection.provider,
-    providerIntegrationId: workspaceConnection.providerIntegrationId,
-    revocationPendingAt: workspaceConnection.revocationPendingAt,
-    integrationStatus: workspaceProviderIntegration.status,
-    integrationProvider: workspaceProviderIntegration.provider,
-    integrationRevokedAt: workspaceProviderIntegration.revokedAt,
-    integrationRevocationPendingAt:
-      workspaceProviderIntegration.revocationPendingAt,
-    integrationRevocationClaimId:
-      workspaceProviderIntegration.revocationClaimId,
-    providerCapabilityManifest: workspaceProviderResource.capabilityManifest,
-  }).from(workspaceConnection).leftJoin(
-    workspaceProviderIntegration,
-    and(
-      eq(
-        workspaceProviderIntegration.id,
-        workspaceConnection.providerIntegrationId,
-      ),
-      eq(
-        workspaceProviderIntegration.organizationId,
-        workspaceConnection.organizationId,
-      ),
-    ),
-  ).leftJoin(
-    workspaceProviderResource,
-    and(
-      eq(workspaceProviderResource.id, workspaceConnection.providerResourceId),
-      eq(
-        workspaceProviderResource.organizationId,
-        workspaceConnection.organizationId,
-      ),
-      eq(workspaceProviderResource.provider, workspaceConnection.provider),
-    ),
-  ).where(and(
-    eq(workspaceConnection.id, connectionId),
-    eq(workspaceConnection.organizationId, workspaceId),
-    isNull(workspaceConnection.deletedAt),
-  )).limit(1);
-  if (!connection) return jsonError("Connection not found", 404);
+  const connection = authorization.connection;
   if (connection.revocationPendingAt) {
     return jsonError("Connection access is changing. Retry shortly.", 409);
   }

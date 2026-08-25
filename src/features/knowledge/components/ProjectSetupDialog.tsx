@@ -67,7 +67,7 @@ export function ProjectSetupDialog({
       }
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: knowledgeQueryKeys.projects(catalogScopeKey),
+          queryKey: knowledgeQueryKeys.inventory(catalogScopeKey),
         }),
         queryClient.invalidateQueries({
           queryKey: knowledgeQueryKeys.agentEnvironments(),

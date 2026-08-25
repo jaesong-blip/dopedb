@@ -168,7 +168,6 @@ export function useAnalysisArticlesController({
       Boolean(selected) &&
       (tab === "history" || tab === "lineage" || tab === "article"),
     retry: false,
-    refetchInterval: running?.articleId === selected?.id ? 2_000 : false,
   });
   const recoveredResult = useQuery({
     queryKey: analysisQueryKeys.localResult(scopeKey, selected?.id),

@@ -76,6 +76,11 @@ export type KnowledgeSource = {
   localCapabilityAvailable: boolean;
 };
 
+export type KnowledgeInventory = {
+  projects: KnowledgeProject[];
+  sources: KnowledgeSource[];
+};
+
 export type KnowledgeSourceSyncProgress = {
   sourceId: string;
   projectEnvironmentId: string;

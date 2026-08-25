@@ -15,7 +15,7 @@ use crate::features::knowledge::ports::{
     AppendKnowledgeEnvironmentRequest, CreateKnowledgeProjectRequest, CreateKnowledgeSourceRequest,
     CreatedKnowledgeSource, HostedKnowledgeAuthorityPort, PinnedSourceReadRequest,
     PinnedSourceSearchRequest, RemoteEnvironmentConnectionBinding, RemoteGithubRepository,
-    RemoteKnowledgeGrant, RemoteKnowledgeProject, RemoteKnowledgeSource,
+    RemoteKnowledgeGrant, RemoteKnowledgeInventory, RemoteKnowledgeProject, RemoteKnowledgeSource,
     RemoteKnowledgeSyncProgress, RemotePersonalKnowledgeScope, RemoteSourceReadResult,
     RemoteSourceSearchResult,
 };
@@ -29,6 +29,7 @@ use dopedb_protocol::{
 use sha2::{Digest, Sha256};
 
 const MAX_KNOWLEDGE_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+const MAX_KNOWLEDGE_INVENTORY_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 async fn knowledge_response<T: DeserializeOwned>(
     response: reqwest::Response,
     action: &str,
@@ -264,6 +265,53 @@ async fn ensure_personal_knowledge_scope(
     })
 }
 
+fn validate_project_inventory(projects: &[RemoteKnowledgeProject]) -> AppResult<()> {
+    if projects.len() > 1_000
+        || projects.iter().any(|project| {
+            project.name.is_empty()
+                || project.name.len() > 512
+                || project.revision == 0
+                || project.environments.is_empty()
+                || project.environments.len() > 100
+                || project.environments.iter().any(|environment| {
+                    environment.name.is_empty()
+                        || environment.name.len() > 512
+                        || environment.revision == 0
+                })
+        })
+    {
+        return Err(AppError::Network(
+            "Project Knowledge returned an invalid scope inventory".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_source_inventory(sources: &[RemoteKnowledgeSource]) -> AppResult<()> {
+    if sources.len() > 10_000
+        || sources.iter().any(|source| {
+            source.environment_revision == 0
+                || source.sync_revision == 0
+                || source.display_name.trim().is_empty()
+                || source.display_name.len() > 512
+                || source.visibility != "shared_graph"
+                || !matches!(
+                    source.sync_state.as_str(),
+                    "pending" | "syncing" | "ready" | "stale" | "failed"
+                )
+                || source
+                    .last_failure_code
+                    .as_ref()
+                    .is_some_and(|value| value.is_empty() || value.len() > 255)
+        })
+    {
+        return Err(AppError::Network(
+            "Project Knowledge returned invalid source inventory".into(),
+        ));
+    }
+    Ok(())
+}
+
 async fn list_knowledge_projects(
     user_id: &str,
     workspace_id: Uuid,
@@ -287,25 +335,36 @@ async fn list_knowledge_projects(
     )
     .await?
     .projects;
-    if projects.len() > 1_000
-        || projects.iter().any(|project| {
-            project.name.is_empty()
-                || project.name.len() > 512
-                || project.revision == 0
-                || project.environments.is_empty()
-                || project.environments.len() > 100
-                || project.environments.iter().any(|environment| {
-                    environment.name.is_empty()
-                        || environment.name.len() > 512
-                        || environment.revision == 0
-                })
-        })
-    {
-        return Err(AppError::Network(
-            "Project Knowledge returned an invalid scope inventory".into(),
-        ));
-    }
+    validate_project_inventory(&projects)?;
     Ok(projects)
+}
+
+async fn list_knowledge_inventory(
+    user_id: &str,
+    workspace_id: Uuid,
+) -> AppResult<RemoteKnowledgeInventory> {
+    let token = bearer(user_id).await?;
+    let response = client()?
+        .get(format!(
+            "{}/api/v1/workspaces/{workspace_id}/knowledge/inventory",
+            origin()?
+        ))
+        .bearer_auth(token.as_str())
+        .send()
+        .await
+        .map_err(|error| request_error("loading Project Knowledge inventory", error))?;
+    if !response.status().is_success() {
+        return Err(oauth_error(response).await);
+    }
+    let inventory: RemoteKnowledgeInventory = bounded_json_response(
+        response,
+        "reading Project Knowledge inventory",
+        MAX_KNOWLEDGE_INVENTORY_RESPONSE_BYTES,
+    )
+    .await?;
+    validate_project_inventory(&inventory.projects)?;
+    validate_source_inventory(&inventory.sources)?;
+    Ok(inventory)
 }
 
 async fn create_knowledge_project(
@@ -659,14 +718,19 @@ async fn download_knowledge_graph(
 async fn list_environment_connections(
     user_id: &str,
     workspace_id: Uuid,
-    environment_id: Uuid,
+    environment_id: Option<Uuid>,
 ) -> AppResult<Vec<RemoteEnvironmentConnectionBinding>> {
     let token = bearer(user_id).await?;
+    let path = environment_id.map_or_else(
+        || format!("/api/v1/workspaces/{workspace_id}/knowledge/environment-connections"),
+        |environment_id| {
+            format!(
+                "/api/v1/workspaces/{workspace_id}/knowledge/environments/{environment_id}/connections"
+            )
+        },
+    );
     let response = client()?
-        .get(format!(
-            "{}/api/v1/workspaces/{workspace_id}/knowledge/environments/{environment_id}/connections",
-            origin()?
-        ))
+        .get(format!("{}{path}", origin()?))
         .bearer_auth(token.as_str())
         .send()
         .await
@@ -674,15 +738,25 @@ async fn list_environment_connections(
     if !response.status().is_success() {
         return Err(oauth_error(response).await);
     }
-    let bindings = knowledge_response::<EnvironmentConnectionBindingsResponse>(
-        response,
-        "reading Environment connections",
-    )
-    .await?
-    .bindings;
-    if bindings.len() > 1_000
+    let parsed: EnvironmentConnectionBindingsResponse = if environment_id.is_some() {
+        knowledge_response(response, "reading Environment connections").await?
+    } else {
+        bounded_json_response(
+            response,
+            "reading Environment connection inventory",
+            MAX_KNOWLEDGE_INVENTORY_RESPONSE_BYTES,
+        )
+        .await?
+    };
+    let bindings = parsed.bindings;
+    let maximum = if environment_id.is_some() {
+        1_000
+    } else {
+        10_000
+    };
+    if bindings.len() > maximum
         || bindings.iter().any(|binding| {
-            binding.project_environment_id != environment_id
+            environment_id.is_some_and(|id| binding.project_environment_id != id)
                 || binding.environment_revision == 0
                 || binding.connection_revision <= 0
                 || binding.current_connection_revision <= 0
@@ -929,27 +1003,7 @@ async fn list_remote_knowledge_sources(
     )
     .await?
     .sources;
-    if sources.len() > 10_000
-        || sources.iter().any(|source| {
-            source.environment_revision == 0
-                || source.sync_revision == 0
-                || source.display_name.trim().is_empty()
-                || source.display_name.len() > 512
-                || source.visibility != "shared_graph"
-                || !matches!(
-                    source.sync_state.as_str(),
-                    "pending" | "syncing" | "ready" | "stale" | "failed"
-                )
-                || source
-                    .last_failure_code
-                    .as_ref()
-                    .is_some_and(|value| value.is_empty() || value.len() > 255)
-        })
-    {
-        return Err(AppError::Network(
-            "Project Knowledge returned invalid source inventory".into(),
-        ));
-    }
+    validate_source_inventory(&sources)?;
     Ok(sources)
 }
 
@@ -1276,10 +1330,18 @@ impl HostedKnowledgeAuthorityPort for HostedKnowledgeAuthority {
         &self,
         account_id: &str,
         workspace_id: Uuid,
-        environment_id: Uuid,
+        environment_id: Option<Uuid>,
     ) -> impl std::future::Future<Output = AppResult<Vec<RemoteEnvironmentConnectionBinding>>> + Send
     {
         list_environment_connections(account_id, workspace_id, environment_id)
+    }
+
+    fn list_inventory(
+        &self,
+        account_id: &str,
+        workspace_id: Uuid,
+    ) -> impl std::future::Future<Output = AppResult<RemoteKnowledgeInventory>> + Send {
+        list_knowledge_inventory(account_id, workspace_id)
     }
 
     fn bind_environment_connection(

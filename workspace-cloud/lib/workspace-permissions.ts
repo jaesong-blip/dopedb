@@ -10,6 +10,12 @@ export type WorkspaceRoleName = (typeof workspaceRoleNames)[number];
 export type WorkspaceCapability = "view" | "read" | "write" | "manage" | "delete";
 export type WorkspaceConnectionCapability = "view" | "use" | "manage";
 
+const workspaceConnectionCapabilityRank: Record<WorkspaceConnectionCapability, number> = {
+  view: 0,
+  use: 1,
+  manage: 2,
+};
+
 const roleRank: Record<WorkspaceRoleName, number> = {
   viewer: 0,
   analyst: 1,
@@ -28,6 +34,20 @@ const requiredRank: Record<WorkspaceCapability, number> = {
 
 export function isWorkspaceRole(value: string): value is WorkspaceRoleName {
   return workspaceRoleNames.includes(value as WorkspaceRoleName);
+}
+
+export function isWorkspaceConnectionCapability(
+  value: string,
+): value is WorkspaceConnectionCapability {
+  return value === "view" || value === "use" || value === "manage";
+}
+
+export function hasWorkspaceConnectionCapability(
+  actual: WorkspaceConnectionCapability,
+  required: WorkspaceConnectionCapability,
+): boolean {
+  return workspaceConnectionCapabilityRank[actual]
+    >= workspaceConnectionCapabilityRank[required];
 }
 
 export function hasWorkspaceCapability(

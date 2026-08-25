@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { auth } from "../../../../lib/auth";
 import { authoritativeSession } from "../../../../lib/authoritative-session";
 import { db } from "../../../../lib/db";
@@ -15,7 +15,7 @@ import {
   isPersonalKnowledgeMetadata,
   isPersonalKnowledgeOrganization,
 } from "../../../../lib/knowledge/personal-scope";
-import { member, workspaceProfile } from "../../../../lib/schema";
+import { member, organization, workspaceProfile } from "../../../../lib/schema";
 
 export async function GET(request: Request) {
   const session = await authoritativeSession(request);
@@ -26,34 +26,30 @@ export async function GET(request: Request) {
     user: session.user,
     activeOrganizationId: session.session.activeOrganizationId,
   });
-  const workspaces = await auth.api.listOrganizations({ headers: request.headers });
-  const roles = workspaces.length > 0
-    ? await db.select({ organizationId: member.organizationId, role: member.role })
-        .from(member)
-        .innerJoin(
-          workspaceProfile,
-          eq(workspaceProfile.organizationId, member.organizationId),
-        )
-        .where(and(
-          eq(member.userId, session.user.id),
-          inArray(member.organizationId, workspaces.map((workspace) => workspace.id)),
-          isNull(member.revocationPendingAt),
-          eq(workspaceProfile.lifecycleState, "active"),
-        ))
-    : [];
-  const roleByWorkspace = new Map(roles.map((membership) => [
-    membership.organizationId,
-    membership.role,
-  ]));
+  const workspaces = await db.select({
+    id: organization.id,
+    name: organization.name,
+    slug: organization.slug,
+    logo: organization.logo,
+    metadata: organization.metadata,
+    createdAt: organization.createdAt,
+    role: member.role,
+  }).from(member).innerJoin(
+    organization,
+    eq(organization.id, member.organizationId),
+  ).innerJoin(
+    workspaceProfile,
+    eq(workspaceProfile.organizationId, member.organizationId),
+  ).where(and(
+    eq(member.userId, session.user.id),
+    isNull(member.revocationPendingAt),
+    eq(workspaceProfile.lifecycleState, "active"),
+  ));
   return privateJson({
     workspaces: workspaces.filter((workspace) => (
-      roleByWorkspace.has(workspace.id)
-      && !isPersonalKnowledgeOrganization(session.user.id, workspace.id)
+      !isPersonalKnowledgeOrganization(session.user.id, workspace.id)
       && !isPersonalKnowledgeMetadata(workspace.metadata)
-    )).map((workspace) => ({
-      ...workspace,
-      role: roleByWorkspace.get(workspace.id) ?? "viewer",
-    })),
+    )),
   });
 }
 

@@ -261,7 +261,7 @@ impl KnowledgeRepositoryPort for SqliteKnowledgeRepository {
     async fn environment_connections(
         &self,
         workspace_id: Uuid,
-        environment_id: Uuid,
+        environment_id: Option<Uuid>,
     ) -> AppResult<Vec<EnvironmentConnectionBinding>> {
         self.store
             .environment_connections(workspace_id, environment_id)
@@ -302,6 +302,15 @@ impl KnowledgeRepositoryPort for SqliteKnowledgeRepository {
     ) -> AppResult<Option<Uuid>> {
         self.store
             .local_connection_id_for_remote(workspace_id, remote_id)
+            .await
+    }
+
+    async fn local_connection_ids_for_remote(
+        &self,
+        workspace_id: Uuid,
+    ) -> AppResult<Vec<(Uuid, Uuid)>> {
+        self.store
+            .local_connection_ids_for_remote(workspace_id)
             .await
     }
 }

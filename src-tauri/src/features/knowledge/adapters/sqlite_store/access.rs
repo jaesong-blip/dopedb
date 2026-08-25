@@ -16,6 +16,8 @@ use crate::store::{parse_uuid, Store};
 
 use super::codec::{parse_risk_class, u64_to_i64, EnvironmentConnectionRow};
 
+const MAX_WORKSPACE_BINDING_INVENTORY: usize = 10_000;
+
 impl Store {
     async fn github_session_sources(
         &self,
@@ -252,7 +254,7 @@ impl Store {
             )
         };
         let bindings = self
-            .environment_connections(connection.scope.workspace_id, project_environment_id)
+            .environment_connections(connection.scope.workspace_id, Some(project_environment_id))
             .await?;
         if bindings.len() > 32 {
             return Err(AppError::Blocked {
@@ -512,7 +514,7 @@ impl Store {
             });
         }
         transaction.commit().await?;
-        self.environment_connections(connection.scope.workspace_id, project_environment_id)
+        self.environment_connections(connection.scope.workspace_id, Some(project_environment_id))
             .await?
             .into_iter()
             .find(|binding| binding.connection_id == connection.connection_id)
@@ -553,10 +555,34 @@ impl Store {
         id.map(parse_uuid).transpose()
     }
 
+    pub(in crate::features::knowledge::adapters) async fn local_connection_ids_for_remote(
+        &self,
+        workspace_id: Uuid,
+    ) -> AppResult<Vec<(Uuid, Uuid)>> {
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT id, remote_id FROM connections
+             WHERE workspace_id = ?1 AND remote_id IS NOT NULL AND deleted_at IS NULL
+             ORDER BY id
+             LIMIT ?2",
+        )
+        .bind(workspace_id.to_string())
+        .bind((MAX_WORKSPACE_BINDING_INVENTORY + 1) as i64)
+        .fetch_all(self.pool())
+        .await?;
+        if rows.len() > MAX_WORKSPACE_BINDING_INVENTORY {
+            return Err(AppError::Blocked {
+                reason: "the workspace has too many shared database connections".into(),
+            });
+        }
+        rows.into_iter()
+            .map(|(local_id, remote_id)| Ok((parse_uuid(remote_id)?, parse_uuid(local_id)?)))
+            .collect()
+    }
+
     pub(in crate::features::knowledge::adapters) async fn environment_connections(
         &self,
         workspace_id: Uuid,
-        project_environment_id: Uuid,
+        project_environment_id: Option<Uuid>,
     ) -> AppResult<Vec<EnvironmentConnectionBinding>> {
         let rows: Vec<EnvironmentConnectionRow> = sqlx::query_as(
             "SELECT binding.id, binding.workspace_id, binding.project_environment_id,
@@ -570,17 +596,24 @@ impl Store {
                  JOIN knowledge_projects project ON project.id = environment.project_id
                  JOIN connections connection ON connection.id = binding.connection_id
                  WHERE binding.workspace_id = ?1
-                   AND binding.project_environment_id = ?2
+                   AND (?2 IS NULL OR binding.project_environment_id = ?2)
                    AND binding.revoked_at IS NULL
                    AND project.workspace_id = binding.workspace_id
                    AND connection.workspace_id = binding.workspace_id
                    AND connection.deleted_at IS NULL
-                 ORDER BY binding.role, binding.alias, binding.id",
+                 ORDER BY binding.role, binding.alias, binding.id
+                 LIMIT ?3",
         )
         .bind(workspace_id.to_string())
-        .bind(project_environment_id.to_string())
+        .bind(project_environment_id.map(|id| id.to_string()))
+        .bind((MAX_WORKSPACE_BINDING_INVENTORY + 1) as i64)
         .fetch_all(self.pool())
         .await?;
+        if rows.len() > MAX_WORKSPACE_BINDING_INVENTORY {
+            return Err(AppError::Blocked {
+                reason: "the workspace has too many Environment connection bindings".into(),
+            });
+        }
         rows.into_iter()
             .map(
                 |(

@@ -40,10 +40,9 @@ import type {
 import { bindKnowledgeEnvironmentConnectionWithRefresh } from "../../features/knowledge/bindEnvironmentConnection";
 import {
   listKnowledgeEnvironmentConnections,
-  listKnowledgeProjects,
-  listKnowledgeSources,
   onKnowledgeSourceChanged,
 } from "../../features/knowledge/tauriAdapter";
+import { knowledgeInventoryQuery } from "../../features/knowledge/inventory";
 import { captureProductEvent } from "../../features/productAnalytics/client";
 import {
   productAnalyticsAccessMode,
@@ -230,17 +229,14 @@ export function DatabaseExplorer({
       catalogScope.accountScope !== null);
   const sharedKnowledgeWorkspace =
     knowledgeEnabled && sharedWorkspaceScopeAvailable(catalogScope);
+  const inventoryQuery = knowledgeInventoryQuery(catalogScope.key, knowledgeEnabled);
   const knowledgeProjects = useQuery({
-    queryKey: knowledgeQueryKeys.projects(catalogScope.key),
-    queryFn: listKnowledgeProjects,
-    enabled: knowledgeEnabled,
-    retry: false,
+    ...inventoryQuery,
+    select: (inventory) => inventory.projects,
   });
   const knowledgeSources = useQuery({
-    queryKey: knowledgeQueryKeys.sources(catalogScope.key),
-    queryFn: listKnowledgeSources,
-    enabled: knowledgeEnabled,
-    retry: false,
+    ...inventoryQuery,
+    select: (inventory) => inventory.sources,
   });
   const knowledgeSourcesPhase = queryResultPhase(
     knowledgeSources.data,
@@ -253,16 +249,12 @@ export function DatabaseExplorer({
       ),
     [knowledgeProjects.data],
   );
-  const environmentConnectionQueries = useQueries({
-    queries: projectEnvironmentIds.map((environmentId) => ({
-      queryKey: knowledgeQueryKeys.environmentConnections(
-        environmentId,
-        catalogScope.key,
-      ),
-      queryFn: () => listKnowledgeEnvironmentConnections(environmentId),
-      enabled: knowledgeEnabled,
-      retry: false,
-    })),
+  const environmentConnections = useQuery({
+    queryKey: knowledgeQueryKeys.environmentConnections(undefined, catalogScope.key),
+    queryFn: () => listKnowledgeEnvironmentConnections(),
+    enabled: knowledgeEnabled,
+    retry: false,
+    staleTime: 60_000,
   });
   const [globalFilter, setGlobalFilter] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -393,7 +385,7 @@ export function DatabaseExplorer({
     void onKnowledgeSourceChanged(() => {
       if (disposed) return;
       void queryClient.invalidateQueries({
-        queryKey: knowledgeQueryKeys.sources(),
+        queryKey: knowledgeQueryKeys.inventory(),
       });
       void queryClient.invalidateQueries({
         queryKey: knowledgeQueryKeys.agentEnvironments(),
@@ -409,15 +401,12 @@ export function DatabaseExplorer({
   }, [knowledgeEnabled, queryClient]);
 
   const environmentConnectionsById = new Map<string, EnvironmentConnection[]>();
-  projectEnvironmentIds.forEach((environmentId, index) => {
-    environmentConnectionsById.set(
-      environmentId,
-      environmentConnectionQueries[index]?.data ?? [],
-    );
-  });
-  const environmentBindingsReady =
-    environmentConnectionQueries.length === projectEnvironmentIds.length &&
-    environmentConnectionQueries.every((query) => query.isSuccess);
+  for (const binding of environmentConnections.data ?? []) {
+    const current = environmentConnectionsById.get(binding.projectEnvironmentId) ?? [];
+    current.push(binding);
+    environmentConnectionsById.set(binding.projectEnvironmentId, current);
+  }
+  const environmentBindingsReady = environmentConnections.isSuccess;
   const boundConnectionIds = new Set(
     environmentBindingsReady
       ? [...environmentConnectionsById.values()].flatMap((bindings) =>
@@ -436,9 +425,9 @@ export function DatabaseExplorer({
     unassignedConnections.map((connection) => connection.id),
   );
   const environmentDropTargets = projectEnvironmentIds.map(
-    (environmentId, index) => ({
+    (environmentId) => ({
       id: environmentId,
-      accepting: environmentConnectionQueries[index]?.isSuccess === true,
+      accepting: environmentConnections.isSuccess,
       connectionIds: new Set(
         (environmentConnectionsById.get(environmentId) ?? []).flatMap(
           (binding) => (binding.connectionId ? [binding.connectionId] : []),
@@ -465,10 +454,7 @@ export function DatabaseExplorer({
       });
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: knowledgeQueryKeys.environmentConnections(
-            environmentId,
-            catalogScope.key,
-          ),
+          queryKey: knowledgeQueryKeys.environmentConnections(),
           refetchType: "active",
         }),
         queryClient.invalidateQueries({
@@ -786,11 +772,7 @@ export function DatabaseExplorer({
           refetchType: "active",
         }),
         queryClient.invalidateQueries({
-          queryKey: knowledgeQueryKeys.projects(scopeKey),
-          refetchType: "active",
-        }),
-        queryClient.invalidateQueries({
-          queryKey: knowledgeQueryKeys.sources(scopeKey),
+          queryKey: knowledgeQueryKeys.inventory(scopeKey),
           refetchType: "active",
         }),
         queryClient.invalidateQueries({
@@ -1144,7 +1126,7 @@ export function DatabaseExplorer({
     const sourceKey = `${environment.id}:sources`;
     const analysisKey = `${environment.id}:analyses`;
     const environmentIndex = projectEnvironmentIds.indexOf(environment.id);
-    const bindingQuery = environmentConnectionQueries[environmentIndex];
+    const bindingQuery = environmentConnections;
     const bindingPhase = queryResultPhase(
       bindingQuery?.data,
       bindingQuery?.error,

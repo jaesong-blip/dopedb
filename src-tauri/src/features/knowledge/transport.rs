@@ -4,6 +4,7 @@
 //! installation tokens remain in the control plane, and Local Folder paths stay
 //! behind this native command boundary and the OS credential store.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use dopedb_protocol::{
@@ -193,6 +194,13 @@ pub(crate) struct EnvironmentConnectionProjection {
     role: String,
     alias: String,
     stale: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct KnowledgeInventoryProjection {
+    projects: Vec<RemoteKnowledgeProject>,
+    sources: Vec<KnowledgeSourceProjection>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -801,14 +809,16 @@ pub(crate) async fn connect_knowledge_local_folder(
     ))
 }
 
-#[tauri::command]
-pub(crate) async fn list_knowledge_sources(
-    state: State<'_, AppState>,
+async fn knowledge_sources_for_scope(
+    state: &AppState,
+    scope: &ActiveResourceScope,
+    prefetched_remote: Option<(Vec<RemoteKnowledgeProject>, Vec<RemoteKnowledgeSource>)>,
 ) -> AppResult<Vec<KnowledgeSourceProjection>> {
-    let scope = state.services.knowledge.active_resource_scope().await?;
-    let (remote_projects, remote_sources, remote_authoritative) = if scope.workspace_kind
-        == WorkspaceKind::Team
+    let (remote_projects, remote_sources, remote_authoritative) = if let Some((projects, sources)) =
+        prefetched_remote
     {
+        (projects, sources, true)
+    } else if scope.workspace_kind == WorkspaceKind::Team {
         let account = selected_team_account(&scope)?;
         let projects = state
             .services
@@ -822,7 +832,7 @@ pub(crate) async fn list_knowledge_sources(
             .await?;
         (projects, sources, true)
     } else if scope.selected_account_id.is_some() {
-        match active_remote_scope(&state).await {
+        match active_remote_scope(state).await {
             Ok(remote) => match state
                 .services
                 .knowledge
@@ -883,9 +893,52 @@ pub(crate) async fn list_knowledge_sources(
             }
             continue;
         }
-        projections.push(project_source(&state, source, remote).await?);
+        projections.push(project_source(state, source, remote).await?);
     }
     Ok(projections)
+}
+
+#[tauri::command]
+pub(crate) async fn list_knowledge_sources(
+    state: State<'_, AppState>,
+) -> AppResult<Vec<KnowledgeSourceProjection>> {
+    let scope = state.services.knowledge.active_resource_scope().await?;
+    knowledge_sources_for_scope(&state, &scope, None).await
+}
+
+#[tauri::command]
+pub(crate) async fn list_knowledge_inventory_command(
+    state: State<'_, AppState>,
+) -> AppResult<KnowledgeInventoryProjection> {
+    let scope = state.services.knowledge.active_resource_scope().await?;
+    if scope.workspace_kind == WorkspaceKind::Team {
+        let account = selected_team_account(&scope)?;
+        let inventory = state
+            .services
+            .knowledge
+            .list_remote_inventory(account.as_str(), scope.workspace_id)
+            .await?;
+        if let Err(error) =
+            persist_team_project_inventory(&state, &scope, &inventory.projects).await
+        {
+            tracing::warn!(
+                workspace_id = %scope.workspace_id,
+                error_kind = error.kind(),
+                "Project Knowledge inventory cache refresh deferred"
+            );
+        }
+        let projects = inventory.projects;
+        let sources = knowledge_sources_for_scope(
+            &state,
+            &scope,
+            Some((projects.clone(), inventory.sources)),
+        )
+        .await?;
+        return Ok(KnowledgeInventoryProjection { projects, sources });
+    }
+    let projects = fetch_active_project_inventory(&state, &scope).await?;
+    let sources = knowledge_sources_for_scope(&state, &scope, None).await?;
+    Ok(KnowledgeInventoryProjection { projects, sources })
 }
 
 #[tauri::command]
@@ -1143,7 +1196,7 @@ pub(crate) async fn decide_knowledge_mapping(
 #[tauri::command]
 pub(crate) async fn list_knowledge_environment_connections(
     state: State<'_, AppState>,
-    project_environment_id: Uuid,
+    project_environment_id: Option<Uuid>,
 ) -> AppResult<Vec<EnvironmentConnectionProjection>> {
     let scope = state.services.knowledge.active_resource_scope().await?;
     if scope.workspace_kind == WorkspaceKind::Team {
@@ -1157,13 +1210,16 @@ pub(crate) async fn list_knowledge_environment_connections(
                 project_environment_id,
             )
             .await?;
+        let local_connection_ids = state
+            .services
+            .knowledge
+            .local_connection_ids_for_remote(scope.workspace_id)
+            .await?
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
         let mut projections = Vec::with_capacity(remote.len());
         for binding in remote {
-            let local_connection_id = state
-                .services
-                .knowledge
-                .local_connection_id_for_remote(scope.workspace_id, binding.connection_id)
-                .await?;
+            let local_connection_id = local_connection_ids.get(&binding.connection_id).copied();
             projections.push(EnvironmentConnectionProjection {
                 id: binding.id,
                 project_environment_id: binding.project_environment_id,

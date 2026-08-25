@@ -18,7 +18,8 @@ import {
   knowledgeMutationAuthority,
   knowledgeMutationAuthoritySql,
 } from "@/lib/knowledge/mutation-authority";
-import { knowledgeProject, knowledgeProjectEnvironment } from "@/lib/schema";
+import { listKnowledgeProjects } from "@/lib/knowledge/inventory";
+import { knowledgeProject } from "@/lib/schema";
 import { authorizeWorkspace } from "@/lib/workspace-authorization";
 import {
   databaseErrorCode,
@@ -32,27 +33,7 @@ export async function GET(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId)) return jsonError("Invalid workspace id", 400);
   const authorization = await authorizeWorkspace(request, workspaceId, "view");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
-  const [projects, environments] = await Promise.all([
-    db.select().from(knowledgeProject).where(eq(knowledgeProject.organizationId, workspaceId)),
-    db.select().from(knowledgeProjectEnvironment).where(eq(
-      knowledgeProjectEnvironment.organizationId,
-      workspaceId,
-    )),
-  ]);
-  return privateJson({
-    projects: projects.map((project) => ({
-      id: project.id,
-      name: project.name,
-      revision: project.revision,
-      environments: environments.filter((environment) => environment.projectId === project.id)
-        .map((environment) => ({
-          id: environment.id,
-          name: environment.name,
-          riskClass: environment.riskClass,
-          revision: environment.revision,
-        })),
-    })),
-  });
+  return privateJson({ projects: await listKnowledgeProjects(workspaceId) });
 }
 
 export async function POST(request: Request, context: RouteContext) {

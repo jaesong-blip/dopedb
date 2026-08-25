@@ -10,11 +10,15 @@ import {
   workspaceConnection,
   workspaceConnectionGrant,
   workspaceProfile,
+  workspaceProviderIntegration,
+  workspaceProviderResource,
 } from "./schema";
 import {
   accessModeForRole,
   accessModeForConnectionGrant,
   hasWorkspaceCapability,
+  hasWorkspaceConnectionCapability,
+  isWorkspaceConnectionCapability,
   isWorkspaceRole,
   type WorkspaceCapability,
   type WorkspaceConnectionCapability,
@@ -22,12 +26,6 @@ import {
 
 export type { WorkspaceRoleName } from "./workspace-permissions";
 export type { WorkspaceConnectionCapability } from "./workspace-permissions";
-
-const connectionCapabilityRank: Record<WorkspaceConnectionCapability, number> = {
-  view: 0,
-  use: 1,
-  manage: 2,
-};
 
 export async function authorizeWorkspace(
   request: Request,
@@ -141,8 +139,12 @@ export async function authorizeWorkspaceConnection(
       isNull(workspaceConnection.revocationPendingAt),
     ))
     .limit(1);
-  const capability = grant?.capability as WorkspaceConnectionCapability | undefined;
-  if (!capability || connectionCapabilityRank[capability] < connectionCapabilityRank[required]) {
+  const capability = grant?.capability;
+  if (
+    !capability
+    || !isWorkspaceConnectionCapability(capability)
+    || !hasWorkspaceConnectionCapability(capability, required)
+  ) {
     return { ok: false as const, status: 403, error: "Connection grant denied" };
   }
   return {
@@ -150,5 +152,111 @@ export async function authorizeWorkspaceConnection(
     ok: true as const,
     connectionCapability: capability,
     accessMode: accessModeForConnectionGrant(workspace.role, capability),
+  };
+}
+
+/**
+ * Hot Broker preflight for one database action. Session lookup remains the
+ * identity boundary, while membership, grant, connection, integration, and
+ * provider capability are resolved in one tenant-scoped query.
+ */
+export async function authorizeWorkspaceConnectionAction(
+  request: Request,
+  organizationId: string,
+  connectionId: string,
+  required: WorkspaceConnectionCapability,
+) {
+  const session = await authoritativeSession(request);
+  if (!session) return { ok: false as const, status: 401, error: "Unauthorized" };
+  const [row] = await db.select({
+    membership: member,
+    lifecycleState: workspaceProfile.lifecycleState,
+    connection: {
+      id: workspaceConnection.id,
+      revision: workspaceConnection.revision,
+      contentRevision: workspaceConnection.contentRevision,
+      readonlyDefault: workspaceConnection.readonlyDefault,
+      allowWrites: workspaceConnection.allowWrites,
+      credentialMode: workspaceConnection.credentialMode,
+      provider: workspaceConnection.provider,
+      providerIntegrationId: workspaceConnection.providerIntegrationId,
+      revocationPendingAt: workspaceConnection.revocationPendingAt,
+    },
+    connectionCapability: workspaceConnectionGrant.capability,
+    integrationStatus: workspaceProviderIntegration.status,
+    integrationProvider: workspaceProviderIntegration.provider,
+    integrationRevokedAt: workspaceProviderIntegration.revokedAt,
+    integrationRevocationPendingAt: workspaceProviderIntegration.revocationPendingAt,
+    integrationRevocationClaimId: workspaceProviderIntegration.revocationClaimId,
+    providerCapabilityManifest: workspaceProviderResource.capabilityManifest,
+  }).from(member).innerJoin(
+    workspaceProfile,
+    eq(workspaceProfile.organizationId, member.organizationId),
+  ).innerJoin(
+    workspaceConnectionGrant,
+    and(
+      eq(workspaceConnectionGrant.organizationId, member.organizationId),
+      eq(workspaceConnectionGrant.memberId, member.id),
+      eq(workspaceConnectionGrant.connectionId, connectionId),
+    ),
+  ).innerJoin(
+    workspaceConnection,
+    and(
+      eq(workspaceConnection.organizationId, workspaceConnectionGrant.organizationId),
+      eq(workspaceConnection.id, workspaceConnectionGrant.connectionId),
+      isNull(workspaceConnection.deletedAt),
+    ),
+  ).leftJoin(
+    workspaceProviderIntegration,
+    and(
+      eq(workspaceProviderIntegration.organizationId, workspaceConnection.organizationId),
+      eq(workspaceProviderIntegration.id, workspaceConnection.providerIntegrationId),
+    ),
+  ).leftJoin(
+    workspaceProviderResource,
+    and(
+      eq(workspaceProviderResource.organizationId, workspaceConnection.organizationId),
+      eq(workspaceProviderResource.id, workspaceConnection.providerResourceId),
+      eq(workspaceProviderResource.provider, workspaceConnection.provider),
+    ),
+  ).where(and(
+    eq(member.organizationId, organizationId),
+    eq(member.userId, session.user.id),
+    isNull(member.revocationPendingAt),
+    eq(workspaceConnection.id, connectionId),
+  )).limit(1);
+  if (
+    !row
+    || row.lifecycleState !== "active"
+    || !isWorkspaceRole(row.membership.role)
+    || !hasWorkspaceCapability(row.membership.role, "view")
+  ) {
+    return { ok: false as const, status: 403, error: "Workspace access denied" };
+  }
+  if (
+    !isWorkspaceConnectionCapability(row.connectionCapability)
+    || !hasWorkspaceConnectionCapability(row.connectionCapability, required)
+  ) {
+    return { ok: false as const, status: 403, error: "Connection grant denied" };
+  }
+  return {
+    ok: true as const,
+    session,
+    membership: row.membership,
+    role: row.membership.role,
+    connectionCapability: row.connectionCapability,
+    accessMode: accessModeForConnectionGrant(
+      row.membership.role,
+      row.connectionCapability,
+    ),
+    connection: {
+      ...row.connection,
+      integrationStatus: row.integrationStatus,
+      integrationProvider: row.integrationProvider,
+      integrationRevokedAt: row.integrationRevokedAt,
+      integrationRevocationPendingAt: row.integrationRevocationPendingAt,
+      integrationRevocationClaimId: row.integrationRevocationClaimId,
+      providerCapabilityManifest: row.providerCapabilityManifest,
+    },
   };
 }

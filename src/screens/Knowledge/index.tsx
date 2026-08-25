@@ -62,14 +62,13 @@ import {
   listKnowledgeGithubRepositories,
   listKnowledgeMappings,
   listKnowledgeEnvironmentConnections,
-  listKnowledgeProjects,
-  listKnowledgeSources,
   onKnowledgeSourceChanged,
   revokeKnowledgeSource,
   revokeKnowledgeEnvironmentConnection,
   searchKnowledgeGraph,
   syncKnowledgeSource,
 } from "../../features/knowledge/tauriAdapter";
+import { knowledgeInventoryQuery } from "../../features/knowledge/inventory";
 import AnalysisArticles from "./AnalysisArticles";
 
 function repositoryLabel(
@@ -169,17 +168,23 @@ export default function Knowledge({
   const personalWorkspace = catalogScope.workspaceKind === "personal";
   const personalAuthResolved =
     !personalWorkspace || workspaceAuth.data !== undefined || workspaceAuth.isError;
-  const projectKey = knowledgeQueryKeys.projects(catalogScope.key);
-  const sourceKey = knowledgeQueryKeys.sources(catalogScope.key);
+  const inventoryKey = knowledgeQueryKeys.inventory(catalogScope.key);
+  const sourceKey = inventoryKey;
   const repositoryKey = knowledgeQueryKeys.githubRepositories(catalogScope.key);
   const sharedWorkspace = sharedWorkspaceScopeAvailable(catalogScope);
   const githubProviderVisible = sharedWorkspace || personalWorkspace;
   const githubAvailable = sharedWorkspace || signedInPersonalAccount !== null;
-  const projects = useQuery({ queryKey: projectKey, queryFn: listKnowledgeProjects });
+  const inventoryQuery = knowledgeInventoryQuery(
+    catalogScope.key,
+    personalAuthResolved,
+  );
+  const projects = useQuery({
+    ...inventoryQuery,
+    select: (inventory) => inventory.projects,
+  });
   const sources = useQuery({
-    queryKey: sourceKey,
-    queryFn: listKnowledgeSources,
-    enabled: personalAuthResolved,
+    ...inventoryQuery,
+    select: (inventory) => inventory.sources,
   });
   const projectsPhase = queryResultPhase(projects.data, projects.error);
   const sourcesPhase = queryResultPhase(sources.data, sources.error);
@@ -392,7 +397,7 @@ export default function Knowledge({
           "success",
         );
         void queryClient.invalidateQueries({
-          queryKey: knowledgeQueryKeys.sources(),
+          queryKey: knowledgeQueryKeys.inventory(),
         });
         void queryClient.invalidateQueries({
           queryKey: knowledgeQueryKeys.agentEnvironments(),
@@ -703,7 +708,7 @@ export default function Knowledge({
       }
       setActionError(null);
       await queryClient.invalidateQueries({
-        queryKey: knowledgeQueryKeys.environmentConnections(environmentId),
+        queryKey: knowledgeQueryKeys.environmentConnections(),
       });
       await queryClient.invalidateQueries({
         queryKey: knowledgeQueryKeys.agentEnvironments(),
@@ -720,7 +725,7 @@ export default function Knowledge({
     onSuccess: async () => {
       setActionError(null);
       await queryClient.invalidateQueries({
-        queryKey: knowledgeQueryKeys.environmentConnections(environmentId),
+        queryKey: knowledgeQueryKeys.environmentConnections(),
       });
       await queryClient.invalidateQueries({
         queryKey: knowledgeQueryKeys.agentEnvironments(),

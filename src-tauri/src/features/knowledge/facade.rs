@@ -23,8 +23,9 @@ use super::ports::{
     AppendKnowledgeEnvironmentRequest, CreateKnowledgeProjectRequest, CreateKnowledgeSourceRequest,
     HostedKnowledgeAuthorityPort, KnowledgeRepositoryPort, PinnedSourceReadRequest,
     PinnedSourceSearchRequest, RemoteEnvironmentConnectionBinding, RemoteGithubRepository,
-    RemoteKnowledgeProject, RemoteKnowledgeSource, RemoteKnowledgeSyncProgress,
-    RemotePersonalKnowledgeScope, RemoteSourceReadResult, RemoteSourceSearchResult,
+    RemoteKnowledgeInventory, RemoteKnowledgeProject, RemoteKnowledgeSource,
+    RemoteKnowledgeSyncProgress, RemotePersonalKnowledgeScope, RemoteSourceReadResult,
+    RemoteSourceSearchResult,
 };
 use super::KnowledgeAccessReconciliation;
 
@@ -287,7 +288,7 @@ where
     pub(crate) async fn environment_connections(
         &self,
         workspace_id: Uuid,
-        environment_id: Uuid,
+        environment_id: Option<Uuid>,
     ) -> AppResult<Vec<EnvironmentConnectionBinding>> {
         self.repository
             .environment_connections(workspace_id, environment_id)
@@ -331,6 +332,15 @@ where
     ) -> AppResult<Option<Uuid>> {
         self.repository
             .local_connection_id_for_remote(workspace_id, remote_id)
+            .await
+    }
+
+    pub(crate) async fn local_connection_ids_for_remote(
+        &self,
+        workspace_id: Uuid,
+    ) -> AppResult<Vec<(Uuid, Uuid)>> {
+        self.repository
+            .local_connection_ids_for_remote(workspace_id)
             .await
     }
 
@@ -418,10 +428,20 @@ where
         &self,
         account_id: &str,
         workspace_id: Uuid,
-        environment_id: Uuid,
+        environment_id: Option<Uuid>,
     ) -> AppResult<Vec<RemoteEnvironmentConnectionBinding>> {
         self.authority
             .list_environment_connections(account_id, workspace_id, environment_id)
+            .await
+    }
+
+    pub(crate) async fn list_remote_inventory(
+        &self,
+        account_id: &str,
+        workspace_id: Uuid,
+    ) -> AppResult<RemoteKnowledgeInventory> {
+        self.authority
+            .list_inventory(account_id, workspace_id)
             .await
     }
 

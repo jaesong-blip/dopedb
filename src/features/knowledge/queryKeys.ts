@@ -12,6 +12,10 @@ export const knowledgeQueryScope = {
 
 export const knowledgeQueryKeys = {
   all: () => [KNOWLEDGE_WORKSPACE_QUERY_ROOTS[0]] as const,
+  inventory: (scopeKey?: string) =>
+    scopeKey === undefined
+      ? ([KNOWLEDGE_WORKSPACE_QUERY_ROOTS[0], "inventory"] as const)
+      : ([KNOWLEDGE_WORKSPACE_QUERY_ROOTS[0], "inventory", scopeKey] as const),
   projects: (scopeKey: string) =>
     [KNOWLEDGE_WORKSPACE_QUERY_ROOTS[0], "projects", scopeKey] as const,
   sources: (scopeKey?: string) =>
@@ -28,7 +32,14 @@ export const knowledgeQueryKeys = {
     ] as const,
   environmentConnections: (environmentId?: string, scopeKey?: string) =>
     environmentId === undefined
-      ? ([KNOWLEDGE_WORKSPACE_QUERY_ROOTS[0], "environment-connections"] as const)
+      ? scopeKey === undefined
+        ? ([KNOWLEDGE_WORKSPACE_QUERY_ROOTS[0], "environment-connections"] as const)
+        : ([
+            KNOWLEDGE_WORKSPACE_QUERY_ROOTS[0],
+            "environment-connections",
+            "all",
+            scopeKey,
+          ] as const)
       : scopeKey === undefined
         ? ([
             KNOWLEDGE_WORKSPACE_QUERY_ROOTS[0],

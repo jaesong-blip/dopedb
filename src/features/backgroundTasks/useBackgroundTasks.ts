@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useMemo, useState } from "react";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 
 import type { ConnectionProfile } from "../connections/domain";
 import {
@@ -15,12 +15,6 @@ import type { Job } from "../jobs/domain";
 import { cancelJob } from "../jobs/tauriAdapter";
 import { jobsQuery, qk } from "../../lib/queries";
 import { usePostPaintReady } from "../../lib/usePostPaintReady";
-import {
-  knowledgeSyncOverallPercent,
-  knowledgeSyncProgressQuery,
-  knowledgeSyncRemainingFiles,
-} from "../knowledge/syncProgress";
-import { knowledgeQueryKeys } from "../knowledge/queryKeys";
 import type { BackgroundTask, BackgroundTaskStatus } from "./domain";
 
 const ACTIVE_JOB_STATES = new Set<Job["state"]>([
@@ -65,12 +59,10 @@ export function useBackgroundTasks({
   connections,
   queryServiceStore,
   workspaceScopeKey,
-  knowledgeSyncEnabled,
 }: {
   connections: ConnectionProfile[];
   queryServiceStore: QueryServiceStore;
   workspaceScopeKey: string;
-  knowledgeSyncEnabled: boolean;
 }) {
   const queryClient = useQueryClient();
   const postPaintReady = usePostPaintReady();
@@ -88,32 +80,6 @@ export function useBackgroundTasks({
       enabled: postPaintReady,
     })),
   });
-  const knowledgeSyncProgress = useQuery(
-    knowledgeSyncProgressQuery(
-      workspaceScopeKey,
-      postPaintReady && knowledgeSyncEnabled,
-    ),
-  );
-  const previousKnowledgeProgressIds = useRef<ReadonlySet<string>>(new Set());
-
-  useEffect(() => {
-    if (!knowledgeSyncProgress.data) return;
-    const next = new Set(
-      knowledgeSyncProgress.data.map((progress) => progress.sourceId),
-    );
-    const completed = [...previousKnowledgeProgressIds.current].some(
-      (sourceId) => !next.has(sourceId),
-    );
-    previousKnowledgeProgressIds.current = next;
-    if (!completed) return;
-    void queryClient.invalidateQueries({
-      queryKey: knowledgeQueryKeys.sources(workspaceScopeKey),
-    });
-    void queryClient.invalidateQueries({
-      queryKey: knowledgeQueryKeys.agentEnvironments(),
-    });
-  }, [knowledgeSyncProgress.data, queryClient, workspaceScopeKey]);
-
   const tasks = useMemo(() => {
     const connectionNames = new Map(
       connections.map((connection) => [
@@ -182,36 +148,13 @@ export function useBackgroundTasks({
         }];
       })
     );
-    const knowledgeTasks: BackgroundTask[] =
-      (knowledgeSyncProgress.data ?? []).map((progress) => ({
-        kind: "knowledge",
-        key: `knowledge:${progress.sourceId}`,
-        sourceId: progress.sourceId,
-        projectEnvironmentId: progress.projectEnvironmentId,
-        projectName: progress.projectName,
-        environmentName: progress.environmentName,
-        title: progress.displayName,
-        status: progress.retryAt === null ? "running" : "starting",
-        progress: knowledgeSyncOverallPercent(progress),
-        rowsProcessed: null,
-        updatedAt: Date.parse(progress.updatedAt) || 0,
-        phase: progress.phase,
-        totalFiles: progress.totalFiles,
-        completedFiles: progress.completedFiles,
-        remainingFiles: knowledgeSyncRemainingFiles(progress),
-        attempt: progress.attempt,
-        retryAt: progress.retryAt,
-        cancellable: false,
-      }));
-
-    return [...queryTasks, ...agentTasks, ...jobTasks, ...knowledgeTasks].sort(
+    return [...queryTasks, ...agentTasks, ...jobTasks].sort(
       (left, right) => right.updatedAt - left.updatedAt,
     );
   }, [
     agentSessions,
     connections,
     jobQueries,
-    knowledgeSyncProgress.data,
     querySessions,
   ]);
 

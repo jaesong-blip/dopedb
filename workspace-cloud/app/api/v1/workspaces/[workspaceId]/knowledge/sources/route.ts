@@ -13,6 +13,7 @@ import {
   listGithubRepositories,
   resolveGithubCommit,
 } from "@/lib/knowledge/github-app";
+import { listKnowledgeSources } from "@/lib/knowledge/inventory";
 import {
   knowledgeMutationAuthority,
   knowledgeMutationAuthoritySql,
@@ -20,7 +21,6 @@ import {
 import { enqueueInitialGithubKnowledgeSync } from "@/lib/knowledge/sync-queue";
 import {
   knowledgeGithubInstallation,
-  knowledgeEnvironmentHead,
   knowledgeProjectEnvironment,
   knowledgeSource,
 } from "@/lib/schema";
@@ -34,35 +34,7 @@ export async function GET(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId)) return jsonError("Invalid workspace id", 400);
   const authorization = await authorizeWorkspace(request, workspaceId, "view");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
-  const sources = await db.select({
-    id: knowledgeSource.id,
-    projectId: knowledgeSource.projectId,
-    projectEnvironmentId: knowledgeSource.projectEnvironmentId,
-    environmentRevision: knowledgeSource.environmentRevision,
-    provider: knowledgeSource.provider,
-    displayName: knowledgeSource.displayName,
-    visibility: knowledgeSource.visibility,
-    repositoryId: knowledgeSource.repositoryId,
-    repositoryFullName: knowledgeSource.repositoryFullName,
-    refName: knowledgeSource.refName,
-    commitSha: knowledgeSource.commitSha,
-    syncState: knowledgeSource.syncState,
-    syncRevision: knowledgeSource.syncRevision,
-    lastFailureCode: knowledgeSource.lastFailureCode,
-    graphRevisionId: knowledgeEnvironmentHead.graphRevisionId,
-  }).from(knowledgeSource).leftJoin(knowledgeEnvironmentHead, and(
-    eq(knowledgeEnvironmentHead.organizationId, knowledgeSource.organizationId),
-    eq(knowledgeEnvironmentHead.projectEnvironmentId, knowledgeSource.projectEnvironmentId),
-    eq(knowledgeEnvironmentHead.sourceId, knowledgeSource.id),
-  )).where(and(
-    eq(knowledgeSource.organizationId, workspaceId),
-    isNull(knowledgeSource.revokedAt),
-  ));
-  return privateJson({
-    sources: env.knowledgeGraphBuildsEnabled()
-      ? sources
-      : sources.map((source) => ({ ...source, graphRevisionId: null })),
-  });
+  return privateJson({ sources: await listKnowledgeSources(workspaceId) });
 }
 
 export async function POST(request: Request, context: RouteContext) {

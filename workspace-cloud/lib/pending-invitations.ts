@@ -3,21 +3,12 @@
 // email, so an invite can be accepted without requiring its link as a second step.
 import "server-only";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 
 import { db } from "./db";
 import { invitation, workspaceProfile } from "./schema";
 
-type PendingInvitation = {
-  id: string;
-  status: string;
-  expiresAt: Date | string;
-};
-
 type InvitationAuthApi = {
-  listUserInvitations: (input: {
-    query: { email: string };
-  }) => Promise<PendingInvitation[]>;
   acceptInvitation: (input: {
     body: { invitationId: string };
     headers: Headers;
@@ -56,28 +47,18 @@ export async function acceptPendingWorkspaceInvitations({
     return { accepted: 0, failed: 0 };
   }
 
-  const invitations = await api.listUserInvitations({ query: { email } });
-  const pendingInvitationIds = [
-    ...new Set(
-      invitations
-        .filter((item) => (
-          item.status === "pending" &&
-          new Date(item.expiresAt).getTime() > now.getTime()
-        ))
-        .map((item) => item.id),
-    ),
-  ];
-  const eligible = pendingInvitationIds.length > 0
-    ? await db.select({ id: invitation.id }).from(invitation).innerJoin(
-        workspaceProfile,
-        eq(workspaceProfile.organizationId, invitation.organizationId),
-      ).where(and(
-        inArray(invitation.id, pendingInvitationIds),
-        eq(invitation.status, "pending"),
-        eq(workspaceProfile.lifecycleState, "active"),
-      ))
-    : [];
-  const invitationIds = eligible.map((item) => item.id);
+  // Read the authoritative table directly. Better Auth's list API would repeat
+  // the same lookup before every workspace inventory request.
+  const eligible = await db.select({ id: invitation.id }).from(invitation).innerJoin(
+    workspaceProfile,
+    eq(workspaceProfile.organizationId, invitation.organizationId),
+  ).where(and(
+    eq(sql`lower(${invitation.email})`, email),
+    eq(invitation.status, "pending"),
+    gt(invitation.expiresAt, now),
+    eq(workspaceProfile.lifecycleState, "active"),
+  ));
+  const invitationIds = [...new Set(eligible.map((item) => item.id))];
 
   let accepted = 0;
   let failed = 0;

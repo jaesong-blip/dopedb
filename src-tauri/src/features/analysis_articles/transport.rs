@@ -3,6 +3,7 @@
 //! control plane, while all database execution and credentials stay on Desktop.
 
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use dopedb_protocol::{
     AnalysisArticleRecord, AnalysisArticleState, AnalysisRunError, AnalysisRunState,
@@ -16,7 +17,7 @@ use super::adapters::hosted::{
     analysis_publication_url, analysis_runner_capability_is_missing,
     analysis_runner_registration_guard, cancel_analysis_run as cancel_remote_analysis_run,
     complete_analysis_run, create_analysis_publication, create_analysis_signal,
-    delete_analysis_article, delete_analysis_signal, get_analysis_result, get_analysis_run,
+    delete_analysis_article, delete_analysis_signal, get_analysis_result, get_analysis_run_control,
     list_analysis_article_revisions, list_analysis_collaborators, list_analysis_notifications,
     list_analysis_publications, list_analysis_runners, list_analysis_runs,
     list_analysis_signal_receipts, list_analysis_signals, mark_analysis_notifications_read,
@@ -36,6 +37,10 @@ use crate::kernel::identity::AccountId;
 use crate::state::AppState;
 
 use super::{AnalysisArticleMutation, AnalysisDefinitionRunReceipt, AnalysisDefinitionRunRequest};
+
+// This is execution authority/cancellation supervision, not Analysis log polling.
+// Losing the control plane cancels the local query rather than extending a stale grant.
+const ANALYSIS_CONTROL_POLL_INTERVAL: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -563,16 +568,27 @@ pub(crate) async fn run_analysis_article_command(
     };
     let execution = state.services.analysis_article.run_definition(request);
     tokio::pin!(execution);
-    let mut poll = tokio::time::interval(std::time::Duration::from_secs(1));
-    poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    poll.tick().await;
     let local = loop {
+        let control_check = async {
+            tokio::time::sleep(ANALYSIS_CONTROL_POLL_INTERVAL).await;
+            get_analysis_run_control(
+                account.as_str(),
+                scope.workspace_id,
+                article_id,
+                run_id,
+                runner.capability(),
+                None,
+            )
+            .await
+        };
+        tokio::pin!(control_check);
         tokio::select! {
             result = &mut execution => break result,
-            _ = poll.tick() => {
-                match get_analysis_run(account.as_str(), scope.workspace_id, article_id, run_id).await {
-                    Ok(remote) if remote.cancel_requested_at.is_some()
-                        || remote.state != AnalysisRunState::Running => {
+            control = &mut control_check => {
+                match control {
+                    Ok(control) if !control.authorized
+                        || control.cancel_requested_at.is_some()
+                        || control.state != AnalysisRunState::Running => {
                         cancel::cancel(run_id);
                     }
                     Ok(_) => {}
@@ -580,8 +596,13 @@ pub(crate) async fn run_analysis_article_command(
                         tracing::warn!(
                             run_id = %run_id,
                             error_kind = error.kind(),
-                            "Analysis run cancellation poll deferred"
+                            "Analysis run authority could not be verified"
                         );
+                        cancel::cancel(run_id);
+                        break Err(AppError::Safety(
+                            "Analysis Article run cancelled because authority could not be verified"
+                                .into(),
+                        ));
                     }
                 }
             }
@@ -590,28 +611,37 @@ pub(crate) async fn run_analysis_article_command(
 
     match local {
         Ok(result) => {
-            let cancelled =
-                get_analysis_run(account.as_str(), scope.workspace_id, article_id, run_id)
-                    .await
-                    .ok()
-                    .is_some_and(|run| run.cancel_requested_at.is_some());
-            if cancelled {
-                let error = Some(AnalysisRunError {
-                    kind: "cancelled".into(),
-                    message: "Analysis Article run was cancelled".into(),
-                });
-                complete_analysis_run(
-                    account.as_str(),
-                    scope.workspace_id,
-                    article_id,
-                    run_id,
-                    runner.capability(),
-                    AnalysisRunState::Cancelled,
-                    &result.query_receipts,
-                    &[],
-                    &error,
-                )
-                .await?;
+            let control = get_analysis_run_control(
+                account.as_str(),
+                scope.workspace_id,
+                article_id,
+                run_id,
+                runner.capability(),
+                None,
+            )
+            .await?;
+            if !control.authorized
+                || control.cancel_requested_at.is_some()
+                || control.state != AnalysisRunState::Running
+            {
+                if control.authorized && control.state == AnalysisRunState::Running {
+                    let error = Some(AnalysisRunError {
+                        kind: "cancelled".into(),
+                        message: "Analysis Article run was cancelled".into(),
+                    });
+                    complete_analysis_run(
+                        account.as_str(),
+                        scope.workspace_id,
+                        article_id,
+                        run_id,
+                        runner.capability(),
+                        AnalysisRunState::Cancelled,
+                        &result.query_receipts,
+                        &[],
+                        &error,
+                    )
+                    .await?;
+                }
                 return Err(AppError::Safety("Analysis Article run cancelled".into()));
             }
             let shared_result = (article.state == AnalysisArticleState::Review

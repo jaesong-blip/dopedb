@@ -18,6 +18,8 @@ import {
 } from "./mutation-authority";
 
 const SHA1 = /^[0-9a-f]{40}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const MAX_RAW_SOURCE_REVISION_BATCH = 10_000;
 
 type EnqueueResult = { jobId: string };
 type RequeueResult = { jobId: string; graphRevisionId: string | null };
@@ -499,59 +501,107 @@ export async function recordGithubKnowledgePush(input: {
 // Raw-source mode advances only the exact GitHub revision. The delivery row
 // makes webhook replay idempotent and the locked before-SHA prevents an older
 // delivery from rolling a source back after a newer push was accepted.
-export async function recordGithubSourceRevision(input: {
+type GithubSourceRevisionInput = {
   organizationId: string;
   sourceId: string;
   deliveryId: string;
   beforeCommitSha: string;
   afterCommitSha: string | null;
-}) {
-  const before = checkedSha(input.beforeCommitSha);
-  const after = input.afterCommitSha ? checkedSha(input.afterCommitSha) : null;
+};
+
+export async function recordGithubSourceRevisions(
+  inputs: readonly GithubSourceRevisionInput[],
+) {
+  if (inputs.length > MAX_RAW_SOURCE_REVISION_BATCH) {
+    throw new Error("Too many GitHub source revisions");
+  }
+  const requested = new Map<string, GithubSourceRevisionInput>();
+  for (const input of inputs) {
+    if (!UUID.test(input.organizationId) || !UUID.test(input.sourceId)) {
+      throw new Error("Invalid GitHub source scope");
+    }
+    if (!/^[A-Za-z0-9-]{1,128}$/.test(input.deliveryId)) {
+      throw new Error("Invalid GitHub delivery identity");
+    }
+    requested.set(`${input.organizationId}:${input.sourceId}`, {
+      ...input,
+      beforeCommitSha: checkedSha(input.beforeCommitSha),
+      afterCommitSha: input.afterCommitSha ? checkedSha(input.afterCommitSha) : null,
+    });
+  }
+  if (requested.size === 0) return [];
   const rows = await neonSql.query(
-    `WITH current_source AS MATERIALIZED (
-       SELECT source."commit_sha"
-       FROM "workspace_control"."knowledge_source" source
-       WHERE source."organization_id" = $1
-         AND source."id" = $2::uuid
-         AND source."provider" = 'github'
+    `WITH requested AS MATERIALIZED (
+       SELECT *
+       FROM jsonb_to_recordset($1::jsonb) AS item(
+         "organizationId" text, "sourceId" text, "deliveryId" text,
+         "beforeCommitSha" text, "afterCommitSha" text
+       )
+     ), current_source AS MATERIALIZED (
+       SELECT source."organization_id", source."id", source."commit_sha",
+         requested."deliveryId", requested."beforeCommitSha", requested."afterCommitSha"
+       FROM requested
+       JOIN "workspace_control"."knowledge_source" source
+         ON source."organization_id" = requested."organizationId"
+        AND source."id" = requested."sourceId"::uuid
+       WHERE source."provider" = 'github'
          AND source."revoked_at" IS NULL
+       ORDER BY source."organization_id", source."id"
        FOR UPDATE OF source
      ), inserted_event AS MATERIALIZED (
        INSERT INTO "workspace_control"."knowledge_source_event" (
          "organization_id", "source_id", "delivery_id", "event_kind",
          "before_commit_sha", "after_commit_sha", "changed_files", "state", "consumed_at"
        )
-       SELECT $1, $2::uuid, $3, 'push', $4, $5, '[]'::jsonb,
-         CASE WHEN current_source."commit_sha" = $4 THEN 'consumed' ELSE 'failed' END,
+       SELECT current_source."organization_id", current_source."id",
+         current_source."deliveryId", 'push', current_source."beforeCommitSha",
+         current_source."afterCommitSha", '[]'::jsonb,
+         CASE WHEN current_source."commit_sha" = current_source."beforeCommitSha"
+           THEN 'consumed' ELSE 'failed' END,
          now()
        FROM current_source
        ON CONFLICT ("delivery_id", "source_id") DO NOTHING
-       RETURNING "id", "state"
+       RETURNING "organization_id", "source_id", "id", "state"
      ), advanced AS (
        UPDATE "workspace_control"."knowledge_source" source
-       SET "commit_sha" = COALESCE($5, source."commit_sha"),
-         "sync_state" = CASE WHEN $5::text IS NULL THEN 'stale' ELSE 'ready' END,
+       SET "commit_sha" = COALESCE(current_source."afterCommitSha", source."commit_sha"),
+         "sync_state" = CASE WHEN current_source."afterCommitSha" IS NULL
+           THEN 'stale' ELSE 'ready' END,
          "sync_revision" = source."sync_revision" + 1,
          "last_failure_code" = CASE
-           WHEN $5::text IS NULL THEN 'github_ref_deleted'
+           WHEN current_source."afterCommitSha" IS NULL THEN 'github_ref_deleted'
            ELSE NULL
          END,
-         "last_reconciled_at" = CASE WHEN $5::text IS NULL THEN NULL ELSE now() END,
+         "last_reconciled_at" = CASE WHEN current_source."afterCommitSha" IS NULL
+           THEN NULL ELSE now() END,
          "updated_at" = now()
-       FROM current_source CROSS JOIN inserted_event
-       WHERE source."organization_id" = $1
-         AND source."id" = $2::uuid
-         AND current_source."commit_sha" = $4
+       FROM current_source
+       JOIN inserted_event
+         ON inserted_event."organization_id" = current_source."organization_id"
+        AND inserted_event."source_id" = current_source."id"
+       WHERE source."organization_id" = current_source."organization_id"
+         AND source."id" = current_source."id"
+         AND current_source."commit_sha" = current_source."beforeCommitSha"
          AND inserted_event."state" = 'consumed'
-       RETURNING source."id"
+       RETURNING source."organization_id", source."id"
      )
      SELECT inserted_event."id"::text AS "eventId",
-       EXISTS(SELECT 1 FROM advanced) AS "advanced"
+       inserted_event."source_id"::text AS "sourceId",
+       EXISTS(
+         SELECT 1 FROM advanced
+         WHERE advanced."organization_id" = inserted_event."organization_id"
+           AND advanced."id" = inserted_event."source_id"
+       ) AS "advanced"
      FROM inserted_event`,
-    [input.organizationId, input.sourceId, input.deliveryId, before, after],
-  ) as Array<{ eventId: string; advanced: boolean }>;
-  return rows[0] ?? null;
+    [JSON.stringify([...requested.values()])],
+  ) as Array<{ eventId: string; sourceId: string; advanced: boolean }>;
+  return rows;
+}
+
+export async function recordGithubSourceRevision(input: GithubSourceRevisionInput) {
+  const rows = await recordGithubSourceRevisions([input]);
+  const row = rows.find((candidate) => candidate.sourceId === input.sourceId);
+  return row ? { eventId: row.eventId, advanced: row.advanced } : null;
 }
 
 export async function listGithubKnowledgeReconciliationCandidates(limit = 10) {

@@ -194,6 +194,7 @@ pub fn run() {
             features::workspaces::transport::set_workspace_connection_write_policy,
             features::workspaces::transport::delete_workspace_connection,
             features::knowledge::transport::list_knowledge_projects_command,
+            features::knowledge::transport::list_knowledge_inventory_command,
             features::knowledge::transport::create_knowledge_project_command,
             features::knowledge::transport::create_knowledge_environment_command,
             features::knowledge::transport::begin_knowledge_github_install_command,

@@ -35,7 +35,7 @@ import {
 } from "../queries";
 import {
   shouldRevalidateWorkspaceAuth,
-  WORKSPACE_AUTH_RETRY_MS,
+  workspaceAuthRetryDelay,
 } from "../authPolicy";
 import { onWorkspaceLoginRequested } from "../loginRequest";
 import { errMessage } from "../../../ipc/types";
@@ -46,19 +46,17 @@ import { PopupMenuItem } from "../../../design-system/components/PopupMenu";
 import { Button } from "../../../design-system/components/Button";
 import {
   cancelWorkspaceResourceQueries,
-  refetchWorkspaceResourceQueries,
   resetWorkspaceResourceQueries,
+  resumePendingWorkspaceResourceQueries,
 } from "../../../lib/queryClient";
 import { captureProductEvent } from "../../productAnalytics/client";
 
 export default function WorkspaceAccount({
   onScopeChanged,
-  onWorkspaceDataRefreshed,
   compact = false,
   menuPlacement = "rail",
 }: {
   onScopeChanged: () => void | Promise<void>;
-  onWorkspaceDataRefreshed: () => void | Promise<void>;
   compact?: boolean;
   menuPlacement?: "rail" | "topbar";
 }) {
@@ -86,19 +84,16 @@ export default function WorkspaceAccount({
   } | null>(null);
   const membershipRefreshInFlight = useRef<Promise<void> | null>(null);
   const membershipRefreshRetryTimer = useRef<number | null>(null);
+  const membershipRefreshFailures = useRef(0);
   const workspaceAccountMounted = useRef(false);
   const browserWasActive = useRef(false);
   const providerCredentialAuthorityVersion = useRef<number | null>(null);
   const focusReturnHandler = useRef<() => void>(() => undefined);
   const membershipRefreshHandler = useRef<(force?: boolean) => void>(() => undefined);
   const loginRequestHandler = useRef<() => void>(() => undefined);
-  const workspaceDataRefreshHandler = useRef<() => void | Promise<void>>(
-    () => undefined,
-  );
   const scopeChangeHandler = useRef<() => void | Promise<void>>(
     () => undefined,
   );
-  workspaceDataRefreshHandler.current = onWorkspaceDataRefreshed;
   scopeChangeHandler.current = onScopeChanged;
 
   const clearMembershipRefreshRetry = useCallback(() => {
@@ -110,15 +105,28 @@ export default function WorkspaceAccount({
   const scheduleMembershipRefreshRetry = useCallback(() => {
     if (
       !workspaceAccountMounted.current ||
-      membershipRefreshRetryTimer.current !== null
+      membershipRefreshRetryTimer.current !== null ||
+      document.visibilityState !== "visible" ||
+      !navigator.onLine
     ) {
       return;
     }
+    const delay = workspaceAuthRetryDelay(membershipRefreshFailures.current);
     membershipRefreshRetryTimer.current = window.setTimeout(() => {
       membershipRefreshRetryTimer.current = null;
       membershipRefreshHandler.current(true);
-    }, WORKSPACE_AUTH_RETRY_MS);
+    }, delay);
   }, []);
+
+  const membershipRefreshSucceeded = useCallback(() => {
+    membershipRefreshFailures.current = 0;
+    clearMembershipRefreshRetry();
+  }, [clearMembershipRefreshRetry]);
+
+  const membershipRefreshFailed = useCallback(() => {
+    membershipRefreshFailures.current += 1;
+    scheduleMembershipRefreshRetry();
+  }, [scheduleMembershipRefreshRetry]);
 
   const refreshWorkspaceAuthority = useCallback(
     async function refreshWorkspaceAuthority(
@@ -171,11 +179,10 @@ export default function WorkspaceAccount({
           // remains identical. Its active observers were reset above and therefore
           // need an explicit read under the newly proven native authority.
           if (!recoveredQueryScopeChanged) {
-            await refetchWorkspaceResourceQueries(queryClient);
+            await resumePendingWorkspaceResourceQueries(queryClient);
           }
         } else {
-          await refetchWorkspaceResourceQueries(queryClient);
-          await workspaceDataRefreshHandler.current();
+          await resumePendingWorkspaceResourceQueries(queryClient);
         }
       } catch {
         // No local authority proof means the fail-closed empty projection remains.
@@ -202,7 +209,7 @@ export default function WorkspaceAccount({
     if (scopeChanged) {
       await scopeChangeHandler.current();
       if (!queryScopeChanged) {
-        await refetchWorkspaceResourceQueries(queryClient);
+        await resumePendingWorkspaceResourceQueries(queryClient);
       }
       return;
     }
@@ -210,8 +217,7 @@ export default function WorkspaceAccount({
     // `pending + idle`. The unchanged-authority path must explicitly resume every
     // mounted private read after the native authority has been proven stable;
     // refreshing only Connections would otherwise strand Explorer Knowledge forever.
-    await refetchWorkspaceResourceQueries(queryClient);
-    await workspaceDataRefreshHandler.current();
+    await resumePendingWorkspaceResourceQueries(queryClient);
     },
     [queryClient],
   );
@@ -223,7 +229,7 @@ export default function WorkspaceAccount({
     };
     const onFocus = () => {
       if (!pendingLogin.current) {
-        membershipRefreshHandler.current();
+        membershipRefreshHandler.current(membershipRefreshFailures.current > 0);
         return;
       }
       if (!browserWasActive.current) return;
@@ -231,14 +237,26 @@ export default function WorkspaceAccount({
       focusReturnHandler.current();
     };
     const onOnline = () => membershipRefreshHandler.current(true);
+    const onOffline = () => clearMembershipRefreshRetry();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible" && membershipRefreshFailures.current > 0) {
+        membershipRefreshHandler.current(true);
+      } else if (document.visibilityState !== "visible") {
+        clearMembershipRefreshRetry();
+      }
+    };
     window.addEventListener("blur", onBlur);
     window.addEventListener("focus", onFocus);
     window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       workspaceAccountMounted.current = false;
       window.removeEventListener("blur", onBlur);
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       if (membershipRefreshRetryTimer.current !== null) {
         window.clearTimeout(membershipRefreshRetryTimer.current);
         membershipRefreshRetryTimer.current = null;
@@ -246,7 +264,7 @@ export default function WorkspaceAccount({
       loginAttempt.current += 1;
       pendingLogin.current = null;
     };
-  }, []);
+  }, [clearMembershipRefreshRetry]);
 
   useEffect(() => onWorkspaceLoginRequested(() => loginRequestHandler.current()), []);
 
@@ -286,8 +304,8 @@ export default function WorkspaceAccount({
     // one authority verification, so duplicate setup must share the in-flight call.
     if (membershipRefreshInFlight.current) return;
     const request = refreshWorkspaceAuthority(refreshWorkspaceAuthState)
-      .then(clearMembershipRefreshRetry)
-      .catch(() => scheduleMembershipRefreshRetry())
+      .then(membershipRefreshSucceeded)
+      .catch(membershipRefreshFailed)
       .finally(() => {
         if (membershipRefreshInFlight.current === request) {
           membershipRefreshInFlight.current = null;
@@ -295,9 +313,9 @@ export default function WorkspaceAccount({
       });
     membershipRefreshInFlight.current = request;
   }, [
-    clearMembershipRefreshRetry,
+    membershipRefreshFailed,
+    membershipRefreshSucceeded,
     refreshWorkspaceAuthority,
-    scheduleMembershipRefreshRetry,
   ]);
 
   async function wait(ms: number) {
@@ -417,14 +435,14 @@ export default function WorkspaceAccount({
     if (!force && !revalidateAuth) return;
     clearMembershipRefreshRetry();
     const request = refreshWorkspaceAuthority(refreshWorkspaceAuthState)
-      .then(clearMembershipRefreshRetry)
+      .then(membershipRefreshSucceeded)
       .catch(async () => {
         // A membership 401 also invalidates the hosted session. Confirm that state
         // silently so expired team scopes disappear without turning the button into
         // a foreground loading indicator.
         await auth.refetch().catch(() => undefined);
         await invalidateWorkspaceContext(queryClient);
-        scheduleMembershipRefreshRetry();
+        membershipRefreshFailed();
       })
       .finally(() => {
         if (membershipRefreshInFlight.current === request) {

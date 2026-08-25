@@ -416,14 +416,18 @@ where
     for project in projects {
         for environment in &project.environments {
             let remote = authority
-                .list_environment_connections(account.as_str(), scope.workspace_id, environment.id)
+                .list_environment_connections(
+                    account.as_str(),
+                    scope.workspace_id,
+                    Some(environment.id),
+                )
                 .await?;
             let remote_ids = remote
                 .iter()
                 .map(|binding| binding.id)
                 .collect::<BTreeSet<_>>();
             let local = repository
-                .environment_connections(scope.workspace_id, environment.id)
+                .environment_connections(scope.workspace_id, Some(environment.id))
                 .await?;
             let local_ids = local
                 .iter()

@@ -12,9 +12,9 @@ use dopedb_protocol::{AnalysisRunError, AnalysisRunState, AnalysisRunTrigger};
 use uuid::Uuid;
 
 use super::adapters::hosted::{
-    analysis_refresh_lease_is_active, analysis_runner_capability_is_missing,
-    analysis_runner_registration_guard, claim_analysis_refresh_lease, complete_analysis_run,
-    get_analysis_run, register_analysis_runner, release_analysis_refresh_lease, start_analysis_run,
+    analysis_runner_capability_is_missing, analysis_runner_registration_guard,
+    claim_analysis_refresh_lease, complete_analysis_run, get_analysis_run_control,
+    register_analysis_runner, release_analysis_refresh_lease, start_analysis_run,
     RemoteAnalysisLease, RemoteAnalysisRun,
 };
 use crate::error::{AppError, AppResult};
@@ -25,7 +25,9 @@ use crate::kernel::access::{ActiveResourceScope, WorkspaceKind};
 use super::runtime_ports::{AnalysisRunnerChanged, AnalysisRuntimeDesktopPort};
 use super::{AnalysisDefinitionRunRequest, DesktopAnalysisArticlesFeature};
 
-const AUTHORITY_POLL_INTERVAL: Duration = Duration::from_secs(1);
+// This is execution authority/cancellation supervision, not Analysis log polling.
+// Losing the control plane cancels the local query rather than extending a stale grant.
+const AUTHORITY_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const MAX_CLAIMS_PER_TICK: usize = 4;
 
 #[derive(Clone)]
@@ -237,29 +239,42 @@ async fn execute_lease(
     };
     let execution = dependencies.analysis.run_definition(request);
     tokio::pin!(execution);
-    let mut poll = tokio::time::interval(AUTHORITY_POLL_INTERVAL);
-    poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    poll.tick().await;
     let local = loop {
+        let control_check = async {
+            tokio::time::sleep(AUTHORITY_POLL_INTERVAL).await;
+            get_analysis_run_control(
+                account_id,
+                scope.workspace_id,
+                article.id,
+                run_id,
+                lease.runner_capability.as_str(),
+                Some(lease.capability.as_str()),
+            )
+            .await
+        };
+        tokio::pin!(control_check);
         tokio::select! {
             result = &mut execution => break result,
-            _ = poll.tick() => {
-                let active = analysis_refresh_lease_is_active(
-                    account_id,
-                    scope.workspace_id,
-                    &lease,
-                ).await.unwrap_or(false);
-                let run = get_analysis_run(
-                    account_id,
-                    scope.workspace_id,
-                    article.id,
-                    run_id,
-                ).await;
-                let cancelled = !active || run.as_ref().is_ok_and(|run| {
-                    run.cancel_requested_at.is_some() || run.state != AnalysisRunState::Running
-                });
-                if cancelled {
-                    cancel::cancel(run_id);
+            control = &mut control_check => {
+                match control {
+                    Ok(control) if !control.authorized
+                        || control.cancel_requested_at.is_some()
+                        || control.state != AnalysisRunState::Running => {
+                        cancel::cancel(run_id);
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        tracing::warn!(
+                            run_id = %run_id,
+                            error_kind = error.kind(),
+                            "scheduled Analysis authority could not be verified"
+                        );
+                        cancel::cancel(run_id);
+                        break Err(AppError::Safety(
+                            "scheduled Analysis Article run cancelled because authority could not be verified"
+                                .into(),
+                        ));
+                    }
                 }
             }
         }
@@ -282,28 +297,41 @@ async fn execute_lease(
     }
     match local {
         Ok(result) => {
-            let remote =
-                get_analysis_run(account_id, scope.workspace_id, article.id, run_id).await?;
-            if remote.cancel_requested_at.is_some()
-                || !analysis_refresh_lease_is_active(account_id, scope.workspace_id, &lease).await?
+            let control = get_analysis_run_control(
+                account_id,
+                scope.workspace_id,
+                article.id,
+                run_id,
+                lease.runner_capability.as_str(),
+                Some(lease.capability.as_str()),
+            )
+            .await?;
+            if !control.authorized
+                || control.cancel_requested_at.is_some()
+                || control.state != AnalysisRunState::Running
             {
-                let error = Some(AnalysisRunError {
-                    kind: "cancelled".into(),
-                    message: "scheduled Analysis Article refresh was cancelled".into(),
+                if control.authorized && control.state == AnalysisRunState::Running {
+                    let error = Some(AnalysisRunError {
+                        kind: "cancelled".into(),
+                        message: "scheduled Analysis Article refresh was cancelled".into(),
+                    });
+                    complete_analysis_run(
+                        account_id,
+                        scope.workspace_id,
+                        article.id,
+                        run_id,
+                        lease.runner_capability.as_str(),
+                        AnalysisRunState::Cancelled,
+                        &result.query_receipts,
+                        &[],
+                        &error,
+                    )
+                    .await?;
+                    return Ok(());
+                }
+                return Err(AppError::Blocked {
+                    reason: "scheduled Analysis Article authority changed during execution".into(),
                 });
-                complete_analysis_run(
-                    account_id,
-                    scope.workspace_id,
-                    article.id,
-                    run_id,
-                    lease.runner_capability.as_str(),
-                    AnalysisRunState::Cancelled,
-                    &result.query_receipts,
-                    &[],
-                    &error,
-                )
-                .await?;
-                return Ok(());
             }
             let run = complete_analysis_run(
                 account_id,

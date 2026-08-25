@@ -194,6 +194,13 @@ pub(crate) struct RemoteKnowledgeProject {
     pub(crate) environments: Vec<RemoteKnowledgeEnvironment>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct RemoteKnowledgeInventory {
+    pub(crate) projects: Vec<RemoteKnowledgeProject>,
+    pub(crate) sources: Vec<RemoteKnowledgeSource>,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct RemotePersonalKnowledgeScope {
     pub(crate) workspace_id: Uuid,
@@ -452,7 +459,7 @@ pub(crate) trait KnowledgeRepositoryPort:
     fn environment_connections(
         &self,
         workspace_id: Uuid,
-        environment_id: Uuid,
+        environment_id: Option<Uuid>,
     ) -> impl Future<Output = AppResult<Vec<EnvironmentConnectionBinding>>> + Send;
     #[allow(clippy::too_many_arguments)]
     fn bind_environment_connection(
@@ -477,6 +484,10 @@ pub(crate) trait KnowledgeRepositoryPort:
         workspace_id: Uuid,
         remote_id: Uuid,
     ) -> impl Future<Output = AppResult<Option<Uuid>>> + Send;
+    fn local_connection_ids_for_remote(
+        &self,
+        workspace_id: Uuid,
+    ) -> impl Future<Output = AppResult<Vec<(Uuid, Uuid)>>> + Send;
 }
 
 /// Authenticated workspace Knowledge authority. Implementations own all hosted
@@ -550,8 +561,13 @@ pub(crate) trait HostedKnowledgeAuthorityPort: Clone + Send + Sync + 'static {
         &self,
         account_id: &str,
         workspace_id: Uuid,
-        environment_id: Uuid,
+        environment_id: Option<Uuid>,
     ) -> impl Future<Output = AppResult<Vec<RemoteEnvironmentConnectionBinding>>> + Send;
+    fn list_inventory(
+        &self,
+        account_id: &str,
+        workspace_id: Uuid,
+    ) -> impl Future<Output = AppResult<RemoteKnowledgeInventory>> + Send;
     #[allow(clippy::too_many_arguments)]
     fn bind_environment_connection(
         &self,

@@ -35,6 +35,12 @@ export type AnalysisRunAuthority = Readonly<{
   role: string;
 }>;
 
+export type AnalysisRunControl = Readonly<{
+  state: string;
+  cancelRequestedAt: string | null;
+  authorized: boolean;
+}>;
+
 export type SealedAnalysisFragment = Readonly<{
   blockId: string;
   ordinal: number;
@@ -83,6 +89,103 @@ function runProjection() {
         'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') END AS "finishedAt",
     to_char(run."created_at" AT TIME ZONE 'UTC',
       'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "createdAt"`;
+}
+
+/**
+ * Lightweight liveness projection for an executing Desktop runner. This keeps
+ * cancellation, runner possession, the optional scheduled lease, and every
+ * exact connection grant in one bounded database read without loading receipts
+ * or the full Article payload.
+ */
+export async function getAnalysisRunControl(input: {
+  organizationId: string;
+  articleId: string;
+  runId: string;
+  membershipId: string;
+  role: string;
+  runnerCapabilityHash: string;
+  leaseCapabilityHash: string | null;
+}): Promise<AnalysisRunControl | null> {
+  const result = await db.execute<AnalysisRunControl>(sql`
+    SELECT run."state" AS "state",
+      CASE WHEN run."cancel_requested_at" IS NULL THEN NULL ELSE
+        to_char(run."cancel_requested_at" AT TIME ZONE 'UTC',
+          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') END AS "cancelRequestedAt",
+      EXISTS (
+        SELECT 1
+        FROM ${workspaceAnalysisRunner} runner
+        JOIN ${workspaceAnalysisArticle} article
+          ON article."organization_id" = run."organization_id"
+         AND article."id" = run."article_id"
+         AND article."deleted_at" IS NULL
+        JOIN ${workspaceAnalysisArticleRevision} revision
+          ON revision."organization_id" = run."organization_id"
+         AND revision."article_id" = run."article_id"
+         AND revision."revision" = run."article_revision"
+        WHERE runner."organization_id" = run."organization_id"
+          AND runner."id" = run."runner_id"
+          AND runner."member_id" = ${input.membershipId}
+          AND runner."revoked_at" IS NULL
+          AND runner."runner_capability_hash" = ${input.runnerCapabilityHash}
+          AND runner."runner_capability_generation" = run."runner_capability_generation"
+          AND (run."trigger" <> 'schedule' OR runner."background_allowed" = TRUE)
+          AND (
+            article."live_revision" = run."article_revision"
+            OR (article."revision" = run."article_revision"
+              AND ${input.role} IN ('editor', 'admin', 'owner'))
+          )
+          AND EXISTS (
+            SELECT 1
+            FROM ${workspaceAnalysisArticleConnection} pin
+            WHERE pin."organization_id" = run."organization_id"
+              AND pin."article_id" = run."article_id"
+              AND pin."article_revision" = run."article_revision"
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM ${workspaceAnalysisArticleConnection} pin
+            LEFT JOIN ${workspaceConnection} connection
+              ON connection."organization_id" = pin."organization_id"
+             AND connection."id" = pin."connection_id"
+             AND connection."revision" = pin."connection_revision"
+             AND connection."deleted_at" IS NULL
+             AND connection."revocation_pending_at" IS NULL
+            LEFT JOIN ${workspaceConnectionGrant} connection_grant
+              ON connection_grant."organization_id" = pin."organization_id"
+             AND connection_grant."connection_id" = pin."connection_id"
+             AND connection_grant."member_id" = ${input.membershipId}
+             AND connection_grant."capability" IN ('use', 'manage')
+            WHERE pin."organization_id" = run."organization_id"
+              AND pin."article_id" = run."article_id"
+              AND pin."article_revision" = run."article_revision"
+              AND (connection."id" IS NULL OR connection_grant."connection_id" IS NULL)
+          )
+          AND (
+            (run."lease_id" IS NULL AND ${input.leaseCapabilityHash}::text IS NULL)
+            OR (${input.leaseCapabilityHash}::text IS NOT NULL AND EXISTS (
+              SELECT 1
+              FROM ${workspaceAnalysisRefreshLease} lease
+              WHERE lease."organization_id" = run."organization_id"
+                AND lease."id" = run."lease_id"
+                AND lease."article_id" = run."article_id"
+                AND lease."article_revision" = run."article_revision"
+                AND lease."runner_id" = run."runner_id"
+                AND lease."runner_capability_generation" = run."runner_capability_generation"
+                AND lease."parameter_hash" = run."parameter_hash"
+                AND lease."lease_capability_hash" = ${input.leaseCapabilityHash}
+                AND lease."expires_at" > now()
+                AND lease."completed_at" IS NULL
+                AND lease."revoked_at" IS NULL
+            ))
+          )
+      ) AS "authorized"
+    FROM ${workspaceAnalysisArticleRun} run
+    WHERE run."organization_id" = ${input.organizationId}
+      AND run."article_id" = ${input.articleId}::uuid
+      AND run."id" = ${input.runId}::uuid
+    LIMIT 1
+  `);
+  return result.rows[0] ?? null;
 }
 
 export async function requestAnalysisRunCancellation(input: {

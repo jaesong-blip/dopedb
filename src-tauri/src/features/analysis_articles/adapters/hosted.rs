@@ -173,6 +173,20 @@ pub(crate) struct RemoteAnalysisRun {
     pub(crate) created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct RemoteAnalysisRunControl {
+    pub(crate) state: AnalysisRunState,
+    pub(crate) cancel_requested_at: Option<DateTime<Utc>>,
+    pub(crate) authorized: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RunControlResponse {
+    control: RemoteAnalysisRunControl,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RunResponse {
@@ -329,12 +343,6 @@ struct LeaseClaimRequest<'a> {
     runner_id: Uuid,
     device_id: &'a str,
     background: bool,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct LeaseStateResponse {
-    active: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2461,6 +2469,39 @@ pub(crate) async fn get_analysis_run(
     Ok(body.run)
 }
 
+pub(crate) async fn get_analysis_run_control(
+    user_id: &str,
+    workspace_id: Uuid,
+    article_id: Uuid,
+    run_id: Uuid,
+    runner_capability: &str,
+    lease_capability: Option<&str>,
+) -> AppResult<RemoteAnalysisRunControl> {
+    let token = token(user_id).await?;
+    let mut request = client()?
+        .get(format!(
+            "{}/api/v1/workspaces/{workspace_id}/analyses/{article_id}/runs/{run_id}/control",
+            origin()?
+        ))
+        .bearer_auth(token.as_str())
+        .header(ANALYSIS_RUNNER_CAPABILITY_HEADER, runner_capability);
+    if let Some(capability) = lease_capability {
+        request = request.header("x-dopedb-analysis-capability", capability);
+    }
+    let raw = request
+        .send()
+        .await
+        .map_err(|error| request_error("checking Analysis run control", error))?;
+    let body: RunControlResponse = response(
+        raw,
+        user_id,
+        "Analysis run control",
+        MAX_DEFINITION_RESPONSE_BYTES,
+    )
+    .await?;
+    Ok(body.control)
+}
+
 pub(crate) async fn list_analysis_runs(
     user_id: &str,
     workspace_id: Uuid,
@@ -2663,37 +2704,6 @@ pub(crate) async fn release_analysis_refresh_lease(
     )
     .await?;
     Ok(body.revoked)
-}
-
-pub(crate) async fn analysis_refresh_lease_is_active(
-    user_id: &str,
-    workspace_id: Uuid,
-    lease: &RemoteAnalysisLease,
-) -> AppResult<bool> {
-    let token = token(user_id).await?;
-    let raw = client()?
-        .get(format!(
-            "{}/api/v1/workspaces/{workspace_id}/analyses/leases/{}",
-            origin()?,
-            lease.id
-        ))
-        .bearer_auth(token.as_str())
-        .header(
-            ANALYSIS_RUNNER_CAPABILITY_HEADER,
-            lease.runner_capability.as_str(),
-        )
-        .header("x-dopedb-analysis-capability", lease.capability.as_str())
-        .send()
-        .await
-        .map_err(|error| request_error("checking an Analysis refresh lease", error))?;
-    let body: LeaseStateResponse = response(
-        raw,
-        user_id,
-        "Analysis refresh lease status",
-        MAX_DEFINITION_RESPONSE_BYTES,
-    )
-    .await?;
-    Ok(body.active)
 }
 
 #[derive(Clone, Copy)]

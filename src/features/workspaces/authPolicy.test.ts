@@ -24,8 +24,10 @@ import {
 import { sharedWorkspaceScopeAvailable } from "../../lib/queries";
 import {
   shouldRevalidateWorkspaceAuth,
+  workspaceAuthRetryDelay,
   WORKSPACE_AUTH_RECHECK_MS,
   WORKSPACE_AUTH_RETRY_MS,
+  WORKSPACE_AUTH_RETRY_MAX_MS,
 } from "./authPolicy";
 import {
   runWorkspaceAuthorityTransition,
@@ -160,6 +162,9 @@ describe("workspace auth lifecycle", () => {
 
   it("revalidates a signed-in state after the cooldown", () => {
     expect(WORKSPACE_AUTH_RETRY_MS).toBeLessThan(WORKSPACE_AUTH_RECHECK_MS);
+    expect(workspaceAuthRetryDelay(1, () => 0)).toBe(WORKSPACE_AUTH_RETRY_MS);
+    expect(workspaceAuthRetryDelay(3, () => 0)).toBe(WORKSPACE_AUTH_RETRY_MS * 4);
+    expect(workspaceAuthRetryDelay(100, () => 1)).toBe(WORKSPACE_AUTH_RETRY_MAX_MS);
     expect(
       shouldRevalidateWorkspaceAuth(
         true,

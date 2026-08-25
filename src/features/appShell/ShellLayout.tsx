@@ -105,7 +105,6 @@ type ShellLayoutModel = {
 type ShellLayoutCommands = {
   workspace: {
     scopeChanged: () => Promise<void>;
-    dataRefreshed: () => Promise<void>;
     newConnection: (preset?: ConnectionLaunchPreset) => void;
     createDemo: () => void;
     editConnection: (connection: ConnectionProfile) => void;
@@ -318,7 +317,6 @@ function ShellLayoutContent({ model, commands }: Props) {
             compact
             menuPlacement="topbar"
             onScopeChanged={commands.workspace.scopeChanged}
-            onWorkspaceDataRefreshed={commands.workspace.dataRefreshed}
           />
         }
         onNewQuery={commands.workbench.newQuery}

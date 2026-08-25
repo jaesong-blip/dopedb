@@ -4,9 +4,6 @@ import type { KnowledgeSourceSyncProgress } from "./domain";
 import { knowledgeQueryKeys } from "./queryKeys";
 import { listKnowledgeSourceSyncProgress } from "./tauriAdapter";
 
-const ACTIVE_POLL_MS = 5_000;
-const IDLE_POLL_MS = 60_000;
-
 export function knowledgeSyncProgressQuery(
   workspaceScopeKey: string,
   enabled: boolean,
@@ -16,9 +13,6 @@ export function knowledgeSyncProgressQuery(
     queryFn: listKnowledgeSourceSyncProgress,
     enabled,
     retry: false,
-    refetchInterval: (query) =>
-      (query.state.data?.length ?? 0) > 0 ? ACTIVE_POLL_MS : IDLE_POLL_MS,
-    refetchIntervalInBackground: true,
   });
 }
 

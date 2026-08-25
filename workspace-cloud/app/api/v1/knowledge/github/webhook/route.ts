@@ -1,11 +1,11 @@
-import { and, eq, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import { verifyGithubWebhook } from "@/lib/knowledge/github-app";
 import {
   reconcileGithubKnowledgeCommit,
   recordGithubKnowledgePush,
-  recordGithubSourceRevision,
+  recordGithubSourceRevisions,
 } from "@/lib/knowledge/sync-queue";
 import {
   knowledgeGithubInstallation,
@@ -15,6 +15,7 @@ import { kickWorkspaceBackgroundTask } from "@/lib/workspace-background-schedule
 
 const MAX_WEBHOOK_BYTES = 2 * 1024 * 1024;
 const MAX_CHANGED_FILES = 10_000;
+const RAW_SOURCE_REVISION_BATCH = 10_000;
 
 async function boundedBody(request: Request) {
   if (!request.body) return null;
@@ -93,14 +94,13 @@ function repositories(value: unknown) {
 }
 
 async function requeueSources(
-  organizationId: string,
-  sources: Array<{ id: string; commitSha: string | null }>,
+  sources: Array<{ organizationId: string; id: string; commitSha: string | null }>,
 ) {
   let queued = false;
   for (const source of sources) {
     if (!source.commitSha) continue;
     await reconcileGithubKnowledgeCommit({
-      organizationId,
+      organizationId: source.organizationId,
       sourceId: source.id,
       observedCommitSha: source.commitSha,
     });
@@ -140,6 +140,7 @@ export async function POST(request: Request) {
   ));
   if (installations.length === 0) return new Response(null, { status: 202 });
   const graphBuildsEnabled = env.knowledgeGraphBuildsEnabled();
+  const installationIds = installations.map((installation) => installation.id);
   let shouldKick = false;
 
   if (event === "push") {
@@ -161,37 +162,41 @@ export async function POST(request: Request) {
     if (!repositoryId || !refName || !before) return new Response(null, { status: 202 });
     const files = changedFiles(payload);
     const shortRef = refName.replace(/^refs\/(?:heads|tags)\//, "");
-    for (const installation of installations) {
-      const sources = await db.select({ id: knowledgeSource.id }).from(knowledgeSource)
-        .where(and(
-          eq(knowledgeSource.organizationId, installation.organizationId),
-          eq(knowledgeSource.githubInstallationId, installation.id),
-          eq(knowledgeSource.repositoryId, repositoryId.toString()),
-          or(
-            eq(knowledgeSource.refName, refName),
-            eq(knowledgeSource.refName, shortRef),
-          ),
-        ));
+    const sources = await db.select({
+      id: knowledgeSource.id,
+      organizationId: knowledgeSource.organizationId,
+    }).from(knowledgeSource).where(and(
+      inArray(knowledgeSource.githubInstallationId, installationIds),
+      eq(knowledgeSource.repositoryId, repositoryId.toString()),
+      or(
+        eq(knowledgeSource.refName, refName),
+        eq(knowledgeSource.refName, shortRef),
+      ),
+      isNull(knowledgeSource.revokedAt),
+    ));
+    if (graphBuildsEnabled) {
       for (const source of sources) {
-        if (graphBuildsEnabled) {
-          const recorded = await recordGithubKnowledgePush({
-            organizationId: installation.organizationId,
+        const recorded = await recordGithubKnowledgePush({
+          organizationId: source.organizationId,
+          sourceId: source.id,
+          deliveryId,
+          beforeCommitSha: before,
+          afterCommitSha: after,
+          changedFiles: files,
+        });
+        shouldKick = Boolean(recorded?.jobId) || shouldKick;
+      }
+    } else {
+      for (let offset = 0; offset < sources.length; offset += RAW_SOURCE_REVISION_BATCH) {
+        await recordGithubSourceRevisions(
+          sources.slice(offset, offset + RAW_SOURCE_REVISION_BATCH).map((source) => ({
+            organizationId: source.organizationId,
             sourceId: source.id,
             deliveryId,
             beforeCommitSha: before,
             afterCommitSha: after,
-            changedFiles: files,
-          });
-          shouldKick = Boolean(recorded?.jobId) || shouldKick;
-        } else {
-          await recordGithubSourceRevision({
-            organizationId: installation.organizationId,
-            sourceId: source.id,
-            deliveryId,
-            beforeCommitSha: before,
-            afterCommitSha: after,
-          });
-        }
+          })),
+        );
       }
     }
   } else if (event === "installation") {
@@ -209,38 +214,32 @@ export async function POST(request: Request) {
         updatedAt: new Date(),
       }).where(eq(knowledgeGithubInstallation.installationId, installationId));
       if (status !== "active") {
-        for (const installation of installations) {
-          await db.update(knowledgeSource).set({
-            syncState: status === "revoked" ? "revoked" : "stale",
-            lastFailureCode: status === "revoked"
-              ? "github_installation_revoked"
-              : "github_installation_suspended",
-            revokedAt: status === "revoked" ? new Date() : null,
-            updatedAt: new Date(),
-          }).where(and(
-            eq(knowledgeSource.organizationId, installation.organizationId),
-            eq(knowledgeSource.githubInstallationId, installation.id),
-          ));
-        }
+        await db.update(knowledgeSource).set({
+          syncState: status === "revoked" ? "revoked" : "stale",
+          lastFailureCode: status === "revoked"
+            ? "github_installation_revoked"
+            : "github_installation_suspended",
+          revokedAt: status === "revoked" ? new Date() : null,
+          updatedAt: new Date(),
+        }).where(inArray(knowledgeSource.githubInstallationId, installationIds));
       } else {
-        for (const installation of installations) {
-          const sources = await db.update(knowledgeSource).set({
-            syncState: graphBuildsEnabled ? "pending" : "ready",
-            syncRevision: sql`${knowledgeSource.syncRevision} + 1`,
-            lastFailureCode: null,
-            revokedAt: null,
-            updatedAt: new Date(),
-          }).where(and(
-            eq(knowledgeSource.organizationId, installation.organizationId),
-            eq(knowledgeSource.githubInstallationId, installation.id),
-          )).returning({
-            id: knowledgeSource.id,
-            commitSha: knowledgeSource.commitSha,
-          });
-          if (graphBuildsEnabled) {
-            const queued = await requeueSources(installation.organizationId, sources);
-            shouldKick = queued || shouldKick;
-          }
+        const sources = await db.update(knowledgeSource).set({
+          syncState: graphBuildsEnabled ? "pending" : "ready",
+          syncRevision: sql`${knowledgeSource.syncRevision} + 1`,
+          lastFailureCode: null,
+          revokedAt: null,
+          updatedAt: new Date(),
+        }).where(inArray(
+          knowledgeSource.githubInstallationId,
+          installationIds,
+        )).returning({
+          organizationId: knowledgeSource.organizationId,
+          id: knowledgeSource.id,
+          commitSha: knowledgeSource.commitSha,
+        });
+        if (graphBuildsEnabled) {
+          const queued = await requeueSources(sources);
+          shouldKick = queued || shouldKick;
         }
       }
     }
@@ -251,29 +250,27 @@ export async function POST(request: Request) {
       : action === "added"
         ? repositories(payload.repositories_added)
         : [];
-    for (const installation of installations) {
-      for (const repository of changed) {
-        const sources = await db.update(knowledgeSource).set({
-          syncState: action === "removed"
-            ? "stale"
-            : graphBuildsEnabled ? "pending" : "ready",
-          syncRevision: sql`${knowledgeSource.syncRevision} + 1`,
-          lastFailureCode: action === "removed"
-            ? "github_repository_access_removed"
-            : null,
-          updatedAt: new Date(),
-        }).where(and(
-          eq(knowledgeSource.organizationId, installation.organizationId),
-          eq(knowledgeSource.githubInstallationId, installation.id),
-          eq(knowledgeSource.repositoryId, repository.id),
-        )).returning({
-          id: knowledgeSource.id,
-          commitSha: knowledgeSource.commitSha,
-        });
-        if (action === "added" && graphBuildsEnabled) {
-          const queued = await requeueSources(installation.organizationId, sources);
-          shouldKick = queued || shouldKick;
-        }
+    if (changed.length > 0) {
+      const sources = await db.update(knowledgeSource).set({
+        syncState: action === "removed"
+          ? "stale"
+          : graphBuildsEnabled ? "pending" : "ready",
+        syncRevision: sql`${knowledgeSource.syncRevision} + 1`,
+        lastFailureCode: action === "removed"
+          ? "github_repository_access_removed"
+          : null,
+        updatedAt: new Date(),
+      }).where(and(
+        inArray(knowledgeSource.githubInstallationId, installationIds),
+        inArray(knowledgeSource.repositoryId, changed.map((repository) => repository.id)),
+      )).returning({
+        organizationId: knowledgeSource.organizationId,
+        id: knowledgeSource.id,
+        commitSha: knowledgeSource.commitSha,
+      });
+      if (action === "added" && graphBuildsEnabled) {
+        const queued = await requeueSources(sources);
+        shouldKick = queued || shouldKick;
       }
     }
   } else if (event === "repository") {
@@ -283,29 +280,27 @@ export async function POST(request: Request) {
       const unavailable = action === "deleted" || action === "archived" || action === "transferred";
       const available = action === "renamed" || action === "unarchived";
       if (unavailable || available) {
-        for (const installation of installations) {
-          const sources = await db.update(knowledgeSource).set({
-            ...(available && repository.fullName
-              ? { repositoryFullName: repository.fullName }
-              : {}),
-            syncState: unavailable
-              ? "stale"
-              : graphBuildsEnabled ? "pending" : "ready",
-            syncRevision: sql`${knowledgeSource.syncRevision} + 1`,
-            lastFailureCode: unavailable ? "github_repository_unavailable" : null,
-            updatedAt: new Date(),
-          }).where(and(
-            eq(knowledgeSource.organizationId, installation.organizationId),
-            eq(knowledgeSource.githubInstallationId, installation.id),
-            eq(knowledgeSource.repositoryId, repository.id),
-          )).returning({
-            id: knowledgeSource.id,
-            commitSha: knowledgeSource.commitSha,
-          });
-          if (available && graphBuildsEnabled) {
-            const queued = await requeueSources(installation.organizationId, sources);
-            shouldKick = queued || shouldKick;
-          }
+        const sources = await db.update(knowledgeSource).set({
+          ...(available && repository.fullName
+            ? { repositoryFullName: repository.fullName }
+            : {}),
+          syncState: unavailable
+            ? "stale"
+            : graphBuildsEnabled ? "pending" : "ready",
+          syncRevision: sql`${knowledgeSource.syncRevision} + 1`,
+          lastFailureCode: unavailable ? "github_repository_unavailable" : null,
+          updatedAt: new Date(),
+        }).where(and(
+          inArray(knowledgeSource.githubInstallationId, installationIds),
+          eq(knowledgeSource.repositoryId, repository.id),
+        )).returning({
+          organizationId: knowledgeSource.organizationId,
+          id: knowledgeSource.id,
+          commitSha: knowledgeSource.commitSha,
+        });
+        if (available && graphBuildsEnabled) {
+          const queued = await requeueSources(sources);
+          shouldKick = queued || shouldKick;
         }
       }
     }

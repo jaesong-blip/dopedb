@@ -6,6 +6,7 @@ import type {
   GithubKnowledgeRepository,
   GithubKnowledgeSourceInput,
   KnowledgeProject,
+  KnowledgeInventory,
   KnowledgeSource,
   KnowledgeSourceSyncProgress,
   KnowledgeSyncResult,
@@ -21,10 +22,17 @@ export function listKnowledgeProjects(): Promise<KnowledgeProject[]> {
   return invoke("list_knowledge_projects_command");
 }
 
+export function listKnowledgeInventory(): Promise<KnowledgeInventory> {
+  return invoke("list_knowledge_inventory_command");
+}
+
 export function listKnowledgeEnvironmentConnections(
-  projectEnvironmentId: string,
+  projectEnvironmentId?: string,
 ): Promise<EnvironmentConnection[]> {
-  return invoke("list_knowledge_environment_connections", { projectEnvironmentId });
+  return invoke(
+    "list_knowledge_environment_connections",
+    projectEnvironmentId ? { projectEnvironmentId } : {},
+  );
 }
 
 export function bindKnowledgeEnvironmentConnection(

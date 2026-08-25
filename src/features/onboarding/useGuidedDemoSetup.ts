@@ -69,14 +69,11 @@ export function useGuidedDemoSetup({
         const setup = await ensureGuidedDemoEnvironment(saved);
         await Promise.all([
           queryClient.invalidateQueries({
-            queryKey: knowledgeQueryKeys.projects(scope.key),
+            queryKey: knowledgeQueryKeys.inventory(scope.key),
             refetchType: "active",
           }),
           queryClient.invalidateQueries({
-            queryKey: knowledgeQueryKeys.environmentConnections(
-              setup.environmentId,
-              scope.key,
-            ),
+            queryKey: knowledgeQueryKeys.environmentConnections(),
             refetchType: "active",
           }),
           queryClient.invalidateQueries({
