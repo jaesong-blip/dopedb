@@ -1,6 +1,8 @@
-//! Foreground/background scheduler for live Analysis Articles. The control plane
-//! leases exact immutable revisions; Desktop keeps credentials, executes bounded
-//! reads locally, and uploads only privacy-minimized reviewed block fragments.
+//! One-shot foreground/background dispatcher for live Analysis Articles. The
+//! control plane leases exact immutable revisions; Desktop keeps credentials,
+//! executes bounded reads locally, and uploads only privacy-minimized reviewed
+//! block fragments. Startup may claim work once, but the Desktop never keeps the
+//! hosted control plane awake with an idle polling loop.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -23,7 +25,6 @@ use crate::kernel::access::{ActiveResourceScope, WorkspaceKind};
 use super::runtime_ports::{AnalysisRunnerChanged, AnalysisRuntimeDesktopPort};
 use super::{AnalysisDefinitionRunRequest, DesktopAnalysisArticlesFeature};
 
-const POLL_INTERVAL: Duration = Duration::from_secs(20);
 const AUTHORITY_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_CLAIMS_PER_TICK: usize = 4;
 
@@ -78,29 +79,26 @@ impl AnalysisRunnerRuntime {
             crate::features::automation_runner::is_background_launch_argument(&argument)
         });
         tokio::spawn(async move {
-            loop {
-                let allowed = background_allowed.load(Ordering::Acquire);
-                if background_launch && !allowed {
-                    emit(desktop.as_ref(), "disabled", None, None, None);
-                    break;
-                }
-                if let Err(error) =
-                    poll_active_scope(&dependencies, desktop.as_ref(), allowed, background_launch)
-                        .await
-                {
-                    tracing::warn!(
-                        error_kind = error.kind(),
-                        "Analysis Article scheduler poll deferred"
-                    );
-                    emit(desktop.as_ref(), "deferred", None, None, Some(error.kind()));
-                }
-                tokio::time::sleep(POLL_INTERVAL).await;
+            let allowed = background_allowed.load(Ordering::Acquire);
+            if background_launch && !allowed {
+                emit(desktop.as_ref(), "disabled", None, None, None);
+                return;
+            }
+            if let Err(error) =
+                run_active_scope_once(&dependencies, desktop.as_ref(), allowed, background_launch)
+                    .await
+            {
+                tracing::warn!(
+                    error_kind = error.kind(),
+                    "Analysis Article scheduler run deferred"
+                );
+                emit(desktop.as_ref(), "deferred", None, None, Some(error.kind()));
             }
         });
     }
 }
 
-async fn poll_active_scope(
+async fn run_active_scope_once(
     dependencies: &AnalysisRunnerDependencies,
     desktop: &dyn AnalysisRuntimeDesktopPort,
     background_allowed: bool,
