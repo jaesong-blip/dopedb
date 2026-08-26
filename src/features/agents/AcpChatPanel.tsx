@@ -70,6 +70,7 @@ export default function AcpChatPanel(props: AcpChatPanelProps) {
 
 function AcpChatPanelContent({
   connection,
+  connections,
   composerRequest,
   documents,
   activeDocumentId,
@@ -86,6 +87,7 @@ function AcpChatPanelContent({
   const { t } = useI18n();
   const controller = useAcpChatController({
     connection,
+    connections,
     composerRequest,
     documents,
     activeDocumentId,

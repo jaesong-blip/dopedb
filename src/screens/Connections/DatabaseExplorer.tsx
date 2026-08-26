@@ -1703,18 +1703,6 @@ export function DatabaseExplorer({
           selected={activeEnvironmentBelongsToProject && !projectExpanded}
           actions={
             <TreeRowActions>
-              <ConfirmButton
-                iconOnly
-                label={t("connections.deleteProject")}
-                confirmLabel={t("connections.reallyDeleteProject")}
-                disabled={deletingProjectId !== null}
-                size="xs"
-                tone="danger"
-                variant="dangerGhost"
-                onConfirm={() => void removeProject(project)}
-              >
-                <Icon name="trash" />
-              </ConfirmButton>
               <Button
                 iconOnly
                 size="xs"
@@ -1727,6 +1715,25 @@ export function DatabaseExplorer({
               >
                 <Icon name="plus" />
               </Button>
+              <ToolbarMenu
+                icon="moreVertical"
+                label={t("connections.projectMenu")}
+                triggerTabIndex={-1}
+              >
+                <div role="none" data-menu-keep-open>
+                  <ConfirmButton
+                    confirmLabel={t("connections.reallyDeleteProject")}
+                    disabled={deletingProjectId !== null}
+                    presentation="menuItem"
+                    size="compact"
+                    tone="danger"
+                    variant="ghost"
+                    onConfirm={() => void removeProject(project)}
+                  >
+                    {t("connections.deleteProject")}
+                  </ConfirmButton>
+                </div>
+              </ToolbarMenu>
             </TreeRowActions>
           }
           onToggle={() => toggleExpandedId(setExpandedProjectIds, project.id)}

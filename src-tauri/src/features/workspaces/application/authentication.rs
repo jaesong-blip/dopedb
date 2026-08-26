@@ -55,6 +55,7 @@ where
             match self.control_plane.auth_user(&user_id).await {
                 Ok(Some(user)) => {
                     self.sync_account_memberships(&user).await?;
+                    self.refresh_active_connection_authority(&user.id).await?;
                 }
                 Ok(None) => {
                     self.runtime.remove_account(&user_id).await?;

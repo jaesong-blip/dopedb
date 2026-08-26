@@ -17,6 +17,10 @@ import type {
   AgentProvider,
 } from "./domain";
 import type { AcpChatController } from "./useAcpChatController";
+import {
+  agentDatabaseScopeKey,
+  agentEnvironmentScopeKey,
+} from "./useAgentEnvironmentInventory";
 
 type AcpChatComposerProps = Pick<
   AcpChatController,
@@ -250,10 +254,10 @@ export default function AcpChatComposer({
         {setup.knowledge.success ? (
           <span className="tw:max-w-[14rem]">
             <InlineSelect
-              value={setup.knowledge.selectedEnvironmentId ?? ""}
+              value={setup.knowledge.selectedScopeKey ?? ""}
               disabled={
                 session.starting ||
-                active !== null ||
+                !setup.knowledge.scopeChangeAllowed ||
                 setup.knowledge.reconfirmingEnvironmentId !== null
               }
               onChange={(event) =>
@@ -261,19 +265,41 @@ export default function AcpChatComposer({
                   event.target.value || null,
                 )
               }
-              aria-label={t("agent.acpEnvironment")}
-              title={t("agent.acpEnvironmentHint")}
+              aria-label={t("agent.acpScope")}
+              title={t("agent.acpScopeHint")}
             >
               <option value="" disabled>
-                {t("agent.acpSelectEnvironment")}
+                {t("agent.acpSelectScope")}
               </option>
               {setup.knowledge.environments.map((environment) => (
-                <option key={environment.id} value={environment.id}>
-                  {environment.projectName} / {environment.name}
-                  {environment.needsReconfirmation
-                    ? ` · ${t("agent.acpEnvironmentReconfirm")}`
-                    : ""}
-                </option>
+                <optgroup
+                  key={environment.id}
+                  label={`${environment.projectName} / ${environment.name}`}
+                >
+                  <option value={agentEnvironmentScopeKey(environment.id)}>
+                    {t("agent.acpEntireEnvironment")}
+                    {environment.needsReconfirmation
+                      ? ` · ${t("agent.acpEnvironmentReconfirm")}`
+                      : ""}
+                  </option>
+                  {environment.bindings.flatMap((binding) =>
+                    binding.connectionId ? (
+                      <option
+                        key={binding.id}
+                        value={agentDatabaseScopeKey(
+                          environment.id,
+                          binding.connectionId,
+                        )}
+                      >
+                        {t("agent.acpDatabaseScope", {
+                          database: binding.alias || binding.connectionName,
+                        })}
+                      </option>
+                    ) : (
+                      []
+                    ),
+                  )}
+                </optgroup>
               ))}
             </InlineSelect>
           </span>

@@ -32,6 +32,7 @@ type AcpSessionStartupInput = {
   onStarted: (focus: AcpSessionFocus, provider: AgentProvider) => void;
   onStartingChange: (starting: boolean) => void;
   prerequisitesReady: boolean;
+  selectedEnvironmentConnectionIds: ConnectionId[] | null;
   selectedEnvironmentId: string | null;
   selectedProvider: AgentProvider;
   sessionsLoading: boolean;
@@ -49,6 +50,7 @@ export function useAcpSessionStartup({
   onStarted,
   onStartingChange,
   prerequisitesReady,
+  selectedEnvironmentConnectionIds,
   selectedEnvironmentId,
   selectedProvider,
   sessionsLoading,
@@ -75,6 +77,7 @@ export function useAcpSessionStartup({
         connectionId,
         provider,
         environmentId,
+        selectedEnvironmentConnectionIds?.join(",") ?? "all",
       ].join(":");
       if (pendingStartRef.current?.key === startKey) {
         return pendingStartRef.current.promise;
@@ -92,6 +95,7 @@ export function useAcpSessionStartup({
             connectionId,
             provider,
             environmentId,
+            selectedEnvironmentConnectionIds,
           );
           completeAnalytics("success");
           const recorded = recordAcpSessionFocus(catalogScope.key, focus);
@@ -138,6 +142,7 @@ export function useAcpSessionStartup({
       onStarted,
       onStartingChange,
       prerequisitesReady,
+      selectedEnvironmentConnectionIds,
       selectedEnvironmentId,
       selectedProvider,
       t,
@@ -163,6 +168,7 @@ export function useAcpSessionStartup({
       connectionId,
       selectedProvider,
       selectedEnvironmentId,
+      selectedEnvironmentConnectionIds?.join(",") ?? "all",
     ].join(":");
     if (prewarmAttemptRef.current === prewarmKey) return;
     prewarmAttemptRef.current = prewarmKey;
@@ -175,6 +181,7 @@ export function useAcpSessionStartup({
     environmentScopeReady,
     prerequisitesReady,
     selectedEnvironmentId,
+    selectedEnvironmentConnectionIds,
     selectedProvider,
     sessionsLoading,
     startSession,

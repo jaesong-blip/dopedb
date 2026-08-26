@@ -52,8 +52,12 @@ DopeDB의 제품 축, 실제 사용자 작업, 접근성, 운영 안전성, 지�
   준비된 Welcome은 sample table 탐색, exact Environment에 고정된 Agent 읽기,
   `Settings → Safety`를 거치는 Agent 쓰기 승인의 실제 command 세 개만 flat
   목록으로 보여준다.
-- 오른쪽 Agent surface는 exact Project·Environment·connection revision에 고정된
-  대화, 도구 진행, 승인과 복구를 소유한다.
+- 오른쪽 Agent surface는 exact Project·Environment와 검증된 database subset에
+  고정된 대화, 도구 진행, 승인과 복구를 소유한다. scope control은 Environment
+  전체 또는 그 Environment에 연결된 개별 DB 하나를 선택한다. Environment 전체는
+  검증된 모든 DB와 source revision을, 개별 DB는 그 DB revision과 같은
+  Environment의 source revision을 세션 시작 시 immutable하게 고정한다. 임의의
+  다중 DB checkbox 조합은 제공하지 않는다.
 - 하단 Services surface는 실행, result, output, job, background task를 관찰하고
   중단하는 곳이다.
 - status surface는 현재 database/source/schema/object, transaction과 background

@@ -6,7 +6,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { errMessage } from "../../ipc/types";
 import { useI18n } from "../../lib/i18n";
-import type { ConnectionProfile } from "../connections/domain";
+import type {
+  ConnectionId,
+  ConnectionProfile,
+} from "../connections/domain";
 import { bindKnowledgeEnvironmentConnectionWithRefresh } from "../knowledge/bindEnvironmentConnection";
 import type { EnvironmentConnection } from "../knowledge/domain";
 import { knowledgeInventoryQuery } from "../knowledge/inventory";
@@ -16,9 +19,29 @@ import type { AgentKnowledgeEnvironment } from "./domain";
 import { listAgentKnowledgeEnvironments } from "./tauriAdapter";
 
 export type AgentEnvironmentChoice = AgentKnowledgeEnvironment & {
-  binding: EnvironmentConnection | null;
+  bindings: EnvironmentConnection[];
   needsReconfirmation: boolean;
 };
+
+export type AgentScopeChoice = {
+  key: string;
+  kind: "environment" | "database";
+  environmentId: string;
+  connectionId: ConnectionId;
+  environmentConnectionIds: ConnectionId[] | null;
+  needsReconfirmation: boolean;
+};
+
+export function agentEnvironmentScopeKey(environmentId: string) {
+  return `environment:${environmentId}`;
+}
+
+export function agentDatabaseScopeKey(
+  environmentId: string,
+  connectionId: string,
+) {
+  return `database:${environmentId}:${connectionId}`;
+}
 
 export function useAgentEnvironmentInventory({
   catalogScopeKey,
@@ -63,7 +86,7 @@ export function useAgentEnvironmentInventory({
         environment.id,
         {
           ...environment,
-          binding: null,
+          bindings: [],
           needsReconfirmation: false,
         },
       ]),
@@ -77,18 +100,26 @@ export function useAgentEnvironmentInventory({
       ),
     );
     for (const binding of environmentConnectionsQuery.data ?? []) {
-      if (binding.connectionId !== connection.id) continue;
+      if (binding.connectionId === null) continue;
       const identity = environmentIdentity.get(binding.projectEnvironmentId);
       if (!identity) continue;
       const existing = byId.get(binding.projectEnvironmentId);
+      const bindings = [
+        ...(existing?.bindings ?? []),
+        binding,
+      ].sort((left, right) =>
+        `${left.alias}\u0000${left.connectionName}\u0000${left.id}`.localeCompare(
+          `${right.alias}\u0000${right.connectionName}\u0000${right.id}`,
+        ),
+      );
       byId.set(binding.projectEnvironmentId, {
         id: binding.projectEnvironmentId,
         projectName: existing?.projectName ?? identity.projectName,
         name: existing?.name ?? identity.environment.name,
         riskClass: existing?.riskClass ?? identity.environment.riskClass,
         graphRevisionCount: existing?.graphRevisionCount ?? 0,
-        binding,
-        needsReconfirmation: binding.stale,
+        bindings,
+        needsReconfirmation: bindings.some((candidate) => candidate.stale),
       });
     }
     return [...byId.values()].sort((left, right) =>
@@ -98,23 +129,51 @@ export function useAgentEnvironmentInventory({
     );
   }, [
     available,
-    connection.id,
     environmentConnectionsQuery.data,
     knowledgeInventory.data?.projects,
   ]);
+  const scopes = useMemo<AgentScopeChoice[]>(
+    () =>
+      choices.flatMap((environment) => {
+        const bindings = environment.bindings.filter(
+          (binding): binding is EnvironmentConnection & { connectionId: ConnectionId } =>
+            binding.connectionId !== null,
+        );
+        const anchor =
+          bindings.find((binding) => binding.connectionId === connection.id) ??
+          bindings[0];
+        if (!anchor) return [];
+        return [
+          {
+            key: agentEnvironmentScopeKey(environment.id),
+            kind: "environment" as const,
+            environmentId: environment.id,
+            connectionId: anchor.connectionId,
+            environmentConnectionIds: null,
+            needsReconfirmation: environment.needsReconfirmation,
+          },
+          ...bindings.map((binding) => ({
+            key: agentDatabaseScopeKey(environment.id, binding.connectionId),
+            kind: "database" as const,
+            environmentId: environment.id,
+            connectionId: binding.connectionId,
+            environmentConnectionIds: [binding.connectionId],
+            needsReconfirmation: environment.needsReconfirmation,
+          })),
+        ];
+      }),
+    [choices, connection.id],
+  );
   const loadError = agentEnvironmentsQuery.isError
     ? errMessage(agentEnvironmentsQuery.error)
-    : choices.length === 0 && environmentConnectionsQuery.isError
+    : environmentConnectionsQuery.isError
       ? errMessage(environmentConnectionsQuery.error)
-      : choices.length === 0 && knowledgeInventory.isError
+      : knowledgeInventory.isError
         ? errMessage(knowledgeInventory.error)
         : null;
 
   const ensureAvailable = useCallback(
-    async (environmentId: string) => {
-      if (available.some((environment) => environment.id === environmentId)) {
-        return true;
-      }
+    async (environmentId: string, targetConnectionId = connection.id) => {
       const choice = choices.find(
         (environment) => environment.id === environmentId,
       );
@@ -122,23 +181,31 @@ export function useAgentEnvironmentInventory({
       setUpdatingEnvironmentId(environmentId);
       onError(null);
       try {
-        if (choice.needsReconfirmation) {
-          if (!choice.binding) return false;
+        for (const binding of choice.bindings) {
+          if (!binding.stale || binding.connectionId === null) continue;
           await bindKnowledgeEnvironmentConnectionWithRefresh({
             projectEnvironmentId: environmentId,
-            connectionId: connection.id,
-            role: choice.binding.role,
-            alias: choice.binding.alias,
+            connectionId: binding.connectionId,
+            role: binding.role,
+            alias: binding.alias,
           });
+        }
+        if (choice.needsReconfirmation) {
           await queryClient.invalidateQueries({
             queryKey: knowledgeQueryKeys.environmentConnections(),
           });
         }
-        const refreshed = await agentEnvironmentsQuery.refetch();
+        const targetQueryKey = knowledgeQueryKeys.agentEnvironments(
+          targetConnectionId,
+          catalogScopeKey,
+        );
+        await queryClient.invalidateQueries({ queryKey: targetQueryKey });
+        const refreshed = await queryClient.fetchQuery({
+          queryKey: targetQueryKey,
+          queryFn: () => listAgentKnowledgeEnvironments(targetConnectionId),
+        });
         const ready = Boolean(
-          refreshed.data?.some(
-            (environment) => environment.id === environmentId,
-          ),
+          refreshed.some((environment) => environment.id === environmentId),
         );
         if (!ready) onError(t("agent.acpEnvironmentReconfirmFailed"));
         return ready;
@@ -154,8 +221,7 @@ export function useAgentEnvironmentInventory({
       }
     },
     [
-      agentEnvironmentsQuery,
-      available,
+      catalogScopeKey,
       choices,
       connection.id,
       onError,
@@ -168,13 +234,17 @@ export function useAgentEnvironmentInventory({
   return {
     available,
     choices,
+    scopes,
     ensureAvailable,
     loadError,
     pending:
       agentEnvironmentsQuery.isPending ||
-      (available.length === 0 &&
-        (environmentConnectionsQuery.isPending || knowledgeInventory.isPending)),
-    success: agentEnvironmentsQuery.isSuccess,
+      environmentConnectionsQuery.isPending ||
+      knowledgeInventory.isPending,
+    success:
+      agentEnvironmentsQuery.isSuccess &&
+      environmentConnectionsQuery.isSuccess &&
+      knowledgeInventory.isSuccess,
     updatingEnvironmentId,
     refresh: agentEnvironmentsQuery.refetch,
   };

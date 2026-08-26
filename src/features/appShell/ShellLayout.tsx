@@ -494,6 +494,7 @@ function ShellLayoutContent({ model, commands }: Props) {
       {agent.open && workspace.selected && (
         <AcpChatPanel
           connection={workspace.selected}
+          connections={workspace.connections}
           composerRequest={agent.composerRequest}
           documents={workbench.documents}
           activeDocumentId={workbench.activeDocumentId}

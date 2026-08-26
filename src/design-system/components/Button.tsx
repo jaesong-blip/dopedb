@@ -65,6 +65,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       type={type}
       title={iconOnly ? undefined : title}
       aria-label={iconOnly ? tooltipLabel ?? undefined : ariaLabel}
+      role={presentation === "menuItem" ? "menuitem" : undefined}
       data-active={active}
       data-collapse={collapse}
       data-icon-only={iconOnly}

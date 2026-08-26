@@ -200,7 +200,7 @@ color를 거부한다.
 - Body: 14px.
 - Dense UI: 13px.
 - 보조 텍스트: 12px.
-- 기본 본문과 일반 tree row는 최소 450, 일반 control과 DB row는 550,
+- 기본 본문과 일반 leaf row는 최소 450, tree section·일반 control·DB row는 550,
   section emphasis는 650, heading과 강한 category label은 700 weight를 사용한다.
   `font-normal/medium/semibold/bold`는 이 네 semantic token에 대응하며 화면별
   임의 숫자 weight로 가독성을 보정하지 않는다.
@@ -534,7 +534,8 @@ DopeDB의 실제 작업 흐름과 접근성, supported viewport를 위한 제품
   생성 action을 구분하고, Project 생성 dialog는 기본 `main` Environment를 함께
   설정한다. Project 행의 hover/focus `plus`는 해당 Project에 Environment를 추가하고
   시각적 folder를 만들지 않은 채 Project의 `Databases`와 새 Environment binding
-  상세를 연다. 같은 action rail의 `trash`는 2단계 확인 뒤 Project를 제거한다. 이때 workspace의
+  상세를 연다. 같은 action rail의 overflow menu 안 `프로젝트 삭제`는 2단계 확인 뒤
+  Project를 제거한다. 이때 workspace의
   database connection은 삭제하지 않고 `Unassigned`로 돌려보내며, active Analysis
   Article이 있으면 Article history를 보존하기 위해 Project 삭제를 차단한다. 삭제된
   Project의 source sync와 Agent grant는 즉시 폐기하고 해당 Environment에 고정된 실행 중
@@ -564,9 +565,11 @@ DopeDB의 실제 작업 흐름과 접근성, supported viewport를 위한 제품
   행 높이, surface, icon, selection은 이 문서의 semantic primitive가 소유한다.
   Agent/worktree 행은 DopeDB
   resource tree로 가져오지 않는다.
-- AI Chat의 scope control은 `Project / Environment` 하나만 표시한다. 하위 DB
-  checkbox나 current-database-only mode를 다시 만들지 않으며, 새 ACP session은
-  해당 환경에서 검증된 전체 DB·source revision set을 immutable하게 고정한다.
+- AI Chat의 scope control은 `Project / Environment 전체`와 그 Environment에
+  연결된 개별 DB를 한 계층형 목록으로 표시한다. 전체 범위는 검증된 모든 DB와
+  source revision set을, 개별 DB 범위는 해당 DB revision과 같은 Environment의
+  source revision set을 새 ACP session에 immutable하게 고정한다. 임의의 다중 DB
+  checkbox 조합은 만들지 않는다.
 - 빈 AI Chat transcript는 제목·설명 card를 만들지 않고 실제 SQL 작업,
   스키마·선택 데이터 탐색, 명시적 변경 승인 세 줄만 표시한다. 화면에 없는
   IDE capability를 본뜨거나 steady-state onboarding 문단을 반복하지 않는다.

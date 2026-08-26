@@ -102,6 +102,23 @@ where
         Ok(())
     }
 
+    /// Force the active Team connection collection to its authoritative head.
+    /// Cursor replay can legitimately have no connection event, while an exact
+    /// revision-conflict retry specifically needs the current full collection.
+    pub(super) async fn refresh_active_connection_authority(
+        &self,
+        account_user_id: &AccountId,
+    ) -> AppResult<()> {
+        let active = self.repository.active_workspace().await?;
+        if active.kind != WorkspaceKind::Team
+            || self.repository.active_account_id().await?.as_ref() != Some(account_user_id)
+        {
+            return Ok(());
+        }
+        let _sync_guard = self.sync_lock.lock().await;
+        self.sync_connections(account_user_id, active.id).await
+    }
+
     /// Serialize one account/workspace pull so a late full-collection response can
     /// never overwrite a newer cursor page. Each page checkpoint is committed only
     /// after all selected projections have been reconciled successfully.

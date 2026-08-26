@@ -76,6 +76,10 @@ import {
 } from "./tauriAdapter";
 import { visibleAcpTranscriptItems } from "./transcript";
 import { useAgentEnvironmentInventory } from "./useAgentEnvironmentInventory";
+import {
+  useAgentScopeConnection,
+  useAgentScopeSelection,
+} from "./useAgentScopeSelection";
 import { useAcpSessionStartup } from "./useAcpSessionStartup";
 
 const MAX_PROMPT_CHARS = 8 * 1024;
@@ -93,6 +97,7 @@ const EMPTY_PROMPT_CONTEXT: AcpPromptContext = {
 
 export type AcpChatControllerInput = {
   connection: ConnectionProfile;
+  connections: ConnectionProfile[];
   composerRequest: AgentComposerRequest | null;
   documents: WorkbenchDocument[];
   activeDocumentId: string | null;
@@ -105,6 +110,7 @@ export type AcpChatControllerInput = {
 
 export function useAcpChatController({
   connection,
+  connections,
   composerRequest,
   documents,
   activeDocumentId,
@@ -125,9 +131,6 @@ export function useAcpChatController({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [selectedProvider, setSelectedProvider] =
     useState<AgentProvider>("claude");
-  const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<
-    string | null
-  >(null);
   const [includeEditorContext, setIncludeEditorContext] = useState(false);
   const [composerExpanded, setComposerExpanded] = useState(false);
   const [configChanging, setConfigChanging] = useState<string | null>(null);
@@ -138,6 +141,7 @@ export function useAcpChatController({
   >(null);
   const [copiedSetupCommand, setCopiedSetupCommand] =
     useState<AgentProvider | null>(null);
+  const scopeConnection = useAgentScopeConnection(connection, connections);
   const activeIdRef = useRef<AcpSessionId | null>(null);
   const selectionGenerationRef = useRef(0);
   const focusRequestIdRef = useRef(0);
@@ -158,7 +162,7 @@ export function useAcpChatController({
   });
   const environmentInventory = useAgentEnvironmentInventory({
     catalogScopeKey: catalogScope.key,
-    connection,
+    connection: scopeConnection.connection,
     onError: setError,
   });
   const availableKnowledgeEnvironments = environmentInventory.available;
@@ -182,10 +186,10 @@ export function useAcpChatController({
   const connectionSessions = useMemo(
     () =>
       sessionSnapshot.sessions
-        .filter((session) => session.connectionId === connection.id)
+        .filter((session) => session.connectionId === scopeConnection.connection.id)
         .filter((session) => enabledProviders.includes(session.provider))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-    [connection.id, enabledProviders, sessionSnapshot.sessions],
+    [enabledProviders, scopeConnection.connection.id, sessionSnapshot.sessions],
   );
   const active =
     connectionSessions.find((session) => session.id === activeId) ?? null;
@@ -201,6 +205,17 @@ export function useAcpChatController({
   // store snapshot. Derive these bounded views on render so neither can retain
   // a stale mutable projection behind an incomplete memo dependency.
   const transcript = visibleAcpTranscriptItems(activeProjection);
+  const scopeChangeAllowed = active === null || (active.lifecycle === "ready" && transcript.length === 0);
+  const agentScope = useAgentScopeSelection({
+    active,
+    composerRequest,
+    connectionId: scopeConnection.connection.id,
+    inventory: environmentInventory,
+    onClearError: () => setError(null),
+    onSelectConnection: scopeConnection.select,
+    selectionLocked: !scopeChangeAllowed,
+  });
+  const selectedEnvironmentId = agentScope.environmentId;
   const richTranscriptKeys = selectRichTranscriptKeys(transcript);
   const configOptions = activeProjection?.configOptions ?? [];
   const modelOption = configOptions.find(
@@ -214,12 +229,12 @@ export function useAcpChatController({
   const context = useMemo(
     () =>
       buildAcpPromptContext(
-        connection,
+        scopeConnection.connection,
         activeDocument,
         selectedTable,
         selection,
       ),
-    [activeDocument, connection, selectedTable, selection],
+    [activeDocument, scopeConnection.connection, selectedTable, selection],
   );
   const contextLabels = useMemo(
     () => summarizeAcpPromptContext(context),
@@ -244,11 +259,7 @@ export function useAcpChatController({
     : selectedCliStatus?.detectionError ?? null;
   const selectedPluginReady = enabledProviders.includes(selectedProvider);
   const prerequisitesReady = selectedCliReady && selectedPluginReady;
-  const selectedKnowledgeEnvironment = availableKnowledgeEnvironments.find(
-    (environment) => environment.id === selectedEnvironmentId,
-  );
-  const newEnvironmentScopeReady =
-    selectedKnowledgeEnvironment !== undefined;
+  const newEnvironmentScopeReady = agentScope.newScopeReady;
   const activeEnvironmentScopeReady =
     active !== null &&
     active.lifecycle !== "closed" &&
@@ -326,13 +337,13 @@ export function useAcpChatController({
   useEffect(() => {
     if (sessionSnapshot.loading) return;
     const next = sessionSnapshot.sessions
-      .filter((session) => session.connectionId === connection.id)
+      .filter((session) => session.connectionId === scopeConnection.connection.id)
       .filter((session) => isLiveSession(session.lifecycle))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
     if (activeIdRef.current === null) {
       selectActiveSession(next?.id ?? null);
     }
-  }, [connection.id, selectActiveSession, sessionSnapshot, t]);
+  }, [scopeConnection.connection.id, selectActiveSession, sessionSnapshot, t]);
 
   useEffect(() => {
     selectActiveSession(null);
@@ -354,28 +365,6 @@ export function useAcpChatController({
   useEffect(() => {
     if (activeProvider) setSelectedProvider(activeProvider);
   }, [activeProvider]);
-
-  useEffect(() => {
-    if (active?.projectEnvironmentId) {
-      setSelectedEnvironmentId(active.projectEnvironmentId);
-      return;
-    }
-    if (composerRequest?.connectionId === connection.id) {
-      setSelectedEnvironmentId(composerRequest.projectEnvironmentId);
-      return;
-    }
-    setSelectedEnvironmentId(
-      availableKnowledgeEnvironments.length === 1
-        ? availableKnowledgeEnvironments[0].id
-        : null,
-    );
-  }, [
-    active?.id,
-    active?.projectEnvironmentId,
-    availableKnowledgeEnvironments,
-    composerRequest,
-    connection.id,
-  ]);
 
   useEffect(() => {
     if (enabledProviders.includes(selectedProvider)) return;
@@ -447,7 +436,7 @@ export function useAcpChatController({
     activeSessionId: activeId,
     beginFocusRequest,
     catalogScope,
-    connectionId: connection.id,
+    connectionId: scopeConnection.connection.id,
     currentFocusRequest,
     environmentScopeReady: newEnvironmentScopeReady,
     focusRequestIsCurrent,
@@ -455,6 +444,7 @@ export function useAcpChatController({
     onStarted: commitStartedSession,
     onStartingChange: setStarting,
     prerequisitesReady,
+    selectedEnvironmentConnectionIds: agentScope.environmentConnectionIds,
     selectedEnvironmentId,
     selectedProvider,
     sessionsLoading: sessionSnapshot.loading,
@@ -502,7 +492,7 @@ export function useAcpChatController({
   useEffect(() => {
     if (
       composerRequest === null ||
-      composerRequest.connectionId !== connection.id ||
+      composerRequest.connectionId !== scopeConnection.connection.id ||
       consumedComposerRequestRef.current === composerRequest.id ||
       !environmentInventory.success
     ) return;
@@ -542,7 +532,7 @@ export function useAcpChatController({
     active,
     availableKnowledgeEnvironments,
     composerRequest,
-    connection.id,
+    scopeConnection.connection.id,
     environmentInventory.success,
     prerequisitesReady,
     selectActiveSession,
@@ -606,7 +596,7 @@ export function useAcpChatController({
     try {
       const submittedContext: AcpPromptContext = includeEditorContext
         ? buildAcpPromptContext(
-            connection,
+            scopeConnection.connection,
             activeDocument,
             selectedTable,
             selection,
@@ -615,16 +605,6 @@ export function useAcpChatController({
       if (await submitPromptText(submitted, submittedContext)) setPrompt("");
     } catch (reason) {
       setError(t("agent.acpSendFailed", { error: errMessage(reason) }));
-    }
-  }
-
-  async function selectEnvironment(environmentId: string | null) {
-    if (starting || active || environmentInventory.updatingEnvironmentId) return;
-    setSelectedEnvironmentId(environmentId);
-    setError(null);
-    if (!environmentId) return;
-    if (!(await environmentInventory.ensureAvailable(environmentId))) {
-      setSelectedEnvironmentId(null);
     }
   }
 
@@ -706,6 +686,24 @@ export function useAcpChatController({
     }
   }
 
+  async function selectAgentScope(scopeKey: string | null) {
+    if (starting || !scopeChangeAllowed) return;
+    if (active) {
+      setStarting(true);
+      setError(null);
+      try {
+        await closeAgentAcpSession(active.id);
+        selectActiveSession(null);
+      } catch (reason) {
+        setError(t("agent.acpCloseFailed", { error: errMessage(reason) }));
+        setStarting(false);
+        return;
+      }
+    }
+    await agentScope.select(scopeKey);
+    if (active) setStarting(false);
+  }
+
   function beginResize(event: ReactMouseEvent<HTMLDivElement>) {
     if (overlay || compact) return;
     event.preventDefault();
@@ -775,6 +773,8 @@ export function useAcpChatController({
       knowledge: {
         environments: environmentInventory.choices,
         selectedEnvironmentId,
+        selectedScopeKey: agentScope.selectedScopeKey,
+        scopeChangeAllowed,
         pending: environmentInventory.pending,
         success: environmentInventory.success,
         loadError: environmentLoadError,
@@ -812,7 +812,7 @@ export function useAcpChatController({
         toggleExpanded: () => setComposerExpanded((current) => !current),
         toggleEditorContext: () =>
           setIncludeEditorContext((current) => !current),
-        selectEnvironment,
+        selectEnvironment: selectAgentScope,
         changeConfigOption,
       },
       setup: {

@@ -34,6 +34,7 @@ export const connectionsCatalog = defineCatalog(
     "connections.connectionDuplicated":
       "Duplicate draft is ready. Apply or OK to save it.",
     "connections.connectionMenu": "Connection actions",
+    "connections.projectMenu": "Project actions",
     "connections.connectionOk": "Connection OK",
     "connections.connectionSaved": "Connection saved",
     "connections.clouds": "Clouds",
@@ -376,6 +377,7 @@ export const connectionsCatalog = defineCatalog(
     "connections.connectionDuplicated":
       "복제 초안을 만들었습니다. 적용 또는 확인으로 저장하세요.",
     "connections.connectionMenu": "연결 메뉴",
+    "connections.projectMenu": "프로젝트 메뉴",
     "connections.connectionOk": "연결 정상",
     "connections.connectionSaved": "연결이 저장되었습니다",
     "connections.clouds": "클라우드",

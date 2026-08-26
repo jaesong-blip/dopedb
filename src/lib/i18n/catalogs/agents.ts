@@ -119,6 +119,12 @@ export const agentsCatalog = defineCatalog(
     "agent.acpPlan": "Plan",
     "agent.acpPrompt": "Describe the database task for the Agent…",
     "agent.acpProvider": "Agent",
+    "agent.acpScope": "Agent scope",
+    "agent.acpScopeHint":
+      "Choose every verified database and source in one Environment, or one database with that Environment's sources.",
+    "agent.acpSelectScope": "Select Environment or database",
+    "agent.acpEntireEnvironment": "Entire Environment · all databases + sources",
+    "agent.acpDatabaseScope": "Database · {database}",
     "agent.acpEnvironment": "Project environment",
     "agent.acpEnvironmentHint":
       "Pins the Agent to every database and source revision in one exact Project Environment.",
@@ -494,6 +500,12 @@ export const agentsCatalog = defineCatalog(
     "agent.acpPlan": "계획",
     "agent.acpPrompt": "Agent가 수행할 데이터베이스 작업을 입력하세요…",
     "agent.acpProvider": "Agent",
+    "agent.acpScope": "Agent 범위",
+    "agent.acpScopeHint":
+      "한 Environment의 검증된 모든 DB와 소스를 보거나, 해당 소스와 함께 개별 DB 하나만 선택합니다.",
+    "agent.acpSelectScope": "Environment 또는 DB 선택",
+    "agent.acpEntireEnvironment": "Environment 전체 · 모든 DB + 소스",
+    "agent.acpDatabaseScope": "DB · {database}",
     "agent.acpEnvironment": "프로젝트 환경",
     "agent.acpEnvironmentHint":
       "Agent를 하나의 정확한 프로젝트 환경에 속한 모든 DB와 소스 리비전에 고정합니다.",
