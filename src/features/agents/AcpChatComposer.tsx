@@ -12,15 +12,12 @@ import {
   ToolWindowComposerInput,
 } from "../../design-system/components/ToolWindow";
 import { useI18n } from "../../lib/i18n";
+import { AcpScopeSelect } from "./AcpScopeSelect";
 import type {
   AcpSessionConfigOption,
   AgentProvider,
 } from "./domain";
 import type { AcpChatController } from "./useAcpChatController";
-import {
-  agentDatabaseScopeKey,
-  agentEnvironmentScopeKey,
-} from "./useAgentEnvironmentInventory";
 
 type AcpChatComposerProps = Pick<
   AcpChatController,
@@ -251,59 +248,13 @@ export default function AcpChatComposer({
             }
           />
         ) : null}
-        {setup.knowledge.success ? (
-          <span className="tw:max-w-[14rem]">
-            <InlineSelect
-              value={setup.knowledge.selectedScopeKey ?? ""}
-              disabled={
-                session.starting ||
-                !setup.knowledge.scopeChangeAllowed ||
-                setup.knowledge.reconfirmingEnvironmentId !== null
-              }
-              onChange={(event) =>
-                void commands.composer.selectEnvironment(
-                  event.target.value || null,
-                )
-              }
-              aria-label={t("agent.acpScope")}
-              title={t("agent.acpScopeHint")}
-            >
-              <option value="" disabled>
-                {t("agent.acpSelectScope")}
-              </option>
-              {setup.knowledge.environments.map((environment) => (
-                <optgroup
-                  key={environment.id}
-                  label={`${environment.projectName} / ${environment.name}`}
-                >
-                  <option value={agentEnvironmentScopeKey(environment.id)}>
-                    {t("agent.acpEntireEnvironment")}
-                    {environment.needsReconfirmation
-                      ? ` · ${t("agent.acpEnvironmentReconfirm")}`
-                      : ""}
-                  </option>
-                  {environment.bindings.flatMap((binding) =>
-                    binding.connectionId ? (
-                      <option
-                        key={binding.id}
-                        value={agentDatabaseScopeKey(
-                          environment.id,
-                          binding.connectionId,
-                        )}
-                      >
-                        {t("agent.acpDatabaseScope", {
-                          database: binding.alias || binding.connectionName,
-                        })}
-                      </option>
-                    ) : (
-                      []
-                    ),
-                  )}
-                </optgroup>
-              ))}
-            </InlineSelect>
-          </span>
-        ) : null}
+        <AcpScopeSelect
+          knowledge={setup.knowledge}
+          starting={session.starting}
+          onSelect={(scopeKey) =>
+            void commands.composer.selectEnvironment(scopeKey)
+          }
+        />
       </ToolWindowComposerContext>
     </ToolWindowComposerDock>
   );

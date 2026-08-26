@@ -119,30 +119,34 @@ export const agentsCatalog = defineCatalog(
     "agent.acpPlan": "Plan",
     "agent.acpPrompt": "Describe the database task for the Agent…",
     "agent.acpProvider": "Agent",
-    "agent.acpScope": "Agent scope",
+    "agent.acpScope": "Agent context",
     "agent.acpScopeHint":
-      "Choose every verified database and source in one Environment, or one database with that Environment's sources.",
-    "agent.acpSelectScope": "Select Environment or database",
-    "agent.acpEntireEnvironment": "Entire Environment · all databases + sources",
-    "agent.acpDatabaseScope": "Database · {database}",
-    "agent.acpEnvironment": "Project environment",
-    "agent.acpEnvironmentHint":
-      "Pins the Agent to every database and source revision in one exact Project Environment.",
-    "agent.acpEnvironmentLoadFailed": "Could not load Project Environments",
+      "Choose the entire Project with its sources and PROD databases, or one exact database regardless of Project.",
+    "agent.acpSelectScope": "Choose a Project or database",
+    "agent.acpProjectScopeTrigger": "Project · {project}",
+    "agent.acpDatabaseScopeTrigger": "DB · {database}",
+    "agent.acpCurrentProjectScope":
+      "Agent context: entire Project {project}, its sources, and {count} PROD databases",
+    "agent.acpCurrentDatabaseScope":
+      "Agent context: database {database} in {project} ({marker})",
+    "agent.acpProjectScopeGroup": "Entire Project",
+    "agent.acpDatabaseScopeGroup": "Single database",
+    "agent.acpProjectScopeDescription":
+      "Project sources · {count} PROD databases",
+    "agent.acpEnvironmentLoadFailed": "Could not load Agent scopes",
     "agent.acpEnvironmentLoadFailedBody":
       "The Agent scope could not be verified: {error}",
-    "agent.acpEnvironmentRequired": "Set up a Project Environment",
+    "agent.acpEnvironmentRequired": "Connect a database to a Project",
     "agent.acpEnvironmentRequiredBody":
-      "In Explorer, place this database and source code inside a Project and Environment before starting the Agent.",
-    "agent.acpSelectEnvironment": "Select Project / Environment",
+      "In Explorer, connect this database and source code to a Project before starting the Agent.",
     "agent.acpEnvironmentReconfirm": "Reconfirm",
     "agent.acpEnvironmentReconfirmFailed":
-      "The current connection revision could not be confirmed for this Project Environment.",
+      "The current connection revision could not be confirmed for the selected Project scope.",
     "agent.acpEnvironmentReconfirmFailedWithError":
-      "Could not reconfirm this Project Environment: {error}",
+      "Could not reconfirm the selected Project scope: {error}",
     "agent.acpProtocol": "ACP v1 · official Claude and Codex adapters",
     "agent.acpReadyBody":
-      "Every verified database and source revision in this Project Environment is attached as one exact ACP scope.",
+      "The selected verified database and source revisions are attached as one exact ACP scope.",
     "agent.acpReadyTitle": "Ready to work",
     "agent.acpRenderFailed": "AI Chat could not be displayed",
     "agent.acpRenderFailedBody":
@@ -500,30 +504,33 @@ export const agentsCatalog = defineCatalog(
     "agent.acpPlan": "계획",
     "agent.acpPrompt": "Agent가 수행할 데이터베이스 작업을 입력하세요…",
     "agent.acpProvider": "Agent",
-    "agent.acpScope": "Agent 범위",
+    "agent.acpScope": "Agent 컨텍스트",
     "agent.acpScopeHint":
-      "한 Environment의 검증된 모든 DB와 소스를 보거나, 해당 소스와 함께 개별 DB 하나만 선택합니다.",
-    "agent.acpSelectScope": "Environment 또는 DB 선택",
-    "agent.acpEntireEnvironment": "Environment 전체 · 모든 DB + 소스",
-    "agent.acpDatabaseScope": "DB · {database}",
-    "agent.acpEnvironment": "프로젝트 환경",
-    "agent.acpEnvironmentHint":
-      "Agent를 하나의 정확한 프로젝트 환경에 속한 모든 DB와 소스 리비전에 고정합니다.",
-    "agent.acpEnvironmentLoadFailed": "프로젝트 환경을 불러오지 못했습니다",
+      "프로젝트 전체의 소스와 PROD DB들을 보거나, 프로젝트와 관계없이 개별 DB 하나만 선택합니다.",
+    "agent.acpSelectScope": "프로젝트 전체 또는 개별 DB 선택",
+    "agent.acpProjectScopeTrigger": "프로젝트 · {project}",
+    "agent.acpDatabaseScopeTrigger": "DB · {database}",
+    "agent.acpCurrentProjectScope":
+      "Agent 컨텍스트: {project} 프로젝트 전체, 소스, PROD DB {count}개",
+    "agent.acpCurrentDatabaseScope":
+      "Agent 컨텍스트: {project}의 {database} DB ({marker})",
+    "agent.acpProjectScopeGroup": "프로젝트 전체",
+    "agent.acpDatabaseScopeGroup": "개별 DB",
+    "agent.acpProjectScopeDescription": "프로젝트 소스 · PROD DB {count}개",
+    "agent.acpEnvironmentLoadFailed": "Agent 범위를 불러오지 못했습니다",
     "agent.acpEnvironmentLoadFailedBody":
       "Agent 범위를 검증하지 못했습니다: {error}",
-    "agent.acpEnvironmentRequired": "프로젝트 환경을 먼저 설정하세요",
+    "agent.acpEnvironmentRequired": "프로젝트에 DB를 먼저 연결하세요",
     "agent.acpEnvironmentRequiredBody":
-      "Agent를 시작하기 전에 탐색기에서 이 DB와 소스 코드를 프로젝트와 환경 안에 배치하세요.",
-    "agent.acpSelectEnvironment": "프로젝트 / 환경 선택",
+      "Agent를 시작하기 전에 탐색기에서 이 DB와 소스 코드를 프로젝트에 연결하세요.",
     "agent.acpEnvironmentReconfirm": "재확인",
     "agent.acpEnvironmentReconfirmFailed":
-      "이 프로젝트 환경에서 현재 연결 리비전을 확인하지 못했습니다.",
+      "선택한 프로젝트 범위에서 현재 연결 리비전을 확인하지 못했습니다.",
     "agent.acpEnvironmentReconfirmFailedWithError":
-      "프로젝트 환경을 재확인하지 못했습니다: {error}",
+      "선택한 프로젝트 범위를 재확인하지 못했습니다: {error}",
     "agent.acpProtocol": "ACP v1 · 공식 Claude·Codex 어댑터",
     "agent.acpReadyBody":
-      "이 프로젝트 환경의 검증된 모든 DB와 소스 리비전을 하나의 정확한 ACP 범위로 첨부합니다.",
+      "선택한 검증된 DB와 소스 리비전을 하나의 정확한 ACP 범위로 첨부합니다.",
     "agent.acpReadyTitle": "작업 준비 완료",
     "agent.acpRenderFailed": "AI Chat 화면을 표시하지 못했습니다",
     "agent.acpRenderFailedBody":

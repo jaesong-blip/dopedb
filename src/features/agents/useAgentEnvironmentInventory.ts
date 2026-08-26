@@ -6,9 +6,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { errMessage } from "../../ipc/types";
 import { useI18n } from "../../lib/i18n";
-import type {
-  ConnectionId,
-  ConnectionProfile,
+import {
+  connectionId as asConnectionId,
+  type ConnectionId,
+  type ConnectionProfile,
 } from "../connections/domain";
 import { bindKnowledgeEnvironmentConnectionWithRefresh } from "../knowledge/bindEnvironmentConnection";
 import type { EnvironmentConnection } from "../knowledge/domain";
@@ -19,21 +20,40 @@ import type { AgentKnowledgeEnvironment } from "./domain";
 import { listAgentKnowledgeEnvironments } from "./tauriAdapter";
 
 export type AgentEnvironmentChoice = AgentKnowledgeEnvironment & {
+  projectId: string;
   bindings: EnvironmentConnection[];
   needsReconfirmation: boolean;
 };
 
-export type AgentScopeChoice = {
+type AgentScopeChoiceBase = {
   key: string;
-  kind: "environment" | "database";
   environmentId: string;
   connectionId: ConnectionId;
   environmentConnectionIds: ConnectionId[] | null;
   needsReconfirmation: boolean;
 };
 
-export function agentEnvironmentScopeKey(environmentId: string) {
-  return `environment:${environmentId}`;
+export type AgentProjectScopeChoice = AgentScopeChoiceBase & {
+  kind: "project";
+  projectId: string;
+  projectName: string;
+  databaseCount: number;
+};
+
+export type AgentDatabaseScopeChoice = AgentScopeChoiceBase & {
+  kind: "database";
+  projectId: string;
+  projectName: string;
+  databaseName: string;
+  riskClass: AgentKnowledgeEnvironment["riskClass"];
+};
+
+export type AgentScopeChoice =
+  | AgentProjectScopeChoice
+  | AgentDatabaseScopeChoice;
+
+export function agentProjectScopeKey(environmentId: string) {
+  return `project:${environmentId}`;
 }
 
 export function agentDatabaseScopeKey(
@@ -81,23 +101,27 @@ export function useAgentEnvironmentInventory({
     [agentEnvironmentsQuery.data],
   );
   const choices = useMemo<AgentEnvironmentChoice[]>(() => {
-    const byId = new Map<string, AgentEnvironmentChoice>(
-      available.map((environment) => [
-        environment.id,
-        {
-          ...environment,
-          bindings: [],
-          needsReconfirmation: false,
-        },
-      ]),
-    );
     const environmentIdentity = new Map(
       (knowledgeInventory.data?.projects ?? []).flatMap((project) =>
         project.environments.map((environment) => [
           environment.id,
-          { environment, projectName: project.name },
+          { environment, projectId: project.id, projectName: project.name },
         ] as const),
       ),
+    );
+    const byId = new Map<string, AgentEnvironmentChoice>(
+      available.map((environment) => {
+        const identity = environmentIdentity.get(environment.id);
+        return [
+          environment.id,
+          {
+            ...environment,
+            projectId: identity?.projectId ?? environment.projectName,
+            bindings: [],
+            needsReconfirmation: false,
+          },
+        ] as const;
+      }),
     );
     for (const binding of environmentConnectionsQuery.data ?? []) {
       if (binding.connectionId === null) continue;
@@ -114,6 +138,7 @@ export function useAgentEnvironmentInventory({
       );
       byId.set(binding.projectEnvironmentId, {
         id: binding.projectEnvironmentId,
+        projectId: existing?.projectId ?? identity.projectId,
         projectName: existing?.projectName ?? identity.projectName,
         name: existing?.name ?? identity.environment.name,
         riskClass: existing?.riskClass ?? identity.environment.riskClass,
@@ -132,12 +157,63 @@ export function useAgentEnvironmentInventory({
     environmentConnectionsQuery.data,
     knowledgeInventory.data?.projects,
   ]);
-  const scopes = useMemo<AgentScopeChoice[]>(
+  const projects = useMemo(() => {
+    const byId = new Map<
+      string,
+      { id: string; name: string; boundaries: AgentEnvironmentChoice[] }
+    >();
+    for (const boundary of choices) {
+      const project = byId.get(boundary.projectId);
+      if (project) project.boundaries.push(boundary);
+      else {
+        byId.set(boundary.projectId, {
+          id: boundary.projectId,
+          name: boundary.projectName,
+          boundaries: [boundary],
+        });
+      }
+    }
+    const riskOrder: Record<AgentKnowledgeEnvironment["riskClass"], number> = {
+      production: 0,
+      staging: 1,
+      development: 2,
+      test: 3,
+      custom: 4,
+    };
+    return [...byId.values()]
+      .map((project) => ({
+        ...project,
+        boundaries: project.boundaries.sort(
+          (left, right) =>
+            riskOrder[left.riskClass] - riskOrder[right.riskClass] ||
+            `${left.name}\u0000${left.id}`.localeCompare(
+              `${right.name}\u0000${right.id}`,
+            ),
+        ),
+      }))
+      .sort((left, right) =>
+        `${left.name}\u0000${left.id}`.localeCompare(
+          `${right.name}\u0000${right.id}`,
+        ),
+      );
+  }, [choices]);
+  const projectScopes = useMemo<AgentProjectScopeChoice[]>(
     () =>
-      choices.flatMap((environment) => {
-        const bindings = environment.bindings.filter(
-          (binding): binding is EnvironmentConnection & { connectionId: ConnectionId } =>
-            binding.connectionId !== null,
+      projects.flatMap((project) => {
+        const productionBoundaries = project.boundaries.filter(
+          (boundary) => boundary.riskClass === "production",
+        );
+        if (productionBoundaries.length !== 1) return [];
+        const boundary = productionBoundaries[0]!;
+        const bindings = boundary.bindings.flatMap((binding) =>
+          binding.connectionId === null
+            ? []
+            : [
+                {
+                  ...binding,
+                  connectionId: asConnectionId(binding.connectionId),
+                },
+              ],
         );
         const anchor =
           bindings.find((binding) => binding.connectionId === connection.id) ??
@@ -145,24 +221,56 @@ export function useAgentEnvironmentInventory({
         if (!anchor) return [];
         return [
           {
-            key: agentEnvironmentScopeKey(environment.id),
-            kind: "environment" as const,
-            environmentId: environment.id,
+            key: agentProjectScopeKey(boundary.id),
+            kind: "project" as const,
+            projectId: project.id,
+            projectName: project.name,
+            databaseCount: bindings.length,
+            environmentId: boundary.id,
             connectionId: anchor.connectionId,
             environmentConnectionIds: null,
-            needsReconfirmation: environment.needsReconfirmation,
+            needsReconfirmation: boundary.needsReconfirmation,
           },
-          ...bindings.map((binding) => ({
-            key: agentDatabaseScopeKey(environment.id, binding.connectionId),
-            kind: "database" as const,
-            environmentId: environment.id,
-            connectionId: binding.connectionId,
-            environmentConnectionIds: [binding.connectionId],
-            needsReconfirmation: environment.needsReconfirmation,
-          })),
         ];
       }),
-    [choices, connection.id],
+    [connection.id, projects],
+  );
+  const databaseScopes = useMemo<AgentDatabaseScopeChoice[]>(
+    () =>
+      choices
+        .flatMap((environment) =>
+          environment.bindings.flatMap((binding) => {
+            if (binding.connectionId === null) return [];
+            const scopedConnectionId = asConnectionId(binding.connectionId);
+            return [
+              {
+                key: agentDatabaseScopeKey(
+                  environment.id,
+                  scopedConnectionId,
+                ),
+                kind: "database" as const,
+                projectId: environment.projectId,
+                projectName: environment.projectName,
+                databaseName: binding.alias || binding.connectionName,
+                riskClass: environment.riskClass,
+                environmentId: environment.id,
+                connectionId: scopedConnectionId,
+                environmentConnectionIds: [scopedConnectionId],
+                needsReconfirmation: environment.needsReconfirmation,
+              },
+            ];
+          }),
+        )
+        .sort((left, right) =>
+          `${left.databaseName}\u0000${left.projectName}\u0000${left.connectionId}`.localeCompare(
+            `${right.databaseName}\u0000${right.projectName}\u0000${right.connectionId}`,
+          ),
+        ),
+    [choices],
+  );
+  const scopes = useMemo<AgentScopeChoice[]>(
+    () => [...projectScopes, ...databaseScopes],
+    [databaseScopes, projectScopes],
   );
   const loadError = agentEnvironmentsQuery.isError
     ? errMessage(agentEnvironmentsQuery.error)
@@ -233,7 +341,8 @@ export function useAgentEnvironmentInventory({
 
   return {
     available,
-    choices,
+    projectScopes,
+    databaseScopes,
     scopes,
     ensureAvailable,
     loadError,

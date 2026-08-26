@@ -176,7 +176,9 @@ export default function AcpChatTranscript({
             {t("agentTools.checkAgain")}
           </Button>
         </AgentEmpty>
-      ) : !active && setup.knowledge.environments.length === 0 ? (
+      ) : !active &&
+        setup.knowledge.projectScopes.length === 0 &&
+        setup.knowledge.databaseScopes.length === 0 ? (
         <AgentEmpty>
           <Icon name="folder" />
           <strong>{t("agent.acpEnvironmentRequired")}</strong>

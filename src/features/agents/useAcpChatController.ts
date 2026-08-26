@@ -215,7 +215,7 @@ export function useAcpChatController({
     onSelectConnection: scopeConnection.select,
     selectionLocked: !scopeChangeAllowed,
   });
-  const selectedEnvironmentId = agentScope.environmentId;
+  const { environmentId: selectedEnvironmentId, rememberSessionScope } = agentScope;
   const richTranscriptKeys = selectRichTranscriptKeys(transcript);
   const configOptions = activeProjection?.configOptions ?? [];
   const modelOption = configOptions.find(
@@ -236,10 +236,7 @@ export function useAcpChatController({
       ),
     [activeDocument, scopeConnection.connection, selectedTable, selection],
   );
-  const contextLabels = useMemo(
-    () => summarizeAcpPromptContext(context),
-    [context],
-  );
+  const contextLabels = useMemo(() => summarizeAcpPromptContext(context), [context]);
   const pendingPermissionId =
     active?.lifecycle === "waitingPermission"
       ? activeProjection?.pendingPermissionId ?? null
@@ -426,11 +423,12 @@ export function useAcpChatController({
 
   const commitStartedSession = useCallback(
     (focus: AcpSessionFocus, provider: AgentProvider) => {
+      rememberSessionScope(focus.session.id);
       selectActiveSession(focus.session.id);
       setSelectedProvider(provider);
       setHistoryOpen(false);
     },
-    [selectActiveSession],
+    [rememberSessionScope, selectActiveSession],
   );
   const startSession = useAcpSessionStartup({
     activeSessionId: activeId,
@@ -771,7 +769,8 @@ export function useAcpChatController({
       pluginPending: pluginStatusQuery.isPending,
       copiedSetupCommand,
       knowledge: {
-        environments: environmentInventory.choices,
+        projectScopes: environmentInventory.projectScopes,
+        databaseScopes: environmentInventory.databaseScopes,
         selectedEnvironmentId,
         selectedScopeKey: agentScope.selectedScopeKey,
         scopeChangeAllowed,

@@ -565,11 +565,13 @@ DopeDB의 실제 작업 흐름과 접근성, supported viewport를 위한 제품
   행 높이, surface, icon, selection은 이 문서의 semantic primitive가 소유한다.
   Agent/worktree 행은 DopeDB
   resource tree로 가져오지 않는다.
-- AI Chat의 scope control은 `Project / Environment 전체`와 그 Environment에
-  연결된 개별 DB를 한 계층형 목록으로 표시한다. 전체 범위는 검증된 모든 DB와
-  source revision set을, 개별 DB 범위는 해당 DB revision과 같은 Environment의
-  source revision set을 새 ACP session에 immutable하게 고정한다. 임의의 다중 DB
-  checkbox 조합은 만들지 않는다.
+- AI Chat의 context control은 `프로젝트 전체`와 `개별 DB` 두 group만 표시하고
+  Project Environment를 별도 계층이나 이름으로 노출하지 않는다. 프로젝트 전체는
+  Project source와 단일 production 내부 경계의 검증된 PROD DB 전체를, 개별 DB는
+  Project·환경 표시와 관계없이 선택한 DB 하나와 같은 내부 경계의 source revision
+  set을 새 ACP session에 immutable하게 고정한다. production 내부 경계가 없거나
+  모호한 Project의 전체 범위는 추정하지 않는다. trigger는 메뉴가 닫혀도 선택 종류와
+  대상 이름을 함께 보이며 DEV/staging 전체와 임의의 다중 DB 조합은 만들지 않는다.
 - 빈 AI Chat transcript는 제목·설명 card를 만들지 않고 실제 SQL 작업,
   스키마·선택 데이터 탐색, 명시적 변경 승인 세 줄만 표시한다. 화면에 없는
   IDE capability를 본뜨거나 steady-state onboarding 문단을 반복하지 않는다.
@@ -660,7 +662,9 @@ DopeDB의 실제 작업 흐름과 접근성, supported viewport를 위한 제품
   조밀한 범위 trigger를 소유한다. trigger가 compact 전환이나 tool-window
   교체로 viewport 밖에 나가면 열린 portal도 함께 닫는다. command 선택으로
   menu가 닫힐 때 trigger를 먼저 focus해, 이어서 열린 modal이 macOS pointer
-  경로에서도 실제 호출자를 return-focus owner로 캡처하게 한다.
+  경로에서도 실제 호출자를 return-focus owner로 캡처하게 한다. 선택 가능한
+  `menuitemradio`·`menuitemcheckbox`는 `aria-checked`와 semantic selection surface로
+  현재 값을 메뉴 안에서도 명확히 표시한다.
 - `StatusBadge`, `StatusDot`, `StatusBarItem`, `StatusBarBreadcrumbs`,
   `StatusBarIconButton`, `LoadingLabel`, `InlineNotice`: lifecycle 상태 점,
   semantic success/warning/danger badge, IDE 하단 상태 segment, database

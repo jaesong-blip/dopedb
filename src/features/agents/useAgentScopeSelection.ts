@@ -1,5 +1,6 @@
-// AI Chat scope selection keeps the workbench connection independent from the
-// exact Environment or single-database grant chosen for a new ACP session.
+// AI Chat context selection keeps the workbench connection independent from
+// the Project-production or single-database choice for a new ACP session. The
+// backend still enforces either choice through one exact Environment grant.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -8,12 +9,17 @@ import type {
   ConnectionProfile,
 } from "../connections/domain";
 import type {
+  AcpSessionId,
   AcpSessionSummary,
   AgentComposerRequest,
 } from "./domain";
 import {
+  rememberAgentScopeKind,
+  storedAgentScopeKind,
+} from "./agentScopePreferences";
+import {
   agentDatabaseScopeKey,
-  agentEnvironmentScopeKey,
+  agentProjectScopeKey,
   type useAgentEnvironmentInventory,
 } from "./useAgentEnvironmentInventory";
 
@@ -59,8 +65,14 @@ export function useAgentScopeSelection({
   useEffect(() => {
     if (active?.projectEnvironmentId) {
       setEnvironmentId(active.projectEnvironmentId);
+      const rememberedKind = storedAgentScopeKind(active.id);
+      const isProjectScope =
+        rememberedKind === "project" &&
+        inventory.projectScopes.some(
+          (scope) => scope.environmentId === active.projectEnvironmentId,
+        );
       setEnvironmentConnectionIds(
-        active.environmentConnections.length === 1
+        !isProjectScope && active.environmentConnections.length === 1
           ? [active.environmentConnections[0]!.connectionId as ConnectionId]
           : null,
       );
@@ -68,7 +80,13 @@ export function useAgentScopeSelection({
     }
     if (composerRequest?.connectionId === connectionId) {
       setEnvironmentId(composerRequest.projectEnvironmentId);
-      setEnvironmentConnectionIds(null);
+      setEnvironmentConnectionIds(
+        inventory.projectScopes.some(
+          (scope) => scope.environmentId === composerRequest.projectEnvironmentId,
+        )
+          ? null
+          : [composerRequest.connectionId],
+      );
       return;
     }
     if (
@@ -77,16 +95,24 @@ export function useAgentScopeSelection({
     ) {
       return;
     }
-    setEnvironmentId(
-      inventory.available.length === 1 ? inventory.available[0]!.id : null,
+    const databaseScope = inventory.databaseScopes.find(
+      (scope) => scope.connectionId === connectionId,
     );
-    setEnvironmentConnectionIds(null);
+    setEnvironmentId(
+      databaseScope?.environmentId ??
+        (inventory.available.length === 1 ? inventory.available[0]!.id : null),
+    );
+    setEnvironmentConnectionIds(
+      databaseScope ? [databaseScope.connectionId] : null,
+    );
   }, [
     active,
     composerRequest,
     connectionId,
     environmentId,
     inventory.available,
+    inventory.databaseScopes,
+    inventory.projectScopes,
   ]);
 
   const select = useCallback(
@@ -111,10 +137,20 @@ export function useAgentScopeSelection({
     [inventory, onClearError, onSelectConnection, selectionLocked],
   );
 
+  const rememberSessionScope = useCallback(
+    (sessionId: AcpSessionId) => {
+      rememberAgentScopeKind(
+        sessionId,
+        environmentConnectionIds === null ? "project" : "database",
+      );
+    },
+    [environmentConnectionIds],
+  );
+
   const selectedScopeKey = environmentId
     ? environmentConnectionIds?.length === 1
       ? agentDatabaseScopeKey(environmentId, environmentConnectionIds[0]!)
-      : agentEnvironmentScopeKey(environmentId)
+      : agentProjectScopeKey(environmentId)
     : null;
   const selectedEnvironment = inventory.available.find(
     (environment) => environment.id === environmentId,
@@ -130,6 +166,7 @@ export function useAgentScopeSelection({
     environmentConnectionIds,
     environmentId,
     newScopeReady,
+    rememberSessionScope,
     select,
     selectedScopeKey,
   };
