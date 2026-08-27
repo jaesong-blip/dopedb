@@ -5,41 +5,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import ConfirmButton from "../../components/ConfirmButton";
 import { Icon } from "../../components/Icon";
 import { Button } from "../../design-system/components/Button";
-import {
-  CheckboxField,
-  Field,
-  SelectInput,
-  TextAreaInput,
-  TextInput,
-} from "../../design-system/components/FormControls";
-import {
-  InlineNotice,
-  LoadingLabel,
-  StatusBadge,
-  StatusDot,
-} from "../../design-system/components/Status";
+import { CheckboxField, Field, SelectInput, TextInput } from "../../design-system/components/FormControls";
+import { InlineNotice, LoadingLabel, StatusBadge } from "../../design-system/components/Status";
 import { errMessage } from "../../ipc/types";
 import { useI18n } from "../../lib/i18n";
+import type { AnalysisArticleRecord, AnalysisPublicationRequest } from "./domain";
 import { analysisQueryKeys } from "./queryKeys";
-import { AnalysisPublicationSnapshotPreview } from "./AnalysisPublicationSnapshotPreview";
-import {
-  type AnalysisArticleRecord,
-  type AnalysisPublicationPreview,
-  type AnalysisPublicationRequest,
-} from "./domain";
 import {
   analysisPublicationUrl,
   listAnalysisPublications,
-  previewAnalysisPublication,
   publishAnalysisSnapshot,
   revokeAnalysisPublication,
 } from "./tauriAdapter";
-
-const CONTROL_BLOCKS = new Set([
-  "date_range_control",
-  "comparison_control",
-  "segment_control",
-]);
 
 function slugify(title: string): string {
   const stem = title
@@ -54,20 +31,11 @@ function slugify(title: string): string {
 function requestFor(article: AnalysisArticleRecord): AnalysisPublicationRequest {
   return {
     id: crypto.randomUUID(),
-    runId: article.liveRunId ?? "",
+    runId: article.latestSuccessfulRunId ?? "",
     slug: slugify(article.definition.title),
     replacePublicationId: null,
     visibility: "unlisted",
-    title: article.definition.title,
-    description: article.definition.summary,
-    blockIds: article.definition.blocks
-      .filter((block) => !CONTROL_BLOCKS.has(block.kind))
-      .map((block) => block.id),
-    parameterIds: [],
     searchIndexable: false,
-    sensitivityConfirmed: false,
-    productionConfirmed: false,
-    previewHash: null,
   };
 }
 
@@ -78,7 +46,7 @@ export function AnalysisPublicationPanel({
   article: AnalysisArticleRecord;
   scopeKey: string;
 }) {
-  const { lang, t } = useI18n();
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const publicationKey = analysisQueryKeys.publication(scopeKey, article.id);
   const publications = useQuery({
@@ -87,38 +55,18 @@ export function AnalysisPublicationPanel({
     retry: false,
   });
   const [request, setRequest] = useState(() => requestFor(article));
-  const [preview, setPreview] = useState<AnalysisPublicationPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const change = (patch: Partial<AnalysisPublicationRequest>) => {
-    setRequest((current) => ({ ...current, ...patch, previewHash: null }));
-    setPreview(null);
-  };
-  const previewMutation = useMutation({
-    mutationFn: () => previewAnalysisPublication(article.id, { ...request, previewHash: null }),
-    onSuccess: (value) => {
-      setError(null);
-      setPreview(value);
-    },
-    onError: (nextError) => setError(errMessage(nextError)),
-  });
-  const publishMutation = useMutation({
-    mutationFn: () => {
-      if (!preview) throw new Error(t("analysis.publicationPreviewRequired"));
-      return publishAnalysisSnapshot(article.id, {
-        ...request,
-        previewHash: preview.snapshotHash,
-      });
-    },
+  const publish = useMutation({
+    mutationFn: () => publishAnalysisSnapshot(article.id, request),
     onSuccess: async () => {
       setError(null);
-      setPreview(null);
       setRequest(requestFor(article));
       await queryClient.invalidateQueries({ queryKey: publicationKey });
     },
     onError: (nextError) => setError(errMessage(nextError)),
   });
-  const revokeMutation = useMutation({
+  const revoke = useMutation({
     mutationFn: (publicationId: string) => revokeAnalysisPublication(article.id, publicationId),
     onSuccess: async () => {
       setError(null);
@@ -127,179 +75,99 @@ export function AnalysisPublicationPanel({
     onError: (nextError) => setError(errMessage(nextError)),
   });
 
-  if (article.state !== "live" || !article.liveRunId) {
-    return (
-      <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[900px] tw:gap-3 tw:p-5">
-        <InlineNotice tone="warning" icon="alert">
-          {t("analysis.publicationLiveFirst")}
-        </InlineNotice>
-      </div>
-    );
+  const preparePublication = (publication: NonNullable<typeof publications.data>[number]) => {
+    setRequest({
+      ...requestFor(article),
+      slug: publication.slug,
+      replacePublicationId: publication.id,
+      visibility: publication.visibility,
+      searchIndexable: publication.visibility === "public",
+    });
+  };
+
+  if (!article.latestSuccessfulRunId) {
+    return <InlineNotice tone="warning" icon="alert">{t("analysis.publishRunFirst")}</InlineNotice>;
   }
 
   return (
-    <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[1200px] tw:gap-6 tw:p-5 tw:@max-[760px]:p-3">
+    <div className="tw:grid tw:gap-5">
       {error ? <InlineNotice tone="danger" icon="alert" role="alert">{error}</InlineNotice> : null}
-
-      <section className="tw:grid tw:gap-3">
-        <div className="tw:grid tw:gap-1">
-          <h2 className="tw:m-0 tw:text-base tw:font-semibold">{t("analysis.publicationTitle")}</h2>
-          <p className="tw:m-0 tw:max-w-[86ch] tw:text-sm tw:leading-body tw:text-muted-foreground">
-            {t("analysis.publicationBody", { run: article.liveRunId.slice(0, 8) })}
-          </p>
-        </div>
-        <div className="tw:grid tw:grid-cols-2 tw:gap-3 tw:@max-[680px]:grid-cols-1">
-          <Field label={t("analysis.publicationPublicTitle")}>
-            <TextInput value={request.title} maxLength={160} onChange={(event) => change({ title: event.target.value })} />
-          </Field>
-          <Field label={t("analysis.publicationSlug")}>
-            <TextInput value={request.slug} pattern="[a-z0-9][a-z0-9-]{7,127}" onChange={(event) => change({ slug: event.target.value.toLocaleLowerCase() })} />
-          </Field>
-          <Field label={t("analysis.publicationVisibility")}>
-            <SelectInput value={request.visibility} onChange={(event) => {
-              const visibility = event.target.value === "public" ? "public" : "unlisted";
-              change({ visibility, searchIndexable: visibility === "public" ? request.searchIndexable : false });
-            }}>
-              <option value="unlisted">{t("analysis.publicationUnlisted")}</option>
-              <option value="public">{t("analysis.publicationPublic")}</option>
-            </SelectInput>
-          </Field>
-          <Field label={t("analysis.publicationReplace")}>
-            <SelectInput value={request.replacePublicationId ?? ""} onChange={(event) => change({ replacePublicationId: event.target.value || null })}>
-              <option value="">{t("analysis.publicationNewUrl")}</option>
-              {(publications.data ?? []).filter((publication) => !publication.revokedAt).map((publication) => (
-                <option key={publication.id} value={publication.id}>{publication.slug} · v{publication.version}</option>
-              ))}
-            </SelectInput>
-          </Field>
-        </div>
-        <Field label={t("analysis.publicationDescription")}>
-          <TextAreaInput value={request.description} maxLength={2_000} onChange={(event) => change({ description: event.target.value })} />
-        </Field>
-
-        <div className="tw:grid tw:gap-2">
-          <strong className="tw:text-sm tw:font-medium">{t("analysis.publicationBlocks")}</strong>
-          <div className="tw:grid tw:grid-cols-2 tw:gap-1 tw:rounded-md tw:border tw:border-border-subtle tw:p-2 tw:@max-[620px]:grid-cols-1">
-            {article.definition.blocks.filter((block) => !CONTROL_BLOCKS.has(block.kind)).map((block) => (
-              <CheckboxField
-                key={block.id}
-                label={`${block.title || block.id} · ${block.kind.replace(/_/g, " ")}`}
-                checked={request.blockIds.includes(block.id)}
-                onChange={(event) => change({
-                  blockIds: event.target.checked
-                    ? [...request.blockIds, block.id]
-                    : request.blockIds.filter((id) => id !== block.id),
-                })}
-              />
-            ))}
-          </div>
-        </div>
-        {article.definition.parameters.length ? (
-          <div className="tw:grid tw:gap-2">
-            <strong className="tw:text-sm tw:font-medium">{t("analysis.publicationParameters")}</strong>
-            <div className="tw:grid tw:grid-cols-2 tw:gap-1 tw:rounded-md tw:border tw:border-border-subtle tw:p-2 tw:@max-[620px]:grid-cols-1">
-              {article.definition.parameters.map((parameter) => (
-                <CheckboxField
-                  key={parameter.id}
-                  label={parameter.label}
-                  checked={request.parameterIds.includes(parameter.id)}
-                  onChange={(event) => change({
-                    parameterIds: event.target.checked
-                      ? [...request.parameterIds, parameter.id]
-                      : request.parameterIds.filter((id) => id !== parameter.id),
-                  })}
-                />
-              ))}
-            </div>
-          </div>
-        ) : null}
-        <div className="tw:grid tw:gap-2 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3">
-          <CheckboxField
-            label={t("analysis.publicationSensitivityConfirm")}
-            checked={request.sensitivityConfirmed}
-            onChange={(event) => change({ sensitivityConfirmed: event.target.checked })}
-          />
-          <CheckboxField
-            label={t("analysis.publicationProductionConfirm")}
-            checked={request.productionConfirmed}
-            onChange={(event) => change({ productionConfirmed: event.target.checked })}
-          />
-          <CheckboxField
-            label={t("analysis.publicationIndexable")}
-            checked={request.searchIndexable}
-            disabled={request.visibility !== "public"}
-            onChange={(event) => change({ searchIndexable: event.target.checked })}
-          />
-        </div>
-        <div className="tw:flex tw:flex-wrap tw:justify-end tw:gap-2">
-          <Button
-            disabled={previewMutation.isPending || request.blockIds.length === 0 || !request.sensitivityConfirmed || !request.productionConfirmed}
-            onClick={() => previewMutation.mutate()}
-          >
-            {previewMutation.isPending ? <Icon name="refresh" className="tw:animate-spin tw:motion-reduce:animate-none" /> : <Icon name="view" />}
-            {t("analysis.publicationPreview")}
-          </Button>
-          <ConfirmButton
-            variant="primary"
-            disabled={!preview || publishMutation.isPending}
-            confirmLabel={t("analysis.publicationPublishConfirm")}
-            onConfirm={() => publishMutation.mutate()}
-          >
-            <Icon name="externalLink" /> {t("analysis.publicationPublish")}
-          </ConfirmButton>
-        </div>
-      </section>
-
-      {preview ? (
-        <AnalysisPublicationSnapshotPreview
-          definition={article.definition}
-          parameterIds={request.parameterIds}
-          preview={preview}
+      <div className="tw:grid tw:gap-1">
+        <h2 className="tw:m-0 tw:text-base tw:font-semibold">{t("analysis.publishHtmlTitle")}</h2>
+        <p className="tw:m-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
+          {t("analysis.publishHtmlBody")}
+        </p>
+      </div>
+      <Field label={t("analysis.publicationSlug")}>
+        <TextInput
+          id="analysis-publication-slug"
+          value={request.slug}
+          maxLength={128}
+          onChange={(event) => setRequest((current) => ({
+            ...current,
+            slug: event.target.value.toLocaleLowerCase().replace(/[^a-z0-9-]/g, ""),
+          }))}
+        />
+      </Field>
+      <Field label={t("analysis.publicationVisibility")}>
+        <SelectInput
+          id="analysis-publication-visibility"
+          value={request.visibility}
+          onChange={(event) => {
+            const visibility = event.target.value === "public" ? "public" : "unlisted";
+            setRequest((current) => ({ ...current, visibility, searchIndexable: false }));
+          }}
+        >
+          <option value="unlisted">{t("analysis.visibilityUnlisted")}</option>
+          <option value="public">{t("analysis.visibilityPublic")}</option>
+        </SelectInput>
+      </Field>
+      {request.visibility === "public" ? (
+        <CheckboxField
+          checked={request.searchIndexable}
+          onChange={(event) => setRequest((current) => ({ ...current, searchIndexable: event.target.checked }))}
+          label={t("analysis.publicationSearchIndex")}
         />
       ) : null}
+      <div className="tw:flex tw:justify-end">
+        <Button variant="primary" disabled={publish.isPending || request.slug.length < 8} onClick={() => publish.mutate()}>
+          <Icon name="upload" />
+          {publish.isPending ? t("analysis.publishing") : request.replacePublicationId ? t("analysis.publishNewVersion") : t("analysis.publishHtml")}
+        </Button>
+      </div>
 
-      <section className="tw:grid tw:gap-3 tw:border-t tw:border-border-subtle tw:pt-5">
-        <h2 className="tw:m-0 tw:text-base tw:font-semibold">{t("analysis.publicationHistory")}</h2>
-        {publications.isPending ? <LoadingLabel>{t("analysis.publicationLoading")}</LoadingLabel> : publications.error ? (
-          <InlineNotice tone="danger" icon="alert">{errMessage(publications.error)}</InlineNotice>
-        ) : (publications.data?.length ?? 0) === 0 ? (
-          <span className="tw:text-sm tw:text-muted-foreground">{t("analysis.publicationEmpty")}</span>
-        ) : publications.data?.map((publication) => (
-          <div key={publication.id} className="tw:grid tw:grid-cols-[auto_minmax(0,1fr)_auto] tw:items-center tw:gap-3 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3">
-            <StatusDot tone={publication.revokedAt ? "neutral" : "success"} />
-            <span className="tw:grid tw:min-w-0 tw:gap-0.5">
-              <strong className="tw:truncate tw:text-sm tw:font-medium">{publication.title}</strong>
-              <span className="tw:truncate tw:text-xs tw:text-muted-foreground">{publication.slug} · v{publication.version} · {publication.visibility === "public" ? t("analysis.publicationPublic") : t("analysis.publicationUnlisted")} · {new Date(publication.publishedAt).toLocaleString(lang)}</span>
-              <code className="tw:truncate tw:text-2xs tw:text-muted-foreground">{publication.snapshotHash}</code>
-            </span>
-            <span className="tw:flex tw:items-center tw:gap-1">
-              {!publication.revokedAt ? (
-                <Button
-                  iconOnly
-                  size="xs"
-                  variant="ghost"
-                  title={t("analysis.publicationOpen")}
-                  onClick={() => void analysisPublicationUrl(publication.slug).then(openUrl)}
-                >
-                  <Icon name="externalLink" />
-                </Button>
-              ) : null}
-              {!publication.revokedAt ? (
-                <ConfirmButton
-                  iconOnly
-                  size="xs"
-                  variant="ghost"
-                  label={t("analysis.publicationRevoke")}
-                  confirmLabel={t("analysis.publicationRevokeConfirm")}
-                  disabled={revokeMutation.isPending}
-                  onConfirm={() => revokeMutation.mutate(publication.id)}
-                >
-                  <Icon name="trash" />
-                </ConfirmButton>
-              ) : <StatusBadge density="compact">{t("analysis.publicationRevoked")}</StatusBadge>}
-            </span>
-          </div>
-        ))}
+      <section className="tw:grid tw:gap-2 tw:border-t tw:border-border-subtle tw:pt-4">
+        <h3 className="tw:m-0 tw:text-sm tw:font-semibold">{t("analysis.publicationsTitle")}</h3>
+        {publications.isPending ? <LoadingLabel>{t("analysis.loading")}</LoadingLabel> : null}
+        {publications.data?.length ? (
+          <ul className="tw:m-0 tw:grid tw:list-none tw:gap-2 tw:p-0">
+            {publications.data.map((publication) => (
+              <li className="tw:flex tw:flex-wrap tw:items-center tw:gap-2 tw:rounded-md tw:border tw:border-border-subtle tw:p-3" key={publication.id}>
+                <code className="tw:min-w-0 tw:flex-1 tw:truncate tw:text-xs">/{publication.slug}</code>
+                <StatusBadge density="compact">v{publication.version}</StatusBadge>
+                {publication.revokedAt ? <StatusBadge density="compact" tone="danger">{t("analysis.revoked")}</StatusBadge> : null}
+                {!publication.revokedAt ? (
+                  <>
+                    <Button size="xs" onClick={() => void analysisPublicationUrl(publication.slug).then(openUrl)}>
+                      {t("analysis.openPublication")}
+                    </Button>
+                    <Button size="xs" onClick={() => preparePublication(publication)}>{t("analysis.prepareNewVersion")}</Button>
+                    <ConfirmButton
+                      size="xs"
+                      variant="danger"
+                      confirmLabel={t("analysis.revokeConfirm")}
+                      onConfirm={() => revoke.mutate(publication.id)}
+                    >
+                      {t("analysis.revoke")}
+                    </ConfirmButton>
+                  </>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : publications.isPending ? null : (
+          <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">{t("analysis.noPublications")}</p>
+        )}
       </section>
     </div>
   );

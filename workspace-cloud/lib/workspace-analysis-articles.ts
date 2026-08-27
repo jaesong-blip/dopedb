@@ -1,10 +1,10 @@
 // Runtime-neutral, credential-free contract for shared Analysis Articles.
 //
-// An Article definition is declarative. It can describe bounded reads, typed
-// transforms, narrative/BI blocks, refresh policy, and evidence claims, but it
-// cannot carry result rows, credentials, executable JavaScript, HTML, or an
-// inferred cross-connection join. Desktop is the only database execution plane.
+// Current Articles are sanitized HTML plus one bounded read. Version-1 graph
+// definitions are accepted only long enough to project them into that simple
+// contract; Desktop remains the only database execution plane.
 import { CronExpressionParser } from "cron-parser";
+import sanitizeHtml from "sanitize-html";
 
 export const analysisArticleStates = ["draft", "review", "live", "archived"] as const;
 export const analysisArticleSources = [
@@ -246,9 +246,10 @@ export function nextAnalysisRefreshAt(
 }
 
 export type AnalysisArticleDefinition = Readonly<{
-  version: 1;
+  version: 2;
   source: AnalysisArticleSource;
   title: string;
+  html: string;
   question: string;
   summary: string;
   timezone: string;
@@ -282,6 +283,33 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const ID = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const PARAMETER_TOKEN = /\{\{([A-Za-z][A-Za-z0-9_-]{0,63})\}\}/g;
 const UNSAFE_DISPLAY = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u202a-\u202e\u2066-\u2069]/u;
+
+const ARTICLE_HTML_TAGS = [
+  "p", "h2", "h3", "h4", "blockquote", "ul", "ol", "li", "strong", "em",
+  "code", "pre", "a", "hr", "br", "table", "thead", "tbody", "tr", "th", "td",
+] as const;
+
+export function sanitizeAnalysisArticleHtml(value: unknown): string {
+  if (typeof value !== "string" || value.length > 250_000 || UNSAFE_DISPLAY.test(value)) {
+    throw new Error("Invalid Analysis Article HTML");
+  }
+  const html = sanitizeHtml(value, {
+    allowedTags: [...ARTICLE_HTML_TAGS],
+    allowedAttributes: {
+      a: ["href", "title"],
+      th: ["colspan", "rowspan", "scope"],
+      td: ["colspan", "rowspan"],
+    },
+    allowedSchemes: ["http", "https", "mailto"],
+    allowProtocolRelative: false,
+    disallowedTagsMode: "discard",
+    enforceHtmlBoundary: true,
+  });
+  if (new TextEncoder().encode(html).byteLength > 256 * 1024) {
+    throw new Error("Analysis Article HTML is too large");
+  }
+  return html;
+}
 
 function exactRecord(value: unknown, fields: readonly string[]) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -1104,16 +1132,73 @@ function validateBlockSchema(
   }
 }
 
+function escapeHtmlText(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function paragraphs(value: string) {
+  return value
+    .split(/\n{2,}/u)
+    .map((paragraph) => `<p>${escapeHtmlText(paragraph).replaceAll("\n", "<br>")}</p>`)
+    .join("");
+}
+
+function legacyArticleHtml(
+  question: string,
+  summary: string,
+  blocks: readonly AnalysisBlock[],
+) {
+  const parts: string[] = [];
+  if (summary.trim()) parts.push(paragraphs(summary));
+  if (question.trim() && question.trim() !== summary.trim()) parts.push(paragraphs(question));
+  for (const block of blocks) {
+    if (block.kind === "heading" && typeof block.config.text === "string") {
+      const level = block.config.level === 3 ? 4 : block.config.level === 2 ? 3 : 2;
+      parts.push(`<h${level}>${escapeHtmlText(block.config.text)}</h${level}>`);
+    } else if ((block.kind === "markdown" || block.kind === "callout")
+      && typeof block.config.markdown === "string") {
+      parts.push(paragraphs(block.config.markdown));
+    } else if (block.kind === "divider") {
+      parts.push("<hr>");
+    }
+  }
+  return sanitizeAnalysisArticleHtml(parts.join(""));
+}
+
+function queryResultBlock(query: AnalysisQueryNode): AnalysisBlock {
+  return {
+    id: "query_result",
+    kind: "table",
+    title: "Query result",
+    sourceNodeId: query.id,
+    width: 12,
+    config: {
+      columns: query.columns.map((column) => column.name),
+      pageSize: Math.max(10, Math.min(500, query.maxRows)),
+    },
+  };
+}
+
 function parseDefinition(value: unknown, connectionRoles: ReadonlySet<string>): AnalysisArticleDefinition {
+  const candidate = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+  const version = candidate?.version;
   const row = exactRecord(value, [
     "version", "source", "title", "question", "summary", "timezone", "parameters",
     "queries", "transforms", "metrics", "blocks", "claims", "refresh", "warnings",
+    ...(version === 2 ? ["html"] : []),
   ]);
   const title = displayText(row?.title, 160);
   const question = displayText(row?.question, 8_000, true);
   const summary = displayText(row?.summary, 20_000, true);
   const timezone = displayText(row?.timezone, 128);
-  if (!row || row.version !== 1 || typeof row.source !== "string"
+  if (!row || (row.version !== 1 && row.version !== 2) || typeof row.source !== "string"
     || !analysisArticleSources.includes(row.source as AnalysisArticleSource)
     || title === null || question === null || summary === null || timezone === null
     || !Array.isArray(row.parameters) || row.parameters.length > 32
@@ -1206,21 +1291,70 @@ function parseDefinition(value: unknown, connectionRoles: ReadonlySet<string>): 
   }
   const warnings = row.warnings.map((warning) => displayText(warning, 2_000));
   if (warnings.some((warning) => warning === null)) throw new Error("Invalid Analysis Article warning");
+  const refresh = parseRefresh(row.refresh);
+  const parsedPrimaryQuery = queries[0]!;
+  const primaryQuery = { ...parsedPrimaryQuery, cacheTtlSeconds: 0 };
+  const referencedParameterIds = new Set(primaryQuery.parameterIds);
+  const retainedParameters = parameters.filter((parameter) => referencedParameterIds.has(parameter.id));
+  if (row.version === 2) {
+    if (queries.length !== 1 || transforms.length !== 0 || metrics.length !== 0 || claims.length !== 0
+      || warnings.length !== 0 || blocks.length !== 1 || blocks[0]?.kind !== "table"
+      || blocks[0]?.id !== "query_result"
+      || blocks[0].sourceNodeId !== parsedPrimaryQuery.id || question !== "" || summary !== ""
+      || timezone !== "UTC" || refresh.mode !== "manual" || refresh.cron !== null
+      || refresh.runnerId !== null || refresh.shareReviewedResults) {
+      throw new Error("Analysis Article must contain one HTML document and one manual read query");
+    }
+    return {
+      version: 2,
+      source: row.source as AnalysisArticleSource,
+      title,
+      html: sanitizeAnalysisArticleHtml(row.html),
+      question: "",
+      summary: "",
+      timezone: "UTC",
+      parameters: retainedParameters,
+      queries: [primaryQuery],
+      transforms: [],
+      metrics: [],
+      blocks: [queryResultBlock(primaryQuery)],
+      claims: [],
+      refresh: {
+        mode: "manual",
+        cron: null,
+        timezone: "UTC",
+        runnerId: null,
+        maxStalenessSeconds: 86_400,
+        resultRetentionDays: 30,
+        shareReviewedResults: false,
+      },
+      warnings: [],
+    };
+  }
   return {
-    version: 1,
+    version: 2,
     source: row.source as AnalysisArticleSource,
     title,
-    question,
-    summary,
-    timezone,
-    parameters,
-    queries,
-    transforms,
-    metrics,
-    blocks,
-    claims,
-    refresh: parseRefresh(row.refresh),
-    warnings: warnings as string[],
+    html: legacyArticleHtml(question, summary, blocks),
+    question: "",
+    summary: "",
+    timezone: "UTC",
+    parameters: retainedParameters,
+    queries: [primaryQuery],
+    transforms: [],
+    metrics: [],
+    blocks: [queryResultBlock(primaryQuery)],
+    claims: [],
+    refresh: {
+      mode: "manual",
+      cron: null,
+      timezone: "UTC",
+      runnerId: null,
+      maxStalenessSeconds: 86_400,
+      resultRetentionDays: 30,
+      shareReviewedResults: false,
+    },
+    warnings: [],
   };
 }
 
@@ -1249,17 +1383,22 @@ export function parseSharedAnalysisArticleCreate(value: unknown): SharedAnalysis
   if ((row.sourceKnowledgeGrantId === null) !== (row.graphRevisionIds.length === 0)) {
     throw new Error("Analysis Article knowledge authority is incomplete");
   }
+  const definition = parseDefinition(
+    row.definition,
+    new Set(connections.map((connection) => connection.role)),
+  );
+  const queryConnection = connections.find(
+    (connection) => connection.role === definition.queries[0]!.connectionRole,
+  );
+  if (!queryConnection) throw new Error("Analysis Article query connection is unavailable");
   return {
     id: row.id,
     projectEnvironmentId: row.projectEnvironmentId,
     environmentRevision,
-    sourceKnowledgeGrantId: row.sourceKnowledgeGrantId as string | null,
-    graphRevisionIds: row.graphRevisionIds as string[],
-    connections,
-    definition: parseDefinition(
-      row.definition,
-      new Set(connections.map((connection) => connection.role)),
-    ),
+    sourceKnowledgeGrantId: null,
+    graphRevisionIds: [],
+    connections: [queryConnection],
+    definition,
   };
 }
 

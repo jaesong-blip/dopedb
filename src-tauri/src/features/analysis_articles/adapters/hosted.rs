@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use dopedb_protocol::{
-    AnalysisArticleRecord, AnalysisArticleVersionPayload, AnalysisBlockKind, AnalysisQueryReceipt,
+    AnalysisArticleRecord, AnalysisArticleVersionPayload, AnalysisQueryReceipt,
     AnalysisResultFragment, AnalysisRunError, AnalysisRunState, AnalysisRunTrigger,
     SharedAnalysisArticleCreate,
 };
@@ -366,46 +366,7 @@ pub(crate) struct AnalysisPublicationRequest {
     pub(crate) slug: String,
     pub(crate) replace_publication_id: Option<Uuid>,
     pub(crate) visibility: String,
-    pub(crate) title: String,
-    pub(crate) description: String,
-    pub(crate) block_ids: Vec<String>,
-    pub(crate) parameter_ids: Vec<String>,
     pub(crate) search_indexable: bool,
-    pub(crate) sensitivity_confirmed: bool,
-    pub(crate) production_confirmed: bool,
-    pub(crate) preview_hash: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct RemoteAnalysisPublicParameter {
-    pub(crate) label: String,
-    pub(crate) value: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct RemoteAnalysisPublicBlock {
-    pub(crate) id: String,
-    pub(crate) kind: AnalysisBlockKind,
-    pub(crate) title: String,
-    pub(crate) width: u8,
-    pub(crate) config: serde_json::Value,
-    pub(crate) fragments: Vec<AnalysisResultFragment>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct RemoteAnalysisPublicSnapshot {
-    pub(crate) version: u32,
-    pub(crate) title: String,
-    pub(crate) description: String,
-    pub(crate) summary: String,
-    pub(crate) timezone: String,
-    pub(crate) data_as_of: DateTime<Utc>,
-    pub(crate) search_indexable: bool,
-    pub(crate) parameters: Vec<RemoteAnalysisPublicParameter>,
-    pub(crate) blocks: Vec<RemoteAnalysisPublicBlock>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -429,13 +390,6 @@ pub(crate) struct RemoteAnalysisPublication {
 #[serde(deny_unknown_fields)]
 struct PublicationCollectionResponse {
     publications: Vec<RemoteAnalysisPublication>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct PublicationPreviewResponse {
-    snapshot: RemoteAnalysisPublicSnapshot,
-    snapshot_hash: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -768,7 +722,7 @@ fn validate_article(article: &AnalysisArticleRecord, expected_id: Option<Uuid>) 
             .live_revision
             .is_some_and(|revision| revision < 1 || revision > article.revision)
         || article.connections.is_empty()
-        || article.definition.version != 1
+        || article.definition.version != 2
     {
         return Err(AppError::Network(
             "Analysis Article returned invalid identity or authority".into(),
@@ -1397,67 +1351,12 @@ pub(crate) async fn list_analysis_publications(
     Ok(body.publications)
 }
 
-pub(crate) async fn preview_analysis_publication(
-    user_id: &str,
-    workspace_id: Uuid,
-    article_id: Uuid,
-    request: &AnalysisPublicationRequest,
-) -> AppResult<(RemoteAnalysisPublicSnapshot, String)> {
-    if request.preview_hash.is_some() {
-        return Err(AppError::Config(
-            "Analysis publication preview cannot assert a snapshot hash".into(),
-        ));
-    }
-    let token = token(user_id).await?;
-    let raw = client()?
-        .post(format!(
-            "{}/api/v1/workspaces/{workspace_id}/analyses/{article_id}/publications/preview",
-            origin()?
-        ))
-        .bearer_auth(token.as_str())
-        .json(request)
-        .send()
-        .await
-        .map_err(|error| request_error("previewing an Analysis publication", error))?;
-    let body: PublicationPreviewResponse = response(
-        raw,
-        user_id,
-        "Analysis publication preview",
-        MAX_RESULT_RESPONSE_BYTES,
-    )
-    .await?;
-    if body.snapshot.version != 1
-        || body.snapshot.blocks.is_empty()
-        || body.snapshot.blocks.len() > 128
-        || body.snapshot_hash.len() != 64
-        || body
-            .snapshot
-            .blocks
-            .iter()
-            .any(|block| block.width < 1 || block.width > 12 || block.fragments.len() > 256)
-    {
-        return Err(AppError::Network(
-            "Analysis publication preview returned invalid safe content".into(),
-        ));
-    }
-    Ok((body.snapshot, body.snapshot_hash))
-}
-
 pub(crate) async fn create_analysis_publication(
     user_id: &str,
     workspace_id: Uuid,
     article_id: Uuid,
     request: &AnalysisPublicationRequest,
 ) -> AppResult<RemoteAnalysisPublication> {
-    if request
-        .preview_hash
-        .as_ref()
-        .is_none_or(|hash| hash.len() != 64)
-    {
-        return Err(AppError::Config(
-            "Analysis publication requires its exact preview hash".into(),
-        ));
-    }
     let token = token(user_id).await?;
     let raw = client()?
         .post(format!(
@@ -1477,12 +1376,9 @@ pub(crate) async fn create_analysis_publication(
     )
     .await?;
     validate_publication(&body.publication, Some(request.id))?;
-    if body.publication.slug != request.slug
-        || body.publication.source_run_id != request.run_id
-        || body.publication.snapshot_hash != request.preview_hash.as_deref().unwrap_or_default()
-    {
+    if body.publication.slug != request.slug || body.publication.source_run_id != request.run_id {
         return Err(AppError::Network(
-            "Analysis publication changed its approved snapshot".into(),
+            "Analysis publication changed its requested identity".into(),
         ));
     }
     Ok(body.publication)

@@ -1,5 +1,7 @@
-// Create and list explicitly approved fixed public snapshots of one live Article.
-import { and, desc, eq, gt } from "drizzle-orm";
+// Publish and list immutable HTML snapshots. The source run proves that the
+// saved query executed for this exact revision, but its SQL and rows are never
+// copied into the public payload.
+import { and, desc, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
 import { db } from "../../../../../../../../lib/db";
@@ -14,7 +16,6 @@ import {
 import {
   workspaceAnalysisArticleRun,
   workspaceAnalysisPublication,
-  workspaceAnalysisResultFragment,
 } from "../../../../../../../../lib/schema";
 import { authorizeWorkspace } from "../../../../../../../../lib/workspace-authorization";
 import { accessibleAnalysisArticle } from "../../../../../../../../lib/workspace-analysis-article-http";
@@ -23,9 +24,7 @@ import {
   buildAnalysisPublicSnapshot,
   parseAnalysisPublicationRequest,
 } from "../../../../../../../../lib/workspace-analysis-publications";
-import { openAnalysisResultFragments } from "../../../../../../../../lib/workspace-analysis-results";
 import { hasWorkspaceCapability } from "../../../../../../../../lib/workspace-permissions";
-import { canonicalHash } from "../../../../../../../../lib/workspace-versioning";
 
 type RouteContext = { params: Promise<{ workspaceId: string; articleId: string }> };
 
@@ -88,71 +87,39 @@ export async function POST(request: Request, context: RouteContext) {
   } catch (error) {
     return jsonError(error instanceof Error ? error.message : "Invalid Analysis Article publication", 400);
   }
-  if (!publication.previewHash) {
-    return jsonError("Preview the exact Analysis Article snapshot before publishing", 428);
-  }
   const article = await accessibleAnalysisArticle({
     organizationId: workspaceId,
     articleId,
     memberId: authorization.membership.id,
-    includeWorking: false,
+    includeWorking: true,
   });
-  if (!article || !article.liveRevision || article.liveRunId !== publication.runId) {
-    return jsonError("Only the current live Analysis Article result can be published", 409);
+  if (!article) return jsonError("Analysis Article not found", 404);
+  if (article.ownerMemberId !== authorization.membership.id
+    && authorization.role !== "admin" && authorization.role !== "owner") {
+    return jsonError("Only the Article owner or a workspace administrator can publish it", 403);
   }
   const run = await db.query.workspaceAnalysisArticleRun.findFirst({
     where: and(
       eq(workspaceAnalysisArticleRun.organizationId, workspaceId),
       eq(workspaceAnalysisArticleRun.articleId, articleId),
       eq(workspaceAnalysisArticleRun.id, publication.runId),
+      eq(workspaceAnalysisArticleRun.articleRevision, article.revision),
       eq(workspaceAnalysisArticleRun.state, "succeeded"),
     ),
   });
-  if (!run || !run.finishedAt) return jsonError("Live Analysis Article result is unavailable", 409);
-  const stored = await db.select().from(workspaceAnalysisResultFragment).where(and(
-    eq(workspaceAnalysisResultFragment.organizationId, workspaceId),
-    eq(workspaceAnalysisResultFragment.runId, run.id),
-    gt(workspaceAnalysisResultFragment.expiresAt, new Date()),
-  ));
-  let fragments;
-  try {
-    fragments = await openAnalysisResultFragments({
-      request,
-      workspaceId,
-      fragments: stored.map((fragment) => ({
-        runId: run.id,
-        blockId: fragment.blockId,
-        ordinal: fragment.ordinal,
-        dataKeyId: fragment.dataKeyId,
-        keyReference: fragment.keyReference,
-        keyVersion: fragment.keyVersion,
-        ciphertext: fragment.ciphertext,
-        payloadHash: fragment.payloadHash,
-      })),
-    });
-  } catch {
-    return jsonError("Live Analysis Article result is temporarily unavailable", 503);
+  if (!run?.finishedAt) {
+    return jsonError("Run the saved query successfully before publishing this HTML", 409);
   }
-  let snapshot;
-  try {
-    snapshot = buildAnalysisPublicSnapshot({
-      request: publication,
-      definition: article.definition,
-      parameterValues: run.parameterValues as Record<string, string | number | boolean | null>,
-      fragments,
-      dataAsOf: run.finishedAt,
-    });
-  } catch (error) {
-    return jsonError(error instanceof Error ? error.message : "Unsafe Analysis publication", 409);
-  }
-  if (canonicalHash(snapshot) !== publication.previewHash) {
-    return jsonError("Analysis publication changed after preview. Preview it again.", 409);
-  }
+  const snapshot = buildAnalysisPublicSnapshot({
+    request: publication,
+    definition: article.definition,
+    publishedAt: new Date(),
+  });
   try {
     const created = await commitAnalysisPublication({
       organizationId: workspaceId,
       articleId,
-      articleRevision: article.liveRevision,
+      articleRevision: article.revision,
       request: publication,
       snapshot,
       authority: {

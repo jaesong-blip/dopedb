@@ -42,7 +42,6 @@ export function WorkspaceManagementPanel({
   gcpSetupId,
   initialIntegrationId,
   initialArticleId,
-  initialBlockId,
   area,
   canEditWorkspace,
   locale,
@@ -53,7 +52,6 @@ export function WorkspaceManagementPanel({
   gcpSetupId: string | null;
   initialIntegrationId: string | null;
   initialArticleId: string | null;
-  initialBlockId: string | null;
   area: WorkspaceManagementArea;
   canEditWorkspace: boolean;
   locale: WorkspaceLocale;
@@ -116,7 +114,6 @@ export function WorkspaceManagementPanel({
           <AnalysisManagementPanel
             workspaceId={workspaceId}
             initialArticleId={initialArticleId}
-            initialBlockId={initialBlockId}
             canEdit={canEditWorkspace}
           />
         ) : null}

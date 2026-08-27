@@ -31,13 +31,6 @@ const documents = new Map(
 
 const scopedContracts = [
   {
-    prefix: "--ds-chart-",
-    owners: new Set([
-      "src/design-system/scoped-palettes.css",
-      "src/features/analysisArticles/AnalysisArticleVisualization.tsx",
-    ]),
-  },
-  {
     prefix: "--ds-terminal-",
     owners: new Set([
       "src/design-system/scoped-palettes.css",

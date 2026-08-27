@@ -229,6 +229,7 @@ async fn execute_lease(
     }
     let request = AnalysisDefinitionRunRequest {
         workspace_id: Some(scope.workspace_id),
+        project_environment_id: Some(article.project_environment_id),
         article_id: article.id,
         article_revision: article.revision,
         definition: article.definition.clone(),

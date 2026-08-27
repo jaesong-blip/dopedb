@@ -165,6 +165,7 @@ export type EnvironmentConnection = {
   remoteConnectionId: string | null;
   connectionRevision: number;
   currentConnectionRevision: number;
+  connectionContentRevision: number;
   connectionName: string;
   role: string;
   alias: string;

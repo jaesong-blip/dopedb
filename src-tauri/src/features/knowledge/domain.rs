@@ -208,8 +208,14 @@ pub(crate) struct KnowledgeSessionScope {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct KnowledgeSessionConnection {
+    /// Device-local connection identity used by the pinned ACP session.
     pub(crate) connection_id: Uuid,
+    /// Current device-local/hosted authority epoch used for execution checks.
     pub(crate) connection_revision: i64,
+    /// Hosted shared identity and public template revision used by durable
+    /// Analysis Article definitions. They never replace the local authority.
+    pub(crate) remote_connection_id: Option<Uuid>,
+    pub(crate) connection_content_revision: i64,
     pub(crate) role: String,
     pub(crate) alias: String,
 }
@@ -247,6 +253,7 @@ pub(crate) struct EnvironmentConnectionBinding {
     pub(crate) connection_id: Uuid,
     pub(crate) connection_revision: i64,
     pub(crate) current_connection_revision: i64,
+    pub(crate) connection_content_revision: i64,
     pub(crate) connection_name: String,
     pub(crate) role: String,
     pub(crate) alias: String,

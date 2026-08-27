@@ -184,7 +184,6 @@ color를 거부한다.
 | 범위 | 정본 | 허용 소비자 | fallback과 경계 |
 | --- | --- | --- | --- |
 | core chrome | `tokens.css`의 surface/foreground/selection/focus/status 역할 | 모든 제품 화면과 공용 primitive | neutral surface가 기본이며 다른 palette의 색을 navigation·button·panel에 사용하지 않음 |
-| analysis chart | `scoped-palettes.css`의 `--ds-chart-*` | `AnalysisArticleVisualization` | 네 번째 이후 series는 muted foreground로 수렴하며 core status 색을 series에 사용하지 않음 |
 | Agent syntax | `scoped-palettes.css`의 `--ds-syntax-*` | `agentSyntax`의 완료된 code fence | grammar/highlighter가 없으면 색 없는 escaped code를 표시하며 terminal ANSI 역할을 빌리지 않음 |
 | terminal ANSI | `scoped-palettes.css`의 `--ds-terminal-*` | `resolvePtyTheme` | xterm host의 background/foreground/selection은 core 역할을 별도 주입하고 ANSI 색은 terminal 밖에서 사용하지 않음 |
 | provider/engine brand | `src/assets/db-icons/`와 `AgentProviderMark`의 로컬 정본 SVG | `EngineMark`, `AgentProviderMark` | asset이 없으면 accessible text/neutral glyph를 사용하고 brand pigment를 chrome 상태색으로 승격하지 않음 |

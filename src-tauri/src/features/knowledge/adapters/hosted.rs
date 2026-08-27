@@ -789,6 +789,7 @@ async fn list_environment_connections(
                 || binding.environment_revision == 0
                 || binding.connection_revision <= 0
                 || binding.current_connection_revision <= 0
+                || binding.connection_content_revision <= 0
                 || binding.connection_name.is_empty()
                 || binding.connection_name.len() > 512
                 || binding.role.is_empty()
@@ -852,6 +853,7 @@ async fn bind_environment_connection(
         || binding.connection_id != connection_id
         || binding.connection_revision != expected_connection_revision
         || binding.current_connection_revision != expected_connection_revision
+        || binding.connection_content_revision <= 0
         || binding.stale
     {
         return Err(AppError::Network(

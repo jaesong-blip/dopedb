@@ -1,9 +1,8 @@
 //! Versioned, credential-free Analysis Article contracts.
 //!
-//! Definitions describe bounded database reads, a typed transform DAG, semantic
-//! metrics, narrative/visual blocks, refresh policy, and evidence claims. They do
-//! not carry credentials or executable UI code. The Desktop runtime validates the
-//! definition again and is the only database execution plane.
+//! Current definitions are sanitized HTML plus one bounded saved query. Legacy
+//! fields remain in the shared read model only so old rows can be projected
+//! safely; new Agent input never authors those structures.
 
 use std::collections::BTreeMap;
 
@@ -267,6 +266,7 @@ pub struct AnalysisArticleDefinition {
     pub version: u32,
     pub source: AnalysisArticleSource,
     pub title: String,
+    pub html: String,
     pub question: String,
     pub summary: String,
     pub timezone: String,
@@ -280,44 +280,55 @@ pub struct AnalysisArticleDefinition {
     pub warnings: Vec<String>,
 }
 
-/// Agent-authored portion of an Analysis Article. Session authority supplies the
-/// source identity, Environment revision, Knowledge grant, graph revisions, and
-/// connection pins; none of those values are accepted from tool input.
+/// Agent-authored portion of a current Analysis Article. Authority and the
+/// fixed manual execution envelope are supplied by the Desktop session.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AnalysisArticleDraftDefinition {
     pub version: u32,
     pub title: String,
-    pub question: String,
-    pub summary: String,
-    pub timezone: String,
-    pub parameters: Vec<AnalysisParameter>,
-    pub queries: Vec<AnalysisQueryNode>,
-    pub transforms: Vec<AnalysisTransformNode>,
-    pub metrics: Vec<AnalysisMetric>,
-    pub blocks: Vec<AnalysisBlock>,
-    pub claims: Vec<AnalysisEvidenceClaim>,
-    pub refresh: AnalysisRefreshPolicy,
-    pub warnings: Vec<String>,
+    pub html: String,
+    pub query: AnalysisQueryNode,
 }
 
 impl AnalysisArticleDraftDefinition {
     pub fn with_source(self, source: AnalysisArticleSource) -> AnalysisArticleDefinition {
+        let query = self.query;
+        let block = AnalysisBlock {
+            id: "query_result".into(),
+            kind: AnalysisBlockKind::Table,
+            title: "Query result".into(),
+            source_node_id: Some(query.id.clone()),
+            width: 12,
+            config: serde_json::json!({
+                "columns": query.columns.iter().map(|column| column.name.clone()).collect::<Vec<_>>(),
+                "pageSize": query.max_rows.clamp(10, 500),
+            }),
+        };
         AnalysisArticleDefinition {
             version: self.version,
             source,
             title: self.title,
-            question: self.question,
-            summary: self.summary,
-            timezone: self.timezone,
-            parameters: self.parameters,
-            queries: self.queries,
-            transforms: self.transforms,
-            metrics: self.metrics,
-            blocks: self.blocks,
-            claims: self.claims,
-            refresh: self.refresh,
-            warnings: self.warnings,
+            html: self.html,
+            question: String::new(),
+            summary: String::new(),
+            timezone: "UTC".into(),
+            parameters: Vec::new(),
+            queries: vec![query],
+            transforms: Vec::new(),
+            metrics: Vec::new(),
+            blocks: vec![block],
+            claims: Vec::new(),
+            refresh: AnalysisRefreshPolicy {
+                mode: AnalysisRefreshMode::Manual,
+                cron: None,
+                timezone: "UTC".into(),
+                runner_id: None,
+                max_staleness_seconds: 86_400,
+                result_retention_days: 30,
+                share_reviewed_results: false,
+            },
+            warnings: Vec::new(),
         }
     }
 }

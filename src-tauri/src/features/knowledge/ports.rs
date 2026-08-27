@@ -259,6 +259,7 @@ pub(crate) struct RemoteEnvironmentConnectionBinding {
     pub(crate) connection_id: Uuid,
     pub(crate) connection_revision: i64,
     pub(crate) current_connection_revision: i64,
+    pub(crate) connection_content_revision: i64,
     pub(crate) connection_name: String,
     pub(crate) role: String,
     pub(crate) alias: String,

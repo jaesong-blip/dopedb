@@ -27,7 +27,7 @@ runtime과 성능 수치로 수행한다.
 | Services/Jobs | `complete` | `features/queryServices`, `features/jobs` | background cancel과 복원된 result handle packaged 검수 |
 | Agent tool window | `complete` | `features/agents`, ACP Rust runtime | `프로젝트 전체`(source + PROD DB 전체)와 `개별 DB` 두 context만 구분하고 trigger에 현재 종류·대상 이름을 계속 표시하며 Project Environment 이름은 노출하지 않는다. 공식 adapter 설치·로그아웃·permission·resume, 첫 prompt 단일 제출과 동일 권한 focus-refresh 연속성, 실제 권한·process 중단 사유와 복구의 OS별 검수를 유지 |
 | Knowledge graph | `complete` | Rust `features/knowledge`, frontend Knowledge projection | packaged GitHub 설치·기존 설치 업데이트 복귀, Local source revision, publish, mapping과 exact grant 검수 |
-| Analysis Article | `partial` | `features/analysisArticles`, cloud analysis application | Explorer 소유 문자·상태 필터와 단일 중앙 document, raw run timestamp의 RFC3339 응답 계약을 유지하고 production runner·publication·metric signal을 실제 환경에서 검수 |
+| Analysis Article | `partial` | `features/analysisArticles`, cloud analysis application | Explorer 소유 문자·상태 필터와 단일 중앙 HTML document, exact 단일 query의 로컬 수동 재조회, immutable public HTML 발행과 raw run timestamp의 RFC3339 응답을 실제 환경에서 검수 |
 | Settings | `complete` | `features/settings`, `features/safetySettings` | 선택 연결의 단일 쓰기 제어, 관리자용 workspace 상한 + 기기 gate의 fail-closed 저장, compact viewport 검수 |
 | Diagnostics/Recovery | `complete` | design-system diagnostics, feature recovery boundaries | failure injection에서 오류 owner와 retry가 유지되는지 확인 |
 
@@ -101,12 +101,12 @@ focus가 없어야 한다.
 
 1. GitHub repository 또는 Local Folder를 Project Environment에 연결한다.
 2. deterministic extraction이 immutable graph revision과 evidence anchor를 만든다.
-3. Agent는 exact graph/connection grant에서 Analysis Article draft와 bounded read를
-   제안한다.
-4. 사람만 mapping, schedule, result publication과 public snapshot을 승인한다.
+3. Agent는 exact connection grant에서 sanitized HTML Article draft와 단일 bounded
+   read query를 제안한다.
+4. 사람은 Desktop에서 query를 수동 재조회하고 immutable public HTML을 발행한다.
 
-Acceptance: Local 원문은 명시적 publish 전 local-only이며 public article은 query나
-credential 없이 immutable approved snapshot만 읽는다.
+Acceptance: public article은 query, result row, credential 없이 immutable sanitized
+HTML snapshot만 읽고 재조회 command는 인증된 Desktop에만 존재한다.
 
 ## 트래커 갱신 규칙
 

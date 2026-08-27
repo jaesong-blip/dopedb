@@ -14,6 +14,8 @@ use uuid::Uuid;
 pub(crate) struct AnalysisDefinitionRunRequest {
     #[serde(default)]
     pub(crate) workspace_id: Option<Uuid>,
+    #[serde(default)]
+    pub(crate) project_environment_id: Option<Uuid>,
     pub(crate) article_id: Uuid,
     pub(crate) article_revision: i64,
     pub(crate) definition: AnalysisArticleDefinition,

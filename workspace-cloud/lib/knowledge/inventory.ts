@@ -113,6 +113,7 @@ export async function listKnowledgeEnvironmentConnections(workspaceId: string) {
     connectionId: knowledgeEnvironmentConnection.connectionId,
     connectionRevision: knowledgeEnvironmentConnection.connectionRevision,
     currentConnectionRevision: workspaceConnection.revision,
+    connectionContentRevision: workspaceConnection.contentRevision,
     connectionName: workspaceConnection.name,
     role: knowledgeEnvironmentConnection.role,
     alias: knowledgeEnvironmentConnection.alias,

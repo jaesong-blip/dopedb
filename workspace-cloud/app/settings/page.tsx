@@ -79,10 +79,6 @@ export default async function SettingsPage({
       .test(params.article)
       ? params.article
       : null;
-  const requestedBlockId = typeof params.block === "string"
-    && /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(params.block)
-    ? params.block
-    : null;
   const requestHeaders = await headers();
   const session = await auth.api.getSession({ headers: requestHeaders });
   const encodedWorkspaceId = requestedWorkspaceId
@@ -406,7 +402,6 @@ export default async function SettingsPage({
               gcpSetupId={requestedGcpSetupId}
               initialIntegrationId={requestedIntegrationId}
               initialArticleId={requestedArticleId}
-              initialBlockId={requestedBlockId}
               area={activeManagementArea}
               canEditWorkspace={canEditActiveWorkspace}
               locale={locale}

@@ -10,8 +10,8 @@ use dopedb_protocol::{
 };
 use uuid::Uuid;
 
-use crate::error::AppResult;
-use crate::kernel::access::{ActiveResourceScope, PinnedConnection};
+use crate::error::{AppError, AppResult};
+use crate::kernel::access::{ActiveResourceScope, PinnedConnection, WorkspaceKind};
 
 use super::domain::{
     validate_binding_draft, EnvironmentConnectionBinding, EnvironmentRiskClass,
@@ -216,9 +216,104 @@ where
         connection: &PinnedConnection,
         environment_id: Option<Uuid>,
     ) -> AppResult<Option<KnowledgeSessionScope>> {
-        self.repository
+        let mut scope = self
+            .repository
             .knowledge_session_scope(connection, environment_id)
-            .await
+            .await?;
+        let Some(scope) = scope.as_mut() else {
+            return Ok(None);
+        };
+        if connection.scope.workspace_kind != WorkspaceKind::Team {
+            return Ok(Some(scope.clone()));
+        }
+        let account_id = connection
+            .scope
+            .selected_account_id
+            .as_deref()
+            .ok_or_else(|| AppError::Blocked {
+                reason: "Team Project Knowledge requires a selected account".into(),
+            })?;
+        let remote_bindings = self
+            .authority
+            .list_environment_connections(
+                account_id,
+                connection.scope.workspace_id,
+                Some(scope.project_environment_id),
+            )
+            .await?;
+        for scoped_connection in &mut scope.connections {
+            let pinned = self
+                .repository
+                .pin_connection_for_read(scoped_connection.connection_id)
+                .await?;
+            let remote_id = self
+                .repository
+                .remote_connection_id(&pinned)
+                .await?
+                .ok_or_else(|| AppError::Blocked {
+                    reason: "A shared Environment database has no hosted identity".into(),
+                })?;
+            let binding = remote_bindings
+                .iter()
+                .find(|binding| {
+                    binding.connection_id == remote_id
+                        && binding.role == scoped_connection.role
+                        && binding.alias == scoped_connection.alias
+                })
+                .ok_or_else(|| AppError::Blocked {
+                    reason:
+                        "The hosted Environment database binding changed; start a new Agent session"
+                            .into(),
+                })?;
+            if binding.stale
+                || binding.connection_revision != scoped_connection.connection_revision
+                || binding.connection_revision != binding.current_connection_revision
+                || binding.connection_content_revision < 1
+            {
+                return Err(AppError::Blocked {
+                    reason: "The hosted Environment database authority changed; start a new Agent session"
+                        .into(),
+                });
+            }
+            scoped_connection.remote_connection_id = Some(remote_id);
+            scoped_connection.connection_content_revision = binding.connection_content_revision;
+        }
+        Ok(Some(scope.clone()))
+    }
+
+    /// Resolve the current internal authority epoch for one durable Analysis
+    /// Article content pin. The caller still compares this value with its
+    /// device-local pin before opening a credential.
+    pub(crate) async fn analysis_connection_authority_revision(
+        &self,
+        account_id: &str,
+        workspace_id: Uuid,
+        environment_id: Uuid,
+        remote_connection_id: Uuid,
+        content_revision: i64,
+    ) -> AppResult<i64> {
+        let bindings = self
+            .authority
+            .list_environment_connections(account_id, workspace_id, Some(environment_id))
+            .await?;
+        let binding = bindings
+            .iter()
+            .find(|binding| binding.connection_id == remote_connection_id)
+            .ok_or_else(|| AppError::Blocked {
+                reason: "The Analysis Article database is no longer bound to this Environment"
+                    .into(),
+            })?;
+        if binding.stale
+            || binding.connection_content_revision != content_revision
+            || binding.connection_revision != binding.current_connection_revision
+        {
+            return Err(AppError::Blocked {
+                reason:
+                    "The Analysis Article database authority or shared connection content changed"
+                        .into(),
+            });
+        }
+        Ok(binding.connection_revision)
     }
 
     pub(crate) async fn exact_knowledge_session_graphs(

@@ -575,12 +575,16 @@ async fn assert_current_store_migration_is_write_free() {
             crate::features::knowledge::domain::KnowledgeSessionConnection {
                 connection_id: current_connection_id,
                 connection_revision: 1,
+                remote_connection_id: None,
+                connection_content_revision: 1,
                 role: "primary".into(),
                 alias: "Primary".into(),
             },
             crate::features::knowledge::domain::KnowledgeSessionConnection {
                 connection_id: secondary_connection_id,
                 connection_revision: 2,
+                remote_connection_id: None,
+                connection_content_revision: 2,
                 role: "analytics".into(),
                 alias: "Analytics".into(),
             },

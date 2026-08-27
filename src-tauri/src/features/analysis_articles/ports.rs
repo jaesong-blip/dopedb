@@ -95,6 +95,7 @@ pub(crate) trait AnalysisLocalRepositoryPort: Clone + Send + Sync + 'static {
 
 pub(crate) struct AnalysisReadExecutionRequest<'a> {
     pub(crate) workspace_id: Option<Uuid>,
+    pub(crate) project_environment_id: Option<Uuid>,
     pub(crate) authority: &'a AnalysisArticleConnection,
     pub(crate) query: &'a AnalysisQueryNode,
     pub(crate) parameter_definitions: &'a [AnalysisParameter],

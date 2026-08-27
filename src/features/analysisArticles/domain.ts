@@ -1,73 +1,4 @@
 export const analysisArticleStates = ["draft", "review", "live", "archived"] as const;
-export const analysisParameterTypes = [
-  "string",
-  "number",
-  "boolean",
-  "date",
-  "datetime",
-  "enum",
-] as const;
-export const analysisColumnTypes = [
-  "string",
-  "number",
-  "boolean",
-  "date",
-  "datetime",
-  "duration",
-  "currency",
-  "percent",
-  "json",
-] as const;
-export const analysisColumnRoles = [
-  "dimension",
-  "measure",
-  "time",
-  "identifier",
-  "free_text",
-] as const;
-export const analysisColumnSensitivities = [
-  "public",
-  "internal",
-  "confidential",
-  "restricted",
-] as const;
-export const analysisColumnMasking = ["none", "redact", "hash", "bucket"] as const;
-export const analysisTransformOperations = [
-  "project",
-  "filter",
-  "sort",
-  "limit",
-  "union",
-  "group",
-  "aggregate",
-  "inner_join",
-  "left_join",
-  "window",
-  "lag",
-  "ratio",
-  "difference",
-  "rate",
-  "cohort",
-  "retention",
-] as const;
-export const analysisBlockKinds = [
-  "heading",
-  "markdown",
-  "callout",
-  "divider",
-  "metric",
-  "time_series",
-  "bar",
-  "area",
-  "scatter",
-  "table",
-  "funnel",
-  "retention_cohort",
-  "heatmap",
-  "date_range_control",
-  "comparison_control",
-  "segment_control",
-] as const;
 
 export type AnalysisArticleState = (typeof analysisArticleStates)[number];
 export type AnalysisArticleSource =
@@ -75,13 +6,6 @@ export type AnalysisArticleSource =
   | "dopedb.acp.claude"
   | "dopedb.acp.codex"
   | "migration";
-export type AnalysisParameterType = (typeof analysisParameterTypes)[number];
-export type AnalysisColumnType = (typeof analysisColumnTypes)[number];
-export type AnalysisColumnRole = (typeof analysisColumnRoles)[number];
-export type AnalysisColumnSensitivity = (typeof analysisColumnSensitivities)[number];
-export type AnalysisColumnMasking = (typeof analysisColumnMasking)[number];
-export type AnalysisTransformOperation = (typeof analysisTransformOperations)[number];
-export type AnalysisBlockKind = (typeof analysisBlockKinds)[number];
 export type AnalysisParameterValue = string | number | boolean | null;
 
 export type AnalysisArticleConnection = {
@@ -91,10 +15,12 @@ export type AnalysisArticleConnection = {
   alias: string;
 };
 
+// Parameters remain readable for legacy Articles that were projected into the
+// simple model. New Articles always create an empty list.
 export type AnalysisParameter = {
   id: string;
   label: string;
-  type: AnalysisParameterType;
+  type: "string" | "number" | "boolean" | "date" | "datetime" | "enum";
   required: boolean;
   defaultValue: AnalysisParameterValue;
   options: string[];
@@ -102,28 +28,20 @@ export type AnalysisParameter = {
 
 export type AnalysisColumn = {
   name: string;
-  type: AnalysisColumnType;
+  type:
+    | "string"
+    | "number"
+    | "boolean"
+    | "date"
+    | "datetime"
+    | "duration"
+    | "currency"
+    | "percent"
+    | "json";
   nullable: boolean;
-  role: AnalysisColumnRole;
-  sensitivity: AnalysisColumnSensitivity;
-  masking: AnalysisColumnMasking;
-};
-
-export type AnalysisNumberFormat = {
-  style: "number" | "percent" | "currency" | "duration" | "compact";
-  decimals: number;
-  currency: string | null;
-};
-
-export type AnalysisMetric = {
-  id: string;
-  label: string;
-  description: string;
-  sourceNodeId: string;
-  valueColumn: string;
-  unit: string;
-  lowerIsBetter: boolean | null;
-  format: AnalysisNumberFormat;
+  role: "dimension" | "measure" | "time" | "identifier" | "free_text";
+  sensitivity: "public" | "internal" | "confidential" | "restricted";
+  masking: "none" | "redact" | "hash" | "bucket";
 };
 
 export type AnalysisQueryNode = {
@@ -134,60 +52,46 @@ export type AnalysisQueryNode = {
   parameterIds: string[];
   maxRows: number;
   maxBytes: number;
-  cacheTtlSeconds: number;
+  cacheTtlSeconds: 0;
   columns: AnalysisColumn[];
 };
 
-export type AnalysisTransformNode = {
-  id: string;
+type AnalysisQueryResultBlock = {
+  id: "query_result";
+  kind: "table";
   title: string;
-  operation: AnalysisTransformOperation;
-  inputNodeIds: string[];
-  config: Record<string, unknown>;
-  columns: AnalysisColumn[];
-};
-
-export type AnalysisBlock = {
-  id: string;
-  kind: AnalysisBlockKind;
-  title: string;
-  sourceNodeId: string | null;
-  width: number;
-  config: Record<string, unknown>;
-};
-
-export type AnalysisEvidenceClaim = {
-  id: string;
-  text: string;
-  blockIds: string[];
-  nodeIds: string[];
-};
-
-export type AnalysisRefreshPolicy = {
-  mode: "manual" | "scheduled";
-  cron: string | null;
-  timezone: string;
-  runnerId: string | null;
-  maxStalenessSeconds: number;
-  resultRetentionDays: number;
-  shareReviewedResults: boolean;
+  sourceNodeId: string;
+  width: 12;
+  config: {
+    columns: string[];
+    pageSize: number;
+  };
 };
 
 export type AnalysisArticleDefinition = {
-  version: 1;
+  version: 2;
   source: AnalysisArticleSource;
   title: string;
-  question: string;
-  summary: string;
-  timezone: string;
+  html: string;
+  question: "";
+  summary: "";
+  timezone: "UTC";
   parameters: AnalysisParameter[];
-  queries: AnalysisQueryNode[];
-  transforms: AnalysisTransformNode[];
-  metrics: AnalysisMetric[];
-  blocks: AnalysisBlock[];
-  claims: AnalysisEvidenceClaim[];
-  refresh: AnalysisRefreshPolicy;
-  warnings: string[];
+  queries: [AnalysisQueryNode];
+  transforms: never[];
+  metrics: never[];
+  blocks: [AnalysisQueryResultBlock];
+  claims: never[];
+  refresh: {
+    mode: "manual";
+    cron: null;
+    timezone: "UTC";
+    runnerId: null;
+    maxStalenessSeconds: number;
+    resultRetentionDays: number;
+    shareReviewedResults: false;
+  };
+  warnings: never[];
 };
 
 export type SharedAnalysisArticleCreate = {
@@ -298,49 +202,10 @@ export type AnalysisArticleRevision = {
   createdAt: string;
 };
 
-export type AnalysisResult = {
-  run: Pick<
-    AnalysisRun,
-    | "id"
-    | "articleId"
-    | "articleRevision"
-    | "state"
-    | "resultHash"
-    | "rowCount"
-    | "byteCount"
-    | "finishedAt"
-  >;
-  fragments: AnalysisResultFragment[];
-};
-
-export type AnalysisRunnerChanged = {
-  state: "disabled" | "deferred" | "registering" | "running" | "failed" | "ready";
-  articleId: string | null;
-  runId: string | null;
-  errorKind: string | null;
-};
-
 export type AnalysisArticleChanged = {
   articleId: string;
   revision: number;
   action: "proposed" | "updated";
-};
-
-export type AnalysisRunner = {
-  id: string;
-  deviceId: string;
-  displayName: string;
-  backgroundAllowed: boolean;
-  lastSeenAt: string;
-  online: boolean;
-  scheduledArticleCount: number;
-  isCurrent: boolean;
-};
-
-export type AnalysisRunnerRevocation = {
-  id: string;
-  scheduledArticleCount: number;
-  activeLeaseCount: number;
 };
 
 export type AnalysisPublicationRequest = {
@@ -349,38 +214,7 @@ export type AnalysisPublicationRequest = {
   slug: string;
   replacePublicationId: string | null;
   visibility: "unlisted" | "public";
-  title: string;
-  description: string;
-  blockIds: string[];
-  parameterIds: string[];
   searchIndexable: boolean;
-  sensitivityConfirmed: boolean;
-  productionConfirmed: boolean;
-  previewHash: string | null;
-};
-
-export type AnalysisPublicSnapshot = {
-  version: 1;
-  title: string;
-  description: string;
-  summary: string;
-  timezone: string;
-  dataAsOf: string;
-  searchIndexable: boolean;
-  parameters: Array<{ label: string; value: AnalysisParameterValue }>;
-  blocks: Array<{
-    id: string;
-    kind: AnalysisBlockKind;
-    title: string;
-    width: number;
-    config: Record<string, unknown>;
-    fragments: AnalysisResultFragment[];
-  }>;
-};
-
-export type AnalysisPublicationPreview = {
-  snapshot: AnalysisPublicSnapshot;
-  snapshotHash: string;
 };
 
 export type AnalysisPublication = {
@@ -396,86 +230,6 @@ export type AnalysisPublication = {
   snapshotHash: string;
   publishedAt: string;
   revokedAt: string | null;
-};
-
-export type AnalysisSignalCondition =
-  | { kind: "threshold_above" | "threshold_below" | "absolute_change"; value: number }
-  | { kind: "percentage_change"; percentage: number }
-  | { kind: "missing_data" | "consecutive_failure"; count: number };
-
-export type AnalysisSignalDefinition = {
-  condition: AnalysisSignalCondition;
-  baselineWindowSeconds: number | null;
-  minimumSampleCount: number;
-  cooldownSeconds: number;
-  rearmAfterNormalCount: number;
-  severity: "info" | "warning" | "critical";
-  recipientMemberIds: string[];
-  channels: Array<"desktop" | "workspace_web" | "email">;
-  productionConfirmed: boolean;
-};
-
-export type AnalysisSignalCreate = {
-  id: string;
-  articleRevision: number;
-  blockId: string;
-  definition: AnalysisSignalDefinition;
-  enabled: boolean;
-};
-
-export type AnalysisSignal = AnalysisSignalCreate & {
-  articleId: string;
-  ownerMemberId: string | null;
-  revision: number;
-  lastEvaluatedRunId: string | null;
-  lastObservedState: "unknown" | "normal" | "firing" | "recovered" | "no_data" | "error" | "stale";
-  createdAt: string;
-  updatedAt: string;
-  deletedAt: string | null;
-};
-
-export type AnalysisSignalHistoryReceipt = {
-  id: string;
-  signalRevision: number;
-  runId: string;
-  observedState: "normal" | "firing" | "no_data" | "error" | "stale";
-  state: "normal" | "firing" | "recovered" | "no_data" | "error" | "stale";
-  resultHash: string | null;
-  schemaFingerprint: string;
-  transitionSequence: number;
-  errorKind: string | null;
-  evaluatedAt: string;
-  createdAt: string;
-};
-
-export type AnalysisCollaborator = {
-  id: string;
-  name: string;
-  role: "viewer" | "analyst" | "editor" | "admin" | "owner";
-  canOwnAnalysis: boolean;
-};
-
-export type AnalysisCollaboratorDirectory = {
-  workspaceId: string;
-  currentMemberId: string;
-  currentRole: AnalysisCollaborator["role"];
-  members: AnalysisCollaborator[];
-};
-
-export type AnalysisNotification = {
-  id: string;
-  articleId: string;
-  articleTitle: string;
-  signalId: string;
-  blockId: string;
-  signalRevision: number;
-  state: "normal" | "firing" | "recovered" | "no_data" | "error" | "stale";
-  observedState: "normal" | "firing" | "no_data" | "error" | "stale";
-  severity: "info" | "warning" | "critical";
-  deliveryState: "pending" | "delivered" | "failed";
-  evaluatedAt: string;
-  createdAt: string;
-  readAt: string | null;
 };
 
 export type AnalysisBlockData = {
@@ -504,16 +258,4 @@ export function mergeAnalysisFragments(
     });
   }
   return output;
-}
-
-export function articleFreshness(
-  article: AnalysisArticleRecord,
-  now = Date.now(),
-): "never_run" | "running" | "failed" | "fresh" | "stale" {
-  if (!article.latestSuccessfulRunId) return "never_run";
-  const updatedAt = Date.parse(article.updatedAt);
-  if (!Number.isFinite(updatedAt)) return "stale";
-  return now - updatedAt <= article.definition.refresh.maxStalenessSeconds * 1_000
-    ? "fresh"
-    : "stale";
 }

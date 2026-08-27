@@ -29,10 +29,10 @@ user demand.
 **1. A workspace owns shared access; members own credentials.** The unit of the
 product is a team workspace, not one person's machine. Connection identity,
 provider resource, environment policy, grants, and Analysis Articles exist to be
-shared inside it. An Analysis Article is the canonical BI resource: it owns a
-versioned narrative, exact-source analysis graph, live bounded results, evidence,
-and metric signals; Dashboard, Funnel Analysis, and Agent Report are not separate
-product domains. Long-lived secrets never travel with the shared record:
+shared inside it. An Analysis Article is a sanitized HTML document with one exact
+read-only saved query and an authenticated Desktop-only manual rerun; it is not a
+dashboard, transform graph, schedule, signal system, or shared-result warehouse.
+Long-lived secrets never travel with the shared record:
 member-local access stays in each member's OS credential store, while managed
 access issues a least-privilege, member-specific short-lived credential into
 process memory. A feature that makes access safely shareable outranks a local-only
@@ -86,12 +86,13 @@ open-source tools using tokens directly, not large products.
 The Agent can only judge well when it sees the real schema, so introspection
 breadth and depth outrank visual features.
 
-Team BI follows
+Shared analysis publication follows
 [`docs/adr/0007-analysis-article-bi-domain.md`](docs/adr/0007-analysis-article-bi-domain.md).
-Internal articles may share only reviewed, bounded, masked result fragments from
-an exact-grant Desktop runner. Public articles are immutable approved snapshots
-and never execute a query. Arbitrary executable blocks, hosted database proxying,
-and silently inferred cross-database joins are prohibited.
+The workspace shares sanitized HTML and one exact query definition, while result
+rows remain local to the exact-grant Desktop runner. Public articles are immutable
+HTML snapshots and never execute or expose the saved query. Arbitrary executable
+blocks, schedules, signals, hosted database proxying, and silently inferred
+cross-database joins are prohibited.
 
 [`docs/PRODUCT_UI_SCOPE.md`](docs/PRODUCT_UI_SCOPE.md)
 owns the per-feature decision table. Anything decided `구현 안 함` or `범위 밖`

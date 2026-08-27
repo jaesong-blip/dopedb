@@ -89,13 +89,33 @@ impl AnalysisReadExecutionPort for DesktopAnalysisReadExecution {
             request.authority.connection_id
         };
         let pin = operation_scope.pin_connection(local_connection_id).await?;
-        if pin.connection_revision != request.authority.connection_revision {
+        let expected_authority_revision =
+            match (request.workspace_id, request.project_environment_id) {
+                (Some(workspace_id), Some(environment_id)) => {
+                    let account_id = pin.scope.selected_account_id.as_deref().ok_or_else(|| {
+                        AppError::Blocked {
+                            reason:
+                                "Analysis Article execution requires the selected workspace account"
+                                    .into(),
+                        }
+                    })?;
+                    self.knowledge
+                        .analysis_connection_authority_revision(
+                            account_id,
+                            workspace_id,
+                            environment_id,
+                            request.authority.connection_id,
+                            request.authority.connection_revision,
+                        )
+                        .await?
+                }
+                _ => request.authority.connection_revision,
+            };
+        if pin.connection_revision != expected_authority_revision {
             return Err(AppError::Blocked {
                 reason: format!(
                     "Analysis Article connection '{}' changed from revision {} to {}",
-                    request.authority.alias,
-                    request.authority.connection_revision,
-                    pin.connection_revision
+                    request.authority.alias, expected_authority_revision, pin.connection_revision
                 ),
             });
         }

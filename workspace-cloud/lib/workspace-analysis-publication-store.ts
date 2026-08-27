@@ -53,18 +53,18 @@ export async function commitAnalysisPublication(input: {
         AND member."revocation_claim_id" IS NULL
       FOR UPDATE OF session, member
     ), source AS MATERIALIZED (
-      SELECT article."id", article."live_revision", run."id" AS "run_id"
+      SELECT article."id", article."revision", run."id" AS "run_id"
       FROM ${workspaceAnalysisArticle} article
       JOIN ${workspaceAnalysisArticleRun} run
         ON run."organization_id" = article."organization_id"
        AND run."article_id" = article."id"
-       AND run."id" = article."live_run_id"
        AND run."id" = ${input.request.runId}::uuid
+       AND run."article_revision" = ${input.articleRevision}
        AND run."state" = 'succeeded'
       JOIN authority ON TRUE
       WHERE article."organization_id" = ${input.organizationId}
         AND article."id" = ${input.articleId}::uuid
-        AND article."live_revision" = ${input.articleRevision}
+        AND article."revision" = ${input.articleRevision}
         AND article."deleted_at" IS NULL
         AND (article."owner_member_id" = authority."id" OR authority."role" IN ('admin', 'owner'))
       FOR UPDATE OF article, run
@@ -101,9 +101,9 @@ export async function commitAnalysisPublication(input: {
          "slug", "version", "replaces_publication_id", "visibility", "title",
          "description", "snapshot", "snapshot_hash", "approved_by_member_id")
       SELECT ${input.request.id}::uuid, ${input.organizationId}, source."id",
-        source."live_revision", source."run_id", ${input.request.slug},
+        source."revision", source."run_id", ${input.request.slug},
         publication_slot."next_version", publication_slot."previous_id",
-        ${input.request.visibility}, ${input.request.title}, ${input.request.description},
+        ${input.request.visibility}, ${input.snapshot.title}, '',
         ${JSON.stringify(input.snapshot)}::jsonb, ${canonicalHash(input.snapshot)}, authority."id"
       FROM source JOIN authority ON TRUE JOIN publication_slot ON TRUE
       WHERE publication_slot."previous_id" IS NULL
@@ -120,10 +120,17 @@ export async function commitAnalysisPublication(input: {
           'version', inserted."version"), ${requestId}::uuid
       FROM inserted RETURNING "resource_id"
     )
-    SELECT inserted."id"::text AS "id", inserted."slug" AS "slug",
-      inserted."version" AS "version", inserted."visibility" AS "visibility",
+    SELECT inserted."id"::text AS "id",
+      inserted."article_revision"::double precision AS "articleRevision",
+      inserted."source_run_id"::text AS "sourceRunId",
+      inserted."slug" AS "slug", inserted."version"::double precision AS "version",
+      inserted."replaces_publication_id"::text AS "replacesPublicationId",
+      inserted."visibility" AS "visibility", inserted."title" AS "title",
+      inserted."description" AS "description",
       inserted."snapshot_hash" AS "snapshotHash",
-      inserted."published_at" AS "publishedAt"
+      to_char(inserted."published_at" AT TIME ZONE 'UTC',
+        'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "publishedAt",
+      NULL::text AS "revokedAt"
     FROM inserted JOIN audit ON audit."resource_id" = inserted."id"::text
   `);
   return result.rows[0] ?? null;

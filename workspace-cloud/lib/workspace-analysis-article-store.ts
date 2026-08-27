@@ -245,14 +245,14 @@ export async function commitAnalysisArticleCreate(input: {
        AND binding."project_environment_id" = ${input.article.projectEnvironmentId}::uuid
        AND binding."environment_revision" = ${input.article.environmentRevision}
        AND binding."connection_id" = requested.connection_id
-       AND binding."connection_revision" = requested.connection_revision
        AND binding."role" = requested.role
        AND binding."alias" = requested.alias
        AND binding."revoked_at" IS NULL
       JOIN ${workspaceConnection} connection
-        ON connection."organization_id" = binding."organization_id"
+       ON connection."organization_id" = binding."organization_id"
        AND connection."id" = binding."connection_id"
        AND connection."revision" = binding."connection_revision"
+       AND connection."content_revision" = requested.connection_revision
        AND connection."deleted_at" IS NULL
        AND connection."revocation_pending_at" IS NULL
       JOIN ${workspaceConnectionGrant} connection_grant
@@ -484,13 +484,13 @@ export async function commitAnalysisArticleMutation(input: {
        AND binding."project_environment_id" = ${input.article.projectEnvironmentId}::uuid
        AND binding."environment_revision" = ${input.article.environmentRevision}
        AND binding."connection_id" = requested.connection_id
-       AND binding."connection_revision" = requested.connection_revision
        AND binding."role" = requested.role AND binding."alias" = requested.alias
        AND binding."revoked_at" IS NULL
       JOIN ${workspaceConnection} connection
-        ON connection."organization_id" = binding."organization_id"
+       ON connection."organization_id" = binding."organization_id"
        AND connection."id" = binding."connection_id"
        AND connection."revision" = binding."connection_revision"
+       AND connection."content_revision" = requested.connection_revision
        AND connection."deleted_at" IS NULL AND connection."revocation_pending_at" IS NULL
       JOIN ${workspaceConnectionGrant} connection_grant
         ON connection_grant."organization_id" = connection."organization_id"
@@ -547,6 +547,9 @@ export async function commitAnalysisArticleMutation(input: {
           WHEN ${input.operation} = 'publish_live' THEN article."latest_successful_run_id"
           ELSE article."live_run_id"
         END,
+        -- Every mutation creates a new immutable Article revision. A run from
+        -- the previous revision must never keep the new Publish action enabled.
+        "latest_successful_run_id" = NULL,
         "next_refresh_at" = CASE
           WHEN ${input.operation} = 'publish_live' THEN ${nextRefreshAt}
           WHEN ${input.operation} IN ('archive', 'delete') THEN NULL

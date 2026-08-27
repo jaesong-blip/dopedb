@@ -40,6 +40,7 @@ export async function GET(request: Request, context: RouteContext) {
     connectionId: knowledgeEnvironmentConnection.connectionId,
     connectionRevision: knowledgeEnvironmentConnection.connectionRevision,
     currentConnectionRevision: workspaceConnection.revision,
+    connectionContentRevision: workspaceConnection.contentRevision,
     connectionName: workspaceConnection.name,
     role: knowledgeEnvironmentConnection.role,
     alias: knowledgeEnvironmentConnection.alias,
@@ -103,6 +104,7 @@ export async function POST(request: Request, context: RouteContext) {
     environmentRevision: number;
     connectionId: string;
     connectionRevision: number;
+    connectionContentRevision: number;
     connectionName: string;
     role: string;
     alias: string;
@@ -114,6 +116,7 @@ export async function POST(request: Request, context: RouteContext) {
       SELECT environment."id", environment."revision" AS environment_revision,
         connection."id" AS connection_id,
         connection."revision" AS connection_revision,
+        connection."content_revision" AS connection_content_revision,
         connection."name" AS connection_name
       FROM ${knowledgeProjectEnvironment} AS environment
       JOIN ${knowledgeProject} AS project
@@ -148,7 +151,7 @@ export async function POST(request: Request, context: RouteContext) {
         AND binding."project_environment_id" = scope."id"
         AND binding."connection_id" = scope.connection_id
         AND binding."revoked_at" IS NULL
-      RETURNING binding.*, scope.connection_name
+      RETURNING binding.*, scope.connection_name, scope.connection_content_revision
     ), inserted AS MATERIALIZED (
       INSERT INTO ${knowledgeEnvironmentConnection}
         ("id", "organization_id", "project_environment_id", "environment_revision",
@@ -165,12 +168,14 @@ export async function POST(request: Request, context: RouteContext) {
       updated."environment_revision"::integer AS "environmentRevision",
       updated."connection_id"::text AS "connectionId",
       updated."connection_revision"::integer AS "connectionRevision",
+      updated.connection_content_revision::integer AS "connectionContentRevision",
       updated.connection_name AS "connectionName", updated."role", updated."alias", false AS inserted
     FROM updated
     UNION ALL
     SELECT inserted."id"::text, inserted."project_environment_id"::text,
       inserted."environment_revision"::integer, inserted."connection_id"::text,
-      inserted."connection_revision"::integer, scope.connection_name,
+      inserted."connection_revision"::integer, scope.connection_content_revision::integer,
+      scope.connection_name,
       inserted."role", inserted."alias", true
     FROM inserted JOIN scope ON scope."id" = inserted."project_environment_id"
   `);

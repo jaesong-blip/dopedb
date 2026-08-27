@@ -67,7 +67,6 @@ import {
   selectGuidedDemoEnvironment,
 } from "../onboarding/demoSetup";
 import { findAgentSqlProposal, isSqlProposalTool } from "../agents/sqlProposal";
-import { AnalysisSnapshotParameterField } from "../analysisArticles/AnalysisArticleVisualization";
 import { actionSearchShortcutTargetIsEditable } from "../actionSearch/useActionSearchDialog";
 import { tabFocusTargetIndex } from "../../design-system/tabKeyboard";
 import {
@@ -741,6 +740,7 @@ describe("workbench state ownership", () => {
           connectionId: input.connectionId,
           remoteConnectionId: null,
           connectionRevision: 1,
+          connectionContentRevision: 1,
           currentConnectionRevision: 1,
           connectionName: demo.name,
           role: input.role,
@@ -933,22 +933,6 @@ describe("workbench state ownership", () => {
       "commerce_dev.public.orders.orders_status_idx",
     ]);
 
-    const snapshotParameter = renderToStaticMarkup(
-      createElement(AnalysisSnapshotParameterField, {
-        parameter: {
-          id: "include-archived",
-          label: "Include archived",
-          type: "boolean",
-          required: true,
-          defaultValue: false,
-          options: [],
-        },
-        value: true,
-      }),
-    );
-    expect(snapshotParameter).toContain("Include archived");
-    expect(snapshotParameter).toContain("true");
-    expect(snapshotParameter).not.toMatch(/<(?:input|select|textarea)\b/);
     expect(
       actionSearchShortcutTargetIsEditable({
         closest: (selector: string) => selector.includes(".cm-content"),

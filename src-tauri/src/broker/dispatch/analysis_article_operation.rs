@@ -120,22 +120,31 @@ fn article_create(
     definition.refresh.cron = None;
     definition.refresh.runner_id = None;
     definition.refresh.share_reviewed_results = false;
+    let query_role = definition
+        .queries
+        .first()
+        .map(|query| query.connection_role.as_str())
+        .ok_or(ErrorCode::InvalidRequest)?;
+    let scoped_connection = scope
+        .connections
+        .iter()
+        .find(|connection| connection.role == query_role)
+        .ok_or(ErrorCode::ScopeDenied)?;
+    let remote_connection_id = scoped_connection
+        .remote_connection_id
+        .ok_or(ErrorCode::ScopeDenied)?;
     let article = SharedAnalysisArticleCreate {
         id: article_id,
         project_environment_id: scope.project_environment_id,
         environment_revision,
-        source_knowledge_grant_id: scope.knowledge_grant_id,
-        graph_revision_ids: scope.graph_revision_ids.clone(),
-        connections: scope
-            .connections
-            .iter()
-            .map(|connection| dopedb_protocol::AnalysisArticleConnection {
-                connection_id: connection.connection_id,
-                connection_revision: connection.connection_revision,
-                role: connection.role.clone(),
-                alias: connection.alias.clone(),
-            })
-            .collect(),
+        source_knowledge_grant_id: None,
+        graph_revision_ids: Vec::new(),
+        connections: vec![dopedb_protocol::AnalysisArticleConnection {
+            connection_id: remote_connection_id,
+            connection_revision: scoped_connection.connection_content_revision,
+            role: scoped_connection.role.clone(),
+            alias: scoped_connection.alias.clone(),
+        }],
         definition,
     };
     article
@@ -228,6 +237,7 @@ async fn run_draft(
         .analysis_article
         .run_definition(AnalysisDefinitionRunRequest {
             workspace_id: Some(Uuid::from(session.workspace_id)),
+            project_environment_id: Some(article.project_environment_id),
             article_id,
             article_revision: 1,
             definition: article.definition,

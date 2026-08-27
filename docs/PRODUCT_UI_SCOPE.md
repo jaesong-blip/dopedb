@@ -39,7 +39,7 @@ DopeDB의 제품 축, 실제 사용자 작업, 접근성, 운영 안전성, 지�
   돌려보내고 source sync·Agent grant를 폐기하며 해당 Environment에 고정된 실행 중
   Agent session도 중단한다. active Analysis Article이 있는
   Project는 Article을 명시적으로 삭제하기 전에는 삭제할 수 없으며, 삭제된 Article의
-  version history와 공개 snapshot은 보존한다. Analysis collection의 문자·상태
+  version history와 공개 HTML snapshot은 보존한다. Analysis collection의 문자·상태
   필터와 Article 선택도 Explorer가 소유하며, 중앙 Analysis document는 선택한
   Article만 표시하고 별도의 collection
   rail을 만들지 않는다.
@@ -145,16 +145,16 @@ DopeDB의 제품 축, 실제 사용자 작업, 접근성, 운영 안전성, 지�
 | PD-28 | safe branch checkpoint/restore | `구현` | 승인된 격리 생성, connection revision 전환, 복귀·폐기와 audit를 하나의 durable operation으로 묶는다. |
 | PD-29 | engine별 native query cancellation | `구현 안 함` | exact operation signal, timeout, connection-close fallback과 unknown outcome 보존을 유지한다. |
 | PD-30 | disk-backed query result | `구현` | Rust가 bounded page artifact와 streaming CSV/JSON export를 소유한다. |
-| PD-31 | evidence-bound analysis narrative | `구현` | Analysis Article의 narrative/evidence block과 run lineage로 통합한다. |
+| PD-31 | HTML Analysis Article | `구현` | sanitized HTML 본문과 exact connection에 고정된 읽기 전용 쿼리 하나만 저장하고 Desktop에서 수동 재조회한다. |
 | PD-32 | enterprise shared-secret suite | `구현 안 함` | 중앙 static secret 배포·SSO·SCIM·self-hosted 묶음을 별도 수요 없이 예약하지 않는다. PD-18의 좁은 Vault Database Secrets 동적 발급 adapter는 이 suite에 포함되지 않는다. |
 | PD-33 | general Plugin Platform | `구현 안 함` | app-owned driver, provider, ACP adapter의 닫힌 목록만 지원한다. |
-| PD-34 | realtime SQL CRDT/presence | `구현 안 함` | 일반 SQL text와 cursor는 로컬에 두고 공유 분석은 Analysis Article이 소유한다. |
+| PD-34 | realtime SQL CRDT/presence | `구현 안 함` | 일반 SQL text와 cursor는 로컬에 두고 공유할 가치가 있는 결과만 HTML Analysis Article로 저장한다. |
 | PD-35 | Arrow/Parquet plugin export | `구현 안 함` | bounded native CSV/JSON sink의 정확성과 취소 경계를 유지한다. |
 | PD-36 | Project Knowledge graph | `구현` | source identity, immutable graph revision, evidence anchor, KnowledgeGrant와 승인된 mapping을 공유한다. |
 | PD-37 | Project→Environment exact scope | `구현` | session 시작 시 connection과 graph revision 집합을 immutable pin으로 고정한다. |
-| PD-38 | funnel analysis migration | `구현` | 별도 제품이 아니라 Analysis Article의 typed block으로 일회 이관한다. |
-| PD-39 | metric signal monitoring | `구현` | published article revision과 metric semantic id에 귀속하고 offline/stale 상태를 숨기지 않는다. |
-| PD-40 | Analysis Article BI archive | `구현` | ADR 0007의 exact source, bounded result, evidence, metric signal과 immutable publication 계약을 따른다. |
+| PD-38 | funnel analysis/block migration | `구현 안 함` | funnel·cohort·chart는 별도 UI domain으로 이관하지 않고 SQL 또는 Agent 결과를 일반 HTML로 설명한다. |
+| PD-39 | metric signal monitoring | `구현 안 함` | Article은 수동 재조회 문서이며 cron·signal·background runner를 소유하지 않는다. |
+| PD-40 | Analysis Article archive | `구현` | ADR 0007의 sanitized HTML, 단일 bounded read query, 로컬 수동 재조회, immutable public HTML 계약을 따른다. |
 
 ## 변경 규칙
 

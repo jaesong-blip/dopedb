@@ -9,14 +9,12 @@ AI 작업자는 변경 전에 `AGENTS.md`와 `CLAUDE.md`를 읽는다. 협업 �
 상태를 공유하되 장기 비밀값은 공유 레코드를 따라가지 않고, 구성원은 member-local
 OS 저장 또는 구성원별 단기 managed 자격 증명을 사용한다. 연결은 간단해야 하며,
 Agent는 정확한 workspace/account/connection revision과 local policy에 고정된
-grant 안에서 일하고 화면은 관찰·승인·중단·복구한다. 팀 BI의 유일한 공유 단위는
-versioned narrative, exact-source 분석 graph, bounded live result, evidence,
-metric signal을 합친 Analysis Article이며 기존 Dashboard·Funnel Analysis·Agent
-Report를 별도 domain으로 확장하지 않는다. 내부 article result는 exact-grant
-Desktop runner가 제한·masking한 fragment만 공유하고 public article은 승인된
-immutable snapshot으로만 발행한다. 범용 DB client 기능 수, text-to-SQL, 상시
-범용 MCP server, hosted DB proxy, 임의 executable BI block, driver 개수는 제품
-방향이 아니다.
+grant 안에서 일하고 화면은 관찰·승인·중단·복구한다. 공유 분석의 단위는
+sanitized HTML과 정확한 읽기 전용 저장 쿼리 하나를 가진 Analysis Article이다.
+result row는 exact-grant Desktop에 남고, public article은 query를 실행하거나
+노출하지 않는 immutable HTML snapshot으로만 발행한다. Dashboard·transform graph,
+schedule·signal, 범용 DB client 기능 수, text-to-SQL, 상시 범용 MCP server,
+hosted DB proxy, 임의 executable BI block, driver 개수는 제품 방향이 아니다.
 개별 기능의 결정 상태는
 [`docs/PRODUCT_UI_SCOPE.md`](docs/PRODUCT_UI_SCOPE.md)의
 기능 범위 결정 표가 소유한다.

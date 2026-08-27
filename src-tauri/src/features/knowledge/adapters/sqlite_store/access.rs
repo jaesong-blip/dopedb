@@ -284,6 +284,8 @@ impl Store {
             connections.push(KnowledgeSessionConnection {
                 connection_id: binding.connection_id,
                 connection_revision: binding.connection_revision,
+                remote_connection_id: None,
+                connection_content_revision: binding.connection_revision,
                 role: binding.role,
                 alias: binding.alias,
             });
@@ -663,6 +665,7 @@ impl Store {
                         connection_id: parse_uuid(connection_id)?,
                         connection_revision,
                         current_connection_revision,
+                        connection_content_revision: current_connection_revision,
                         connection_name,
                         role,
                         alias,

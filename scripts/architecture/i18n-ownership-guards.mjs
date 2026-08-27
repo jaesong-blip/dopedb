@@ -1,8 +1,8 @@
 const rowEditorPath = "src/components/RowEditor.tsx";
-const analysisBuilderPath = "src/features/analysisArticles/AnalysisDefinitionBuilder.tsx";
+const analysisEditorPath = "src/features/analysisArticles/AnalysisArticleEditor.tsx";
 
 export function collectI18nOwnershipDiagnostics({ exists, read }) {
-  const required = [rowEditorPath, analysisBuilderPath];
+  const required = [rowEditorPath, analysisEditorPath];
   const diagnostics = required
     .filter((filePath) => !exists(filePath))
     .map((filePath) => `required localized editor is missing: ${filePath}`);
@@ -13,24 +13,10 @@ export function collectI18nOwnershipDiagnostics({ exists, read }) {
     diagnostics.push(`${rowEditorPath}: no-change errors must remain catalogue-owned`);
   }
 
-  const analysisBuilder = read(analysisBuilderPath);
-  for (const literal of [
-    'label="Markdown"',
-    'title: "Read query"',
-    'text: "Section heading"',
-    'markdown: "Write the analysis context and interpretation."',
-    'markdown: "Important context for this result."',
-    'title: "Table"',
-    'title: "Funnel"',
-    'title: "Retention cohort"',
-    'title: "Heatmap"',
-  ]) {
-    if (analysisBuilder.includes(literal)) {
-      diagnostics.push(`${analysisBuilderPath}: persisted user-facing seed bypasses the catalogue (${literal})`);
-    }
-  }
-  if (!analysisBuilder.includes("function defaultBlock(") || !analysisBuilder.includes("t: Translate,")) {
-    diagnostics.push(`${analysisBuilderPath}: block creation must receive the current translator explicitly`);
+  const analysisEditor = read(analysisEditorPath);
+  if (!analysisEditor.includes('t("analysis.fieldHtml")')
+    || !analysisEditor.includes('t("analysis.fieldSavedQuery")')) {
+    diagnostics.push(`${analysisEditorPath}: HTML and saved-query labels must remain catalogue-owned`);
   }
 
   return diagnostics;

@@ -355,8 +355,9 @@ pub(crate) fn validate_definition(
     connections: &[AnalysisArticleConnection],
     supplied_parameters: &BTreeMap<String, Value>,
 ) -> AppResult<BTreeMap<String, Value>> {
-    if definition.version != 1
+    if definition.version != 2
         || !safe_text(&definition.title, 160, false)
+        || !safe_text(&definition.html, 262_144, true)
         || !safe_text(&definition.question, 8_000, true)
         || !safe_text(&definition.summary, 20_000, true)
         || !safe_text(&definition.timezone, 128, false)
@@ -374,6 +375,32 @@ pub(crate) fn validate_definition(
     {
         return Err(AppError::Config(
             "invalid Analysis Article definition bounds".into(),
+        ));
+    }
+
+    let query = &definition.queries[0];
+    let block = &definition.blocks[0];
+    if connections.len() != 1
+        || definition.queries.len() != 1
+        || definition.blocks.len() != 1
+        || !definition.transforms.is_empty()
+        || !definition.metrics.is_empty()
+        || !definition.claims.is_empty()
+        || !definition.warnings.is_empty()
+        || !definition.question.is_empty()
+        || !definition.summary.is_empty()
+        || definition.timezone != "UTC"
+        || query.cache_ttl_seconds != 0
+        || block.id != "query_result"
+        || block.kind != AnalysisBlockKind::Table
+        || block.source_node_id.as_deref() != Some(query.id.as_str())
+        || definition.refresh.mode != AnalysisRefreshMode::Manual
+        || definition.refresh.cron.is_some()
+        || definition.refresh.runner_id.is_some()
+        || definition.refresh.share_reviewed_results
+    {
+        return Err(AppError::Config(
+            "Analysis Article must contain HTML and one manual saved query".into(),
         ));
     }
 

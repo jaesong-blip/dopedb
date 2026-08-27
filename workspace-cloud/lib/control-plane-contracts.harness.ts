@@ -764,7 +764,7 @@ describe("Desktop control-plane contracts", () => {
     })).toThrow();
 
     type MutableAnalysisFixture = {
-      definition: { blocks: Array<Record<string, unknown>> };
+      definition: { html: string; blocks: Array<Record<string, unknown>> };
     };
     const malformedArticle = (mutate: (article: MutableAnalysisFixture) => void) => {
       const article = structuredClone(fixture.analysisArticleCreate) as MutableAnalysisFixture;
@@ -782,18 +782,16 @@ describe("Desktop control-plane contracts", () => {
       };
     }))).toThrow("Invalid heading block");
     expect(() => parseSharedAnalysisArticleCreate(malformedArticle((article) => {
-      article.definition.blocks[0]!.config = { metricId: "active_accounts" };
-    }))).toThrow("Invalid metric block");
-    expect(() => parseSharedAnalysisArticleCreate(malformedArticle((article) => {
-      article.definition.blocks[1]!.config = {};
+      article.definition.blocks[0]!.config = {};
     }))).toThrow("Invalid table block");
     expect(() => parseSharedAnalysisArticleCreate(malformedArticle((article) => {
-      article.definition.blocks[1] = {
-        ...article.definition.blocks[1]!,
-        kind: "bar",
-        config: { xColumn: "active_accounts", seriesColumns: ["active_accounts"] },
-      };
-    }))).toThrow("Invalid Analysis Article chart config");
+      article.definition.blocks[0]!.id = "other_result";
+    }))).toThrow("one HTML document and one manual read query");
+    const sanitized = parseSharedAnalysisArticleCreate(malformedArticle((article) => {
+      article.definition.html = '<p>Safe</p><script>alert(1)</script><a href="javascript:alert(2)">link</a>';
+    }));
+    expect(sanitized.definition.html).not.toContain("<script");
+    expect(sanitized.definition.html).not.toContain("javascript:");
 
     expect(Object.keys(productAnalyticsGolden).sort()).toEqual([
       "appVersion",

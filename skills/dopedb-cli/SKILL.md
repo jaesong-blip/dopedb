@@ -93,8 +93,9 @@ general MCP server.
 
 Outside DopeDB AI Chat, explain that the user must open the target Project /
 Environment in Desktop and ask its Agent to draft the Article. The Agent may
-verify and propose a draft, but a person reviews the result, makes it live,
-enables production refresh, and publishes any external snapshot.
+verify and propose ordinary HTML with one bounded read-only saved query. A
+person edits the HTML, reruns that query when current data is needed, and
+publishes an immutable HTML copy.
 
 ## Mutations
 

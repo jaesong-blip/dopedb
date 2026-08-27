@@ -21,13 +21,12 @@ use super::adapters::hosted::{
     list_analysis_article_revisions, list_analysis_collaborators, list_analysis_notifications,
     list_analysis_publications, list_analysis_runners, list_analysis_runs,
     list_analysis_signal_receipts, list_analysis_signals, mark_analysis_notifications_read,
-    preview_analysis_publication, register_analysis_runner, revoke_analysis_publication,
-    revoke_analysis_runner, set_analysis_signal_enabled, start_analysis_run,
-    update_analysis_signal, AnalysisCollaboratorDirectory, AnalysisPublicationRequest,
-    AnalysisRunnerRevocation, AnalysisSignalChannel, AnalysisSignalCreateRequest,
-    RemoteAnalysisArticleRevision, RemoteAnalysisNotification, RemoteAnalysisPublicSnapshot,
-    RemoteAnalysisPublication, RemoteAnalysisResult, RemoteAnalysisRun, RemoteAnalysisSignal,
-    RemoteAnalysisSignalHistoryReceipt,
+    register_analysis_runner, revoke_analysis_publication, revoke_analysis_runner,
+    set_analysis_signal_enabled, start_analysis_run, update_analysis_signal,
+    AnalysisCollaboratorDirectory, AnalysisPublicationRequest, AnalysisRunnerRevocation,
+    AnalysisSignalChannel, AnalysisSignalCreateRequest, RemoteAnalysisArticleRevision,
+    RemoteAnalysisNotification, RemoteAnalysisPublication, RemoteAnalysisResult, RemoteAnalysisRun,
+    RemoteAnalysisSignal, RemoteAnalysisSignalHistoryReceipt,
 };
 use super::adapters::TauriAnalysisRuntimeAdapter;
 use crate::error::{AppError, AppResult};
@@ -64,13 +63,6 @@ pub(crate) struct AnalysisRunCommandResult {
 pub(crate) struct AnalysisRunPage {
     runs: Vec<RemoteAnalysisRun>,
     next_cursor: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct AnalysisPublicationPreview {
-    snapshot: RemoteAnalysisPublicSnapshot,
-    snapshot_hash: String,
 }
 
 fn team_account(scope: &ActiveResourceScope) -> AppResult<AccountId> {
@@ -313,22 +305,6 @@ pub(crate) async fn list_analysis_publications_command(
 }
 
 #[tauri::command]
-pub(crate) async fn preview_analysis_publication_command(
-    state: State<'_, AppState>,
-    article_id: Uuid,
-    request: AnalysisPublicationRequest,
-) -> AppResult<AnalysisPublicationPreview> {
-    let (scope, account) = remote_scope(&state).await?;
-    let (snapshot, snapshot_hash) =
-        preview_analysis_publication(account.as_str(), scope.workspace_id, article_id, &request)
-            .await?;
-    Ok(AnalysisPublicationPreview {
-        snapshot,
-        snapshot_hash,
-    })
-}
-
-#[tauri::command]
 pub(crate) async fn create_analysis_publication_command(
     state: State<'_, AppState>,
     article_id: Uuid,
@@ -558,6 +534,7 @@ pub(crate) async fn run_analysis_article_command(
     .await?;
     let request = AnalysisDefinitionRunRequest {
         workspace_id: Some(scope.workspace_id),
+        project_environment_id: Some(article.project_environment_id),
         article_id,
         article_revision,
         definition: article.definition.clone(),

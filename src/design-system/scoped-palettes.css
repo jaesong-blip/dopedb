@@ -8,20 +8,6 @@
  */
 
 :root {
-  /* Declarative Analysis Article chart series. */
-  --ds-chart-series-1: #6b9bfa;
-  --ds-chart-series-2: color-mix(
-    in srgb,
-    var(--ds-chart-series-1) 70%,
-    var(--ds-text-muted)
-  );
-  --ds-chart-series-3: color-mix(
-    in srgb,
-    var(--ds-chart-series-1) 48%,
-    var(--ds-text-muted)
-  );
-  --ds-chart-series-fallback: var(--ds-text-muted);
-
   /* xterm ANSI theme. resolvePtyTheme is the only consumer. */
   --ds-terminal-ansi-black: #26282c;
   --ds-terminal-ansi-bright-black: #548af7;

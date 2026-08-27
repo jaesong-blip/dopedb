@@ -26,13 +26,15 @@
     "drizzle-orm": "^0.45.2",
     "next": "^16.2.12",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "sanitize-html": "^2.17.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "@types/sanitize-html": "^2.16.1",
     "drizzle-kit": "^0.31.10",
     "postcss": "8.5.23",
     "postgres": "3.4.9",

@@ -43,11 +43,12 @@ export async function runAnalysisLifecycleScenarios(
       alias: "Harness",
     }],
     definition: {
-      version: 1,
+      version: 2,
       source: "human",
       title: "Harness analysis",
-      question: "How many active rows exist?",
-      summary: "A bounded aggregate with an exact result contract.",
+      html: "<h2>Active rows</h2><p>A bounded aggregate backed by one saved query.</p>",
+      question: "",
+      summary: "",
       timezone: "UTC",
       parameters: [],
       queries: [{
@@ -69,34 +70,13 @@ export async function runAnalysisLifecycleScenarios(
         }],
       }],
       transforms: [],
-      metrics: [{
-        id: "active_rows",
-        label: "Active rows",
-        description: "Current active row count",
-        sourceNodeId: "active_rows",
-        valueColumn: "active_rows",
-        unit: "rows",
-        lowerIsBetter: null,
-        format: { style: "number", decimals: 0, currency: null },
-      }],
+      metrics: [],
       blocks: [{
-        id: "active_rows_metric",
-        kind: "metric",
-        title: "Active rows",
-        sourceNodeId: "active_rows",
-        width: 4,
-        config: {
-          metricId: "active_rows",
-          comparisonColumn: null,
-          sparklineColumn: null,
-          sampleCountColumn: null,
-        },
-      }, {
-        id: "active_rows_detail",
+        id: "query_result",
         kind: "table",
-        title: "Active rows detail",
+        title: "Query result",
         sourceNodeId: "active_rows",
-        width: 8,
+        width: 12,
         config: {
           columns: ["active_rows"],
           pageSize: 10,
@@ -110,9 +90,9 @@ export async function runAnalysisLifecycleScenarios(
         runnerId: null,
         maxStalenessSeconds: 86_400,
         resultRetentionDays: 30,
-        shareReviewedResults: true,
+        shareReviewedResults: false,
       },
-      warnings: ["Harness definition only"],
+      warnings: [],
     },
   });
   const createdArticle = await commitAnalysisArticleCreate({
@@ -131,7 +111,7 @@ export async function runAnalysisLifecycleScenarios(
     ...articleInput,
     definition: {
       ...articleInput.definition,
-      summary: "A reviewed bounded aggregate with an exact result contract.",
+      html: "<h2>Active rows</h2><p>A reviewed aggregate backed by one saved query.</p>",
     },
   });
   const updatedArticle = await commitAnalysisArticleMutation({
@@ -457,6 +437,34 @@ export async function runAnalysisLifecycleScenarios(
       authority,
     })
   );
+  const authorityEpochDrift = await sql.begin(async (tx) => {
+    const revisions = await tx<{
+      contentRevision: number;
+      authorityRevision: number;
+    }[]>`
+      UPDATE "workspace_control"."workspace_connection"
+      SET "revision" = "revision" + 1
+      WHERE "organization_id" = ${organizationId}
+        AND "id" = ${left.connection.id}::uuid
+      RETURNING "content_revision"::int AS "contentRevision",
+        "revision"::int AS "authorityRevision"
+    `;
+    await tx`
+      UPDATE "workspace_control"."knowledge_environment_connection"
+      SET "connection_revision" = ${revisions[0]!.authorityRevision}
+      WHERE "organization_id" = ${organizationId}
+        AND "project_environment_id" = ${developmentEnvironment.id}::uuid
+        AND "connection_id" = ${left.connection.id}::uuid
+        AND "revoked_at" IS NULL
+    `;
+    return revisions;
+  });
+  expect(authorityEpochDrift[0]).toEqual({
+    contentRevision: left.connection.contentRevision,
+    authorityRevision: left.connection.contentRevision + 1,
+  });
+  // A revocation/lease epoch change must not make unchanged saved SQL stale.
+  // The run still rechecks the live binding, grant, and revocation gate.
   const analysisRunId = await createAnalysisRun(3);
   const invalidAnalysisRunnerCapabilityHash = runnerCapabilityContract
     .hashAnalysisRunnerCapability(invalidAnalysisRunnerCapability);
@@ -468,6 +476,8 @@ export async function runAnalysisLifecycleScenarios(
     runnerCapabilityHash: invalidAnalysisRunnerCapabilityHash,
     authority,
   })).toBe(false);
+  // Simple Articles keep query results on the member's Desktop. The control
+  // plane receives only the bounded execution receipt.
   expect(await runStore.canStageAnalysisRunFragment({
     organizationId,
     articleId,
@@ -475,46 +485,7 @@ export async function runAnalysisLifecycleScenarios(
     runnerId: analysisRunnerId,
     runnerCapabilityHash: analysisRunnerCapabilityHash,
     authority,
-  })).toBe(true);
-  const firstFragment = stagedFragment(0);
-  const secondFragment = stagedFragment(1);
-  const detailFragment = stagedFragment(0, "active_rows_detail");
-  await expect(runStore.stageAnalysisRunFragment({
-    organizationId,
-    articleId,
-    runId: analysisRunId,
-    runnerId: analysisRunnerId,
-    runnerCapabilityHash: invalidAnalysisRunnerCapabilityHash,
-    fragment: firstFragment,
-    authority,
-  })).resolves.toBeNull();
-  await expect(stageFragment(analysisRunId, firstFragment)).resolves.toMatchObject({
-    blockId: firstFragment.blockId,
-    ordinal: 0,
-    payloadHash: firstFragment.payloadHash,
-  });
-  await expect(stageFragment(analysisRunId, secondFragment)).resolves.toMatchObject({
-    blockId: secondFragment.blockId,
-    ordinal: 1,
-    payloadHash: secondFragment.payloadHash,
-  });
-  await expect(stageFragment(analysisRunId, detailFragment)).resolves.toMatchObject({
-    blockId: detailFragment.blockId,
-    ordinal: 0,
-    payloadHash: detailFragment.payloadHash,
-  });
-  // A retry is a read of the same immutable row, not another staged audit.
-  await expect(stageFragment(analysisRunId, firstFragment)).resolves.toMatchObject({
-    payloadHash: firstFragment.payloadHash,
-  });
-  const stagedAudits = await sql<{ count: number }[]>`
-    SELECT count(*)::int AS "count"
-    FROM "workspace_control"."workspace_audit_event"
-    WHERE "organization_id" = ${organizationId}
-      AND "action" = 'analysis_article.result_fragment_staged'
-      AND "resource_id" = ${analysisRunId}
-  `;
-  expect(stagedAudits[0]?.count).toBe(3);
+  })).toBe(false);
   const queryReceipt = {
     queryNodeId: "active_rows",
     connectionId: left.connection.id,
@@ -532,119 +503,12 @@ export async function runAnalysisLifecycleScenarios(
     byteCount: 257,
     durationMs: 9,
   };
-  const fragmentManifest = [firstFragment, secondFragment, detailFragment].map((fragment) => ({
-    blockId: fragment.blockId,
-    ordinal: fragment.ordinal,
-    payloadHash: fragment.payloadHash,
-  }));
-  const missingBlockManifest = fragmentManifest.filter(
-    (fragment) => fragment.blockId !== "active_rows_detail",
-  );
-  const gapManifest = fragmentManifest.map((fragment) => fragment.ordinal === 1
-    ? { ...fragment, ordinal: 2 }
-    : fragment);
-  const duplicateManifest = [...fragmentManifest, fragmentManifest[0]!];
-  const unknownBlockManifest = [
-    { ...fragmentManifest[0]!, blockId: "unknown_block" },
-    ...fragmentManifest,
-  ];
-  const inlineFragment = (blockId: string, ordinal: number) => ({
-    version: 1 as const,
-    blockId,
-    ordinal,
-    columns: revisedArticle.definition.queries[0]!.columns,
-    rows: [[2]],
-    truncated: false,
-  });
-  expect(runContract.parseAnalysisRunCompletion({
+  const completion = runContract.parseAnalysisRunCompletion({
     state: "succeeded",
     queryReceipts: [queryReceipt],
-    fragmentManifest,
+    fragmentManifest: [],
     error: null,
-  }, revisedArticle.definition).fragmentManifest).toHaveLength(3);
-  expect(runContract.parseAnalysisRunCompletion({
-    state: "succeeded",
-    queryReceipts: [queryReceipt],
-    fragments: [
-      inlineFragment("active_rows_metric", 0),
-      inlineFragment("active_rows_metric", 1),
-      inlineFragment("active_rows_detail", 0),
-    ],
-    error: null,
-  }, revisedArticle.definition).inlineFragments).toHaveLength(3);
-  for (const invalidManifest of [
-    missingBlockManifest,
-    gapManifest,
-    duplicateManifest,
-    unknownBlockManifest,
-  ]) {
-    expect(() => runContract.parseAnalysisRunCompletion({
-      state: "succeeded",
-      queryReceipts: [queryReceipt],
-      fragmentManifest: invalidManifest,
-      error: null,
-    }, revisedArticle.definition)).toThrow();
-  }
-  for (const invalidInlineFragments of [
-    [
-      inlineFragment("active_rows_metric", 0),
-      inlineFragment("active_rows_metric", 1),
-    ],
-    [
-      inlineFragment("active_rows_metric", 0),
-      inlineFragment("active_rows_metric", 2),
-      inlineFragment("active_rows_detail", 0),
-    ],
-  ]) {
-    expect(() => runContract.parseAnalysisRunCompletion({
-      state: "succeeded",
-      queryReceipts: [queryReceipt],
-      fragments: invalidInlineFragments,
-      error: null,
-    }, revisedArticle.definition)).toThrow();
-  }
-  const completion = {
-    state: "succeeded" as const,
-    queryReceipts: [queryReceipt],
-    fragmentManifest,
-    inlineFragments: [],
-    error: null,
-  };
-  const sqlBoundaryCases = [
-    [],
-    missingBlockManifest,
-    gapManifest,
-    unknownBlockManifest,
-    duplicateManifest,
-  ];
-  for (const invalidManifest of sqlBoundaryCases) {
-    const invalidRunId = await createAnalysisRun(3);
-    for (const fragment of [firstFragment, secondFragment, detailFragment]) {
-      await stageFragment(invalidRunId, fragment);
-    }
-    const invalidReceipt = { ...queryReceipt, queryRunId: randomUUID() };
-    await expect(runStore.commitAnalysisRunCompletion({
-      organizationId,
-      articleId,
-      runId: invalidRunId,
-      runnerId: analysisRunnerId,
-      runnerCapabilityHash: analysisRunnerCapabilityHash,
-      completion: {
-        ...completion,
-        queryReceipts: [invalidReceipt],
-        fragmentManifest: invalidManifest,
-      },
-      fragmentManifest: invalidManifest,
-      authority,
-    })).resolves.toBeNull();
-    const invalidRun = await sql<{ state: string }[]>`
-      SELECT "state"
-      FROM "workspace_control"."workspace_analysis_article_run"
-      WHERE "organization_id" = ${organizationId}
-        AND "id" = ${invalidRunId}::uuid
-    `;
-    expect(invalidRun[0]?.state).toBe("running");
-  }
+  }, revisedArticle.definition);
   const completedRun = await runStore.commitAnalysisRunCompletion({
     organizationId,
     articleId,
@@ -652,7 +516,7 @@ export async function runAnalysisLifecycleScenarios(
     runnerId: analysisRunnerId,
     runnerCapabilityHash: analysisRunnerCapabilityHash,
     completion,
-    fragmentManifest,
+    fragmentManifest: [],
     authority,
   });
   expect(completedRun).toMatchObject({
@@ -660,8 +524,8 @@ export async function runAnalysisLifecycleScenarios(
     articleRevision: 3,
     state: "succeeded",
     rowCount: 2,
-    byteCount: 385,
-    resultHash: runContract.analysisRunResultHash([queryReceipt], fragmentManifest),
+    byteCount: 0,
+    resultHash: runContract.analysisRunResultHash([queryReceipt], []),
   });
   expectRfc3339Timestamp(completedRun?.finishedAt);
   expectRfc3339Timestamp(completedRun?.createdAt);
@@ -674,7 +538,7 @@ export async function runAnalysisLifecycleScenarios(
     runnerId: analysisRunnerId,
     runnerCapabilityHash: analysisRunnerCapabilityHash,
     completion,
-    fragmentManifest,
+    fragmentManifest: [],
     authority,
   })).resolves.toMatchObject({ id: analysisRunId, state: "succeeded" });
   await expect(runStore.commitAnalysisRunCompletion({
@@ -684,7 +548,7 @@ export async function runAnalysisLifecycleScenarios(
     runnerId: analysisRunnerId,
     runnerCapabilityHash: invalidAnalysisRunnerCapabilityHash,
     completion,
-    fragmentManifest,
+    fragmentManifest: [],
     authority,
   })).resolves.toBeNull();
   const completionDurability = await sql<{
@@ -703,38 +567,8 @@ export async function runAnalysisLifecycleScenarios(
          AND "resource_id" = ${analysisRunId}) AS "completionAudits"
   `;
   expect(completionDurability[0]).toEqual({ receipts: 1, completionAudits: 1 });
-  // Retention can remove one row before another cleanup batch. The committed
-  // manifest hash must then fail closed instead of treating the remainder as
-  // a smaller valid result.
-  await sql`
-    DELETE FROM "workspace_control"."workspace_analysis_result_fragment"
-    WHERE "organization_id" = ${organizationId}
-      AND "run_id" = ${analysisRunId}::uuid
-      AND "ordinal" = 1
-  `;
-  const retainedFragments = await sql<{
-    blockId: string;
-    ordinal: number;
-    payloadHash: string;
-    plaintextBytes: number;
-  }[]>`
-    SELECT "block_id" AS "blockId", "ordinal", "payload_hash" AS "payloadHash",
-      "plaintext_bytes" AS "plaintextBytes"
-    FROM "workspace_control"."workspace_analysis_result_fragment"
-    WHERE "organization_id" = ${organizationId}
-      AND "run_id" = ${analysisRunId}::uuid
-      AND "expires_at" > now()
-  `;
-  expect(runContract.analysisRunEvidenceIsComplete({
-    resultHash: String(completedRun?.resultHash ?? ""),
-    rowCount: 2,
-    byteCount: 385,
-    receipts: [queryReceipt],
-    fragments: retainedFragments,
-  })).toBe(false);
 
   const cancelledRunId = await createAnalysisRun(3);
-  await expect(stageFragment(cancelledRunId, stagedFragment(0))).resolves.not.toBeNull();
   const cancelRequestedRun = await runStore.requestAnalysisRunCancellation({
     organizationId,
     articleId,
@@ -751,7 +585,6 @@ export async function runAnalysisLifecycleScenarios(
     runnerCapabilityHash: analysisRunnerCapabilityHash,
     authority,
   })).toBe(false);
-  await expect(stageFragment(cancelledRunId, stagedFragment(1))).resolves.toBeNull();
   const cancelledReceiptProbe = {
     ...queryReceipt,
     queryRunId: randomUUID(),

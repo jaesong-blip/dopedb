@@ -89,11 +89,12 @@
       }
     ],
     "definition": {
-      "version": 1,
+      "version": 2,
       "source": "human",
       "title": "Active accounts",
-      "question": "How many accounts are active?",
-      "summary": "A bounded aggregate tied to one exact connection revision.",
+      "html": "<p>A bounded aggregate tied to one exact connection revision.</p>",
+      "question": "",
+      "summary": "",
       "timezone": "UTC",
       "parameters": [],
       "queries": [
@@ -119,42 +120,14 @@
         }
       ],
       "transforms": [],
-      "metrics": [
-        {
-          "id": "active_accounts",
-          "label": "Active accounts",
-          "description": "Current active account count",
-          "sourceNodeId": "active_accounts",
-          "valueColumn": "active_accounts",
-          "unit": "accounts",
-          "lowerIsBetter": null,
-          "format": {
-            "style": "number",
-            "decimals": 0,
-            "currency": null
-          }
-        }
-      ],
+      "metrics": [],
       "blocks": [
         {
-          "id": "active_accounts_metric",
-          "kind": "metric",
-          "title": "Active accounts",
-          "sourceNodeId": "active_accounts",
-          "width": 4,
-          "config": {
-            "metricId": "active_accounts",
-            "comparisonColumn": null,
-            "sparklineColumn": null,
-            "sampleCountColumn": null
-          }
-        },
-        {
-          "id": "active_accounts_detail",
+          "id": "query_result",
           "kind": "table",
-          "title": "Active accounts detail",
+          "title": "Query result",
           "sourceNodeId": "active_accounts",
-          "width": 8,
+          "width": 12,
           "config": {
             "columns": [
               "active_accounts"
@@ -171,11 +144,9 @@
         "runnerId": null,
         "maxStalenessSeconds": 86400,
         "resultRetentionDays": 30,
-        "shareReviewedResults": true
+        "shareReviewedResults": false
       },
-      "warnings": [
-        "Golden contract fixture only"
-      ]
+      "warnings": []
     }
   },
   "analysisArticleAcceptances": [
@@ -410,17 +381,17 @@
       ]
     },
     {
-      "name": "Analysis Article rejects duplicate block identifiers",
+      "name": "Analysis Article requires its single query result block identity",
       "contract": "analysisArticleCreate",
       "mutations": [
-        { "path": ["definition", "blocks", 1, "id"], "value": "active_accounts_metric" }
+        { "path": ["definition", "blocks", 0, "id"], "value": "other_result" }
       ]
     },
     {
-      "name": "Analysis Article metric blocks require a compatible metric",
+      "name": "Analysis Article rejects presentation blocks in the saved query contract",
       "contract": "analysisArticleCreate",
       "mutations": [
-        { "path": ["definition", "blocks", 0, "config", "metricId"], "value": "missing_metric" }
+        { "path": ["definition", "blocks", 0, "kind"], "value": "metric" }
       ]
     }
   ]

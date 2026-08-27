@@ -209,9 +209,13 @@ pub(super) fn run() {
         "../../dopedb-protocol/tests/fixtures/control-plane-contracts-v1.json"
     ))
     .unwrap();
-    let mut proposal_definition = contracts["analysisArticleCreate"]["definition"].clone();
-    proposal_definition.as_object_mut().unwrap().remove("source");
-    proposal_definition["refresh"]["shareReviewedResults"] = serde_json::json!(false);
+    let stored_definition = &contracts["analysisArticleCreate"]["definition"];
+    let proposal_definition = serde_json::json!({
+        "version": 2,
+        "title": stored_definition["title"],
+        "html": stored_definition["html"],
+        "query": stored_definition["queries"][0],
+    });
     let (cancel_started_tx, cancel_started_rx) = mpsc::channel();
     let server = thread::spawn(move || {
         let mut catalog_searches = 0;
@@ -502,65 +506,33 @@ pub(super) fn run() {
     assert_eq!(article_tool["annotations"]["idempotentHint"], false);
     assert_eq!(article_tool["inputSchema"]["additionalProperties"], false);
     assert_eq!(
-        article_tool["inputSchema"]["properties"]["definition"]["properties"]["queries"]
-            ["maxItems"],
-        32,
-    );
-    let block_variants = article_tool["inputSchema"]["properties"]["definition"]["properties"]
-        ["blocks"]["items"]["oneOf"]
-        .as_array()
-        .expect("Analysis Article blocks must use a discriminated schema");
-    let block_variant = |kind: &str| {
-        block_variants
-            .iter()
-            .find(|variant| {
-                variant["properties"]["kind"]["const"] == kind
-                    || variant["properties"]["kind"]["enum"]
-                        .as_array()
-                        .is_some_and(|kinds| kinds.iter().any(|value| value == kind))
-            })
-            .expect("every supported block kind must have an exact schema")
-    };
-    assert_eq!(
-        block_variant("heading")["properties"]["config"]["required"],
-        serde_json::json!(["level", "text"]),
+        article_tool["inputSchema"]["properties"]["definition"]["properties"]["version"]
+            ["const"],
+        2,
     );
     assert_eq!(
-        block_variant("metric")["properties"]["config"]["required"],
-        serde_json::json!([
-            "metricId",
-            "comparisonColumn",
-            "sparklineColumn",
-            "sampleCountColumn"
-        ]),
+        article_tool["inputSchema"]["properties"]["definition"]["properties"]["html"]
+            ["maxLength"],
+        250_000,
     );
     assert_eq!(
-        block_variant("table")["properties"]["config"]["required"],
-        serde_json::json!(["columns", "pageSize"]),
+        article_tool["inputSchema"]["properties"]["definition"]["required"],
+        serde_json::json!(["version", "title", "html", "query"]),
     );
     assert_eq!(
-        article_tool["inputSchema"]["properties"]["definition"]["properties"]["refresh"]
-            ["properties"]["mode"]["const"],
-        "manual",
+        article_tool["inputSchema"]["properties"]["definition"]["properties"]["query"]
+            ["properties"]["parameterIds"]["const"],
+        serde_json::json!([]),
     );
     assert_eq!(
-        article_tool["inputSchema"]["properties"]["definition"]["properties"]["refresh"]
-            ["properties"]["cron"]["type"],
-        "null",
+        article_tool["inputSchema"]["properties"]["definition"]["properties"]["query"]
+            ["properties"]["cacheTtlSeconds"]["const"],
+        0,
     );
-    let transform_variants = article_tool["inputSchema"]["properties"]["definition"]
-        ["properties"]["transforms"]["items"]["oneOf"]
-        .as_array()
-        .expect("Analysis Article transforms must use a discriminated schema");
-    assert!(transform_variants.iter().any(|variant| {
-        variant["properties"]["operation"]["const"] == "aggregate"
-            && variant["properties"]["config"]["required"]
-                == serde_json::json!(["groupBy", "measures"])
-    }));
     assert!(article_tool["description"]
         .as_str()
         .unwrap()
-        .contains("cannot submit review"));
+        .contains("sanitized HTML"));
     let update_tool = tools
         .iter()
         .find(|tool| tool["name"] == "analysis_article_update_draft")
@@ -581,7 +553,7 @@ pub(super) fn run() {
     assert_eq!(draft_run_tool["annotations"]["readOnlyHint"], true);
     assert_eq!(
         draft_run_tool["inputSchema"]["properties"]["parameterValues"]["maxProperties"],
-        64,
+        0,
     );
     assert!(!tools.iter().any(|tool| tool["name"] == "run"));
 
@@ -622,7 +594,7 @@ pub(super) fn run() {
     assert!(response(7)["result"]["content"][0]["text"]
         .as_str()
         .unwrap()
-        .contains("exact config shown in this tool's input schema"));
+        .contains("sanitized HTML and exactly one bounded read-only query"));
     let serialized = serde_json::to_string(&bridge).unwrap();
     assert!(!serialized.contains("must-never-escape"));
 

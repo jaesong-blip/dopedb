@@ -78,6 +78,7 @@ where
                 .execution
                 .execute_read(AnalysisReadExecutionRequest {
                     workspace_id: request.workspace_id,
+                    project_environment_id: request.project_environment_id,
                     authority,
                     query,
                     parameter_definitions: &request.definition.parameters,

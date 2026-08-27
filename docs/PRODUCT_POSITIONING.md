@@ -13,8 +13,8 @@ DopeDB is the **shared database access workspace for teams and AI agents**.
 It is not positioned as a universal desktop database client, a text-to-SQL
 assistant, or a general-purpose MCP server. The desktop client is the local
 execution and approval console. The hosted workspace is the control plane for
-shared connection identity, membership, policy, provider resources, revisions,
-bounded Analysis Article result fragments, and collaboration audit. Database
+shared connection identity, membership, policy, provider resources, simple HTML
+Analysis Article definitions, and collaboration audit. Database
 traffic continues to run through an exact-grant Desktop runner; the hosted
 service does not become a database proxy.
 
@@ -27,9 +27,9 @@ The product promise has five parts:
    account, connection revision, and policy boundary.
 4. Risky execution is observable, approvable, stoppable, and recoverable, with an
    immutable operation and receipt trail.
-5. A team can keep one versioned Analysis Article current from several exact
-   database grants, inspect the lineage of every metric, and publish only an
-   explicitly reviewed fixed snapshot outside the workspace.
+5. A team can publish a versioned HTML Analysis Article, keep one exact read-only
+   query with it, and manually rerun that query inside Desktop without exposing
+   execution on the public page.
 
 ## Audience and job
 
@@ -77,14 +77,13 @@ system:
 | Query confirmation | Immutable proposal, exact approval, run claim, outcome receipt |
 | Local activity log | Local execution audit plus scoped collaboration audit |
 | Generic cloud connection | Provider-native or approved broker discovery, issuance, revoke, drift, and lifecycle |
-| Generic dashboard builder | Versioned Analysis Article with exact-source lineage, bounded live results, human publication, and deterministic blocks |
+| Generic dashboard builder | Versioned HTML Analysis Article with one exact bounded query and explicit manual rerun |
 
-Analysis Article is the only BI collaboration domain. Dashboard, Funnel Analysis,
-and Agent Report are migration sources, not separate product categories. Signal
-rules attach to a published article metric. Flexibility comes from the closed,
-versioned block and transform registries in
-[`adr/0007-analysis-article-bi-domain.md`](adr/0007-analysis-article-bi-domain.md),
-not arbitrary executable widgets or hosted cross-database SQL federation.
+Analysis Article is the only analysis-publication domain. It is a sanitized HTML
+document with one saved read-only query, not a dashboard, funnel builder, report
+graph, signal system, or hosted cross-database federation. The narrow contract is
+owned by
+[`adr/0007-analysis-article-bi-domain.md`](adr/0007-analysis-article-bi-domain.md).
 
 Do not chase driver count or general database-management feature breadth. A new
 engine or provider is justified only by verified user demand after the
@@ -145,10 +144,9 @@ boundary in the same sentence that makes the claim:
   and applying membership, policy, or revision changes do require the service, so
   never write an unqualified "DopeDB going down cannot affect you."
 - **Result locality.** Queries, results, cancellation, and rollback stay on the
-  member's machine, with one deliberate exception: the reviewed, bounded, masked
-  result fragments a person publishes into an internal Analysis Article. Copy may say
-  results stay local only when it also names that exception, and must not claim the
-  workspace service knows *nothing* beyond who may reach what.
+  member's machine. An Analysis Article shares its sanitized HTML and saved query
+  definition, but not query result rows. Copy must not claim the workspace service
+  knows *nothing* beyond who may reach what.
 
 Public copy must label the product as an alpha and must not imply that the following
 open roadmap work is complete:
@@ -157,9 +155,8 @@ open roadmap work is complete:
 - general provider inventory/import and all revoke/drift reconciliation;
 - full bidirectional resource sync, KMS wrapping, backup/restore, or self-service
   workspace deletion;
-- packaged two-member production validation of the completed Analysis Article
-  migration, scheduled Desktop runner, shared bounded results, and fixed public
-  publication flow;
+- packaged two-member production validation of the simplified Analysis Article
+  migration, manual rerun recovery, and fixed public HTML publication flow;
 - the remaining Local Folder Project Knowledge and any paid/experimental graph product;
   GitHub exact-commit source browsing is the default source path, not a completed graph;
 - bundled Node and independently installed first-party ACP adapter distribution;
@@ -176,9 +173,8 @@ When work competes for time, use this order:
 4. Keep GitHub exploration cheap and exact through pinned tree/path/file reads, then
    validate a graph product with measured quality, latency, and operating-cost gains
    before re-enabling graph construction as a paid/experimental capability.
-5. Complete the Analysis Article archive, exact-source multi-database transforms,
-   Desktop refresh runner, bounded team results, fixed public publications, and
-   article metric signals only on top of that environment boundary.
+5. Complete the simple Analysis Article archive, exact single-query manual rerun,
+   and fixed public HTML publication only on top of that environment boundary.
 6. Deepen schema introspection where it improves Agent judgment.
 
 General local-client convenience, driver breadth, visual object authoring, built-in

@@ -8,6 +8,7 @@ import { sql } from "drizzle-orm";
 import { db } from "./db";
 import { revocationGateLockKey } from "./revocation-gates";
 import {
+  knowledgeEnvironmentConnection,
   workspaceAnalysisArticle,
   workspaceAnalysisArticleConnection,
   workspaceAnalysisArticleQueryReceipt,
@@ -147,9 +148,16 @@ export async function getAnalysisRunControl(input: {
             LEFT JOIN ${workspaceConnection} connection
               ON connection."organization_id" = pin."organization_id"
              AND connection."id" = pin."connection_id"
-             AND connection."revision" = pin."connection_revision"
+             AND connection."content_revision" = pin."connection_revision"
              AND connection."deleted_at" IS NULL
              AND connection."revocation_pending_at" IS NULL
+            LEFT JOIN ${knowledgeEnvironmentConnection} environment_binding
+              ON environment_binding."organization_id" = pin."organization_id"
+             AND environment_binding."project_environment_id" = article."project_environment_id"
+             AND environment_binding."environment_revision" = article."environment_revision"
+             AND environment_binding."connection_id" = pin."connection_id"
+             AND environment_binding."connection_revision" = connection."revision"
+             AND environment_binding."revoked_at" IS NULL
             LEFT JOIN ${workspaceConnectionGrant} connection_grant
               ON connection_grant."organization_id" = pin."organization_id"
              AND connection_grant."connection_id" = pin."connection_id"
@@ -158,7 +166,8 @@ export async function getAnalysisRunControl(input: {
             WHERE pin."organization_id" = run."organization_id"
               AND pin."article_id" = run."article_id"
               AND pin."article_revision" = run."article_revision"
-              AND (connection."id" IS NULL OR connection_grant."connection_id" IS NULL)
+              AND (connection."id" IS NULL OR environment_binding."id" IS NULL
+                OR connection_grant."connection_id" IS NULL)
           )
           AND (
             (run."lease_id" IS NULL AND ${input.leaseCapabilityHash}::text IS NULL)
@@ -295,7 +304,7 @@ export async function commitAnalysisRunCreate(input: {
         AND (${input.run.trigger} <> 'schedule' OR runner."background_allowed" = TRUE)
       FOR UPDATE OF runner
     ), article_authority AS MATERIALIZED (
-      SELECT article."id"
+      SELECT article."id", article."project_environment_id", article."environment_revision"
       FROM ${workspaceAnalysisArticle} article
       JOIN ${workspaceAnalysisArticleRevision} revision
         ON revision."organization_id" = article."organization_id"
@@ -315,19 +324,29 @@ export async function commitAnalysisRunCreate(input: {
       JOIN ${workspaceConnection} connection
         ON connection."organization_id" = pin."organization_id"
        AND connection."id" = pin."connection_id"
-       AND connection."revision" = pin."connection_revision"
+       -- Article definitions pin the public template/content revision. The
+       -- internal revision is a revocation/lease epoch and may advance while
+       -- the shared endpoint, driver, and saved SQL stay unchanged.
+       AND connection."content_revision" = pin."connection_revision"
        AND connection."deleted_at" IS NULL
        AND connection."revocation_pending_at" IS NULL
+      JOIN article_authority ON article_authority."id" = pin."article_id"
+      JOIN ${knowledgeEnvironmentConnection} environment_binding
+        ON environment_binding."organization_id" = connection."organization_id"
+       AND environment_binding."project_environment_id" = article_authority."project_environment_id"
+       AND environment_binding."environment_revision" = article_authority."environment_revision"
+       AND environment_binding."connection_id" = connection."id"
+       AND environment_binding."connection_revision" = connection."revision"
+       AND environment_binding."revoked_at" IS NULL
       JOIN ${workspaceConnectionGrant} connection_grant
         ON connection_grant."organization_id" = connection."organization_id"
        AND connection_grant."connection_id" = connection."id"
        AND connection_grant."member_id" = ${input.authority.membershipId}
        AND connection_grant."capability" IN ('use', 'manage')
-      JOIN article_authority ON article_authority."id" = pin."article_id"
       WHERE pin."organization_id" = ${input.organizationId}
         AND pin."article_id" = ${input.articleId}::uuid
         AND pin."article_revision" = ${input.run.articleRevision}
-      FOR UPDATE OF connection, connection_grant
+      FOR UPDATE OF connection, environment_binding, connection_grant
     ), lease_lock AS MATERIALIZED (
       SELECT lease."runner_id"
       FROM ${workspaceAnalysisRefreshLease} lease
@@ -731,15 +750,26 @@ export async function commitAnalysisRunCompletion(input: {
       JOIN ${workspaceConnection} connection
         ON connection."organization_id" = pin."organization_id"
        AND connection."id" = pin."connection_id"
-       AND connection."revision" = pin."connection_revision"
+       AND connection."content_revision" = pin."connection_revision"
        AND connection."deleted_at" IS NULL
        AND connection."revocation_pending_at" IS NULL
+      JOIN ${workspaceAnalysisArticle} article
+        ON article."organization_id" = current."organization_id"
+       AND article."id" = current."article_id"
+       AND article."deleted_at" IS NULL
+      JOIN ${knowledgeEnvironmentConnection} environment_binding
+        ON environment_binding."organization_id" = connection."organization_id"
+       AND environment_binding."project_environment_id" = article."project_environment_id"
+       AND environment_binding."environment_revision" = article."environment_revision"
+       AND environment_binding."connection_id" = connection."id"
+       AND environment_binding."connection_revision" = connection."revision"
+       AND environment_binding."revoked_at" IS NULL
       JOIN ${workspaceConnectionGrant} connection_grant
         ON connection_grant."organization_id" = connection."organization_id"
        AND connection_grant."connection_id" = connection."id"
        AND connection_grant."member_id" = ${input.authority.membershipId}
        AND connection_grant."capability" IN ('use', 'manage')
-      FOR UPDATE OF connection, connection_grant
+      FOR UPDATE OF connection, environment_binding, connection_grant
     ), verified_fragments AS MATERIALIZED (
       SELECT fragment."run_id", fragment."plaintext_bytes"
       FROM current CROSS JOIN requested_fragment requested

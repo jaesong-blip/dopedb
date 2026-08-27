@@ -252,7 +252,6 @@ pub fn run() {
             features::analysis_articles::transport::list_analysis_runners_command,
             features::analysis_articles::transport::revoke_analysis_runner_command,
             features::analysis_articles::transport::list_analysis_publications_command,
-            features::analysis_articles::transport::preview_analysis_publication_command,
             features::analysis_articles::transport::create_analysis_publication_command,
             features::analysis_articles::transport::revoke_analysis_publication_command,
             features::analysis_articles::transport::analysis_publication_url_command,
