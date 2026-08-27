@@ -46,6 +46,7 @@ use cache::{
 
 const MANAGED_RELEASE_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_TARGET_DATABASE_BYTES: usize = 255;
+const MAX_BIGQUERY_DATASET_BYTES: usize = 1_024;
 
 /// A shared cache hit needs another hosted authorization only when the authority
 /// response crossed an asynchronous slot boundary. An uncontended slot is the
@@ -72,8 +73,13 @@ fn resolve_target_database(
     authorization: &ConnectionAuthorization,
 ) -> AppResult<String> {
     let database = requested.unwrap_or(&profile.database);
+    let maximum_bytes = if profile.engine == Engine::Bigquery {
+        MAX_BIGQUERY_DATASET_BYTES
+    } else {
+        MAX_TARGET_DATABASE_BYTES
+    };
     if database.is_empty()
-        || database.len() > MAX_TARGET_DATABASE_BYTES
+        || database.len() > maximum_bytes
         || database.chars().any(char::is_control)
     {
         return Err(AppError::Config(

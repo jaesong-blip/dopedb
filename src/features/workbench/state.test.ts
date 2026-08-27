@@ -45,8 +45,16 @@ import {
   connectionDiagnosticBlocksTest,
   diagnoseConnection,
 } from "../connections/diagnostics";
+import {
+  connectionUrlNeedsDatabaseSelection,
+  parseConnectionUrl,
+} from "../connections/connectionUrl";
 import type { DriverDescriptor } from "../connections/domain";
 import { switchConnectionSource } from "../connections/connectionEditorModel";
+import {
+  CONNECTION_SSH_ALIAS_PARAMETER,
+  isConnectionOptionSupported,
+} from "../connections/options";
 import {
   blankConnection,
   demoSqliteConnection,
@@ -66,7 +74,10 @@ import {
   treeKeyboardMoveTarget,
   virtualTreeFocusIndex,
 } from "../../design-system/treeKeyboard";
-import { filterLoadedCatalogObjects } from "../catalogExplorer/catalogDomain";
+import {
+  filterLoadedCatalogObjects,
+  supportedObjectKinds,
+} from "../catalogExplorer/catalogDomain";
 import {
   flattenProjectEnvironmentResources,
   preferredProjectEnvironment,
@@ -80,6 +91,7 @@ import {
 } from "../../design-system/components/Modal";
 import { queryResultPhase } from "../../lib/queryResultPhase";
 import { compareCatalogs, diffCounts } from "../../lib/schemaDiff";
+import { tableRef } from "../../lib/tableRef";
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -317,7 +329,7 @@ describe("workbench state ownership", () => {
     updater.dispose();
   });
 
-  it("creates the welcome fallback when the last SQL tab closes", () => {
+  it("keeps an engine-specific query surface when the last tab closes", () => {
     const query = queryDocument("db-1", "sql");
     const state = workbenchReducer(emptyWorkbenchState, {
       type: "activate",
@@ -327,11 +339,27 @@ describe("workbench state ownership", () => {
       type: "close",
       id: query.id,
       connectionId: "db-1",
-      keepWelcomeFallback: true,
+      fallbackKind: "welcome",
     });
 
     expect(closed.documents).toEqual([stableDocument("db-1", "welcome")]);
     expect(closed.activeDocumentId).toBe("db-1:welcome");
+
+    const mongoQuery = queryDocument("mongo-1", "documents");
+    const mongoState = workbenchReducer(emptyWorkbenchState, {
+      type: "activate",
+      document: mongoQuery,
+    });
+    const mongoClosed = workbenchReducer(mongoState, {
+      type: "close",
+      id: mongoQuery.id,
+      connectionId: "mongo-1",
+      fallbackKind: "documents",
+    });
+
+    expect(mongoClosed.documents).toHaveLength(1);
+    expect(mongoClosed.documents[0]?.kind).toBe("documents");
+    expect(mongoClosed.activeDocumentId).toBe(mongoClosed.documents[0]?.id);
   });
 
   it("applies a successful save through the one state reducer", async () => {
@@ -528,6 +556,131 @@ describe("workbench state ownership", () => {
     expect(
       mongoDiagnostics.some(
         ({ fieldId }) => fieldId === "connection-username",
+      ),
+    ).toBe(false);
+    const importedMongo = parseConnectionUrl(
+      'MONGODB_URI="mongodb+srv://reader:secret@cluster.example.net/?retryWrites=true&w=majority"',
+    );
+    expect(importedMongo).not.toBeNull();
+    expect(importedMongo?.update).toMatchObject({
+      engine: "mongodb",
+      host: "cluster.example.net",
+      database: "",
+      username: "reader",
+      extraParams: {
+        retryWrites: "true",
+        w: "majority",
+        srv: "true",
+      },
+    });
+    expect(importedMongo?.password).toBe("secret");
+    expect(
+      connectionUrlNeedsDatabaseSelection(importedMongo!),
+    ).toBe(true);
+    expect(
+      connectionUrlNeedsDatabaseSelection(
+        parseConnectionUrl(
+          "mongodb+srv://reader@cluster.example.net/app",
+        )!,
+      ),
+    ).toBe(false);
+
+    const bigQueryDriver: DriverDescriptor = {
+      ...postgresDriver,
+      id: "google-bq-cli",
+      name: "Google BigQuery CLI",
+      engine: "bigquery",
+      version: ">=2.0.29",
+      installMode: "system",
+      supportedProviders: ["generic"],
+      capabilities: ["sql", "introspection"],
+    };
+    const bigQuery = switchConnectionSource(
+      {
+        ...nameless,
+        name: "Warehouse",
+        port: 9_999,
+        schemaGroup: "analytics",
+        extraParams: { "dopedb.sshAlias": "warehouse" },
+      },
+      "bigquery",
+      "generic",
+    );
+    expect(bigQuery).toMatchObject({
+      engine: "bigquery",
+      provider: "generic",
+      host: "",
+      port: 443,
+      database: "",
+      username: "",
+      sslmode: "require",
+      readonlyDefault: true,
+      allowWrites: false,
+      schemaGroup: null,
+      extraParams: { maximumBytesBilled: "1073741824" },
+    });
+    expect(
+      diagnoseConnection(
+        {
+          ...bigQuery,
+          host: "campfire-460003",
+          database: "analytics_2026",
+        },
+        [],
+        [bigQueryDriver],
+        false,
+        false,
+      ),
+    ).toEqual([]);
+    expect(
+      diagnoseConnection(
+        {
+          ...bigQuery,
+          host: "UPPERCASE",
+          database: "invalid-dataset",
+          extraParams: { maximumBytesBilled: "0" },
+        },
+        [],
+        [bigQueryDriver],
+        false,
+        false,
+      ).map(({ code }) => code),
+    ).toEqual([
+      "bigQueryProjectInvalid",
+      "bigQueryDatasetInvalid",
+      "bigQueryMaximumBytesBilledInvalid",
+    ]);
+    expect(
+      tableRef("bigquery", {
+        schema: "analytics_2026",
+        name: "orders",
+      } as CatalogTable),
+    ).toBe("`analytics_2026.orders`");
+    expect(supportedObjectKinds("bigquery")).toEqual(
+      new Set(["materialized_view"]),
+    );
+    const importedBigQuery = parseConnectionUrl(
+      "bigquery://reader:secret@campfire-460003:9999/analytics_2026?location=US&maximumBytesBilled=42&foo=discarded&schemaGroup=discarded&allowWrites=true",
+    );
+    expect(importedBigQuery).not.toBeNull();
+    expect(importedBigQuery?.update).toMatchObject({
+      engine: "bigquery",
+      provider: "generic",
+      host: "campfire-460003",
+      port: 443,
+      database: "analytics_2026",
+      username: "",
+      sslmode: "require",
+      readonlyDefault: true,
+      allowWrites: false,
+      extraParams: { location: "US", maximumBytesBilled: "42" },
+    });
+    expect(importedBigQuery?.update.schemaGroup).toBeUndefined();
+    expect(importedBigQuery?.password).toBeNull();
+    expect(
+      isConnectionOptionSupported(
+        CONNECTION_SSH_ALIAS_PARAMETER,
+        "bigquery",
       ),
     ).toBe(false);
 

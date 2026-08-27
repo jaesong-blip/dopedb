@@ -172,6 +172,15 @@ async fn explain(
                     (None, Some(plan))
                 })
         }
+        PoolRef::Bigquery(connection) => timeout(PREVIEW_TIMEOUT, connection.dry_run_bytes(sql))
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .map(|bytes| {
+                let estimated_rows = None;
+                let plan = bytes.map(|value| format!("BigQuery dry-run: {value} bytes processed"));
+                (estimated_rows, plan)
+            }),
     };
     out.unwrap_or((None, None))
 }

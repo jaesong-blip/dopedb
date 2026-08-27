@@ -14,7 +14,11 @@ import {
   type ConnectionInputMode,
   type ConnectionTab,
 } from "./connectionEditorModel";
-import { formatConnectionUrl, parseConnectionUrl } from "./connectionUrl";
+import {
+  connectionUrlNeedsDatabaseSelection,
+  formatConnectionUrl,
+  parseConnectionUrl,
+} from "./connectionUrl";
 import type { ConnectionProfile } from "./domain";
 import type { ConnectionTestFailure } from "./domain";
 import {
@@ -269,8 +273,13 @@ export function useConnectionProfileState({
     }
     try {
       const text = await navigator.clipboard.readText();
-      const imported = applyConnectionUrl(text, showFeedback, true, "urlOnly");
-      if (imported) setConnectionInputMode("urlOnly");
+      const parsed = parseConnectionUrl(text);
+      const inputMode =
+        parsed && connectionUrlNeedsDatabaseSelection(parsed)
+          ? "default"
+          : "urlOnly";
+      const imported = applyConnectionUrl(text, showFeedback, true, inputMode);
+      if (imported) setConnectionInputMode(inputMode);
       if (!imported && showFeedback) {
         toast(t("connections.clipboardNoConnectionUrl"), "error");
       }

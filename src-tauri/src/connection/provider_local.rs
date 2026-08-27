@@ -124,7 +124,7 @@ impl ProviderLocalTarget {
                 identity.push_str(match engine {
                     Engine::Postgres => "postgres;",
                     Engine::Mysql => "mysql;",
-                    Engine::Sqlite | Engine::Mongodb => "invalid;",
+                    Engine::Sqlite | Engine::Mongodb | Engine::Bigquery => "invalid;",
                 });
                 identity.push_str(match network_mode {
                     GcpCloudSqlNetworkMode::PrivateServicesAccess => "psa",

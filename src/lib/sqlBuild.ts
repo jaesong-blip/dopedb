@@ -122,7 +122,9 @@ function sqlValue(engine: Engine, dataType: string, value: string | null): strin
 
 // CAST target for text comparison (MySQL uses CHAR; TEXT is invalid there).
 function castText(engine: Engine): string {
-  return engine === "mysql" ? "CHAR" : "TEXT";
+  if (engine === "mysql") return "CHAR";
+  if (engine === "bigquery") return "STRING";
+  return "TEXT";
 }
 
 // Convert a raw cell value (from QueryResult.rows) to the editor/literal string form.

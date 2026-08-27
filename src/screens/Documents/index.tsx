@@ -218,6 +218,16 @@ export default function Documents({
     durationMs: result?.page.durationMs ?? 0,
   };
 
+  if (catalogPhase === "loaded" && tables.length === 0) {
+    return (
+      <WorkbenchPane>
+        <WorkbenchEmptyState icon="database">
+          {t("documents.noCollections")}
+        </WorkbenchEmptyState>
+      </WorkbenchPane>
+    );
+  }
+
   return (
     <WorkbenchPane>
       <WorkbenchToolbar label={t("documents.title")} compact>

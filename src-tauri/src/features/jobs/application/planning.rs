@@ -7,6 +7,7 @@ use crate::features::jobs::{
     CreateJobRequest, Job, JobDetail, JobFileDirection, JobFormat, JobKind, JobPlan, JobProposal,
 };
 use crate::kernel::identity::{ConnectionId, ConnectionJobId};
+use crate::model::Engine;
 use crate::operations::{
     canonical_hash, required_confirmation, NewOperation, OperationPlanDisposition,
 };
@@ -44,6 +45,12 @@ where
                 reason:
                     "document databases require the typed document job adapter; SQL-family jobs cannot be used for this connection"
                         .into(),
+            });
+        }
+        if authority.engine == Engine::Bigquery {
+            return Err(AppError::Blocked {
+                reason: "BigQuery bulk import/export jobs are unavailable; export a bounded query result instead"
+                    .into(),
             });
         }
         let operation_context = self

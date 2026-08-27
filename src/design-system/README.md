@@ -308,7 +308,9 @@ Elevation은 세 단계만 허용한다.
 - `ToolWindowVerticalSplit`: Local History에서 관찰한 primary/secondary
   vertical split. 비율은 `--ds-tool-window-primary-ratio`가 소유한다.
 - `EngineMark`: form/action 기본 크기와 24px tree row 안의 `tree` 크기를
-  함께 소유한다. feature가 이미지 크기나 wrapper 크기를 다시 지정하지 않는다.
+  함께 소유한다. 로컬 엔진 SVG와 Iconify Simple Icons의 공식 브랜드 SVG가
+  동일한 quiet monochrome 크기·필터를 사용하며, feature가 이미지 크기나
+  wrapper 크기를 다시 지정하지 않는다.
 - `ToolWindowComposer`, `ToolWindowComposerDock`, `ToolWindowComposerInput`,
   `ToolWindowComposerContext`: AI Chat의 multiline 입력면, 내부 context row와
   외부 Agent/model row. 입력면의 `expanded` 상태는 실제 확대·복원 action과
@@ -647,7 +649,10 @@ DopeDB의 실제 작업 흐름과 접근성, supported viewport를 위한 제품
   fragment는 backend read-only proposal을 통과해야 하며 주석, 문장 구분자,
   다른 clause로 경계를 벗어나 generated `LIMIT`을 삼킬 수 없다.
 - MongoDB document query도 별도 큰 화면 제목이나 세로 label toolbar를 만들지
-  않는다. 실행/중지는 `WorkbenchToolbar`의 평평한 icon command, operation과
+  않는다. 제품 명칭은 범용 `문서`가 아니라 `MongoDB 조회`를 사용하고 마지막
+  query tab을 닫은 뒤에도 같은 조회 surface를 유지한다. 조회 가능한 collection이
+  없으면 toolbar나 생성 button 없이 `WorkbenchEmptyState`로 정확한 빈 상태만
+  표시한다. 실행/중지는 `WorkbenchToolbar`의 평평한 icon command, operation과
   collection은 `WorkbenchSelect`, JSON 입력은 공용 `Field`와
   `TextAreaInput`을 사용한다.
 - 정렬 trigger와 column filter trigger는 header 안의 서로 다른 button이다.

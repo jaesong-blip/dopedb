@@ -487,6 +487,7 @@ const fn engine(engine: Engine) -> v2::DatabaseEngine {
         Engine::Mysql => v2::DatabaseEngine::Mysql,
         Engine::Sqlite => v2::DatabaseEngine::Sqlite,
         Engine::Mongodb => v2::DatabaseEngine::Mongodb,
+        Engine::Bigquery => v2::DatabaseEngine::Bigquery,
     }
 }
 

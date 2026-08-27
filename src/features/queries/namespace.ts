@@ -7,6 +7,7 @@ import type { ConnectionProfile } from "../connections/domain";
 export function defaultSqlNamespace(connection: ConnectionProfile): string {
   if (connection.engine === "sqlite") return "main";
   if (connection.engine === "mysql") return connection.database;
+  if (connection.engine === "bigquery") return connection.database;
   if (connection.engine === "postgres") return "public";
   return connection.database;
 }
@@ -17,6 +18,9 @@ export function sqlNamespaceOptions(
 ): string[] {
   if (connection.engine === "sqlite") return ["main"];
   if (connection.engine === "mysql") return [connection.database].filter(Boolean);
+  if (connection.engine === "bigquery") {
+    return [connection.database].filter(Boolean);
+  }
 
   const discovered = new Set<string>();
   for (const table of catalog?.tables ?? []) {

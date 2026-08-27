@@ -42,8 +42,17 @@ impl ScriptPlatformAdapter {
         };
         ensure_operation_scope(&planned, &operation_pin)
             .map_err(DesktopScriptRunError::Application)?;
+        if operation_pin.profile.engine == crate::model::Engine::Bigquery {
+            return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
+                error: AppError::Blocked {
+                    reason: "BigQuery supports one read statement per operation in DopeDB".into(),
+                },
+                _scope: Box::new(operation_scope),
+            }));
+        }
         let namespace = match crate::executor::namespace::resolve_sql_namespace(
             &operation_pin.profile,
+            Some(&payload.database),
             payload.namespace.clone(),
         ) {
             Ok(namespace) => namespace,

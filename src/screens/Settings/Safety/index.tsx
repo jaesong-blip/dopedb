@@ -313,7 +313,9 @@ export default function Safety({
         </Button>
       </div>
 
-      <MonitoringAccess connectionId={connectionId} />
+      {connection.engine !== "bigquery" ? (
+        <MonitoringAccess connectionId={connectionId} />
+      ) : null}
     </div>
   );
 }

@@ -113,6 +113,9 @@ impl ManualConnection {
                 sqlx::query("BEGIN").execute(&mut *connection).await?;
                 Ok(Self::Sqlite(connection))
             }
+            DbPool::Bigquery(_) => Err(AppError::Blocked {
+                reason: "BigQuery does not expose manual transactions in DopeDB".into(),
+            }),
         }
     }
 

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
 use crate::kernel::identity::{ConnectionId, SqlDocumentId};
-use crate::kernel::sql_namespace::normalize_sql_namespace;
+use crate::kernel::sql_namespace::normalize_sql_namespace_bounded;
 
 use super::domain::{
     content_hash, normalize_resolve_mode, normalize_title, validate_content, NewSqlDocument,
@@ -133,7 +133,8 @@ where
         let guard = self.authority.authorize(request.connection_id).await?;
         let selected_database =
             normalize_database(request.selected_database, &guard.authority().database)?;
-        let selected_schema = normalize_sql_namespace(request.selected_schema)?;
+        let selected_schema =
+            normalize_document_namespace(guard.authority().dialect, request.selected_schema)?;
         let document = SqlDocument::create(
             self.generator.next_id(),
             NewSqlDocument {
@@ -161,12 +162,13 @@ where
             ));
         }
         let title = normalize_title(&request.title)?;
-        let selected_schema = normalize_sql_namespace(request.selected_schema)?;
         let resolve_mode = normalize_resolve_mode(Some(request.resolve_mode))?;
         validate_content(&request.content)?;
         let attempted_content_hash = content_hash(&request.content);
         let expected_revision = request.expected_revision;
         let guard = self.authority.authorize(request.connection_id).await?;
+        let selected_schema =
+            normalize_document_namespace(guard.authority().dialect, request.selected_schema)?;
         let selected_database =
             normalize_database(Some(request.selected_database), &guard.authority().database)?;
         let outcome = self
@@ -225,6 +227,20 @@ where
         }
         Ok(())
     }
+}
+
+fn normalize_document_namespace(
+    dialect: super::domain::SqlDialect,
+    value: Option<String>,
+) -> AppResult<Option<String>> {
+    normalize_sql_namespace_bounded(
+        value,
+        if dialect == super::domain::SqlDialect::BigQuery {
+            1_024
+        } else {
+            256
+        },
+    )
 }
 
 fn normalize_revision_search(value: Option<String>) -> AppResult<Option<String>> {

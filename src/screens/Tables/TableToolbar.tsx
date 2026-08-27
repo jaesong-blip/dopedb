@@ -33,6 +33,8 @@ type Props = {
   structureOpen: boolean;
   manualTransaction: ManualTransactionController;
   writesEnabled: boolean;
+  supportsMutationTools: boolean;
+  supportsBulkJobs: boolean;
   onOpenEdit: (mode: "insert" | "edit" | "duplicate") => void;
   onDelete: () => void;
   onReviewStaged: () => void;
@@ -65,6 +67,8 @@ export default function TableToolbar(props: Props) {
     jobsOpen,
     catalogAvailable,
     structureOpen,
+    supportsMutationTools,
+    supportsBulkJobs,
   } = props;
   const exportCsv = () => {
     if (!result) return;
@@ -100,33 +104,37 @@ export default function TableToolbar(props: Props) {
           >
             {busy ? "…" : <Icon name="refresh" />}
           </WorkbenchButton>
-          <WorkbenchButton
-            iconOnly
-            disabled={!canEdit}
-            title={canEdit ? t("tables.insert") : noEditTitle}
-            aria-label={t("tables.insert")}
-            onClick={() => props.onOpenEdit("insert")}
-          >
-            <Icon name="plus" />
-          </WorkbenchButton>
-          <WorkbenchButton
-            iconOnly
-            disabled={!canEdit || selected == null}
-            title={canEdit ? t("tables.edit") : noEditTitle}
-            aria-label={t("tables.edit")}
-            onClick={() => props.onOpenEdit("edit")}
-          >
-            <Icon name="pencil" />
-          </WorkbenchButton>
-          <WorkbenchButton
-            iconOnly
-            disabled={!canEdit || selected == null}
-            title={canEdit ? t("tables.delete") : noEditTitle}
-            aria-label={t("tables.delete")}
-            onClick={props.onDelete}
-          >
-            <Icon name="minus" />
-          </WorkbenchButton>
+          {supportsMutationTools ? (
+            <>
+              <WorkbenchButton
+                iconOnly
+                disabled={!canEdit}
+                title={canEdit ? t("tables.insert") : noEditTitle}
+                aria-label={t("tables.insert")}
+                onClick={() => props.onOpenEdit("insert")}
+              >
+                <Icon name="plus" />
+              </WorkbenchButton>
+              <WorkbenchButton
+                iconOnly
+                disabled={!canEdit || selected == null}
+                title={canEdit ? t("tables.edit") : noEditTitle}
+                aria-label={t("tables.edit")}
+                onClick={() => props.onOpenEdit("edit")}
+              >
+                <Icon name="pencil" />
+              </WorkbenchButton>
+              <WorkbenchButton
+                iconOnly
+                disabled={!canEdit || selected == null}
+                title={canEdit ? t("tables.delete") : noEditTitle}
+                aria-label={t("tables.delete")}
+                onClick={props.onDelete}
+              >
+                <Icon name="minus" />
+              </WorkbenchButton>
+            </>
+          ) : null}
           {stagedCount > 0 ? (
             <>
               <WorkbenchButton
@@ -152,17 +160,21 @@ export default function TableToolbar(props: Props) {
         <WorkbenchDivider />
 
         <div className="tw:flex tw:shrink-0 tw:items-center tw:gap-1">
-          <ManualTransactionControls
-            controller={props.manualTransaction}
-            writesEnabled={props.writesEnabled}
-            disabled={busy}
-          />
-          <WorkbenchButton
-            onClick={props.onShowDdl}
-            title={t("connections.showDdl")}
-          >
-            DDL
-          </WorkbenchButton>
+          {supportsMutationTools ? (
+            <>
+              <ManualTransactionControls
+                controller={props.manualTransaction}
+                writesEnabled={props.writesEnabled}
+                disabled={busy}
+              />
+              <WorkbenchButton
+                onClick={props.onShowDdl}
+                title={t("connections.showDdl")}
+              >
+                DDL
+              </WorkbenchButton>
+            </>
+          ) : null}
           <WorkbenchButton
             active={activeFilters > 0}
             iconOnly
@@ -189,19 +201,21 @@ export default function TableToolbar(props: Props) {
         onPage={props.onPage}
         onRefresh={props.onRefresh}
       >
-        <WorkbenchButton
-          collapse="compact"
-          iconOnly
-          disabled={!catalogAvailable}
-          aria-expanded={jobsOpen}
-          title={
-            catalogAvailable ? t("jobs.open") : t("tables.catalogRequired")
-          }
-          aria-label={t("jobs.open")}
-          onClick={props.onToggleJobs}
-        >
-          <Icon name="download" />
-        </WorkbenchButton>
+        {supportsBulkJobs ? (
+          <WorkbenchButton
+            collapse="compact"
+            iconOnly
+            disabled={!catalogAvailable}
+            aria-expanded={jobsOpen}
+            title={
+              catalogAvailable ? t("jobs.open") : t("tables.catalogRequired")
+            }
+            aria-label={t("jobs.open")}
+            onClick={props.onToggleJobs}
+          >
+            <Icon name="download" />
+          </WorkbenchButton>
+        ) : null}
         <WorkbenchButton
           collapse="compact"
           iconOnly
@@ -274,13 +288,15 @@ export default function TableToolbar(props: Props) {
           >
             {t("common.refresh")}
           </ToolbarMenuItem>
-          <ToolbarMenuItem
-            icon="download"
-            disabled={!catalogAvailable}
-            onClick={props.onToggleJobs}
-          >
-            {t("jobs.open")}
-          </ToolbarMenuItem>
+          {supportsBulkJobs ? (
+            <ToolbarMenuItem
+              icon="download"
+              disabled={!catalogAvailable}
+              onClick={props.onToggleJobs}
+            >
+              {t("jobs.open")}
+            </ToolbarMenuItem>
+          ) : null}
           <ToolbarMenuItem icon="columns" onClick={props.onToggleStructure}>
             {t("tables.structureTitle")}
           </ToolbarMenuItem>

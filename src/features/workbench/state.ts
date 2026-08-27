@@ -5,6 +5,7 @@ import type { SqlDocument } from "../sqlDocuments/domain";
 import type { SqlResolveMode } from "../queries/resolveMode";
 import {
   persistedQueryDocument,
+  queryDocument,
   stableDocument,
   type WorkbenchDocument,
 } from "./domain";
@@ -34,7 +35,7 @@ export type WorkbenchAction =
       type: "close";
       id: string;
       connectionId: string;
-      keepWelcomeFallback: boolean;
+      fallbackKind: "welcome" | "documents";
     }
   | { type: "updateTitle"; id: string; title: string }
   | { type: "updateSelectedDatabase"; id: string; selectedDatabase: string }
@@ -93,8 +94,12 @@ export function workbenchReducer(
       const index = selected.findIndex((document) => document.id === action.id);
       if (index < 0) return state;
       let remaining = selected.filter((document) => document.id !== action.id);
-      if (remaining.length === 0 && action.keepWelcomeFallback) {
-        remaining = [stableDocument(action.connectionId, "welcome")];
+      if (remaining.length === 0) {
+        remaining = [
+          action.fallbackKind === "welcome"
+            ? stableDocument(action.connectionId, "welcome")
+            : queryDocument(action.connectionId, "documents"),
+        ];
       }
       const documents = [
         ...state.documents.filter(

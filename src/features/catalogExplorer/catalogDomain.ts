@@ -46,6 +46,9 @@ export function supportedObjectKinds(engine: ConnectionProfile["engine"]) {
   if (engine === "mysql") {
     return new Set<CatalogObjectKind>(["function", "procedure", "trigger"]);
   }
+  if (engine === "bigquery") {
+    return new Set<CatalogObjectKind>(["materialized_view"]);
+  }
   if (engine === "sqlite") return new Set<CatalogObjectKind>(["trigger"]);
   return new Set<CatalogObjectKind>();
 }

@@ -2,8 +2,8 @@
 
 DopeDB separates three concepts that database tools often collapse:
 
-- **Engine**: the wire/query model (`postgres`, `mysql`, `sqlite`, later `mongodb`,
-  `neo4j`).
+- **Engine**: the wire/query model (`postgres`, `mysql`, `sqlite`, `mongodb`,
+  `bigquery`, later `neo4j`).
 - **Provider**: a hosting control plane (`generic`, `neon`, `planetScale`, later
   `atlas`, `aura`). A provider never implies one engine; PlanetScale is the immediate
   example because it offers both Vitess/MySQL and PostgreSQL.
@@ -18,6 +18,8 @@ Connection form / Agent CLI
 Driver registry ---- provider capability overlay
         |
         +---- bundled adapter (SQLx today)
+        |
+        +---- verified system CLI adapter (`bq`)
         |
         `---- managed sidecar pack (future Mongo/graph packs)
                     |
@@ -45,6 +47,14 @@ their own workspaces instead of being flattened into SQL tables.
 
 `bundled` drivers are compiled into the signed application. PostgreSQL, MySQL/MariaDB,
 and SQLite currently use this mode through SQLx, so selecting them requires no download.
+
+`system` drivers delegate to an official CLI installed and authenticated by the OS user.
+BigQuery uses only the fixed-path Google Cloud SDK `bq` executable: DopeDB neither reads
+Google tokens nor calls the provider API itself. SQL is passed over stdin, the executable
+identity is revalidated for every invocation, and queries are limited to server-classified
+`SELECT` statements with dry-run byte estimates, a per-connection maximum-bytes-billed
+ceiling, bounded output, timeout, and exact-job cancellation. Project and dataset identity
+can be shared in a Workspace, while every member keeps their own `gcloud` login.
 
 `managed` drivers are reserved for independently shipped executable sidecars. Rust crates
 cannot safely be downloaded and hot-loaded like JDBC jars: Rust has no stable plugin ABI,
@@ -82,6 +92,9 @@ control-plane client:
   authentication is therefore confined to that local verified connector path.
 - MongoDB Atlas: the official MongoDB Rust driver for BSON/commands plus the Atlas Admin
   API for managed resources.
+- Google BigQuery: the local official `bq` CLI is the data-plane adapter. It is a
+  read-only system driver, not a reusable GCP Cloud SQL provider credential and not a
+  hosted database proxy.
 - Neo4j Aura: a Bolt/Cypher adapter plus the Aura control plane. Graph results remain
   nodes, relationships, and paths.
 
@@ -89,7 +102,8 @@ control-plane client:
 
 1. Add the engine only when its query and result model is implemented end to end.
 2. Add a registry descriptor and capability set.
-3. Implement a bundled adapter or publish a verified sidecar pack.
+3. Implement a bundled adapter, a constrained official system-CLI adapter, or publish a
+   verified sidecar pack.
 4. Add provider overlays independently from the engine adapter.
 5. Add contract, persistence, compatibility, and failure-closed tests.
 6. Expose the engine-specific editor and result surface only after the adapter is usable.

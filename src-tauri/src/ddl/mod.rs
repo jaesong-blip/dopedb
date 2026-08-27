@@ -27,5 +27,8 @@ pub(crate) fn render(
         DatabaseEngine::Mongodb => Err(AppError::Blocked {
             reason: "relational DDL is unavailable for document databases".into(),
         }),
+        DatabaseEngine::Bigquery => Err(AppError::Blocked {
+            reason: "BigQuery DDL is unavailable through the read-only adapter".into(),
+        }),
     }
 }

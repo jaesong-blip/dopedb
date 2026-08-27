@@ -47,7 +47,7 @@ export function isConnectionOptionSupported(
     return engine === "postgres" || engine === "mysql";
   }
   if (key === CONNECTION_SSH_ALIAS_PARAMETER) {
-    return engine !== "sqlite";
+    return engine !== "sqlite" && engine !== "bigquery";
   }
   return isConnectionOptionParameter(key);
 }

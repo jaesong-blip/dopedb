@@ -4,7 +4,7 @@ import type { WorkspaceRoleName } from "./workspace-permissions";
 import { parseNeonResource } from "./providers/neon-core";
 
 // SQLite paths identify files on one machine and are not meaningful team endpoints.
-const engines = ["postgres", "mysql", "mongodb"] as const;
+const engines = ["postgres", "mysql", "mongodb", "bigquery"] as const;
 const providers = ["auto", "generic", "neon", "planetScale", "gcpCloudSql"] as const;
 const allowedKeys = new Set([
   "name", "engine", "provider", "driverId", "host", "port", "database",
@@ -133,6 +133,10 @@ export function parseSharedConnection(
     throw new Error("Invalid shared connection write policy");
   }
   const allowWrites = body.allowWrites === true;
+  const engine = body.engine as SharedConnectionInput["engine"];
+  if (engine === "bigquery" && credentialMode !== "member_local") {
+    throw new Error("BigQuery uses member-local Google Cloud CLI authentication");
+  }
   if (credentialMode === "member_local" && allowWrites) {
     throw new Error("Member-local shared connections cannot delegate write authority");
   }
@@ -140,11 +144,25 @@ export function parseSharedConnection(
   if (/[@/?#\s]/.test(host) || host.includes("://")) {
     throw new Error("Host must not contain credentials or a connection URL");
   }
-  const database = text(body.database, 512) ?? "";
+  const database = text(body.database, 1024) ?? "";
   if (/[?#\r\n]/.test(database)) throw new Error("Invalid database name");
+  if (engine === "bigquery") {
+    if (
+      body.provider !== "generic"
+      || body.port !== 443
+      || body.sslmode !== "require"
+      || allowWrites
+      || !/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(host)
+      || !/^[A-Za-z0-9_]{1,1024}$/.test(database)
+      || (body.driverId !== null && body.driverId !== "google-bq-cli")
+      || (body.schemaGroup !== null && body.schemaGroup !== undefined)
+    ) {
+      throw new Error("Invalid BigQuery shared connection boundary");
+    }
+  }
   return {
     name: text(body.name, 120, true)!,
-    engine: body.engine as SharedConnectionInput["engine"],
+    engine,
     provider: body.provider as SharedConnectionInput["provider"],
     driverId: text(body.driverId, 160),
     host,
@@ -195,7 +213,7 @@ export function publicConnection(
     role,
     accessMode,
     credentialMode: managed ? "managed" : "member_local",
-    credentialsRequired: !managed,
+    credentialsRequired: !managed && row.engine !== "bigquery",
     providerTarget: publicProviderTarget(row),
   };
 }

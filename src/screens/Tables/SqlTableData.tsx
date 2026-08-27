@@ -169,7 +169,9 @@ export default function SqlTableData({
   const nonScalarPk = hasNonScalarPk(table);
   const catalogPhase = queryResultPhase(catalogQuery.data, catalogQuery.error);
   const catalogReady = catalogQuery.data !== undefined;
-  const canEdit = catalogReady && pkColumns(table).length > 0 && !nonScalarPk;
+  const supportsMutationTools = connection.engine !== "bigquery";
+  const supportsBulkJobs = connection.engine !== "bigquery";
+  const canEdit = supportsMutationTools && catalogReady && pkColumns(table).length > 0 && !nonScalarPk;
   const activeFilters =
     Object.values(appliedFilters).filter((v) => v.trim()).length +
     (appliedWhereExpression.trim() ? 1 : 0);
@@ -424,6 +426,8 @@ export default function SqlTableData({
         structureOpen={structure}
         manualTransaction={manualTransaction}
         writesEnabled={safety.allowWrites}
+        supportsMutationTools={supportsMutationTools}
+        supportsBulkJobs={supportsBulkJobs}
         onOpenEdit={openEdit}
         onDelete={doDelete}
         onReviewStaged={() =>
@@ -579,7 +583,7 @@ export default function SqlTableData({
             ))
           )}
 
-          {jobsOpen && catalogRelation ? (
+          {supportsBulkJobs && jobsOpen && catalogRelation ? (
             <JobPanel
               connectionId={connection.id}
               relation={catalogRelation}

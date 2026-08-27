@@ -156,6 +156,13 @@ pub(super) async fn execute_script_transaction(
         DbPool::Postgres(pool) => run_transaction!(pool, postgres_context.as_deref()),
         DbPool::Mysql(pool) => run_transaction!(pool, None::<&str>),
         DbPool::Sqlite(pool) => run_transaction!(pool, None::<&str>),
+        DbPool::Bigquery(_) => {
+            return Err(AppError::Blocked {
+                reason:
+                    "BigQuery scripts are unavailable through the single-statement read adapter"
+                        .into(),
+            })
+        }
     })
 }
 

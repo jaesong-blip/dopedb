@@ -68,6 +68,11 @@ export const MONGO_TLS_PARAMETERS = [
   "tlsCertificateKeyFile",
 ] as const;
 
+export const BIGQUERY_LOCATION_PARAMETER = "location";
+export const BIGQUERY_MAXIMUM_BYTES_BILLED_PARAMETER =
+  "maximumBytesBilled";
+export const BIGQUERY_DEFAULT_MAXIMUM_BYTES_BILLED = "1073741824";
+
 export const CONTROLLED_CONNECTION_PARAMETERS = new Set<string>([
   ...SQL_TLS_PARAMETERS,
   ...MONGO_TLS_PARAMETERS,
@@ -78,6 +83,8 @@ export const CONTROLLED_CONNECTION_PARAMETERS = new Set<string>([
   CONNECTION_AUTO_DISCONNECT_SECONDS_PARAMETER,
   CONNECTION_STARTUP_SCRIPT_PARAMETER,
   "srv",
+  BIGQUERY_LOCATION_PARAMETER,
+  BIGQUERY_MAXIMUM_BYTES_BILLED_PARAMETER,
 ]);
 
 export const STANDARD_CONNECTION_SOURCES: StandardConnectionSource[] = [
@@ -97,6 +104,12 @@ export const STANDARD_CONNECTION_SOURCES: StandardConnectionSource[] = [
     engine: "mongodb",
     provider: "generic",
     label: "MongoDB",
+    category: "database",
+  },
+  {
+    engine: "bigquery",
+    provider: "generic",
+    label: "Google BigQuery",
     category: "database",
   },
   {
@@ -162,6 +175,7 @@ export function sslModeForEngine(engine: Engine, current: string): string {
 export function connectionProfileFlags(form: ConnectionProfile) {
   const isSqlite = form.engine === "sqlite";
   const isMongo = form.engine === "mongodb";
+  const isBigQuery = form.engine === "bigquery";
   const isSharedTemplate = form.workspaceAccess !== "local";
   const supportsSqlSessionOptions =
     form.engine === "postgres" || form.engine === "mysql";
@@ -174,6 +188,7 @@ export function connectionProfileFlags(form: ConnectionProfile) {
   return {
     isSqlite,
     isMongo,
+    isBigQuery,
     isSharedTemplate,
     canEditConnection:
       !isSharedTemplate || form.workspaceAccess === "manage",
@@ -197,6 +212,15 @@ export function clearIncompatibleSourceParameters(
   engine: Engine,
 ) {
   const extraParams = { ...current.extraParams };
+  if (engine === "bigquery") {
+    return {
+      [BIGQUERY_MAXIMUM_BYTES_BILLED_PARAMETER]:
+        current.extraParams[BIGQUERY_MAXIMUM_BYTES_BILLED_PARAMETER] ??
+        BIGQUERY_DEFAULT_MAXIMUM_BYTES_BILLED,
+    };
+  }
+  delete extraParams[BIGQUERY_LOCATION_PARAMETER];
+  delete extraParams[BIGQUERY_MAXIMUM_BYTES_BILLED_PARAMETER];
   if (isDocumentEngine(engine)) {
     delete extraParams[SCHEMA_SCOPE_PARAMETER];
     delete extraParams[OBJECT_PATTERN_PARAMETER];
@@ -224,6 +248,8 @@ export function switchConnectionSource(
   engine: Engine,
   provider: Provider,
 ): ConnectionProfile {
+  const switchingFromBigQuery = current.engine === "bigquery";
+  const switchingToBigQuery = engine === "bigquery";
   return {
     ...current,
     engine,
@@ -232,9 +258,25 @@ export function switchConnectionSource(
     sslmode: sslModeForEngine(engine, current.sslmode),
     driverId: null,
     port:
-      current.port === CONNECTION_DEFAULT_PORTS[current.engine]
+      switchingToBigQuery || switchingFromBigQuery
+        ? CONNECTION_DEFAULT_PORTS[engine]
+        : current.port === CONNECTION_DEFAULT_PORTS[current.engine]
         ? CONNECTION_DEFAULT_PORTS[engine]
         : current.port,
-    schemaGroup: isDocumentEngine(engine) ? null : current.schemaGroup,
+    host: switchingToBigQuery
+      ? ""
+      : switchingFromBigQuery
+        ? "localhost"
+        : current.host,
+    database: switchingToBigQuery || switchingFromBigQuery
+      ? ""
+      : current.database,
+    username: switchingToBigQuery ? "" : current.username,
+    readonlyDefault: switchingToBigQuery ? true : current.readonlyDefault,
+    allowWrites: switchingToBigQuery ? false : current.allowWrites,
+    schemaGroup:
+      isDocumentEngine(engine) || switchingToBigQuery
+        ? null
+        : current.schemaGroup,
   };
 }

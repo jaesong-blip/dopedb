@@ -161,12 +161,12 @@ export function useWorkbenchDocuments({
   }, []);
 
   const close = useCallback(
-    (id: string, connection: string, keepWelcomeFallback: boolean) => {
+    (id: string, connection: string, supportsSqlConnection: boolean) => {
       dispatch({
         type: "close",
         id,
         connectionId: connection,
-        keepWelcomeFallback,
+        fallbackKind: supportsSqlConnection ? "welcome" : "documents",
       });
     },
     [],
@@ -207,16 +207,16 @@ export function useWorkbenchDocuments({
       database,
       supportsSql: canUseSql,
       title = t("sql.untitledQuery"),
-      content = "SELECT 1;",
+      content,
     }: OpenQueryOptions): Promise<WorkbenchDocument> => {
       if (!canUseSql) {
-        return queryDocument(rawConnectionId, "documents", content);
+        return queryDocument(rawConnectionId, "documents", content ?? null);
       }
       const document = await sqlDocuments.create({
         connectionId: connectionId(rawConnectionId),
         title,
         selectedDatabase: database,
-        content,
+        content: content ?? "SELECT 1;",
       });
       return persistedQueryDocument(document);
     },

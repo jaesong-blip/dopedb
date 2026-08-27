@@ -70,14 +70,14 @@ async fn query_and_skill_security_contracts_stay_fail_closed() {
     postgres.database = "app".into();
     let adversarial = "tenant\"; DROP SCHEMA public; --";
     assert_eq!(
-        resolve_sql_namespace(&postgres, Some(adversarial.into())).unwrap(),
+        resolve_sql_namespace(&postgres, None, Some(adversarial.into())).unwrap(),
         Some(adversarial.into()),
     );
     assert_eq!(
         postgres_search_path_statement(adversarial),
         "SET LOCAL search_path TO \"tenant\"\"; DROP SCHEMA public; --\"",
     );
-    assert!(resolve_sql_namespace(&production, Some("attached".into())).is_err());
+    assert!(resolve_sql_namespace(&production, None, Some("attached".into())).is_err());
 
     let connection_id = Uuid::new_v4();
     let services_snapshot = serde_json::json!({
@@ -158,5 +158,6 @@ async fn query_and_skill_security_contracts_stay_fail_closed() {
     crate::features::workspaces::adapters::control_plane::assert_hosted_workspace_response_bounds_contract();
     crate::connection::keychain::assert_workspace_session_keychain_async_contract().await;
     crate::connection::assert_warm_cache_authorization_contract();
+    crate::bigquery::assert_bigquery_contract();
     super::adapters::assert_ephemeral_page_contract();
 }

@@ -19,6 +19,7 @@ pub(crate) enum SqlDialect {
     MySql,
     Sqlite,
     MongoDb,
+    BigQuery,
 }
 
 impl SqlDialect {
@@ -28,6 +29,7 @@ impl SqlDialect {
             Self::MySql => "mysql",
             Self::Sqlite => "sqlite",
             Self::MongoDb => "mongodb",
+            Self::BigQuery => "bigquery",
         }
     }
 }

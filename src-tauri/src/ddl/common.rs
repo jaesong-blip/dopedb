@@ -24,7 +24,9 @@ pub(super) fn quoted_ref(engine: DatabaseEngine, reference: &ObjectRef) -> Strin
 
 pub(super) fn quote_identifier(engine: DatabaseEngine, value: &str) -> String {
     match engine {
-        DatabaseEngine::Mysql => format!("`{}`", value.replace('`', "``")),
+        DatabaseEngine::Mysql | DatabaseEngine::Bigquery => {
+            format!("`{}`", value.replace('`', "``"))
+        }
         _ => format!("\"{}\"", value.replace('"', "\"\"")),
     }
 }
@@ -64,6 +66,7 @@ pub(super) fn render_column(
                 return blocked("SQLite identity columns require an explicit INTEGER PRIMARY KEY");
             }
             DatabaseEngine::Mongodb => return blocked("MongoDB has no relational columns"),
+            DatabaseEngine::Bigquery => return blocked("BigQuery DDL is read-only in DopeDB"),
         }
     } else if column.auto_increment {
         match engine {
@@ -75,6 +78,7 @@ pub(super) fn render_column(
                 return blocked("SQLite AUTOINCREMENT is valid only on INTEGER PRIMARY KEY");
             }
             DatabaseEngine::Mongodb => return blocked("MongoDB has no relational columns"),
+            DatabaseEngine::Bigquery => return blocked("BigQuery DDL is read-only in DopeDB"),
         }
     }
     if let Some(expression) = &column.generated_expression {
@@ -212,6 +216,7 @@ pub(super) fn create_table(
             )),
             DatabaseEngine::Sqlite => {}
             DatabaseEngine::Mongodb => return blocked("MongoDB has no relational tables"),
+            DatabaseEngine::Bigquery => return blocked("BigQuery DDL is read-only in DopeDB"),
         }
     }
     Ok(statements)
@@ -235,6 +240,9 @@ pub(super) fn create_index(
             return blocked("SQLite does not support selecting an index method");
         }
         (Some(_), DatabaseEngine::Mongodb) => return blocked("MongoDB uses typed index APIs"),
+        (Some(_), DatabaseEngine::Bigquery) => {
+            return blocked("BigQuery DDL is read-only in DopeDB")
+        }
         (None, _) => String::new(),
     };
     let include = if index.included_columns.is_empty() {

@@ -26,6 +26,12 @@ export type ConnectionDiagnosticCode =
   | "portInvalid"
   | "sqliteFileRequired"
   | "mongoDatabaseRequired"
+  | "bigQueryProjectRequired"
+  | "bigQueryProjectInvalid"
+  | "bigQueryDatasetRequired"
+  | "bigQueryDatasetInvalid"
+  | "bigQueryLocationInvalid"
+  | "bigQueryMaximumBytesBilledInvalid"
   | "timeZoneInvalid"
   | "keepAliveInvalid"
   | "autoDisconnectInvalid"
@@ -102,6 +108,58 @@ export function diagnoseConnection(
           "connection-database",
         ),
       );
+    }
+  } else if (profile.engine === "bigquery") {
+    const project = profile.host.trim();
+    if (!project) {
+      diagnostics.push(
+        issue("bigQueryProjectRequired", "danger", "connection-host"),
+      );
+    } else if (
+      !/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/u.test(project)
+    ) {
+      diagnostics.push(
+        issue("bigQueryProjectInvalid", "danger", "connection-host"),
+      );
+    }
+    const dataset = profile.database.trim();
+    if (!dataset) {
+      diagnostics.push(
+        issue("bigQueryDatasetRequired", "danger", "connection-database"),
+      );
+    } else if (
+      dataset.length > 1024 || !/^[A-Za-z0-9_]+$/u.test(dataset)
+    ) {
+      diagnostics.push(
+        issue("bigQueryDatasetInvalid", "danger", "connection-database"),
+      );
+    }
+    const location = profile.extraParams.location?.trim() ?? "";
+    if (
+      location &&
+      (location.length > 64 || !/^[A-Za-z0-9-]+$/u.test(location))
+    ) {
+      diagnostics.push(
+        issue("bigQueryLocationInvalid", "danger", "connection-bigquery-location"),
+      );
+    }
+    if (profile.workspaceAccess === "local") {
+      const maximum = profile.extraParams.maximumBytesBilled ?? "";
+      const maximumNumber = Number(maximum);
+      if (
+        !/^\d+$/u.test(maximum) ||
+        !Number.isSafeInteger(maximumNumber) ||
+        maximumNumber < 1 ||
+        maximumNumber > 10 * 1024 ** 4
+      ) {
+        diagnostics.push(
+          issue(
+            "bigQueryMaximumBytesBilledInvalid",
+            "danger",
+            "connection-bigquery-maximum-bytes-billed",
+          ),
+        );
+      }
     }
   } else {
     const host = profile.host.trim();

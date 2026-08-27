@@ -74,6 +74,9 @@ pub(crate) async fn run_read_only_cancellable(
     max_rows: u64,
     cancellation: Option<&CancelHandle>,
 ) -> AppResult<QueryResult> {
+    if let PoolRef::Bigquery(connection) = pool {
+        return connection.query(sql, max_rows, cancellation).await;
+    }
     cancel::guard_registered(
         cancellation,
         cancel::QUERY_TIMEOUT,
@@ -94,6 +97,18 @@ pub(crate) async fn run_read_only_byte_capped_parameterized_cancellable(
     max_bytes: usize,
     cancellation: Option<&CancelHandle>,
 ) -> AppResult<QueryResult> {
+    if let PoolRef::Bigquery(connection) = pool {
+        if !parameters.is_empty() {
+            return Err(AppError::Blocked {
+                reason:
+                    "parameterized Analysis Article execution is not available for BigQuery yet"
+                        .into(),
+            });
+        }
+        return connection
+            .query_byte_capped(sql, max_rows, max_bytes, cancellation)
+            .await;
+    }
     cancel::guard_registered(
         cancellation,
         cancel::QUERY_TIMEOUT,
@@ -228,6 +243,7 @@ async fn run_read_only_byte_capped_inner(
             };
             (columns, rows, truncated)
         }
+        PoolRef::Bigquery(_) => unreachable!("BigQuery is handled before the SQLx boundary"),
     };
     Ok(QueryResult {
         row_count: rows.len(),
@@ -352,6 +368,7 @@ async fn run_read_only_inner(
             };
             (c, r, t)
         }
+        PoolRef::Bigquery(_) => unreachable!("BigQuery is handled before the SQLx boundary"),
     };
 
     Ok(QueryResult {
@@ -423,6 +440,7 @@ pub fn is_read_only_violation(engine: Engine, e: &sqlx::Error) -> bool {
         // MongoDB never reaches the SQLx error mapper. Its document adapter uses a
         // typed read allowlist and maps driver errors independently.
         Engine::Mongodb => false,
+        Engine::Bigquery => false,
     }
 }
 
@@ -432,6 +450,7 @@ fn engine_label(engine: Engine) -> &'static str {
         Engine::Mysql => "mysql",
         Engine::Sqlite => "sqlite",
         Engine::Mongodb => "mongodb",
+        Engine::Bigquery => "bigquery",
     }
 }
 

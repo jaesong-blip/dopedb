@@ -13,6 +13,14 @@ export type ParsedConnectionUrl = {
   password: string | null;
 };
 
+function unwrapConnectionUrlInput(raw: string): string {
+  const trimmed = raw.trim();
+  const assignment =
+    /^(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*(.+)$/u.exec(trimmed);
+  const value = (assignment?.[1] ?? trimmed).trim();
+  return value.replace(/^['"`]+|['"`]+$/g, "");
+}
+
 const CONNECTION_META_PARAMETER_KEYS = new Set([
   "allowwrites",
   "connectionname",
@@ -211,7 +219,7 @@ function parseMongoConnectionUrl(text: string): ParsedConnectionUrl | null {
 }
 
 export function parseConnectionUrl(raw: string): ParsedConnectionUrl | null {
-  const text = raw.trim().replace(/^['"`]+|['"`]+$/g, "");
+  const text = unwrapConnectionUrlInput(raw);
   if (!text) return null;
   const driverUrl = text.replace(/^jdbc:/i, "");
   if (/^mongodb(\+srv)?:\/\//i.test(driverUrl)) {
@@ -235,6 +243,8 @@ export function parseConnectionUrl(raw: string): ParsedConnectionUrl | null {
             protocol === "sqlite3" ||
             protocol === "file"
           ? "sqlite"
+          : protocol === "bigquery"
+            ? "bigquery"
           : null;
   if (!engine) return null;
 
@@ -250,6 +260,13 @@ export function parseConnectionUrl(raw: string): ParsedConnectionUrl | null {
     }
     extraParams[key] = value;
   });
+  if (engine === "bigquery") {
+    for (const key of Object.keys(extraParams)) {
+      if (key !== "location" && key !== "maximumBytesBilled") {
+        delete extraParams[key];
+      }
+    }
+  }
 
   const sslmode = normalizeSslMode(
     engine,
@@ -271,7 +288,7 @@ export function parseConnectionUrl(raw: string): ParsedConnectionUrl | null {
   const update: Partial<ConnectionProfile> = {
     name: meta.name,
     engine,
-    provider: "auto",
+    provider: engine === "bigquery" ? "generic" : "auto",
     driverId: null,
     host: engine === "sqlite" ? "localhost" : decodeUrlPart(url.hostname),
     port: url.port
@@ -289,19 +306,36 @@ export function parseConnectionUrl(raw: string): ParsedConnectionUrl | null {
     "schema-group",
     "group",
   ]);
-  if (schemaGroup) update.schemaGroup = schemaGroup;
+  if (schemaGroup && engine !== "bigquery") update.schemaGroup = schemaGroup;
   if (meta.readonlyDefault != null) {
     update.readonlyDefault = meta.readonlyDefault;
   }
   if (meta.allowWrites != null) update.allowWrites = meta.allowWrites;
+  if (engine === "bigquery") {
+    update.username = "";
+    update.port = CONNECTION_DEFAULT_PORTS.bigquery;
+    update.readonlyDefault = true;
+    update.allowWrites = false;
+    update.sslmode = "require";
+  }
 
   return {
     update,
-    password:
-      decodeUrlPart(url.password) ||
-      firstSearchParam(url.searchParams, ["password", "pass"]) ||
-      null,
+    password: engine === "bigquery"
+      ? null
+      : decodeUrlPart(url.password) ||
+        firstSearchParam(url.searchParams, ["password", "pass"]) ||
+        null,
   };
+}
+
+export function connectionUrlNeedsDatabaseSelection(
+  parsed: ParsedConnectionUrl,
+): boolean {
+  return (
+    parsed.update.engine === "mongodb" &&
+    !(parsed.update.database ?? "").trim()
+  );
 }
 
 function encodedPath(value: string): string {
@@ -386,6 +420,16 @@ export function formatConnectionUrl(
       : "";
     return withQuery(
       `${scheme}://${username}${authority}${database}`,
+      params,
+    );
+  }
+
+  if (profile.engine === "bigquery") {
+    const database = profile.database.trim()
+      ? `/${encodeURIComponent(profile.database.trim())}`
+      : "";
+    return withQuery(
+      `bigquery://${urlHost(profile.host)}${database}`,
       params,
     );
   }

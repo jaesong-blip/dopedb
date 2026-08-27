@@ -26,7 +26,11 @@ export function useWorkspaceManualTransactions(
   const queryClient = useQueryClient();
   const postPaintReady = usePostPaintReady();
   const transactionConnections = useMemo(
-    () => connections.filter((connection) => connection.engine !== "mongodb"),
+    () =>
+      connections.filter(
+        (connection) =>
+          connection.engine !== "mongodb" && connection.engine !== "bigquery",
+      ),
     [connections],
   );
   const [settlingIds, setSettlingIds] = useState<Set<string>>(

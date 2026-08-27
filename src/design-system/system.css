@@ -211,11 +211,12 @@ h3 {
   line-height: 0;
 }
 
-.ds-engine-mark img {
+.ds-engine-mark :is(img, svg) {
   width: var(--ds-icon-md);
   height: var(--ds-icon-md);
   display: block;
   object-fit: contain;
+  color: currentColor;
   /* Brand logos stay quiet so the three-hue palette leads the screen. */
   filter: grayscale(0.85) opacity(0.8);
 }

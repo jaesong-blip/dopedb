@@ -10,7 +10,9 @@
 //!   write the gate can hard-stop.
 
 use sqlparser::ast::{FromTable, Query, SetExpr, Statement, TableFactor, TableWithJoins};
-use sqlparser::dialect::{Dialect, MySqlDialect, PostgreSqlDialect, SQLiteDialect};
+use sqlparser::dialect::{
+    BigQueryDialect, Dialect, MySqlDialect, PostgreSqlDialect, SQLiteDialect,
+};
 use sqlparser::parser::Parser;
 
 use crate::error::AppResult;
@@ -65,6 +67,7 @@ fn dialect_for(engine: Engine) -> Option<Box<dyn Dialect>> {
         Engine::Mysql => Some(Box::new(MySqlDialect {})),
         Engine::Sqlite => Some(Box::new(SQLiteDialect {})),
         Engine::Mongodb => None,
+        Engine::Bigquery => Some(Box::new(BigQueryDialect {})),
     }
 }
 

@@ -308,5 +308,6 @@ fn protocol_engine(engine: Engine) -> DatabaseEngine {
         Engine::Mysql => DatabaseEngine::Mysql,
         Engine::Sqlite => DatabaseEngine::Sqlite,
         Engine::Mongodb => DatabaseEngine::Mongodb,
+        Engine::Bigquery => DatabaseEngine::Bigquery,
     }
 }

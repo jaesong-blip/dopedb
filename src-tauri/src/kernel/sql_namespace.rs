@@ -7,9 +7,10 @@
 
 use crate::error::{AppError, AppResult};
 
-const MAX_SQL_NAMESPACE_BYTES: usize = 256;
-
-pub(crate) fn normalize_sql_namespace(value: Option<String>) -> AppResult<Option<String>> {
+pub(crate) fn normalize_sql_namespace_bounded(
+    value: Option<String>,
+    maximum_bytes: usize,
+) -> AppResult<Option<String>> {
     let Some(value) = value else {
         return Ok(None);
     };
@@ -17,9 +18,9 @@ pub(crate) fn normalize_sql_namespace(value: Option<String>) -> AppResult<Option
     if value.is_empty() {
         return Ok(None);
     }
-    if value.len() > MAX_SQL_NAMESPACE_BYTES {
+    if value.len() > maximum_bytes {
         return Err(AppError::Config(format!(
-            "SQL namespace exceeds the {MAX_SQL_NAMESPACE_BYTES}-byte limit"
+            "SQL namespace exceeds the {maximum_bytes}-byte limit"
         )));
     }
     if value.chars().any(char::is_control) {

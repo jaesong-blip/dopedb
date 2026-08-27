@@ -13,7 +13,8 @@ export type ProductAnalyticsEngine =
   | "postgres"
   | "mysql"
   | "sqlite"
-  | "mongodb";
+  | "mongodb"
+  | "bigquery";
 export type ProductAnalyticsDurationBucket =
   | "under_100ms"
   | "100ms_1s"
@@ -238,6 +239,7 @@ const ENGINES = new Set<ProductAnalyticsEngine>([
   "mysql",
   "sqlite",
   "mongodb",
+  "bigquery",
 ]);
 const DURATIONS = new Set<ProductAnalyticsDurationBucket>([
   "under_100ms",

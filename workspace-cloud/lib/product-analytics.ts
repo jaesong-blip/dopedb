@@ -24,7 +24,7 @@ const enumRule = <const Values extends readonly string[]>(...values: Values) => 
   values,
 });
 const booleanRule = { kind: "boolean" as const };
-const engineRule = enumRule("postgres", "mysql", "sqlite", "mongodb");
+const engineRule = enumRule("postgres", "mysql", "sqlite", "mongodb", "bigquery");
 const accessModeRule = enumRule("local", "managed");
 const durationBucketRule = enumRule(
   "under_100ms",

@@ -69,9 +69,9 @@ pub(crate) fn validate_profile(profile: &ConnectionProfile) -> AppResult<()> {
     let Some(alias) = alias(profile) else {
         return Ok(());
     };
-    if profile.engine == Engine::Sqlite {
+    if matches!(profile.engine, Engine::Sqlite | Engine::Bigquery) {
         return Err(AppError::Config(
-            "SQLite connections cannot use an SSH tunnel".into(),
+            "SQLite and BigQuery connections cannot use an SSH tunnel".into(),
         ));
     }
     if profile.engine == Engine::Mongodb

@@ -20,6 +20,7 @@ export const CONNECTION_DEFAULT_PORTS: Record<ConnectionEngine, number> = {
   mysql: 3306,
   sqlite: 0,
   mongodb: 27017,
+  bigquery: 443,
 };
 
 const DEMO_SQLITE_PATH_SUFFIX = "/demos/dopedb-demo-v1.sqlite";
@@ -29,6 +30,7 @@ export function connectionDefaultSslMode(
 ): string {
   if (engine === "mysql") return "preferred";
   if (engine === "sqlite") return "disable";
+  if (engine === "bigquery") return "require";
   return "prefer";
 }
 
@@ -38,18 +40,21 @@ export function blankConnection(
   const engine = preset?.engine ?? "postgres";
   const provider = preset?.provider ?? "auto";
 
+  const bigquery = engine === "bigquery";
   return {
     id: connectionId(crypto.randomUUID()),
     name: "",
     engine,
-    provider,
+    provider: bigquery ? "generic" : provider,
     driverId: null,
-    host: "localhost",
+    host: bigquery ? "" : "localhost",
     port: CONNECTION_DEFAULT_PORTS[engine],
     database: "",
     username: "",
     sslmode: connectionDefaultSslMode(engine),
-    extraParams: {},
+    extraParams: bigquery
+      ? { maximumBytesBilled: "1073741824" }
+      : {},
     readonlyDefault: true,
     allowWrites: false,
     secretRef: null,

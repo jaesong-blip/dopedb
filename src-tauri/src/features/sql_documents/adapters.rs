@@ -321,6 +321,7 @@ fn dialect(engine: Engine) -> SqlDialect {
         Engine::Mysql => SqlDialect::MySql,
         Engine::Sqlite => SqlDialect::Sqlite,
         Engine::Mongodb => SqlDialect::MongoDb,
+        Engine::Bigquery => SqlDialect::BigQuery,
     }
 }
 

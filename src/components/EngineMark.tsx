@@ -2,9 +2,10 @@ import mysqlIcon from "../assets/db-icons/mysql.svg";
 import mongodbIcon from "../assets/db-icons/mongodb.svg";
 import postgresqlIcon from "../assets/db-icons/postgresql.svg";
 import sqliteIcon from "../assets/db-icons/sqlite.svg";
+import GoogleBigQueryIcon from "@iconify-react/simple-icons/googlebigquery";
 import type { Engine } from "../ipc/types";
 
-const ENGINE_ICON: Record<Engine, string> = {
+const ENGINE_ICON: Record<Exclude<Engine, "bigquery">, string> = {
   postgres: postgresqlIcon,
   mysql: mysqlIcon,
   sqlite: sqliteIcon,
@@ -16,6 +17,7 @@ const ENGINE_LABEL: Record<Engine, string> = {
   mysql: "MySQL",
   sqlite: "SQLite",
   mongodb: "MongoDB",
+  bigquery: "Google BigQuery",
 };
 
 export default function EngineMark({
@@ -38,7 +40,16 @@ export default function EngineMark({
       title={label}
       aria-label={label}
     >
-      <img src={ENGINE_ICON[engine]} alt="" aria-hidden="true" draggable={false} />
+      {engine === "bigquery" ? (
+        <GoogleBigQueryIcon aria-hidden="true" />
+      ) : (
+        <img
+          src={ENGINE_ICON[engine]}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+        />
+      )}
     </span>
   );
 }

@@ -16,6 +16,7 @@ pub enum DatabaseEngine {
     Mysql,
     Sqlite,
     Mongodb,
+    Bigquery,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

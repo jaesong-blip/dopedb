@@ -3,6 +3,7 @@
 
 mod app_paths;
 mod audit;
+mod bigquery;
 mod broker;
 mod cli_environment;
 mod cli_install;
@@ -22,6 +23,7 @@ mod mongo;
 mod monitoring;
 pub mod operations;
 mod packaged_benchmark;
+mod process_tree;
 mod safety;
 mod services;
 mod skills;

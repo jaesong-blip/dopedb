@@ -44,16 +44,17 @@ impl QueryPlatformAdapter {
                 return Err(scoped(error, operation_scope));
             }
         }
+        let database = request
+            .database
+            .unwrap_or_else(|| pin.profile.database.clone());
         let namespace = match crate::executor::namespace::resolve_sql_namespace(
             &pin.profile,
+            Some(&database),
             request.namespace,
         ) {
             Ok(namespace) => namespace,
             Err(error) => return Err(scoped(error, operation_scope)),
         };
-        let database = request
-            .database
-            .unwrap_or_else(|| pin.profile.database.clone());
         let analysis = match safety::classify_with_integrity(&request.sql, pin.profile.engine) {
             Ok(analysis) => analysis,
             Err(error) => return Err(scoped(error, operation_scope)),

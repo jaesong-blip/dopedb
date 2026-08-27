@@ -199,6 +199,11 @@ pub(super) async fn execute_transaction(
         DbPool::Postgres(pool) => execute!(pool),
         DbPool::Mysql(pool) => execute!(pool),
         DbPool::Sqlite(pool) => execute!(pool),
+        DbPool::Bigquery(_) => {
+            return Err(AppError::Blocked {
+                reason: "BigQuery import jobs are unavailable through the read-only adapter".into(),
+            })
+        }
     }
     Ok(())
 }

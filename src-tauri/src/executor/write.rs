@@ -88,6 +88,11 @@ pub(crate) async fn run_write(
                 })?;
                 n
             }
+            Pool::Bigquery(_) => {
+                return Err(AppError::Blocked {
+                    reason: "BigQuery connections are read-only in DopeDB".into(),
+                })
+            }
         };
         Ok::<u64, AppError>(affected)
     };

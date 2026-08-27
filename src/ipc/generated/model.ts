@@ -9,7 +9,7 @@ export type JsonValue =
   | { [key: string]: JsonValue }
   | JsonValue[];
 
-export type Engine = "postgres" | "mysql" | "sqlite" | "mongodb";
+export type Engine = "postgres" | "mysql" | "sqlite" | "mongodb" | "bigquery";
 export type Provider = "auto" | "generic" | "neon" | "planetScale" | "gcpCloudSql";
 export type WorkspaceConnectionAccess = "view" | "read" | "write" | "manage" | "local";
 export type WorkspaceCredentialMode = "local" | "memberLocal" | "managed";

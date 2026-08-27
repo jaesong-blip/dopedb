@@ -55,6 +55,7 @@ impl QueryPlatformAdapter {
             .map_err(DesktopSqlRunError::Application)?;
         let namespace = crate::executor::namespace::resolve_sql_namespace(
             &operation_pin.profile,
+            Some(&payload.database),
             payload.namespace.clone(),
         )
         .map_err(DesktopSqlRunError::Application)?;

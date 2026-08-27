@@ -163,7 +163,7 @@ fn startup_variable_allowed(engine: Engine, variable: &ObjectName) -> bool {
             "sql_mode",
             "time_zone",
         ][..],
-        Engine::Sqlite | Engine::Mongodb => &[][..],
+        Engine::Sqlite | Engine::Mongodb | Engine::Bigquery => &[][..],
     };
     allowed.contains(&variable.as_str())
 }
@@ -192,7 +192,7 @@ pub(crate) fn validate_startup_script(script: &str, engine: Engine) -> AppResult
     let dialect: Box<dyn Dialect> = match engine {
         Engine::Postgres => Box::new(PostgreSqlDialect {}),
         Engine::Mysql => Box::new(MySqlDialect {}),
-        Engine::Sqlite | Engine::Mongodb => {
+        Engine::Sqlite | Engine::Mongodb | Engine::Bigquery => {
             return Err(AppError::Config(
                 "startup scripts are available only for PostgreSQL and MySQL".into(),
             ))

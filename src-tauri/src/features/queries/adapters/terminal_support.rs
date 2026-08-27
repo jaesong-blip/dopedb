@@ -42,6 +42,7 @@ pub(super) fn pool_ref(db: &DbPool) -> PoolRef<'_> {
         DbPool::Postgres(pool) => PoolRef::Postgres(pool),
         DbPool::Mysql(pool) => PoolRef::Mysql(pool),
         DbPool::Sqlite(pool) => PoolRef::Sqlite(pool),
+        DbPool::Bigquery(connection) => PoolRef::Bigquery(connection),
     }
 }
 

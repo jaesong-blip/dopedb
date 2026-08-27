@@ -26,6 +26,7 @@ pub async fn introspect(conn: &Live) -> AppResult<Catalog> {
             DbPool::Postgres(pool) => pg::introspect(pool).await,
             DbPool::Mysql(pool) => mysql::introspect(pool, live.skip_fk_metadata).await,
             DbPool::Sqlite(pool) => sqlite::introspect(pool).await,
+            DbPool::Bigquery(connection) => connection.introspect().await,
         },
         Live::Mongo(conn) => crate::mongo::introspect::introspect(conn).await,
     }
@@ -41,6 +42,7 @@ pub(crate) async fn overview(conn: &Live) -> AppResult<CatalogOverview> {
             DbPool::Postgres(pool) => pg::overview(pool).await,
             DbPool::Mysql(pool) => mysql::overview(pool).await,
             DbPool::Sqlite(pool) => sqlite::overview(pool).await,
+            DbPool::Bigquery(connection) => connection.overview().await,
         },
         Live::Mongo(conn) => crate::mongo::introspect::overview(conn).await,
     }
@@ -57,6 +59,7 @@ pub(crate) async fn databases(conn: &Live, configured: &str) -> AppResult<Vec<Da
             DbPool::Postgres(pool) => pg::databases(pool).await?,
             DbPool::Mysql(pool) => mysql::databases(pool).await?,
             DbPool::Sqlite(_) => vec![configured.to_owned()],
+            DbPool::Bigquery(connection) => connection.databases().await?,
         },
         Live::Mongo(conn) => crate::mongo::introspect::databases(conn).await?,
     };
@@ -80,7 +83,7 @@ fn database_summaries(mut names: Vec<String>, configured: &str) -> Vec<DatabaseS
 }
 
 fn valid_database_name(name: &str) -> bool {
-    !name.is_empty() && name.len() <= 255 && !name.chars().any(char::is_control)
+    !name.is_empty() && name.len() <= 1024 && !name.chars().any(char::is_control)
 }
 
 /// The CREATE-TABLE DDL for one table, read through the read-only pool.
@@ -94,6 +97,9 @@ pub(crate) async fn table_ddl(live: &Live, schema: Option<&str>, table: &str) ->
             DbPool::Postgres(pool) => pg::table_ddl(pool, schema, table).await,
             DbPool::Mysql(pool) => mysql::table_ddl(pool, table).await,
             DbPool::Sqlite(pool) => sqlite::table_ddl(pool, table).await,
+            DbPool::Bigquery(_) => Err(AppError::Blocked {
+                reason: "BigQuery DDL is unavailable through the read-only adapter".into(),
+            }),
         },
         Live::Mongo(_) => Err(AppError::Config(
             "MongoDB collections have no SQL DDL".into(),

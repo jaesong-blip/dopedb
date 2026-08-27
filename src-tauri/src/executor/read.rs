@@ -96,6 +96,58 @@ where
     // preference: no caller can request an oversized page.
     let batch_rows = batch_rows.clamp(1, 256);
     let max = max_rows as usize;
+    if let Pool::Bigquery(connection) = &live.read_pool {
+        let result = connection.query(sql, max_rows, cancellation).await?;
+        let columns = result.columns.clone();
+        let row_count = result.rows.len();
+        let first_row_ms = (!result.rows.is_empty()).then(|| started.elapsed().as_millis() as u64);
+        let mut batch = Vec::with_capacity(batch_rows);
+        let mut batch_bytes = 0usize;
+        for row in result.rows {
+            let row_bytes = serde_json::to_vec(&row)?.len();
+            if row_bytes > DESKTOP_STREAM_ROW_BUDGET_BYTES {
+                return Err(AppError::Blocked {
+                    reason: "one streamed result row exceeds the 512 KiB batch safety limit".into(),
+                });
+            }
+            if !batch.is_empty()
+                && batch_bytes.saturating_add(row_bytes) > DESKTOP_STREAM_ROW_BUDGET_BYTES
+            {
+                on_batch(ReadBatch {
+                    columns: columns.clone(),
+                    rows: std::mem::take(&mut batch),
+                })
+                .await?;
+                batch = Vec::with_capacity(batch_rows);
+                batch_bytes = 0;
+            }
+            batch_bytes += row_bytes;
+            batch.push(row);
+            if batch.len() == batch_rows {
+                on_batch(ReadBatch {
+                    columns: columns.clone(),
+                    rows: std::mem::take(&mut batch),
+                })
+                .await?;
+                batch = Vec::with_capacity(batch_rows);
+                batch_bytes = 0;
+            }
+        }
+        if !batch.is_empty() || row_count == 0 {
+            on_batch(ReadBatch {
+                columns: columns.clone(),
+                rows: batch,
+            })
+            .await?;
+        }
+        return Ok(StreamedRead {
+            columns,
+            row_count,
+            truncated: result.truncated,
+            duration_ms: started.elapsed().as_millis() as u64,
+            first_row_ms,
+        });
+    }
     let inner = async {
         let (columns, row_count, truncated, first_row_ms) = match &live.read_pool {
             Pool::Postgres(pool) => {
@@ -179,6 +231,7 @@ where
                     first_row_ms,
                 )
             }
+            Pool::Bigquery(_) => unreachable!("BigQuery is handled before the SQLx stream"),
         };
         // Keep zero-row metadata inside the same cancellation/timeout envelope as
         // cursor iteration. It must also become a page so renderers can build an
@@ -239,6 +292,11 @@ pub(crate) async fn run_read_byte_capped(
 ) -> AppResult<QueryResult> {
     let started = Instant::now();
     let cancellation = query_id.map(cancel::register);
+    if let Pool::Bigquery(connection) = &live.read_pool {
+        return connection
+            .query_byte_capped(sql, max_rows, max_bytes, cancellation.as_ref())
+            .await;
+    }
     let max = max_rows as usize;
     let inner = async {
         let (columns, rows, truncated) = match &live.read_pool {
@@ -272,6 +330,7 @@ pub(crate) async fn run_read_byte_capped(
                 .await?;
                 (with_headers(columns, pool, sql).await, rows, truncated)
             }
+            Pool::Bigquery(_) => unreachable!("BigQuery is handled before the SQLx stream"),
         };
         Ok(QueryResult {
             row_count: rows.len(),
@@ -299,6 +358,10 @@ pub(crate) async fn run_read_registered(
 ) -> AppResult<QueryResult> {
     let started = Instant::now();
     let max = max_rows as usize;
+
+    if let Pool::Bigquery(connection) = &live.read_pool {
+        return connection.query(sql, max_rows, cancellation).await;
+    }
 
     // ponytail: read_pool is the L2-enforced (read-only) pool; reads never touch write_pool.
     let inner = async {
@@ -354,6 +417,7 @@ pub(crate) async fn run_read_registered(
                 .await?;
                 (with_headers(c, pool, sql).await, r, t)
             }
+            Pool::Bigquery(_) => unreachable!("BigQuery is handled before the SQLx stream"),
         };
         Ok::<_, AppError>(QueryResult {
             row_count: rows.len(),

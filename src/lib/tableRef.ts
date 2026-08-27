@@ -2,7 +2,9 @@
 import type { CatalogTable, Engine } from "../ipc/types";
 
 export function quoteIdent(engine: Engine, name: string): string {
-  if (engine === "mysql") return "`" + name.replace(/`/g, "``") + "`";
+  if (engine === "mysql" || engine === "bigquery") {
+    return "`" + name.replace(/`/g, "``") + "`";
+  }
   return '"' + name.replace(/"/g, '""') + '"';
 }
 
@@ -12,11 +14,17 @@ export function tableRef(engine: Engine, t: CatalogTable): string {
   if (engine === "mysql" && t.database) {
     return `${q(t.database)}.${q(t.name)}`;
   }
+  if (engine === "bigquery") {
+    const namespace = t.schema ?? t.database;
+    const path = namespace ? `${namespace}.${t.name}` : t.name;
+    return "`" + path.replace(/`/g, "``") + "`";
+  }
   return q(t.name);
 }
 
 export function tableLabel(engine: Engine, t: CatalogTable): string {
-  return engine === "postgres" && t.schema && t.schema !== "public"
+  return (engine === "postgres" && t.schema && t.schema !== "public")
+    || (engine === "bigquery" && t.schema)
     ? `${t.schema}.${t.name}`
     : t.name;
 }

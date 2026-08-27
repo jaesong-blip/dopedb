@@ -320,15 +320,17 @@ function WorkbenchContentResolved({ model, commands }: Props) {
             onNew={commands.connections.new}
           />
         ) : !activeDocument ? (
-          <WorkbenchEmptyState icon={connection.supportsSql ? "play" : "list"}>
-            <span>
-              {connection.supportsSql ? t("tabs.sql") : t("tabs.documents")}
-            </span>
-            <Button variant="primary" onClick={commands.documents.newQuery}>
-              <Icon name="plus" />
-              {connection.supportsSql ? t("tabs.sql") : t("tabs.documents")}
-            </Button>
-          </WorkbenchEmptyState>
+          connection.supportsSql ? (
+            <WorkbenchEmptyState icon="play">
+              <span>{t("tabs.sql")}</span>
+              <Button variant="primary" onClick={commands.documents.newQuery}>
+                <Icon name="plus" />
+                {t("tabs.sql")}
+              </Button>
+            </WorkbenchEmptyState>
+          ) : (
+            <Documents key={`${selected.id}:mongo-query`} connection={selected} />
+          )
         ) : activeDocument.kind === "welcome" ? (
           <Onboarding
             connectionName={selected.name || selected.database}

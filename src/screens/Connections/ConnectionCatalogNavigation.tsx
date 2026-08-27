@@ -280,6 +280,7 @@ export function ConnectionCatalogNavigation({
                 ) : null}
                 {!identity.isNew &&
                 flags.isSharedTemplate &&
+                form.engine !== "bigquery" &&
                 form.credentialMode === "memberLocal" &&
                 form.workspaceAccess !== "view" ? (
                   <Button

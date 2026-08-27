@@ -398,7 +398,9 @@ export function useSqlWorkbenchController({
           ? "postgresql"
           : connection.engine === "mysql"
             ? "mysql"
-            : "sqlite";
+            : connection.engine === "bigquery"
+              ? "bigquery"
+              : "sqlite";
       setDraft(await formatSqlDocument(draft, language));
     } catch (error) {
       reportDocumentSaveError(error);

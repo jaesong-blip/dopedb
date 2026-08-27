@@ -83,7 +83,7 @@ bounded, and masked result fragment may be shared into an internal Analysis Arti
 | Workspace | Personal and team workspaces, device sign-in, invitations, membership, and roles |
 | Shared access | Secretless connection templates with per-member local credential bindings |
 | Managed access | Member-specific, expiring credentials for PlanetScale, Neon, and GCP Cloud SQL |
-| Databases | PostgreSQL, MySQL/MariaDB, SQLite, and MongoDB connections with schema introspection |
+| Databases | PostgreSQL, MySQL/MariaDB, SQLite, MongoDB, and read-only Google BigQuery through the official `bq` CLI, with schema introspection |
 | Agent runtime | Official Codex and Claude ACP sessions pinned to the Desktop-selected authority |
 | Safety | Read-only defaults, immutable write proposals, exact human approval, cancellation, manual transaction rollback, durable results, and hash-chained audit |
 | Local tools | A version-matched `dopedb` CLI Broker with no listening port, plus an explicit connection-pinned advanced Shell under Settings → Command line |

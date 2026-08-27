@@ -215,6 +215,8 @@ pub(crate) fn assert_connection_test_failure_contract() {
 pub(crate) enum DriverInstallMode {
     Bundled,
     Managed,
+    /// Installed and authenticated by the operating-system user outside DopeDB.
+    System,
 }
 
 /// Current local availability of a driver.
@@ -319,6 +321,13 @@ pub(crate) fn validate_schema_group_engine(
     let Some(group) = profile.schema_group.as_deref() else {
         return Ok(());
     };
+    if profile.engine == Engine::Bigquery {
+        return Err(AppError::Blocked {
+            reason:
+                "BigQuery schema grouping is unavailable until its schema-diff contract is verified"
+                    .into(),
+        });
+    }
     let incompatible = connections.iter().any(|connection| {
         connection.id != profile.id
             && connection

@@ -25,8 +25,8 @@ import { formatConnectionUrl, parseConnectionUrl } from "./connectionUrl";
 import {
   connectionDiagnosticBlocksTest,
   diagnoseConnection,
-  type ConnectionDiagnosticCode,
 } from "./diagnostics";
+import { connectionDiagnosticMessage } from "./connectionDiagnosticMessage";
 import {
   connectionId,
   type ConnectionProfile,
@@ -72,7 +72,7 @@ export function useConnectionProfileController({
   const catalogScope = useCatalogScope();
   const { form, identity, credentials, tabs: tabState, url, status } =
     profileState;
-  const { isSharedTemplate, isMongo } = form.flags;
+  const { isSharedTemplate, isMongo, isBigQuery } = form.flags;
   const [databaseDiscovery, setDatabaseDiscovery] = useState<{
     pending: boolean;
     databases: string[];
@@ -110,7 +110,7 @@ export function useConnectionProfileController({
   const problemItems: DiagnosticItem[] = diagnostics.map((diagnostic) => ({
     id: diagnostic.id,
     tone: diagnostic.tone,
-    title: diagnosticMessage(diagnostic.code),
+    title: connectionDiagnosticMessage(t, diagnostic.code),
   }));
   if (connectionUrlInvalid) {
     problemItems.push({
@@ -141,6 +141,10 @@ export function useConnectionProfileController({
     host: fieldValidation("connection-host"),
     port: fieldValidation("connection-port"),
     database: fieldValidation("connection-database"),
+    bigQueryLocation: fieldValidation("connection-bigquery-location"),
+    bigQueryMaximumBytesBilled: fieldValidation(
+      "connection-bigquery-maximum-bytes-billed",
+    ),
     timeZone: fieldValidation("connection-time-zone"),
     keepAlive: fieldValidation("connection-keep-alive"),
     autoDisconnect: fieldValidation("connection-auto-disconnect"),
@@ -155,6 +159,8 @@ export function useConnectionProfileController({
   };
   const tabs: readonly PanelTab<ConnectionTab>[] = isSharedTemplate
     ? [{ id: "general", label: t("connections.general") }]
+    : isBigQuery
+      ? [{ id: "general", label: t("connections.general") }]
     : [
         { id: "general", label: t("connections.general") },
         { id: "options", label: t("connections.options") },
@@ -167,45 +173,6 @@ export function useConnectionProfileController({
         { id: "advanced", label: t("connections.advanced") },
       ];
 
-  function diagnosticMessage(code: ConnectionDiagnosticCode) {
-    switch (code) {
-      case "nameRequired":
-        return t("connections.problemNameRequired");
-      case "duplicateName":
-        return t("connections.problemDuplicateName");
-      case "hostRequired":
-        return t("connections.problemHostRequired");
-      case "hostInvalid":
-        return t("connections.problemHostInvalid");
-      case "portInvalid":
-        return t("connections.problemPortInvalid");
-      case "sqliteFileRequired":
-        return t("connections.problemSqliteFileRequired");
-      case "mongoDatabaseRequired":
-        return t("connections.problemMongoDatabaseRequired");
-      case "timeZoneInvalid":
-        return t("connections.problemTimeZoneInvalid");
-      case "keepAliveInvalid":
-        return t("connections.problemKeepAliveInvalid");
-      case "autoDisconnectInvalid":
-        return t("connections.problemAutoDisconnectInvalid");
-      case "startupScriptTooLong":
-        return t("connections.problemStartupScriptTooLong");
-      case "sshAliasInvalid":
-        return t("connections.problemSshAliasInvalid");
-      case "sshTunnelSingleHostRequired":
-        return t("connections.problemSshTunnelSingleHostRequired");
-      case "sshTunnelSrvUnsupported":
-        return t("connections.problemSshTunnelSrvUnsupported");
-      case "driverCatalogUnavailable":
-        return t("connections.problemDriverCatalogUnavailable");
-      case "driverUnavailable":
-        return t("connections.problemDriverUnavailable");
-      case "driverInstallRequired":
-        return t("connections.problemDriverInstallRequired");
-    }
-  }
-
   function fieldValidation(fieldId: string): FieldValidation | undefined {
     const diagnostic = diagnostics.find(
       (candidate) => candidate.fieldId === fieldId,
@@ -213,7 +180,7 @@ export function useConnectionProfileController({
     return diagnostic
       ? {
           tone: diagnostic.tone,
-          message: diagnosticMessage(diagnostic.code),
+          message: connectionDiagnosticMessage(t, diagnostic.code),
         }
       : undefined;
   }

@@ -51,6 +51,12 @@ impl JobWorker {
             .await?;
         ensure_record_scope(&record, guard.authority())?;
         let engine = guard.authority().engine;
+        if engine == Engine::Bigquery {
+            return Err(AppError::Blocked {
+                reason: "BigQuery bulk export jobs are unavailable; export a bounded query result instead"
+                    .into(),
+            });
+        }
         let capability = self
             .repository
             .resolve_capability(

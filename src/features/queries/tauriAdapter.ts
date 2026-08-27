@@ -49,7 +49,7 @@ export type SqlReadPageObserver = {
 
 export function formatSqlFragment(
   sql: string,
-  language: "sqlite" | "mysql" | "postgresql",
+  language: "sqlite" | "mysql" | "postgresql" | "bigquery",
 ): Promise<string> {
   return invoke("format_sql_fragment", { sql, language });
 }

@@ -4,9 +4,6 @@
 //! schema-checked JSON value and must still verify the exact Provider and DB
 //! target independently before advancing a receipt to `Ready`.
 
-#[path = "process_tree.rs"]
-mod process_tree;
-
 use std::collections::BTreeSet;
 use std::fmt;
 use std::path::{Component, Path, PathBuf};
@@ -23,6 +20,8 @@ use tokio::process::Command;
 use tokio_util::sync::CancellationToken;
 use zeroize::Zeroizing;
 
+use crate::process_tree::{ProcessTree, ProcessTreeError};
+
 #[cfg(test)]
 use crate::error::AppResult;
 #[cfg(test)]
@@ -32,7 +31,6 @@ use super::super::domain::LocalProvider;
 #[cfg(test)]
 use super::ProvisioningExecutionPermit;
 use super::ProvisioningReadAuthority;
-use process_tree::ProvisioningProcessTree;
 
 const MAX_EXECUTABLE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_ARGUMENTS: usize = 128;
@@ -299,12 +297,12 @@ impl ProvisioningCliCommand {
         let mut child = command
             .spawn()
             .map_err(|_| ProvisioningProcessFailure::SpawnFailed)?;
-        let mut tree = match ProvisioningProcessTree::attach(&child) {
+        let mut tree = match ProcessTree::attach(&child) {
             Ok(tree) => tree,
             Err(error) => {
                 let _ = child.start_kill();
                 let _ = child.wait().await;
-                return Err(error);
+                return Err(map_process_tree_error(error));
             }
         };
         let stdout = child
@@ -325,7 +323,10 @@ impl ProvisioningCliCommand {
                 Err(_) => Err(ProvisioningProcessFailure::TimedOut),
             },
         };
-        let status = tree.terminate_and_reap(&mut child).await?;
+        let status = tree
+            .terminate_and_reap(&mut child)
+            .await
+            .map_err(map_process_tree_error)?;
         let (output, stderr) = result?;
         if !status
             .code()
@@ -364,6 +365,13 @@ impl ProvisioningCliCommand {
             }
         }
         Ok(())
+    }
+}
+
+fn map_process_tree_error(error: ProcessTreeError) -> ProvisioningProcessFailure {
+    match error {
+        ProcessTreeError::Isolation => ProvisioningProcessFailure::ProcessIsolationFailed,
+        ProcessTreeError::Cleanup => ProvisioningProcessFailure::CleanupFailed,
     }
 }
 

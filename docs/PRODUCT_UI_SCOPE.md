@@ -44,7 +44,11 @@ DopeDB의 제품 축, 실제 사용자 작업, 접근성, 운영 안전성, 지�
   Article만 표시하고 별도의 collection
   rail을 만들지 않는다.
 - 중앙 document surface는 welcome, query, data, schema, analysis처럼 현재 작업
-  하나를 소유한다.
+  하나를 소유한다. MongoDB 연결은 BSON `find`/`aggregate`/`count`를 수행하는
+  조회 surface를 유지하되 이를 범용 `문서` 작성 기능으로 표현하지 않는다.
+  마지막 MongoDB 조회 tab을 닫아도 모호한 문서 생성 화면을 만들지 않고 새
+  MongoDB 조회 surface를 즉시 유지하며, 조회 가능한 collection이 없으면
+  `조회할 컬렉션이 없습니다`라는 정확한 빈 상태만 표시한다.
 - Personal Workspace의 첫 Welcome은 실제 파일 기반 SQLite, 로컬 Project와
   development Environment, 그 연결의 versioned binding을 한 번에 준비하는
   `가이드 데모` command 하나를 제공할 수 있다. 이 명령은 재실행해도 같은 데모
@@ -128,7 +132,7 @@ DopeDB의 제품 축, 실제 사용자 작업, 접근성, 운영 안전성, 지�
 | PD-15 | project/files tool window | `범위 밖` | 일반 filesystem 탐색은 제품 밖이다. |
 | PD-16 | data source template lifecycle | `구현` | workspace가 redacted template과 grant를 공유하고 자격 증명은 member-local 또는 단기 managed lease로 분리한다. |
 | PD-17 | DDL file data source/mapping | `범위 밖` | 파일을 data source로 취급하지 않는다. |
-| PD-18 | 검증된 DBMS/driver/credential broker 확장 | `구현` | 실제 수요가 있고 discovery·발급·TTL·회수·drift·E2E 경계를 닫은 adapter만 추가한다. 일반 PostgreSQL/MySQL은 서버 allowlist의 HashiCorp Vault Database Secrets AppRole로 구성원별 15분 이하 동적 자격증명을 발급할 수 있으며, 공용 static DB 비밀번호 배포는 금지한다. |
+| PD-18 | 검증된 DBMS/driver/credential broker 확장 | `구현` | 실제 수요가 있고 discovery·발급·TTL·회수·drift·E2E 경계를 닫은 adapter만 추가한다. 일반 PostgreSQL/MySQL은 서버 allowlist의 HashiCorp Vault Database Secrets AppRole로 구성원별 15분 이하 동적 자격증명을 발급할 수 있으며, 공용 static DB 비밀번호 배포는 금지한다. BigQuery는 공식 로컬 `bq` CLI와 구성원별 `gcloud` 인증만 사용하고 server dry-run·SELECT 제한·과금 바이트 상한·exact job 취소를 갖춘 read-only system driver로 한정한다. |
 | PD-19 | 고급 connection/session option | `구현` | direct TLS와 시스템 OpenSSH Host alias 하나만 제공하며 키와 passphrase는 OS가 소유한다. |
 | PD-20 | Explorer object authoring | `구현 안 함` | DDL은 Agent가 작성하고 사람은 승인한다. |
 | PD-21 | Settings staged apply/scope | `구현 안 함` | 즉시 또는 section별 저장을 유지한다. |

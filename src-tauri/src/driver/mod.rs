@@ -18,6 +18,7 @@ enum RuntimeAdapter {
     Mysql,
     Sqlite,
     Mongodb,
+    Bigquery,
 }
 
 struct DriverDefinition {
@@ -106,17 +107,39 @@ const DEFINITIONS: &[DriverDefinition] = &[
         recommended: true,
         adapter: Some(RuntimeAdapter::Mongodb),
     },
+    DriverDefinition {
+        id: "google-bq-cli",
+        name: "Google BigQuery CLI",
+        engine: Engine::Bigquery,
+        version: ">=2.0.29",
+        install_mode: DriverInstallMode::System,
+        // `descriptor` replaces this with a live fixed-path presence probe.
+        install_state: DriverInstallState::Available,
+        supported_providers: &[Provider::Generic],
+        capabilities: &[DriverCapability::Sql, DriverCapability::Introspection],
+        recommended: true,
+        adapter: Some(RuntimeAdapter::Bigquery),
+    },
 ];
 
 impl DriverDefinition {
     fn descriptor(&self) -> DriverDescriptor {
+        let install_state = if self.engine == Engine::Bigquery {
+            if crate::bigquery::is_cli_available() {
+                DriverInstallState::Installed
+            } else {
+                DriverInstallState::Available
+            }
+        } else {
+            self.install_state
+        };
         DriverDescriptor {
             id: self.id.to_string(),
             name: self.name.to_string(),
             engine: self.engine,
             version: self.version.to_string(),
             install_mode: self.install_mode,
-            install_state: self.install_state,
+            install_state,
             supported_providers: self.supported_providers.to_vec(),
             capabilities: self.capabilities.to_vec(),
             recommended: self.recommended,
@@ -166,7 +189,7 @@ fn resolve(profile: &ConnectionProfile) -> AppResult<&'static DriverDefinition> 
             selected.id, profile.engine, provider
         )));
     }
-    match selected.install_state {
+    match selected.descriptor().install_state {
         DriverInstallState::Installed => {}
         DriverInstallState::Available => {
             return Err(AppError::Config(format!(
@@ -211,6 +234,10 @@ pub fn install(id: &str) -> AppResult<DriverDescriptor> {
             "managed driver pack {:?} has no verified artifact for this build",
             driver.id
         ))),
+        DriverInstallMode::System => Err(AppError::Config(
+            "install Google Cloud CLI with the BigQuery `bq` component outside DopeDB, then restart the app"
+                .into(),
+        )),
     }
 }
 
@@ -257,5 +284,15 @@ pub async fn connect(
             .await?,
         ),
         RuntimeAdapter::Mongodb => Live::Mongo(crate::mongo::connect(profile, secret).await?),
+        RuntimeAdapter::Bigquery => {
+            if access == ConnectionAccess::Write {
+                return Err(AppError::Blocked {
+                    reason: "BigQuery connections are read-only in DopeDB".into(),
+                });
+            }
+            Live::Sql(crate::connection::LiveConnection::bigquery(
+                crate::bigquery::connect(profile).await?,
+            ))
+        }
     })
 }

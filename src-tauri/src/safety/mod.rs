@@ -39,6 +39,7 @@ pub enum PoolRef<'a> {
     Postgres(&'a sqlx::PgPool),
     Mysql(&'a sqlx::MySqlPool),
     Sqlite(&'a sqlx::SqlitePool),
+    Bigquery(&'a crate::bigquery::BigQueryConnection),
 }
 
 impl PoolRef<'_> {
@@ -47,6 +48,7 @@ impl PoolRef<'_> {
             PoolRef::Postgres(_) => Engine::Postgres,
             PoolRef::Mysql(_) => Engine::Mysql,
             PoolRef::Sqlite(_) => Engine::Sqlite,
+            PoolRef::Bigquery(_) => Engine::Bigquery,
         }
     }
 }

@@ -1,7 +1,7 @@
 // Generated from dopedb-protocol public serde DTOs by ts-rs 12.0.1.
 // Keep this checked-in wire contract synchronized with the Rust DTOs.
 
-export type DatabaseEngine = "postgres" | "mysql" | "sqlite" | "mongodb";
+export type DatabaseEngine = "postgres" | "mysql" | "sqlite" | "mongodb" | "bigquery";
 export type OperationState = "planned" | "pending_approval" | "ready" | "approved" | "rejected" | "expired" | "cancelled" | "executing" | "succeeded" | "failed" | "outcome_unknown";
 export type CatalogSnapshot = { schemaVersion: number, connectionId: string, engine: DatabaseEngine, database: string, capturedAt: string, fingerprint: string, namespaces: Array<Namespace>, relations: Array<Relation>, routines: Array<Routine>, otherObjects: Array<DatabaseObject>, };
 export type Namespace = { name: string, comment?: string | null, };

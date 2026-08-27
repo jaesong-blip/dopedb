@@ -32,7 +32,7 @@ pub(crate) async fn format_sql_fragment(sql: String, language: String) -> AppRes
     }
     let dialect = match language.as_str() {
         "postgresql" => sqlformat::Dialect::PostgreSql,
-        "mysql" | "sqlite" => sqlformat::Dialect::Generic,
+        "mysql" | "sqlite" | "bigquery" => sqlformat::Dialect::Generic,
         _ => {
             return Err(crate::AppError::Config(
                 "SQL format language is unsupported".into(),

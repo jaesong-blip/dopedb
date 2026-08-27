@@ -78,7 +78,13 @@ pub(super) fn row_to_connection_with_binding(
 ) -> AppResult<ConnectionProfile> {
     let mut profile = row_to_connection(r)?;
     if profile.workspace_access != WorkspaceConnectionAccess::Local {
-        if profile.credential_mode == WorkspaceCredentialMode::MemberLocal {
+        if profile.engine == Engine::Bigquery {
+            // Shared BigQuery records carry project/dataset identity only. Each
+            // member authenticates through their own Google Cloud CLI context.
+            profile.username.clear();
+            profile.extra_params.clear();
+            profile.secret_ref = None;
+        } else if profile.credential_mode == WorkspaceCredentialMode::MemberLocal {
             profile.username = r
                 .try_get::<Option<String>, _>("binding_username")?
                 .unwrap_or_default();
@@ -132,6 +138,7 @@ pub(crate) fn engine_str(e: Engine) -> &'static str {
         Engine::Mysql => "mysql",
         Engine::Sqlite => "sqlite",
         Engine::Mongodb => "mongodb",
+        Engine::Bigquery => "bigquery",
     }
 }
 
@@ -141,6 +148,7 @@ pub(crate) fn parse_engine(s: String) -> AppResult<Engine> {
         "mysql" => Ok(Engine::Mysql),
         "sqlite" => Ok(Engine::Sqlite),
         "mongodb" => Ok(Engine::Mongodb),
+        "bigquery" => Ok(Engine::Bigquery),
         other => Err(AppError::Config(format!("unknown engine '{other}'"))),
     }
 }

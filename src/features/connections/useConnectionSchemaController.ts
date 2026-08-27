@@ -19,7 +19,7 @@ export function useConnectionSchemaController(
 ) {
   const catalogScope = useCatalogScope();
   const { form, identity, tabs } = profileState;
-  const { isSharedTemplate, isMongo } = form.flags;
+  const { isSharedTemplate, isMongo, isBigQuery } = form.flags;
   const discovery = useQuery({
     ...catalogOverviewQuery(form.value.id, catalogScope),
     enabled:
@@ -27,6 +27,7 @@ export function useConnectionSchemaController(
       tabs.active === "schemas" &&
       !isSharedTemplate &&
       !isMongo &&
+      !isBigQuery &&
       catalogScope.ready,
   });
   const discoveredSchemas = Array.from(

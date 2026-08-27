@@ -40,6 +40,7 @@ pub enum DbPool {
     Postgres(PgPool),
     Mysql(MySqlPool),
     Sqlite(SqlitePool),
+    Bigquery(crate::bigquery::BigQueryConnection),
 }
 
 impl DbPool {
@@ -55,6 +56,7 @@ impl DbPool {
             DbPool::Sqlite(p) => {
                 sqlx::query("SELECT 1").execute(p).await?;
             }
+            DbPool::Bigquery(connection) => connection.ping().await?,
         }
         Ok(())
     }
@@ -65,6 +67,7 @@ impl DbPool {
             DbPool::Postgres(pool) => pool.close().await,
             DbPool::Mysql(pool) => pool.close().await,
             DbPool::Sqlite(pool) => pool.close().await,
+            DbPool::Bigquery(_) => {}
         }
     }
 
@@ -73,6 +76,7 @@ impl DbPool {
             DbPool::Postgres(pool) => pool.is_closed(),
             DbPool::Mysql(pool) => pool.is_closed(),
             DbPool::Sqlite(pool) => pool.is_closed(),
+            DbPool::Bigquery(_) => false,
         }
     }
 }
@@ -97,6 +101,16 @@ pub struct LiveConnection {
 }
 
 impl LiveConnection {
+    pub(crate) fn bigquery(connection: crate::bigquery::BigQueryConnection) -> Self {
+        let read_pool = DbPool::Bigquery(connection);
+        Self {
+            write_pool: read_pool.clone(),
+            read_pool,
+            has_writable_pool: false,
+            skip_fk_metadata: false,
+        }
+    }
+
     /// The read-only pool. Reads and all read previews route through this.
     pub fn ro(&self) -> &DbPool {
         &self.read_pool
@@ -362,6 +376,11 @@ pub(crate) async fn connect_sqlx(
         Engine::Mongodb => {
             return Err(AppError::Config(
                 "MongoDB must be opened through its document database adapter".into(),
+            ))
+        }
+        Engine::Bigquery => {
+            return Err(AppError::Config(
+                "BigQuery must be opened through the official bq CLI adapter".into(),
             ))
         }
     };

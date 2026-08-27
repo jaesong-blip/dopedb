@@ -16,6 +16,7 @@ import { StatusBadge } from "../../design-system/components/Status";
 import type { ConnectionInputMode } from "../../features/connections/connectionEditorModel";
 import type { ConnectionEditorController } from "../../features/connections/useConnectionEditorController";
 import { useI18n } from "../../lib/i18n";
+import { ConnectionBigQueryFields } from "./ConnectionBigQueryFields";
 
 type Controller = ConnectionEditorController;
 
@@ -48,6 +49,7 @@ export function ConnectionGeneralTab({
     isSharedTemplate,
     isSqlite,
     isMongo,
+    isBigQuery,
     canEditConnection,
     canDiscoverDatabases,
     srv,
@@ -92,7 +94,7 @@ export function ConnectionGeneralTab({
             </label>
           ) : null}
 
-          {!isSharedTemplate ? (
+          {!isSharedTemplate && !isBigQuery ? (
             <label className="tw:inline-flex tw:min-w-0 tw:items-center tw:gap-1.5">
               <span>{t("connections.connectionType")}:</span>
               <InlineSelect
@@ -157,7 +159,7 @@ export function ConnectionGeneralTab({
         ) : null}
       </section>
 
-      {!isSharedTemplate && url.mode === "urlOnly" ? (
+      {!isSharedTemplate && !isBigQuery && url.mode === "urlOnly" ? (
         <section className="tw:grid tw:gap-2">
           <PropertyRow
             label={t("connections.connectionUrl")}
@@ -216,6 +218,8 @@ export function ConnectionGeneralTab({
             </div>
           </PropertyRow>
         </section>
+      ) : isBigQuery ? (
+        <ConnectionBigQueryFields profile={profile} drivers={drivers} />
       ) : (
         <section className="tw:grid tw:gap-3">
           <PropertyRow

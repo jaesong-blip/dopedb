@@ -43,7 +43,7 @@ export function useConnectionCatalogController({
 }) {
   const { t } = useI18n();
   const driverCatalog = useQuery(driversQuery());
-  const { form, identity, tabs, status } = profileState;
+  const { form, identity, credentials, tabs, status } = profileState;
   const [installingDriverId, setInstallingDriverId] = useState<
     string | null
   >(null);
@@ -176,7 +176,13 @@ export function useConnectionCatalogController({
     form.setValue((current) =>
       switchConnectionSource(current, engine, provider),
     );
-    if (tabs.active === "schemas" && isDocumentEngine(engine)) {
+    if (engine === "bigquery") {
+      credentials.setPassword("");
+    }
+    if (
+      engine === "bigquery" ||
+      (tabs.active === "schemas" && isDocumentEngine(engine))
+    ) {
       tabs.setActive("general");
     }
   }
@@ -229,6 +235,11 @@ export function useConnectionCatalogController({
   function driverStatus(driver: DriverDescriptor) {
     if (driver.installMode === "bundled") {
       return t("connections.driverBundled");
+    }
+    if (driver.installMode === "system") {
+      return driver.installState === "installed"
+        ? t("connections.driverSystem")
+        : t("connections.driverSystemRequired");
     }
     if (driver.installState === "installed") {
       return t("connections.driverInstalledStatus");

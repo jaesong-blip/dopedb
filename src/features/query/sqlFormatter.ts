@@ -165,7 +165,12 @@ async function formatWithNativeRuntime(
   chunks: readonly string[],
   language: SqlLanguage,
 ) {
-  if (language !== "sqlite" && language !== "mysql" && language !== "postgresql") {
+  if (
+    language !== "sqlite" &&
+    language !== "mysql" &&
+    language !== "postgresql" &&
+    language !== "bigquery"
+  ) {
     throw new Error(`SQL formatter language ${language} is unsupported`);
   }
   const formatted: string[] = [];

@@ -17,6 +17,7 @@ pub enum Engine {
     Mysql,
     Sqlite,
     Mongodb,
+    Bigquery,
 }
 
 impl Engine {

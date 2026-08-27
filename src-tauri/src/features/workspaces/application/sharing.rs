@@ -382,6 +382,12 @@ where
                 reason: "this shared connection uses automatically managed credentials".into(),
             });
         }
+        if profile.engine == crate::model::Engine::Bigquery {
+            return Err(AppError::Blocked {
+                reason: "BigQuery authentication is owned by Google Cloud CLI and cannot be bound as a workspace password"
+                    .into(),
+            });
+        }
         if !profile.workspace_access.can_read() {
             return Err(AppError::Blocked {
                 reason: "your workspace role cannot execute this connection".into(),

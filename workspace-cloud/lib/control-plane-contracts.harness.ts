@@ -31,6 +31,10 @@ import {
 import { parseSharedAnalysisArticleCreate } from "./workspace-analysis-articles";
 import { workspaceSchedulerBoundedWakeAt } from "./workspace-background-scheduler";
 import {
+  parseSharedConnection,
+  publicConnection,
+} from "./workspace-connections";
+import {
   issueVaultLease,
   parseVaultCredential,
   revokeVaultLease,
@@ -676,6 +680,34 @@ describe("Desktop control-plane contracts", () => {
       connectionVersion,
       { ...connectionVersion, host: "10.0.0.2" },
     )).toBe("all");
+
+    const bigQueryTemplate = parseSharedConnection({
+      name: "Warehouse",
+      engine: "bigquery",
+      provider: "generic",
+      driverId: "google-bq-cli",
+      host: "campfire-460003",
+      port: 443,
+      database: "analytics_2026",
+      sslmode: "require",
+      readonlyDefault: true,
+      allowWrites: false,
+      env: "prod",
+      schemaGroup: null,
+    });
+    expect(bigQueryTemplate.engine).toBe("bigquery");
+    expect(() => parseSharedConnection(bigQueryTemplate, {
+      credentialMode: "managed",
+    })).toThrow("member-local Google Cloud CLI");
+    expect(publicConnection({
+      id: "connection-bigquery",
+      ...bigQueryTemplate,
+      databaseName: bigQueryTemplate.database,
+      environment: bigQueryTemplate.env,
+      contentRevision: 1,
+      updatedAt: new Date("2026-08-26T00:00:00Z"),
+      credentialMode: "member_local",
+    }, "analyst", "read").credentialsRequired).toBe(false);
 
     for (const acceptance of fixture.analysisArticleAcceptances) {
       const candidate = applySemanticMutations(

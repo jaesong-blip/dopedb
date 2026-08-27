@@ -80,6 +80,7 @@ pub(super) fn pool_ref(db: &DbPool) -> PoolRef<'_> {
         DbPool::Postgres(pool) => PoolRef::Postgres(pool),
         DbPool::Mysql(pool) => PoolRef::Mysql(pool),
         DbPool::Sqlite(pool) => PoolRef::Sqlite(pool),
+        DbPool::Bigquery(connection) => PoolRef::Bigquery(connection),
     }
 }
 
@@ -123,6 +124,7 @@ impl QueryPlatformAdapter {
         ensure_operation_scope(&planned, &pin).map_err(DesktopSqlRunError::Application)?;
         let namespace = crate::executor::namespace::resolve_sql_namespace(
             &pin.profile,
+            Some(&payload.database),
             payload.namespace.clone(),
         )
         .map_err(DesktopSqlRunError::Application)?;

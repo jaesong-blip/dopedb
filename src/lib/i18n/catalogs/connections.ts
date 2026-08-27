@@ -120,6 +120,15 @@ export const connectionsCatalog = defineCatalog(
     "connections.editData": "Edit Data",
     "connections.databaseFile": "Database file path",
     "connections.databaseRequiredHint": "Required for MongoDB",
+    "connections.bigQueryProjectId": "GCP project ID",
+    "connections.bigQueryDataset": "Dataset",
+    "connections.bigQueryLocation": "Location (optional)",
+    "connections.bigQueryLocationPlaceholder": "Auto-detect, e.g. US or asia-northeast3",
+    "connections.bigQueryMaximumBytesBilled": "Maximum bytes billed",
+    "connections.bigQueryCliReady": "Google Cloud CLI is available",
+    "connections.bigQueryCliRequired": "Google Cloud CLI with bq is required",
+    "connections.bigQuerySecurityNote":
+      "DopeDB never reads or stores a Google token. It uses the active Google Cloud CLI account, server dry-runs every SELECT, and enforces this connection's byte-billing ceiling before execution.",
     "connections.discoveredSchemaCount": "{count} schemas",
     "connections.defaultSchema": "Default schema",
     "connections.defaultValue": "Default",
@@ -127,6 +136,8 @@ export const connectionsCatalog = defineCatalog(
     "connections.driver": "Driver",
     "connections.driverAutomatic": "Automatic (recommended)",
     "connections.driverBundled": "Bundled with this app",
+    "connections.driverSystem": "Provided by the system",
+    "connections.driverSystemRequired": "Install outside DopeDB",
     "connections.driverCatalogLoading": "Loading driver catalog...",
     "connections.driverCatalogScope":
       "This catalog only lists drivers the app can diagnose or install. Unsupported drivers are not presented as available.",
@@ -171,6 +182,18 @@ export const connectionsCatalog = defineCatalog(
       "MongoDB SRV discovery cannot use a single-host SSH tunnel.",
     "connections.problemMongoDatabaseRequired":
       "Enter the MongoDB database name.",
+    "connections.problemBigQueryProjectRequired":
+      "Enter the GCP project ID.",
+    "connections.problemBigQueryProjectInvalid":
+      "Use a 6-30 character lowercase GCP project ID.",
+    "connections.problemBigQueryDatasetRequired":
+      "Enter the BigQuery dataset ID.",
+    "connections.problemBigQueryDatasetInvalid":
+      "Use only letters, digits, or underscores in the dataset ID.",
+    "connections.problemBigQueryLocationInvalid":
+      "Use only letters, digits, or hyphens in the BigQuery location.",
+    "connections.problemBigQueryMaximumBytesBilledInvalid":
+      "Enter a maximum bytes billed value from 1 byte through 10 TiB.",
     "connections.problemNameRequired": "Enter a data source name.",
     "connections.problemPortInvalid":
       "Enter a port from 1 through 65535.",
@@ -463,6 +486,15 @@ export const connectionsCatalog = defineCatalog(
     "connections.editData": "데이터 편집",
     "connections.databaseFile": "데이터베이스 파일 경로",
     "connections.databaseRequiredHint": "MongoDB에는 필수입니다",
+    "connections.bigQueryProjectId": "GCP 프로젝트 ID",
+    "connections.bigQueryDataset": "데이터셋",
+    "connections.bigQueryLocation": "리전 (선택)",
+    "connections.bigQueryLocationPlaceholder": "자동 감지, 예: US 또는 asia-northeast3",
+    "connections.bigQueryMaximumBytesBilled": "최대 과금 바이트",
+    "connections.bigQueryCliReady": "Google Cloud CLI를 사용할 수 있음",
+    "connections.bigQueryCliRequired": "bq가 포함된 Google Cloud CLI 필요",
+    "connections.bigQuerySecurityNote":
+      "DopeDB는 Google 토큰을 읽거나 저장하지 않습니다. 활성 Google Cloud CLI 계정을 사용하고, 모든 SELECT를 서버에서 dry-run한 뒤 연결별 최대 과금 바이트를 넘지 않을 때만 실행합니다.",
     "connections.discoveredSchemaCount": "스키마 {count}개",
     "connections.defaultSchema": "기본 스키마",
     "connections.defaultValue": "기본값",
@@ -470,6 +502,8 @@ export const connectionsCatalog = defineCatalog(
     "connections.driver": "드라이버",
     "connections.driverAutomatic": "자동 선택 (권장)",
     "connections.driverBundled": "앱에 내장됨",
+    "connections.driverSystem": "시스템에서 제공",
+    "connections.driverSystemRequired": "DopeDB 외부에서 설치 필요",
     "connections.driverCatalogLoading": "드라이버 목록 불러오는 중...",
     "connections.driverCatalogScope":
       "앱이 진단하거나 설치할 수 있는 드라이버만 표시합니다. 지원하지 않는 드라이버를 사용 가능한 것처럼 표시하지 않습니다.",
@@ -514,6 +548,18 @@ export const connectionsCatalog = defineCatalog(
       "MongoDB SRV 검색은 단일 호스트 SSH 터널과 함께 사용할 수 없습니다.",
     "connections.problemMongoDatabaseRequired":
       "MongoDB 데이터베이스 이름을 입력하세요.",
+    "connections.problemBigQueryProjectRequired":
+      "GCP 프로젝트 ID를 입력하세요.",
+    "connections.problemBigQueryProjectInvalid":
+      "6~30자의 소문자 GCP 프로젝트 ID를 입력하세요.",
+    "connections.problemBigQueryDatasetRequired":
+      "BigQuery 데이터셋 ID를 입력하세요.",
+    "connections.problemBigQueryDatasetInvalid":
+      "데이터셋 ID에는 영문자, 숫자, 밑줄만 사용하세요.",
+    "connections.problemBigQueryLocationInvalid":
+      "BigQuery 리전에는 영문자, 숫자, 하이픈만 사용하세요.",
+    "connections.problemBigQueryMaximumBytesBilledInvalid":
+      "최대 과금 바이트는 1바이트부터 10TiB 사이로 입력하세요.",
     "connections.problemNameRequired": "데이터 소스 이름을 입력하세요.",
     "connections.problemPortInvalid":
       "1부터 65535 사이의 포트를 입력하세요.",

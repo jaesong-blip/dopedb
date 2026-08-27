@@ -235,6 +235,7 @@ export default function ConnectionNode(props: Props) {
         </span>
         {connection.workspaceAccess === "local" &&
         connection.engine !== "mongodb" &&
+        connection.engine !== "bigquery" &&
         availableSchemas.length > 0 ? (
           <span
             className="tw:shrink-0"
@@ -391,6 +392,7 @@ export default function ConnectionNode(props: Props) {
               ) : null}
               {connection.workspaceAccess !== "view" &&
               connection.workspaceAccess !== "local" &&
+              connection.engine !== "bigquery" &&
               connection.credentialMode === "memberLocal" ? (
                 <PopupMenuItem
                   onClick={() => {

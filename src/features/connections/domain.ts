@@ -15,7 +15,7 @@ export function connectionId(value: string): ConnectionId {
   return value as ConnectionId;
 }
 
-export type ConnectionEngine = "postgres" | "mysql" | "sqlite" | "mongodb";
+export type ConnectionEngine = "postgres" | "mysql" | "sqlite" | "mongodb" | "bigquery";
 export type ConnectionProvider =
   | "auto"
   | "generic"
@@ -113,12 +113,13 @@ export type ConnectionAccessIssue = "grant" | "credentials";
 export function connectionAccessIssue(
   connection: Pick<
     ConnectionProfile,
-    "credentialMode" | "secretRef" | "workspaceAccess"
+    "engine" | "credentialMode" | "secretRef" | "workspaceAccess"
   >,
 ): ConnectionAccessIssue | undefined {
   if (connection.workspaceAccess === "view") return "grant";
   if (
-    connection.workspaceAccess !== "local"
+    connection.engine !== "bigquery"
+    && connection.workspaceAccess !== "local"
     && connection.credentialMode === "memberLocal"
     && connection.secretRef === null
   ) {
@@ -127,7 +128,7 @@ export function connectionAccessIssue(
   return undefined;
 }
 
-type DriverInstallMode = "bundled" | "managed";
+type DriverInstallMode = "bundled" | "managed" | "system";
 type DriverInstallState = "installed" | "available" | "planned";
 
 export type DriverCapability =

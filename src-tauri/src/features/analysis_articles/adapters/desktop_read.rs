@@ -8,7 +8,9 @@ use dopedb_protocol::{
     AnalysisQueryState,
 };
 use serde_json::Value;
-use sqlparser::dialect::{Dialect, MySqlDialect, PostgreSqlDialect, SQLiteDialect};
+use sqlparser::dialect::{
+    BigQueryDialect, Dialect, MySqlDialect, PostgreSqlDialect, SQLiteDialect,
+};
 use sqlparser::tokenizer::{Token, Tokenizer};
 use uuid::Uuid;
 
@@ -342,6 +344,10 @@ fn parameter_placeholder(engine: Engine, ordinal: usize) -> AppResult<String> {
         Engine::Mongodb => Err(AppError::Blocked {
             reason: "Analysis Articles require a relational parameter binder".into(),
         }),
+        Engine::Bigquery => Err(AppError::Blocked {
+            reason: "parameterized Analysis Article queries are not available for BigQuery yet"
+                .into(),
+        }),
     }
 }
 
@@ -349,6 +355,7 @@ fn validate_driver_placeholders(sql: &str, engine: Engine, expected: usize) -> A
     let postgres = PostgreSqlDialect {};
     let mysql = MySqlDialect {};
     let sqlite = SQLiteDialect {};
+    let bigquery = BigQueryDialect {};
     let dialect: &dyn Dialect = match engine {
         Engine::Postgres => &postgres,
         Engine::Mysql => &mysql,
@@ -358,6 +365,7 @@ fn validate_driver_placeholders(sql: &str, engine: Engine, expected: usize) -> A
                 reason: "Analysis Articles require a relational parameter binder".into(),
             })
         }
+        Engine::Bigquery => &bigquery,
     };
     let tokens = Tokenizer::new(dialect, sql)
         .tokenize()
@@ -386,6 +394,7 @@ fn validate_driver_placeholders(sql: &str, engine: Engine, expected: usize) -> A
                 .all(|(index, value)| value == &format!("${}", index + 1)),
             Engine::Mysql | Engine::Sqlite => placeholders.iter().all(|value| value == "?"),
             Engine::Mongodb => false,
+            Engine::Bigquery => placeholders.is_empty(),
         };
     if !matches {
         return Err(AppError::Config(
@@ -479,6 +488,7 @@ fn pool_ref(pool: &DbPool) -> PoolRef<'_> {
         DbPool::Postgres(pool) => PoolRef::Postgres(pool),
         DbPool::Mysql(pool) => PoolRef::Mysql(pool),
         DbPool::Sqlite(pool) => PoolRef::Sqlite(pool),
+        DbPool::Bigquery(connection) => PoolRef::Bigquery(connection),
     }
 }
 

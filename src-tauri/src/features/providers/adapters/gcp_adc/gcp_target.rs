@@ -160,7 +160,7 @@ fn parse_connect_settings_value(
         port: match engine {
             Engine::Postgres => 5432,
             Engine::Mysql => 3306,
-            Engine::Sqlite | Engine::Mongodb => return Err(blocked()),
+            Engine::Sqlite | Engine::Mongodb | Engine::Bigquery => return Err(blocked()),
         },
         sslmode: match network_mode {
             GcpCloudSqlNetworkMode::PrivateServiceConnect => "verify-full".into(),

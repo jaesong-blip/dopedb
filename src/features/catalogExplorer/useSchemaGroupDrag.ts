@@ -95,6 +95,7 @@ export function useSchemaGroupDrag(
       !!dragged &&
       dragged.id !== target.id &&
       dragged.engine === target.engine &&
+      dragged.engine !== "bigquery" &&
       !isDocumentEngine(dragged.engine)
     );
   }
@@ -109,6 +110,7 @@ export function useSchemaGroupDrag(
       !!dragged &&
       !!engine &&
       dragged.engine === engine &&
+      dragged.engine !== "bigquery" &&
       !isDocumentEngine(dragged.engine) &&
       !group.connections.some((connection) => connection.id === dragged.id)
     );

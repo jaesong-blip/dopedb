@@ -1587,6 +1587,7 @@ fn engine_name(engine: Engine) -> &'static str {
         Engine::Mysql => "MySQL",
         Engine::Sqlite => "SQLite",
         Engine::Mongodb => "MongoDB",
+        Engine::Bigquery => "BigQuery",
     }
 }
 

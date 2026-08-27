@@ -12,7 +12,7 @@ use crate::error::{AppError, AppResult};
 use crate::features::catalog::DatabaseSummary;
 use crate::kernel::identity::ConnectionId;
 use crate::kernel::TerminalAuthority;
-use crate::model::{ConnectionProfile, WorkspaceConnectionAccess, WorkspaceCredentialMode};
+use crate::model::{ConnectionProfile, Engine, WorkspaceConnectionAccess, WorkspaceCredentialMode};
 
 use super::domain::{
     normalize_schema_group, resolve_cli_name, validate_schema_group_engine, AgentConnectionSummary,
@@ -141,6 +141,13 @@ where
                 AppError::Config("stored connection secret reference is invalid".into())
             })?;
         let password = password.filter(|password| !password.is_empty());
+        let uses_cli_authentication = profile.engine == Engine::Bigquery;
+        if uses_cli_authentication && password.is_some() {
+            return Err(AppError::Config(
+                "BigQuery credentials are owned by Google Cloud CLI and cannot be stored as a database password"
+                    .into(),
+            ));
+        }
         if password
             .as_ref()
             .is_some_and(|value| value.len() > MAX_CONNECTION_CREDENTIAL_BYTES)
@@ -150,7 +157,11 @@ where
             ));
         }
 
-        profile.secret_ref = existing_secret_id.map(|value| value.to_string());
+        profile.secret_ref = if uses_cli_authentication {
+            None
+        } else {
+            existing_secret_id.map(|value| value.to_string())
+        };
         let replacement_secret_id = password.as_ref().map(|_| Uuid::new_v4());
         if let Some(password) = password.as_deref() {
             let credential_id = replacement_secret_id.expect("password has a replacement id");
@@ -173,6 +184,13 @@ where
                         self.delete_secret_best_effort(
                             previous_id,
                             "replace_connection_credentials",
+                        );
+                    }
+                } else if uses_cli_authentication {
+                    if let Some(previous_id) = existing_secret_id {
+                        self.delete_secret_best_effort(
+                            previous_id,
+                            "remove_obsolete_connection_credentials",
                         );
                     }
                 }
