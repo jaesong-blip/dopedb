@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 
+import { Button } from "../../design-system/components/Button";
 import DataGrid from "../queryResults/DataGrid";
 import ResultToolbar from "../queryResults/ResultToolbar";
 import {
@@ -17,6 +18,11 @@ import {
 import { Icon } from "../../components/Icon";
 import { stamp } from "../../lib/export";
 import { useI18n } from "../../lib/i18n";
+import type { ConnectionProfile } from "../connections/domain";
+import {
+  writeBlockRecoveryKind,
+  type WriteBlockRecoveryKind,
+} from "../safetySettings/policy";
 import StreamOutcome from "./StreamOutcome";
 import type {
   QueryServiceError,
@@ -27,9 +33,13 @@ const PAGE_STEP = 200;
 
 export default function QueryServiceResult({
   result,
+  connection,
+  onOpenSafety,
   scriptStatementIndex,
 }: {
   result: QueryServiceResultModel;
+  connection: ConnectionProfile | null;
+  onOpenSafety: (connectionId: ConnectionProfile["id"]) => void;
   scriptStatementIndex?: number;
 }) {
   const { t } = useI18n();
@@ -79,7 +89,14 @@ export default function QueryServiceResult({
       </WorkbenchEmptyState>
     );
   }
-  return <SqlErrorCard error={result.error} prompt={result.prompt} />;
+  return (
+    <SqlErrorCard
+      error={result.error}
+      prompt={result.prompt}
+      connection={connection}
+      onOpenSafety={onOpenSafety}
+    />
+  );
 }
 
 function EmptyResultMessage() {
@@ -284,13 +301,20 @@ function errorPosition(sql: string, position: number) {
 function SqlErrorCard({
   error,
   prompt,
+  connection,
+  onOpenSafety,
 }: {
   error: QueryServiceError;
   prompt: string;
+  connection: ConnectionProfile | null;
+  onOpenSafety: (connectionId: ConnectionProfile["id"]) => void;
 }) {
   const { t } = useI18n();
   const position =
     error.position !== null ? errorPosition(error.sql, error.position) : null;
+  const writeRecovery = connection
+    ? writeBlockRecoveryKind(connection, error)
+    : null;
   return (
     <div
       data-workbench-scroll-owner="document"
@@ -315,6 +339,13 @@ function SqlErrorCard({
             {error.message}
           </pre>
         </dd>
+        {writeRecovery && connection ? (
+          <WriteBlockRecoveryRow
+            kind={writeRecovery}
+            connection={connection}
+            onOpenSafety={onOpenSafety}
+          />
+        ) : null}
         {position ? (
           <>
             <dt>{t("sql.errorPosition")}</dt>
@@ -340,5 +371,91 @@ function SqlErrorCard({
         </pre>
       </details>
     </div>
+  );
+}
+
+function WriteBlockRecoveryRow({
+  kind,
+  connection,
+  onOpenSafety,
+}: {
+  kind: WriteBlockRecoveryKind;
+  connection: ConnectionProfile;
+  onOpenSafety: (connectionId: ConnectionProfile["id"]) => void;
+}) {
+  const { t } = useI18n();
+  let permission: string;
+  let guidance: string;
+  switch (kind) {
+    case "deviceSafety":
+      permission = t("sql.writeBlock.permissionDeviceSafety");
+      guidance = t("sql.writeBlock.guidanceDeviceSafety", {
+        connection: connection.name,
+      });
+      break;
+    case "localSafety":
+      permission = t("sql.writeBlock.permissionLocalSafety");
+      guidance = t("sql.writeBlock.guidanceLocalSafety", {
+        connection: connection.name,
+      });
+      break;
+    case "managedCredential":
+      permission = t("sql.writeBlock.permissionManagedCredential");
+      guidance = t("sql.writeBlock.guidanceManagedCredential", {
+        connection: connection.name,
+      });
+      break;
+    case "workspaceGrant":
+      permission = t("sql.writeBlock.permissionWorkspaceGrant");
+      guidance = t("sql.writeBlock.guidanceWorkspaceGrant", {
+        connection: connection.name,
+      });
+      break;
+    case "workspacePolicy":
+      permission = t("sql.writeBlock.permissionWorkspacePolicy");
+      guidance = t("sql.writeBlock.guidanceWorkspacePolicy", {
+        connection: connection.name,
+      });
+      break;
+    case "workspacePolicyAndDevice":
+      permission = t("sql.writeBlock.permissionWorkspacePolicyAndDevice");
+      guidance = t("sql.writeBlock.guidanceWorkspacePolicyAndDevice", {
+        connection: connection.name,
+      });
+      break;
+  }
+  const canModifyHere =
+    kind === "deviceSafety" ||
+    kind === "localSafety" ||
+    kind === "workspacePolicyAndDevice";
+  return (
+    <>
+      <dt>{t("sql.writeBlock.requiredPermission")}</dt>
+      <dd>
+        <div className="tw:flex tw:min-w-0 tw:items-start tw:justify-between tw:gap-3 tw:max-[760px]:flex-col">
+          <div className="tw:min-w-0 tw:flex-1">
+            <strong className="tw:block tw:text-ui tw:text-foreground">
+              {permission}
+            </strong>
+            <p className="tw:mt-1 tw:mb-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
+              {guidance}
+            </p>
+          </div>
+          <div className="tw:shrink-0">
+            <Button
+              size="compact"
+              onClick={() => onOpenSafety(connection.id)}
+            >
+              {t(
+                canModifyHere
+                  ? "sql.writeBlock.openSafety"
+                  : "sql.writeBlock.reviewSafety",
+                { connection: connection.name },
+              )}
+            </Button>
+          </div>
+        </div>
+      </dd>
+    </>
   );
 }

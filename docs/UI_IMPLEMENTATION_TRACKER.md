@@ -24,11 +24,11 @@ runtime과 성능 수치로 수행한다.
 | Provider account access | `complete` | `workspace-cloud/features/providerAccess`, provider application modules | 실제 계정 OAuth/CLI 실패·recovery와 allowlisted Vault AppRole의 role/lease/revoke packaged 검수를 유지 |
 | SQL/MongoDB query workflow | `complete` | `features/queries`, `features/documentQueries`, `screens/Sql`, `screens/Documents`, Rust query application | 수동 Run exact 승인, Agent 제안 분리, MongoDB의 지속되는 조회 surface와 collection 없는 정확한 빈 상태, 10 KiB/100 KiB/1 MiB 입력과 cancel/transaction packaged 검수를 유지 |
 | Result/Data grid | `complete` | `features/queryResults`, Rust result artifact | 30열·50,000행 selection/filter/export와 메모리 경계 검수 |
-| Services/Jobs | `complete` | `features/queryServices`, `features/jobs` | background cancel과 복원된 result handle packaged 검수 |
+| Services/Jobs | `complete` | `features/queryServices`, `features/jobs` | background cancel과 복원된 result handle, 쓰기 권한 차단 시 exact DB의 필요한 권한 계층·`Settings → Safety` 복구 진입을 packaged 검수 |
 | Agent tool window | `complete` | `features/agents`, ACP Rust runtime | `프로젝트 전체`(source + PROD DB 전체)와 `개별 DB` 두 context만 구분하고 trigger에 현재 종류·대상 이름을 계속 표시하며 Project Environment 이름은 노출하지 않는다. 공식 adapter 설치·로그아웃·permission·resume, 첫 prompt 단일 제출과 동일 권한 focus-refresh 연속성, 실제 권한·process 중단 사유와 복구의 OS별 검수를 유지 |
 | Knowledge graph | `complete` | Rust `features/knowledge`, frontend Knowledge projection | packaged GitHub 설치·기존 설치 업데이트 복귀, Local source revision, publish, mapping과 exact grant 검수 |
 | Analysis Article | `partial` | `features/analysisArticles`, cloud analysis application | Explorer 소유 문자·상태 필터와 단일 중앙 HTML document, exact 단일 query의 로컬 수동 재조회, immutable public HTML 발행과 raw run timestamp의 RFC3339 응답을 실제 환경에서 검수 |
-| Settings | `complete` | `features/settings`, `features/safetySettings` | 선택 연결의 단일 쓰기 제어, 관리자용 workspace 상한 + 기기 gate의 fail-closed 저장, compact viewport 검수 |
+| Settings | `complete` | `features/settings`, `features/safetySettings` | Desktop `Settings → Safety`의 단일 쓰기 제어, 관리자용 workspace 상한 + 기기 gate의 fail-closed 저장, 미적용 변경 표시를 유지한다. 웹 DB 접근 화면은 같은 상한을 상태로만 표시하며 변경 control을 중복하지 않는다. compact viewport 검수 |
 | Diagnostics/Recovery | `complete` | design-system diagnostics, feature recovery boundaries | failure injection에서 오류 owner와 retry가 유지되는지 확인 |
 
 ## 공용 UI 계약

@@ -15,6 +15,31 @@ export const sqlCatalog = defineCatalog(
     "sql.errorPosition": "Position",
     "sql.errorPositionAt": "Line {line}, column {column}",
     "sql.errorTitle": "Query error",
+    "sql.writeBlock.requiredPermission": "Required permission",
+    "sql.writeBlock.permissionDeviceSafety": "Device write gate",
+    "sql.writeBlock.guidanceDeviceSafety":
+      "In Settings > Safety for {connection}, turn on Allow writes and save.",
+    "sql.writeBlock.permissionLocalSafety":
+      "Connection write policy + device write gate",
+    "sql.writeBlock.guidanceLocalSafety":
+      "In Settings > Safety for {connection}, turn on Allow writes and save. This is the only Desktop control for both local layers.",
+    "sql.writeBlock.permissionManagedCredential":
+      "Managed write credential",
+    "sql.writeBlock.guidanceManagedCredential":
+      "{connection} uses a member-local credential, which is read-only. A workspace administrator must configure managed access and then enable its write policy in Settings > Safety.",
+    "sql.writeBlock.permissionWorkspaceGrant":
+      "Workspace DB read/write or manage access",
+    "sql.writeBlock.guidanceWorkspaceGrant":
+      "Ask a connection manager to grant read/write or manage access to {connection}. That manager changes the limit in Settings > Safety; this device can only narrow it.",
+    "sql.writeBlock.permissionWorkspacePolicy": "Workspace write policy",
+    "sql.writeBlock.guidanceWorkspacePolicy":
+      "The workspace write policy for {connection} is off. A connection manager must enable it in Settings > Safety.",
+    "sql.writeBlock.permissionWorkspacePolicyAndDevice":
+      "Workspace write policy + device write gate",
+    "sql.writeBlock.guidanceWorkspacePolicyAndDevice":
+      "You have manage access. Open Settings > Safety for {connection}, turn on Allow writes, and save; the same control updates both layers.",
+    "sql.writeBlock.openSafety": "Open {connection} Safety",
+    "sql.writeBlock.reviewSafety": "Review {connection} Safety",
     "sql.explain": "Explain",
     "sql.explainReadOnly": "Explain is for read statements - Run shows a write's impact preview instead.",
     "sql.explainSingle": "Explain works on a single statement",
@@ -131,6 +156,30 @@ export const sqlCatalog = defineCatalog(
     "sql.errorPosition": "위치",
     "sql.errorPositionAt": "{line}줄 {column}열",
     "sql.errorTitle": "쿼리 오류",
+    "sql.writeBlock.requiredPermission": "필요한 권한",
+    "sql.writeBlock.permissionDeviceSafety": "이 기기 쓰기 게이트",
+    "sql.writeBlock.guidanceDeviceSafety":
+      "설정 → 안전 → {connection}에서 ‘쓰기 허용’을 켜고 저장하세요.",
+    "sql.writeBlock.permissionLocalSafety":
+      "연결 쓰기 정책 + 이 기기 쓰기 게이트",
+    "sql.writeBlock.guidanceLocalSafety":
+      "설정 → 안전 → {connection}에서 ‘쓰기 허용’을 켜고 저장하세요. 로컬 연결의 두 경계를 바꾸는 유일한 Desktop 화면입니다.",
+    "sql.writeBlock.permissionManagedCredential": "관리형 쓰기 자격 증명",
+    "sql.writeBlock.guidanceManagedCredential":
+      "{connection}은 읽기 전용인 구성원 로컬 자격 증명을 사용합니다. 워크스페이스 관리자가 관리형 접근을 구성한 뒤 설정 → 안전에서 쓰기 정책을 켜야 합니다.",
+    "sql.writeBlock.permissionWorkspaceGrant":
+      "워크스페이스 DB 읽기/쓰기 또는 관리 권한",
+    "sql.writeBlock.guidanceWorkspaceGrant":
+      "연결 관리자에게 {connection}의 읽기/쓰기 또는 관리 권한을 요청하세요. 관리자는 설정 → 안전에서 상한을 바꾸며, 이 기기에서는 권한을 좁힐 수만 있습니다.",
+    "sql.writeBlock.permissionWorkspacePolicy": "워크스페이스 쓰기 정책",
+    "sql.writeBlock.guidanceWorkspacePolicy":
+      "{connection}의 워크스페이스 쓰기 정책이 꺼져 있습니다. 연결 관리자가 설정 → 안전에서 활성화해야 합니다.",
+    "sql.writeBlock.permissionWorkspacePolicyAndDevice":
+      "워크스페이스 쓰기 정책 + 이 기기 쓰기 게이트",
+    "sql.writeBlock.guidanceWorkspacePolicyAndDevice":
+      "관리 권한이 있습니다. 설정 → 안전 → {connection}에서 ‘쓰기 허용’을 켜고 저장하면 같은 제어가 두 경계를 함께 갱신합니다.",
+    "sql.writeBlock.openSafety": "{connection} 안전 설정 열기",
+    "sql.writeBlock.reviewSafety": "{connection} 안전 설정에서 확인",
     "sql.explain": "Explain",
     "sql.explainReadOnly": "Explain은 읽기 문장용입니다. 쓰기 영향 미리보기는 Run에서 확인하세요.",
     "sql.explainSingle": "Explain은 단일 문장에서만 동작합니다",

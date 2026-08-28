@@ -48,6 +48,16 @@ const NUMBERS: { key: keyof SafetySettings; label: I18nKey; hint: I18nKey }[] = 
   { key: "execPreviewRowLimit", label: "safety.execPreviewRowLimit", hint: "safety.execPreviewRowLimitHint" },
 ];
 
+function sameSafetySettings(left: SafetySettings, right: SafetySettings) {
+  return left.requireApproval === right.requireApproval
+    && left.allowWrites === right.allowWrites
+    && left.wrapWritesInTx === right.wrapWritesInTx
+    && left.explainPreview === right.explainPreview
+    && left.autoRunReads === right.autoRunReads
+    && left.maxRows === right.maxRows
+    && left.execPreviewRowLimit === right.execPreviewRowLimit;
+}
+
 export default function Safety({
   connection,
   onConnectionUpdated,
@@ -117,12 +127,25 @@ export default function Safety({
     );
   }
 
+  const persistedSettings = safetyQuery.data
+    ? effectiveSafetySettings(
+        {
+          allowWrites: connection.allowWrites,
+          credentialMode: connection.credentialMode,
+          workspaceAccess: connection.workspaceAccess,
+        },
+        safetyQuery.data,
+      )
+    : null;
+  const hasUnsavedChanges = persistedSettings !== null
+    && !sameSafetySettings(settings, persistedSettings);
+
   function set<K extends keyof SafetySettings>(key: K, value: SafetySettings[K]) {
     setSettings((s) => (s ? { ...s, [key]: value } : s));
   }
 
   async function save() {
-    if (!settings) return;
+    if (!settings || !hasUnsavedChanges) return;
     const requested = requestedSafetySettings(connection, settings);
     const localPolicyChange =
       connection.credentialMode === "local" &&
@@ -304,13 +327,23 @@ export default function Safety({
         </SettingsGroup>
       </div>
 
-      <div className="tw:flex tw:justify-start tw:max-[640px]:[&>button]:w-full">
+      <div className="tw:flex tw:items-center tw:gap-3 tw:max-[640px]:flex-col tw:max-[640px]:items-stretch tw:max-[640px]:[&>button]:w-full">
         <Button
-          disabled={busy}
+          variant="primary"
+          disabled={busy || !hasUnsavedChanges}
           onClick={save}
         >
-          {busy ? t("common.saving") : t("common.save")}
+          {busy ? t("safety.applying") : t("safety.apply")}
         </Button>
+        <span
+          aria-live="polite"
+          className="tw:text-xs tw:leading-body tw:text-muted-foreground tw:data-[pending=true]:font-semibold tw:data-[pending=true]:text-warning"
+          data-pending={hasUnsavedChanges}
+        >
+          {hasUnsavedChanges
+            ? t("safety.unsavedChanges")
+            : t("safety.noUnsavedChanges")}
+        </span>
       </div>
 
       {connection.engine !== "bigquery" ? (

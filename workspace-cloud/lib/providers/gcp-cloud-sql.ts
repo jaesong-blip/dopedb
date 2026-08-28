@@ -28,6 +28,8 @@ const SQL_ADMIN_ORIGIN = "https://sqladmin.googleapis.com/sql/v1beta4";
 const CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
 const SQL_LOGIN_SCOPE = "https://www.googleapis.com/auth/sqlservice.login";
 const REQUEST_TIMEOUT_MS = 15_000;
+const MAX_TRANSIENT_REQUEST_ATTEMPTS = 3;
+const TRANSIENT_RETRY_BASE_MS = 500;
 const MAX_TOKEN_RESPONSE_BYTES = 64 * 1_024;
 const MAX_SQL_ADMIN_RESPONSE_BYTES = 512 * 1_024;
 type JsonObject = Record<string, unknown>;
@@ -116,47 +118,91 @@ export function vercelOidcToken(request: Request): string | null {
   return null;
 }
 
+function transientGcpStatus(status: number) {
+  return status === 408
+    || status === 429
+    || status === 500
+    || status === 502
+    || status === 503
+    || status === 504;
+}
+
+// Every request through jsonRequest is either short-lived token issuance or a
+// read-only Cloud SQL inspection. Retrying these calls cannot widen IAM/DB
+// authority; the complete provider-authority sequence still has a 45s bound.
+async function waitForTransientRetry(attempt: number, deadline: number) {
+  const exponential = TRANSIENT_RETRY_BASE_MS * (2 ** attempt);
+  const jitter = Math.floor(Math.random() * TRANSIENT_RETRY_BASE_MS);
+  const delay = exponential + jitter;
+  if (Date.now() + delay >= deadline) return false;
+  await new Promise((resolve) => setTimeout(resolve, delay));
+  return true;
+}
+
 async function jsonRequest(
   provider: string,
   stage: GcpRequestStage,
   url: string,
   init: RequestInit,
 ) {
-  const response = await fetch(url, {
-    ...init,
-    cache: "no-store",
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  }).catch(() => {
-    throw new ProviderRequestError(provider, "GCP API is unavailable", 502);
-  });
   const responseLimit = stage.startsWith("cloudSqlAdmin.")
     ? MAX_SQL_ADMIN_RESPONSE_BYTES
     : MAX_TOKEN_RESPONSE_BYTES;
-  const body = await boundedJsonResponse(response, responseLimit).catch(() => null);
-  if (!response.ok) {
-    const status = normalizeGcpUpstreamStatus(response.status);
-    const googleError = body && typeof body === "object" && !Array.isArray(body)
-      ? (body as JsonObject).error
+  const deadline = Date.now() + REQUEST_TIMEOUT_MS;
+  let response: Response | null = null;
+  let body: unknown = null;
+  for (let attempt = 0; attempt < MAX_TRANSIENT_REQUEST_ATTEMPTS; attempt += 1) {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) break;
+    response = await fetch(url, {
+      ...init,
+      cache: "no-store",
+      signal: AbortSignal.timeout(Math.max(1, remainingMs)),
+    }).catch(() => null);
+    body = response
+      ? await boundedJsonResponse(response, responseLimit).catch(() => null)
       : null;
-    const googleStatus = googleError && typeof googleError === "object" && !Array.isArray(googleError)
-      && typeof (googleError as JsonObject).status === "string"
-      ? (googleError as JsonObject).status
-      : null;
-    const googleReason = googleErrorReason(googleError);
-    logGcpManagedAccessUpstreamRejection({
-      stage,
-      upstreamStatus: response.status,
-      googleStatus,
-      googleReason,
-    });
-    const message = stage === "federation"
+    if (response?.ok) return object(body);
+    const retryable = response === null || transientGcpStatus(response.status);
+    if (
+      !retryable
+      || attempt + 1 >= MAX_TRANSIENT_REQUEST_ATTEMPTS
+      || !await waitForTransientRetry(attempt, deadline)
+    ) break;
+  }
+  if (!response) {
+    throw new ProviderRequestError(
+      provider,
+      "Google Cloud is temporarily unavailable. Retry the query.",
+      503,
+    );
+  }
+  const transient = transientGcpStatus(response.status);
+  const status = transient
+    ? 503
+    : normalizeGcpUpstreamStatus(response.status);
+  const googleError = body && typeof body === "object" && !Array.isArray(body)
+    ? (body as JsonObject).error
+    : null;
+  const googleStatus = googleError && typeof googleError === "object" && !Array.isArray(googleError)
+    && typeof (googleError as JsonObject).status === "string"
+    ? (googleError as JsonObject).status
+    : null;
+  const googleReason = googleErrorReason(googleError);
+  logGcpManagedAccessUpstreamRejection({
+    stage,
+    upstreamStatus: response.status,
+    googleStatus,
+    googleReason,
+  });
+  const message = transient
+    ? "Google Cloud temporarily could not issue managed database access. Retry the query."
+    : stage === "federation"
       ? "GCP Workload Identity rejected the DopeDB deployment"
       : stage === "serviceAccount"
         ? "GCP service-account token issuance was denied"
         : "Cloud SQL Admin denied the managed access check";
-    throw new ProviderRequestError(provider, message, status);
-  }
-  return object(body);
+  throw new ProviderRequestError(provider, message, status);
 }
 
 async function federatedToken(
@@ -178,14 +224,13 @@ async function federatedToken(
   return requiredString(body.access_token, "federated access token", 32 * 1_024);
 }
 
-async function serviceAccountToken(input: {
+async function serviceAccountTokenFromFederation(input: {
   credential: GcpCloudSqlCredential;
-  oidcToken: string;
+  federatedAccessToken: string;
   serviceAccountEmail: string;
   scope: string;
 }): Promise<GcpAccessToken> {
   requireCurrentSecurityConfiguration(input.credential);
-  const exchanged = await federatedToken(input.credential, input.oidcToken);
   const body = await jsonRequest(
     "gcpCloudSql",
     "serviceAccount",
@@ -195,7 +240,7 @@ async function serviceAccountToken(input: {
     {
       method: "POST",
       headers: {
-        authorization: `Bearer ${exchanged}`,
+        authorization: `Bearer ${input.federatedAccessToken}`,
         "content-type": "application/json",
       },
       body: JSON.stringify({
@@ -223,6 +268,24 @@ async function serviceAccountToken(input: {
     );
   }
   return { accessToken, expiresAt: new Date(expiresAt).toISOString() };
+}
+
+async function serviceAccountToken(input: {
+  credential: GcpCloudSqlCredential;
+  oidcToken: string;
+  serviceAccountEmail: string;
+  scope: string;
+}): Promise<GcpAccessToken> {
+  const federatedAccessToken = await federatedToken(
+    input.credential,
+    input.oidcToken,
+  );
+  return serviceAccountTokenFromFederation({
+    credential: input.credential,
+    federatedAccessToken,
+    serviceAccountEmail: input.serviceAccountEmail,
+    scope: input.scope,
+  });
 }
 
 async function controlPlaneToken(
@@ -289,28 +352,35 @@ export async function validateGcpCloudSqlCredential(
   credential: GcpCloudSqlCredential,
   oidcToken: string,
 ) {
-  const token = await controlPlaneToken(credential, oidcToken);
-  const [details] = await Promise.all([
-    instanceDetailsWithToken(
+  const federatedAccessToken = await federatedToken(credential, oidcToken);
+  const controlPromise = serviceAccountTokenFromFederation({
+    credential,
+    federatedAccessToken,
+    serviceAccountEmail: credential.readServiceAccountEmail,
+    scope: CLOUD_PLATFORM_SCOPE,
+  });
+  const [control] = await Promise.all([
+    controlPromise,
+    serviceAccountTokenFromFederation({
       credential,
-      token.accessToken,
-      credential.instanceId,
-    ),
-    serviceAccountToken({
-      credential,
-      oidcToken,
+      federatedAccessToken,
       serviceAccountEmail: credential.readServiceAccountEmail,
       scope: SQL_LOGIN_SCOPE,
     }),
     ...(credential.writeServiceAccountEmail ? [
-      serviceAccountToken({
+      serviceAccountTokenFromFederation({
         credential,
-        oidcToken,
+        federatedAccessToken,
         serviceAccountEmail: credential.writeServiceAccountEmail,
         scope: SQL_LOGIN_SCOPE,
       }),
     ] : []),
   ]);
+  const details = await instanceDetailsWithToken(
+    credential,
+    control.accessToken,
+    credential.instanceId,
+  );
   if (
     details.name !== credential.instanceId
     || !gcpCloudSqlEngine(details.databaseVersion)
@@ -571,20 +641,34 @@ export async function issueGcpCloudSqlLease(input: {
       409,
     );
   }
+  const federatedAccessToken = await federatedToken(
+    input.credential,
+    input.oidcToken,
+  );
+  const connectorTokenPromise = serviceAccountTokenFromFederation({
+    credential: input.credential,
+    federatedAccessToken,
+    serviceAccountEmail,
+    scope: CLOUD_PLATFORM_SCOPE,
+  });
+  const controlTokenPromise = serviceAccountEmail
+    === input.credential.readServiceAccountEmail
+    ? connectorTokenPromise
+    : serviceAccountTokenFromFederation({
+        credential: input.credential,
+        federatedAccessToken,
+        serviceAccountEmail: input.credential.readServiceAccountEmail,
+        scope: CLOUD_PLATFORM_SCOPE,
+      });
   const [loginToken, connectorToken, control] = await Promise.all([
-    serviceAccountToken({
+    serviceAccountTokenFromFederation({
       credential: input.credential,
-      oidcToken: input.oidcToken,
+      federatedAccessToken,
       serviceAccountEmail,
       scope: SQL_LOGIN_SCOPE,
     }),
-    serviceAccountToken({
-      credential: input.credential,
-      oidcToken: input.oidcToken,
-      serviceAccountEmail,
-      scope: CLOUD_PLATFORM_SCOPE,
-    }),
-    controlPlaneToken(input.credential, input.oidcToken),
+    connectorTokenPromise,
+    controlTokenPromise,
   ]);
   const [settings, details, databases] = await Promise.all([
     connectSettingsWithToken(

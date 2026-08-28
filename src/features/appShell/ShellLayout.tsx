@@ -111,7 +111,7 @@ type ShellLayoutCommands = {
     deleteConnection: (id: string) => Promise<void>;
     updateConnection: (connection: ConnectionProfile) => void;
     settings: () => void;
-    safetySettings: () => void;
+    safetySettings: (connectionId?: ConnectionProfile["id"]) => void;
     openUpdateSettings: () => void;
   };
   explorer: {
@@ -449,6 +449,7 @@ function ShellLayoutContent({ model, commands }: Props) {
           documents={workbench.documents}
           activeDocumentId={workbench.activeDocumentId}
           onActivateDocument={commands.workbench.activateDocument}
+          onOpenSafety={commands.workspace.safetySettings}
           onClose={commands.services.close}
           onStartResize={commands.services.startResize}
           height={services.height}

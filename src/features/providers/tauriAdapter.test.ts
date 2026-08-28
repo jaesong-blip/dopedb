@@ -30,6 +30,7 @@ import sharedDatabaseControllerSource from "../../../workspace-cloud/features/pr
 import neonProviderBootstrapControllerSource from "../../../workspace-cloud/features/providerAccess/useNeonProviderBootstrap.ts?raw";
 import providerAccessDomainSource from "../../../workspace-cloud/features/providerAccess/domain.ts?raw";
 import sharedDatabasePanelSource from "../../../workspace-cloud/app/settings/SharedDatabasePanel.tsx?raw";
+import connectionAccessPanelSource from "../../../workspace-cloud/app/settings/ConnectionAccessPanel.tsx?raw";
 import legacyProviderBackupSource from "../../../workspace-cloud/fixtures/provider-legacy-connection-backup-v1.json?raw";
 import providerCatalogSource from "../../../workspace-cloud/lib/provider-catalog.ts?raw";
 import workspaceMessagesSource from "../../../workspace-cloud/lib/workspace-messages.ts?raw";
@@ -79,6 +80,7 @@ import workspaceRevocationGatesSource from "../../../workspace-cloud/lib/revocat
 import workspaceSchemaSource from "../../../workspace-cloud/lib/schema.ts?raw";
 import workspaceVersioningStoreSource from "../../../workspace-cloud/lib/workspace-versioning-store.ts?raw";
 import workspaceSettingsNavigationSource from "../../../workspace-cloud/app/settings/SettingsNavigation.tsx?raw";
+import safetySettingsScreenSource from "../../../src/screens/Settings/Safety/index.tsx?raw";
 import desktopSharedConnectionSource from "../../../src-tauri/src/features/workspaces/adapters/control_plane/connections.rs?raw";
 import desktopControlPlaneSource from "../../../src-tauri/src/features/workspaces/adapters/control_plane.rs?raw";
 import hostedControlPlaneSource from "../../../src-tauri/src/hosted_control_plane.rs?raw";
@@ -926,6 +928,17 @@ describe("provider credential Tauri adapter", () => {
     expect(gcpBootstrapSource).toContain("roles/serviceusage.serviceUsageConsumer");
     expect(gcpBootstrapSource).toContain("Temporary Cloud SQL privilege bootstrap cleanup failed");
     expect(gcpCloudSqlSource).toContain("logGcpManagedAccessUpstreamRejection");
+    expect(gcpCloudSqlSource).toContain("MAX_TRANSIENT_REQUEST_ATTEMPTS = 3");
+    expect(gcpCloudSqlSource).toContain("waitForTransientRetry(attempt, deadline)");
+    expect(gcpCloudSqlSource).toContain(
+      "Google Cloud temporarily could not issue managed database access",
+    );
+    const gcpLeaseIssuanceSource = gcpCloudSqlSource.slice(
+      gcpCloudSqlSource.indexOf("export async function issueGcpCloudSqlLease"),
+    );
+    expect(gcpLeaseIssuanceSource.match(/federatedToken\(/g)).toHaveLength(1);
+    expect(gcpLeaseIssuanceSource).toContain("serviceAccountTokenFromFederation");
+    expect(gcpLeaseIssuanceSource).not.toContain("controlPlaneToken(");
     expect(workspaceServerLogSource).toContain(
       'emitServerFailure("gcp_managed_access_upstream_rejection"',
     );
@@ -1306,6 +1319,13 @@ describe("provider credential Tauri adapter", () => {
     expect(sharedDatabaseControllerSource).toContain('method: "DELETE"');
     expect(sharedDatabaseControllerSource).toContain('"x-dopedb-expected-revision"');
     expect(sharedDatabasePanelSource).toContain("copy.remove");
+    expect(connectionAccessPanelSource).toContain("copy.writePolicyStatus");
+    expect(connectionAccessPanelSource).toContain("copy.writePolicyDesktop");
+    expect(connectionAccessPanelSource).not.toContain("changeWritePolicy");
+    expect(connectionAccessPanelSource).not.toContain('type="checkbox"');
+    expect(safetySettingsScreenSource).toContain("hasUnsavedChanges");
+    expect(safetySettingsScreenSource).toContain('variant="primary"');
+    expect(safetySettingsScreenSource).toContain('t("safety.unsavedChanges")');
     expect(workspaceMessagesSource).toContain("Remove shared database");
     expect(workspaceMessagesSource).toContain("공유 DB 제거");
     expect(neonBranchManagerSource).not.toMatch(/>Switch<|>Restore<|>Delete</);

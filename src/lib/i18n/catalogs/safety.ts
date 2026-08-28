@@ -6,6 +6,8 @@ export const safetyCatalog = defineCatalog(
     "safety.allowWrites": "Allow writes",
     "safety.allowWritesHint":
       "The single Desktop gate for write execution on this connection. Workspace authority can only narrow it.",
+    "safety.apply": "Apply safety settings",
+    "safety.applying": "Applying...",
     "safety.autoRunReads": "Auto-run reads",
     "safety.autoRunReadsHint":
       "Run read-only SELECTs without a manual approve.",
@@ -28,6 +30,7 @@ export const safetyCatalog = defineCatalog(
     "safety.modeSharedReadOnly": "Workspace read-only",
     "safety.modeWorkspaceWrites": "Workspace writes allowed",
     "safety.modeWrites": "Writes allowed",
+    "safety.noUnsavedChanges": "Current settings are applied.",
     "safety.monitoringAdminHint":
       "This account may need a DBA to grant the role. You can still try or copy the fixed SQL.",
     "safety.monitoringApproveApply": "Approve exact change",
@@ -69,11 +72,15 @@ export const safetyCatalog = defineCatalog(
     "safety.workspacePolicyRollbackFailed":
       "The device stayed read-only, but the workspace write policy could not be rolled back. Retry with this switch off. {error}",
     "safety.title": "Safety settings",
+    "safety.unsavedChanges":
+      "Not applied yet. Apply to update this device and, for a managed connection, the workspace ceiling together.",
   },
   {
     "safety.allowWrites": "쓰기 허용",
     "safety.allowWritesHint":
       "이 연결의 쓰기 실행을 제어하는 유일한 Desktop 게이트입니다. 워크스페이스 권한보다 넓힐 수는 없습니다.",
+    "safety.apply": "안전 설정 적용",
+    "safety.applying": "적용 중...",
     "safety.autoRunReads": "읽기 자동 실행",
     "safety.autoRunReadsHint": "읽기 전용 SELECT를 수동 승인 없이 실행합니다.",
     "safety.body":
@@ -95,6 +102,7 @@ export const safetyCatalog = defineCatalog(
     "safety.modeSharedReadOnly": "워크스페이스 읽기 전용",
     "safety.modeWorkspaceWrites": "워크스페이스 쓰기 허용",
     "safety.modeWrites": "쓰기 허용",
+    "safety.noUnsavedChanges": "현재 설정이 적용되어 있습니다.",
     "safety.monitoringAdminHint":
       "이 계정은 역할 부여에 DBA 권한이 필요할 수 있습니다. 버튼을 시도하거나 고정 SQL을 복사할 수 있습니다.",
     "safety.monitoringApproveApply": "정확한 변경 승인",
@@ -136,5 +144,7 @@ export const safetyCatalog = defineCatalog(
     "safety.workspacePolicyRollbackFailed":
       "이 기기는 읽기 전용으로 유지됐지만 워크스페이스 쓰기 정책을 되돌리지 못했습니다. 스위치를 끈 상태로 다시 저장하세요. {error}",
     "safety.title": "안전 설정",
+    "safety.unsavedChanges":
+      "아직 적용되지 않았습니다. 적용을 누르면 이 기기와 관리형 연결의 워크스페이스 상한을 함께 갱신합니다.",
   },
 );

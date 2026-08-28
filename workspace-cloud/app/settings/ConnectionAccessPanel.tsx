@@ -15,19 +15,8 @@ type SharedConnection = {
   id: string;
   name: string;
   engine: string;
-  provider: string;
-  driverId: string | null;
-  host: string;
-  port: number;
-  database: string;
-  sslmode: string;
-  readonlyDefault: true;
   allowWrites: boolean;
   writeAvailable: boolean;
-  env: string | null;
-  schemaGroup: string | null;
-  revision: number;
-  accessMode: "view" | "read" | "write" | "manage";
   credentialMode: "managed" | "member_local";
 };
 type MemberGrant = {
@@ -290,52 +279,6 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
   }
 
   const selected = connections.find((item) => item.id === selectedId) ?? null;
-  const canManageWritePolicy = selected?.accessMode === "manage";
-
-  async function changeWritePolicy(allowWrites: boolean) {
-    if (
-      !selected
-      || !canManageWritePolicy
-      || mutatingId
-      || selected.credentialMode !== "managed"
-    ) return;
-    setMutatingId("write-policy");
-    setError("");
-    try {
-      const response = await fetch(
-        `/api/v1/workspaces/${workspaceId}/connections/${selected.id}`,
-        {
-          method: "PATCH",
-          headers: {
-            "content-type": "application/json",
-            "x-dopedb-expected-revision": String(selected.revision),
-          },
-          body: JSON.stringify({
-            name: selected.name,
-            engine: selected.engine,
-            provider: selected.provider,
-            driverId: selected.driverId,
-            host: selected.host,
-            port: selected.port,
-            database: selected.database,
-            sslmode: selected.sslmode,
-            readonlyDefault: true,
-            allowWrites,
-            env: selected.env,
-            schemaGroup: selected.schemaGroup,
-          }),
-        },
-      ).catch(() => null);
-      if (!response?.ok) {
-        setError(await responseError(response, copy.changeWriteError, locale));
-        await loadConflicts();
-        return;
-      }
-      await Promise.all([loadConnections(), loadConflicts()]);
-    } finally {
-      setMutatingId("");
-    }
-  }
 
   async function postConflictResolution(
     conflictId: string,
@@ -548,29 +491,24 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
       ) : null}
 
       {selected?.credentialMode === "managed" ? (
-        <label className="tw:grid tw:grid-cols-[16px_minmax(0,1fr)] tw:items-start tw:gap-2 tw:border-y tw:border-border tw:bg-surface-inset tw:px-3 tw:py-3">
-          <input
-            className="tw:mt-0.5 tw:size-4 tw:accent-primary"
-            type="checkbox"
-            checked={selected.allowWrites}
-            disabled={
-              mutatingId !== ""
-              || !selected.writeAvailable
-              || !canManageWritePolicy
-            }
-            onChange={(event) => void changeWritePolicy(event.target.checked)}
-          />
+        <section className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:items-start tw:gap-3 tw:border-y tw:border-border tw:bg-surface-inset tw:px-3 tw:py-3">
           <span className="tw:grid tw:gap-1 tw:text-xs tw:text-foreground">
-            {copy.allowWrites}
+            {copy.writePolicyStatus}
             <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
               {!selected.writeAvailable
                 ? copy.noWriteAccount
-                : canManageWritePolicy
-                  ? copy.writePolicyManager
-                  : copy.writePolicyViewer}
+                : copy.writePolicyDesktop}
             </small>
           </span>
-        </label>
+          <strong
+            className="tw:inline-flex tw:min-h-5 tw:items-center tw:rounded-full tw:border tw:border-border tw:bg-surface tw:px-2 tw:text-2xs tw:font-semibold tw:text-muted-foreground tw:data-[enabled=true]:border-warning/40 tw:data-[enabled=true]:bg-warning/10 tw:data-[enabled=true]:text-warning"
+            data-enabled={selected.allowWrites && selected.writeAvailable}
+          >
+            {selected.allowWrites && selected.writeAvailable
+              ? copy.writePolicyEnabled
+              : copy.writePolicyDisabled}
+          </strong>
+        </section>
       ) : null}
 
       <div className="tw:grid tw:divide-y tw:divide-border tw:border-y tw:border-border">

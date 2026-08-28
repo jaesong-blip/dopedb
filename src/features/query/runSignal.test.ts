@@ -10,6 +10,7 @@ import {
   effectiveSafetySettings,
   requestedSafetySettings,
   safetyWriteControlAvailable,
+  writeBlockRecoveryKind,
 } from "../safetySettings/policy";
 import { approveManualOperationIfRequired } from "../queries/runPath";
 import { buildRunSignal } from "./runSignal";
@@ -115,6 +116,61 @@ describe("SQL run guidance", () => {
       ...managedWorkspaceManager,
       workspaceAccess: "write",
     })).toBe(false);
+    const blockedWrite = {
+      kind: "blocked",
+      message: "blocked: writes are disabled for this connection",
+    };
+    expect(
+      writeBlockRecoveryKind(managedWorkspaceManager, blockedWrite),
+    ).toBe("workspacePolicyAndDevice");
+    expect(
+      writeBlockRecoveryKind(
+        {
+          ...managedWorkspaceManager,
+          workspaceAccess: "write",
+        },
+        blockedWrite,
+      ),
+    ).toBe("workspacePolicy");
+    expect(
+      writeBlockRecoveryKind(
+        {
+          ...managedWorkspaceManager,
+          allowWrites: true,
+          workspaceAccess: "write",
+        },
+        blockedWrite,
+      ),
+    ).toBe("deviceSafety");
+    expect(writeBlockRecoveryKind(localConnection, blockedWrite)).toBe(
+      "localSafety",
+    );
+    expect(
+      writeBlockRecoveryKind(
+        {
+          allowWrites: true,
+          credentialMode: "memberLocal",
+          workspaceAccess: "write",
+        },
+        blockedWrite,
+      ),
+    ).toBe("managedCredential");
+    expect(
+      writeBlockRecoveryKind(
+        {
+          allowWrites: true,
+          credentialMode: "managed",
+          workspaceAccess: "read",
+        },
+        blockedWrite,
+      ),
+    ).toBe("workspaceGrant");
+    expect(
+      writeBlockRecoveryKind(managedWorkspaceManager, {
+        kind: "blocked",
+        message: "blocked: multiple statements are not allowed",
+      }),
+    ).toBeNull();
 
     const managedProfile: ConnectionProfile = {
       id: connectionId("00000000-0000-4000-8000-000000000010"),

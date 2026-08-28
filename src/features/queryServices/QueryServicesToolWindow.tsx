@@ -38,6 +38,7 @@ export default function QueryServicesToolWindow({
   documents,
   activeDocumentId,
   onActivateDocument,
+  onOpenSafety,
   onClose,
   onStartResize,
   height,
@@ -52,6 +53,7 @@ export default function QueryServicesToolWindow({
   documents: WorkbenchDocument[];
   activeDocumentId: string | null;
   onActivateDocument: (id: string) => void;
+  onOpenSafety: (connectionId: ConnectionProfile["id"]) => void;
   onClose: () => void;
   onStartResize: (event: { preventDefault(): void; clientY: number }) => void;
   height: number;
@@ -290,6 +292,8 @@ export default function QueryServicesToolWindow({
               <QueryServiceResult
                 key={`${active.id}:${activeResultTab?.id ?? "result"}`}
                 result={active.result}
+                connection={activeConnection}
+                onOpenSafety={onOpenSafety}
                 scriptStatementIndex={activeResultTab?.statementIndex}
               />
             )}

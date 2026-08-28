@@ -269,7 +269,11 @@ function Shell() {
     toolWindows.toggleServices();
   }
 
-  function openShellSettings(section?: "safety") {
+  function openShellSettings(section?: "safety", connectionId?: string) {
+    if (connectionId && !connections.items.some(({ id }) => id === connectionId)) return;
+    if (connectionId && connections.selectedId !== connectionId) {
+      commands.connections.select(connectionId);
+    }
     commands.route.openSettings(section);
     setMobileExplorerOpen(false);
     if (compactShell) {
@@ -433,7 +437,8 @@ function Shell() {
             deleteConnection: commands.connections.delete,
             updateConnection: commands.connections.update,
             settings: () => openShellSettings(),
-            safetySettings: () => openShellSettings("safety"),
+            safetySettings: (connectionId) =>
+              openShellSettings("safety", connectionId),
             openUpdateSettings: () => commands.route.openSettings("updates"),
           },
           explorer: {

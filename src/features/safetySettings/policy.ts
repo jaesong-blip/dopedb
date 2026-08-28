@@ -6,6 +6,53 @@ export type ConnectionWriteAuthority = Pick<
   "allowWrites" | "credentialMode" | "workspaceAccess"
 >;
 
+export type WriteBlockRecoveryKind =
+  | "deviceSafety"
+  | "localSafety"
+  | "managedCredential"
+  | "workspaceGrant"
+  | "workspacePolicy"
+  | "workspacePolicyAndDevice";
+
+type WriteBlockError = Readonly<{
+  kind: string | null;
+  message: string;
+}>;
+
+function isWritesDisabledError(error: WriteBlockError): boolean {
+  if (error.kind !== "blocked" && error.kind !== "safety") return false;
+  const message = error.message.toLocaleLowerCase();
+  return (
+    message.includes("writes are disabled for this connection") ||
+    message.includes("writing is disabled for this connection") ||
+    message.includes("schema change (ddl) is disabled for this connection")
+  );
+}
+
+/** Identifies the exact authority layer a write-disabled error must recover. */
+export function writeBlockRecoveryKind(
+  connection: ConnectionWriteAuthority,
+  error: WriteBlockError,
+): WriteBlockRecoveryKind | null {
+  if (!isWritesDisabledError(error)) return null;
+  if (connection.credentialMode === "memberLocal") {
+    return "managedCredential";
+  }
+  if (
+    connection.workspaceAccess === "view" ||
+    connection.workspaceAccess === "read"
+  ) {
+    return "workspaceGrant";
+  }
+  if (!connection.allowWrites && connection.credentialMode === "managed") {
+    return connection.workspaceAccess === "manage"
+      ? "workspacePolicyAndDevice"
+      : "workspacePolicy";
+  }
+  if (!connection.allowWrites) return "localSafety";
+  return "deviceSafety";
+}
+
 /**
  * UI projection of the write authority the Rust runtime enforces.
  *
