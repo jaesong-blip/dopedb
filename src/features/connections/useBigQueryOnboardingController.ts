@@ -1,13 +1,15 @@
 // Owns BigQuery's local Google Cloud CLI authentication and bounded resource
 // discovery. The editor receives only account and resource identifiers.
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import {
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 
-import { errMessage } from "../../ipc/types";
+import { errDetails } from "../../ipc/types";
+import { useI18n } from "../../lib/i18n";
+import { qk } from "../../lib/queries";
 import {
   BIGQUERY_AUTH_MODE_PARAMETER,
   bigQueryAuthMode,
@@ -23,6 +25,7 @@ import {
   authenticateBigQueryGoogleAccount,
   authenticateBigQueryServiceAccount,
   clearBigQueryServiceAccountAuth,
+  installDriver,
   pickConnectionFile,
 } from "./tauriAdapter";
 import type { ConnectionProfileState } from "./useConnectionProfileState";
@@ -31,8 +34,11 @@ export function useBigQueryOnboardingController(
   profileState: ConnectionProfileState,
   cliAvailable: boolean,
 ) {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const createdServiceAccountProfile = useRef<ConnectionProfile | null>(null);
+  const [preparingCli, setPreparingCli] = useState(false);
+  const [cliError, setCliError] = useState<unknown>(null);
   const { form } = profileState;
   const profile = form.value;
   const mode = bigQueryAuthMode(profile);
@@ -62,12 +68,34 @@ export function useBigQueryOnboardingController(
     });
   }
 
+  async function ensureCli() {
+    if (cliAvailable) {
+      setCliError(null);
+      return;
+    }
+    setPreparingCli(true);
+    setCliError(null);
+    try {
+      await installDriver("google-bq-cli");
+      await queryClient.invalidateQueries({ queryKey: qk.drivers() });
+    } catch (error) {
+      setCliError(error);
+      throw error;
+    } finally {
+      setPreparingCli(false);
+    }
+  }
+
   const googleAccount = useMutation({
-    mutationFn: () => authenticateBigQueryGoogleAccount(profile),
+    mutationFn: async () => {
+      await ensureCli();
+      return authenticateBigQueryGoogleAccount(profile);
+    },
     onSuccess: refreshOnboarding,
   });
   const serviceAccount = useMutation({
     mutationFn: async () => {
+      await ensureCli();
       const credentialFile = await pickConnectionFile();
       return credentialFile
         ? authenticateBigQueryServiceAccount(profile, credentialFile)
@@ -102,12 +130,46 @@ export function useBigQueryOnboardingController(
     }));
   }
 
-  const error =
-    googleAccount.error ??
-    serviceAccount.error ??
-    auth.error ??
-    projects.error ??
-    datasets.error;
+  function localizedError(
+    error: unknown,
+    scope: "authentication" | "projects" | "datasets" | "runtime",
+  ) {
+    if (!error) return null;
+    const kind = errDetails(error).kind;
+    if (kind === "timeout") {
+      return t("connections.bigQueryErrorTimeout");
+    }
+    if (kind === "network") {
+      return t("connections.bigQueryErrorNetwork");
+    }
+    if (kind === "blocked") {
+      return t(
+        scope === "datasets"
+          ? "connections.bigQueryDatasetsPermissionError"
+          : scope === "projects"
+            ? "connections.bigQueryProjectsPermissionError"
+            : scope === "runtime"
+              ? "connections.bigQueryRuntimeVerificationError"
+              : "connections.bigQueryAuthenticationPermissionError",
+      );
+    }
+    return t(
+      scope === "datasets"
+        ? "connections.bigQueryDatasetsLoadFailed"
+        : scope === "projects"
+          ? "connections.bigQueryProjectsLoadFailed"
+          : scope === "runtime"
+            ? "connections.bigQueryRuntimePreparationFailed"
+            : "connections.bigQueryAuthenticationFailed",
+    );
+  }
+
+  const authenticationError = cliError
+    ? localizedError(cliError, "runtime")
+    : localizedError(
+        googleAccount.error ?? serviceAccount.error ?? auth.error,
+        "authentication",
+      );
 
   return {
     mode,
@@ -115,21 +177,26 @@ export function useBigQueryOnboardingController(
     auth: auth.data ?? null,
     projects: projects.data ?? [],
     datasets: datasets.data ?? [],
+    projectsLoaded: projects.isSuccess,
+    datasetsLoaded: datasets.isSuccess,
+    preparingCli,
     pending:
       (enabled && auth.isPending) ||
       googleAccount.isPending ||
       serviceAccount.isPending,
     projectsPending: projects.isFetching,
     datasetsPending: datasets.isFetching,
-    error: error ? errMessage(error) : null,
+    authenticationError,
+    projectsError: localizedError(projects.error, "projects"),
+    datasetsError: localizedError(datasets.error, "datasets"),
     setMode,
     selectProject,
     selectDataset: (datasetId: string) => form.set("database", datasetId),
     connectGoogleAccount: () => {
-      if (enabled) googleAccount.mutate();
+      if (applicable) googleAccount.mutate();
     },
     connectServiceAccount: () => {
-      if (enabled) serviceAccount.mutate();
+      if (applicable) serviceAccount.mutate();
     },
     finalizeSavedProfile: async (saved: ConnectionProfile) => {
       const created = createdServiceAccountProfile.current;
@@ -155,6 +222,8 @@ export function useBigQueryOnboardingController(
       await clearBigQueryServiceAccountAuth(created);
       createdServiceAccountProfile.current = null;
     },
+    refreshProjects: () => void projects.refetch(),
+    refreshDatasets: () => void datasets.refetch(),
     refresh: () => void refreshOnboarding(),
   };
 }

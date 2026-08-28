@@ -116,6 +116,15 @@ impl QueryPlatformAdapter {
                 _scope: operation_scope,
             }));
         }
+        if let Some(reason) = safety::managed_ddl_block_reason(
+            operation_pin.profile.credential_mode,
+            classification.kind,
+        ) {
+            return Err(DesktopSqlRunError::Blocked(DesktopSqlRunBlocked {
+                reason: reason.into(),
+                _scope: operation_scope,
+            }));
+        }
 
         let cancellation = executor::cancel::register(operation_id.into());
         let claimed = self

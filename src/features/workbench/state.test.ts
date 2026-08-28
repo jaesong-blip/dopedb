@@ -54,6 +54,7 @@ import { switchConnectionSource } from "../connections/connectionEditorModel";
 import {
   BIGQUERY_AUTH_MODE_PARAMETER,
   bigQueryAuthMode,
+  bigQueryResourceInputMode,
   isValidBigQueryDatasetId,
   isValidBigQueryProjectId,
 } from "../connections/bigQueryOnboardingModel";
@@ -596,7 +597,7 @@ describe("workbench state ownership", () => {
       name: "Google BigQuery CLI",
       engine: "bigquery",
       version: ">=2.0.29",
-      installMode: "system",
+      installMode: "managed",
       supportedProviders: ["generic"],
       capabilities: ["sql", "introspection"],
     };
@@ -629,6 +630,9 @@ describe("workbench state ownership", () => {
     expect(isValidBigQueryProjectId("Campfire-460003")).toBe(false);
     expect(isValidBigQueryDatasetId("analytics_2026")).toBe(true);
     expect(isValidBigQueryDatasetId("analytics-2026")).toBe(false);
+    expect(bigQueryResourceInputMode(true, 2)).toBe("select");
+    expect(bigQueryResourceInputMode(true, 0)).toBe("manual");
+    expect(bigQueryResourceInputMode(false, 2)).toBe("manual");
     const serviceAccountBigQuery = {
       ...bigQuery,
       extraParams: {

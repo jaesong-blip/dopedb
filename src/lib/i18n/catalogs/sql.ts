@@ -27,6 +27,9 @@ export const sqlCatalog = defineCatalog(
       "Managed write credential",
     "sql.writeBlock.guidanceManagedCredential":
       "{connection} uses a member-local credential, which is read-only. A workspace administrator must configure managed access and then enable its write policy in Settings > Safety.",
+    "sql.writeBlock.permissionManagedDdl": "Managed access (DML only)",
+    "sql.writeBlock.guidanceManagedDdl":
+      "{connection}'s short-lived managed credential intentionally allows INSERT, UPDATE, and DELETE, but not CREATE, ALTER, or DROP. Safety is already enabled; no checkbox can add this permission. Run the migration with a separate database owner/migration credential or your existing migration tool.",
     "sql.writeBlock.permissionWorkspaceGrant":
       "Workspace DB read/write or manage access",
     "sql.writeBlock.guidanceWorkspaceGrant":
@@ -167,6 +170,9 @@ export const sqlCatalog = defineCatalog(
     "sql.writeBlock.permissionManagedCredential": "관리형 쓰기 자격 증명",
     "sql.writeBlock.guidanceManagedCredential":
       "{connection}은 읽기 전용인 구성원 로컬 자격 증명을 사용합니다. 워크스페이스 관리자가 관리형 접근을 구성한 뒤 설정 → 안전에서 쓰기 정책을 켜야 합니다.",
+    "sql.writeBlock.permissionManagedDdl": "관리형 접근 (DML 전용)",
+    "sql.writeBlock.guidanceManagedDdl":
+      "{connection}의 단기 관리형 자격 증명은 INSERT, UPDATE, DELETE만 허용하며 CREATE, ALTER, DROP은 의도적으로 허용하지 않습니다. 안전 설정은 이미 켜져 있어 체크박스로 추가할 수 있는 권한이 아닙니다. 별도의 DB owner/migration 자격 증명이나 기존 마이그레이션 도구로 실행하세요.",
     "sql.writeBlock.permissionWorkspaceGrant":
       "워크스페이스 DB 읽기/쓰기 또는 관리 권한",
     "sql.writeBlock.guidanceWorkspaceGrant":

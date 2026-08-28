@@ -5,6 +5,7 @@
 //! carries a byte-billing ceiling plus an exact id for cancellation.
 
 mod onboarding;
+mod runtime;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -33,6 +34,7 @@ pub(crate) use onboarding::{
     cleanup_service_account_auth, discover_datasets, discover_projects, uses_service_account_auth,
     BigQueryAuthState, BigQueryDatasetSummary, BigQueryProjectSummary,
 };
+pub(crate) use runtime::install_managed_cli;
 
 const MINIMUM_BQ_VERSION: &str = "2.0.29";
 pub(crate) const DEFAULT_MAXIMUM_BYTES_BILLED: u64 = 1_073_741_824;
@@ -52,7 +54,7 @@ pub(crate) struct BigQueryConnection {
 }
 
 struct BigQueryConnectionInner {
-    executable: ExecutableIdentity,
+    executable: ResolvedSdkExecutable,
     home: PathBuf,
     cloudsdk_config: PathBuf,
     project: String,
@@ -66,6 +68,12 @@ struct ExecutableIdentity {
     canonical_path: PathBuf,
     sha256: String,
     byte_length: u64,
+}
+
+#[derive(Clone)]
+struct ResolvedSdkExecutable {
+    identity: ExecutableIdentity,
+    environment: runtime::CommandEnvironment,
 }
 
 #[derive(Debug)]
@@ -96,9 +104,34 @@ struct DryRun {
 /// Synchronous presence probe used by the driver catalog. Connection-time hashing
 /// and version validation remain authoritative.
 pub(crate) fn is_cli_available() -> bool {
-    executable_candidates()
-        .into_iter()
-        .any(|candidate| candidate.is_file())
+    sdk_roots().into_iter().any(|root| {
+        let bq = root
+            .join("bin")
+            .join(if cfg!(windows) { "bq.cmd" } else { "bq" });
+        let gcloud = root.join("bin").join(if cfg!(windows) {
+            "gcloud.cmd"
+        } else {
+            "gcloud"
+        });
+        audited_candidate_exists(&bq, &root) && audited_candidate_exists(&gcloud, &root)
+    })
+}
+
+fn audited_candidate_exists(candidate: &Path, root: &Path) -> bool {
+    let Ok(canonical_root) = root.canonicalize() else {
+        return false;
+    };
+    let Ok(canonical_candidate) = candidate.canonicalize() else {
+        return false;
+    };
+    let Ok(metadata) = candidate.symlink_metadata() else {
+        return false;
+    };
+    metadata.is_file()
+        && !metadata.file_type().is_symlink()
+        && metadata.len() > 0
+        && metadata.len() <= MAX_EXECUTABLE_BYTES
+        && canonical_candidate.starts_with(canonical_root)
 }
 
 pub(crate) fn validate_profile(profile: &ConnectionProfile) -> AppResult<()> {
@@ -666,7 +699,7 @@ impl BigQueryConnection {
         cancellation: Option<&CancelHandle>,
         timeout: Duration,
     ) -> Result<CommandOutput, CommandFailure> {
-        let executable = self.inner.executable.revalidate().await?;
+        let executable = self.inner.executable.identity.revalidate().await?;
         let mut command = Command::new(executable);
         command
             .args(args)
@@ -676,6 +709,7 @@ impl BigQueryConnection {
             .env("CLOUDSDK_CONFIG", &self.inner.cloudsdk_config)
             .env("CLOUDSDK_CORE_DISABLE_PROMPTS", "1")
             .env("CLOUDSDK_CORE_DISABLE_USAGE_REPORTING", "true")
+            .env("CLOUDSDK_COMPONENT_MANAGER_DISABLE_UPDATE_CHECK", "1")
             .env("CLOUDSDK_CORE_LOG_HTTP", "false")
             .env("PYTHONIOENCODING", "utf-8")
             .kill_on_drop(true)
@@ -686,6 +720,7 @@ impl BigQueryConnection {
             })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        self.inner.executable.environment.apply(&mut command);
         #[cfg(unix)]
         command.process_group(0);
         #[cfg(windows)]
@@ -756,10 +791,6 @@ impl BigQueryConnection {
 }
 
 impl ExecutableIdentity {
-    async fn audit(path: &Path, allowed_root: &Path) -> Result<Self, CommandFailure> {
-        Self::audit_named(path, allowed_root, &["bq", "bq.cmd"]).await
-    }
-
     async fn audit_named(
         path: &Path,
         allowed_root: &Path,
@@ -802,36 +833,43 @@ impl ExecutableIdentity {
     }
 }
 
-async fn discover_executable() -> AppResult<ExecutableIdentity> {
-    for (candidate, root) in executable_candidates_with_roots() {
+async fn discover_executable() -> AppResult<ResolvedSdkExecutable> {
+    discover_sdk_executable(&["bq", "bq.cmd"], "BigQuery CLI").await
+}
+
+async fn discover_sdk_executable(
+    allowed_names: &[&str],
+    label: &str,
+) -> AppResult<ResolvedSdkExecutable> {
+    let file_name = if cfg!(windows) {
+        allowed_names
+            .iter()
+            .find(|name| name.ends_with(".cmd"))
+            .copied()
+    } else {
+        allowed_names
+            .iter()
+            .find(|name| !name.ends_with(".cmd"))
+            .copied()
+    }
+    .ok_or_else(|| AppError::Config(format!("the {label} executable name is invalid")))?;
+    for root in sdk_roots() {
+        let candidate = root.join("bin").join(file_name);
         if !candidate.is_file() {
             continue;
         }
-        if let Ok(identity) = ExecutableIdentity::audit(&candidate, &root).await {
-            return Ok(identity);
+        if let Ok(identity) =
+            ExecutableIdentity::audit_named(&candidate, &root, allowed_names).await
+        {
+            return Ok(ResolvedSdkExecutable {
+                identity,
+                environment: runtime::command_environment_for_sdk_root(&root),
+            });
         }
     }
-    Err(AppError::Config(
-        "Google Cloud CLI with the BigQuery `bq` component is required; install it and restart DopeDB"
-            .into(),
-    ))
-}
-
-fn executable_candidates() -> Vec<PathBuf> {
-    executable_candidates_with_roots()
-        .into_iter()
-        .map(|(candidate, _)| candidate)
-        .collect()
-}
-
-fn executable_candidates_with_roots() -> Vec<(PathBuf, PathBuf)> {
-    sdk_roots()
-        .into_iter()
-        .map(|root| {
-            let file = if cfg!(windows) { "bq.cmd" } else { "bq" };
-            (root.join("bin").join(file), root)
-        })
-        .collect()
+    Err(AppError::Config(format!(
+        "{label} is unavailable; reconnect so DopeDB can prepare the official Google tools"
+    )))
 }
 
 fn sdk_roots() -> Vec<PathBuf> {
@@ -853,6 +891,9 @@ fn sdk_roots() -> Vec<PathBuf> {
     #[cfg(windows)]
     if let Some(local) = dirs::data_local_dir() {
         roots.push(local.join("Google/Cloud SDK/google-cloud-sdk"));
+    }
+    if let Some(managed) = runtime::managed_sdk_root_if_ready() {
+        roots.push(managed);
     }
     roots
 }
@@ -1245,6 +1286,7 @@ fn safe_path() -> &'static str {
 #[cfg(test)]
 pub(crate) fn assert_bigquery_contract() {
     onboarding::assert_onboarding_contract();
+    runtime::assert_runtime_contract();
     assert!(valid_project_id("campfire-460003"));
     assert!(!valid_project_id("Campfire-460003"));
     assert!(valid_dataset_id("analytics_2026"));

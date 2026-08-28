@@ -61,6 +61,37 @@ impl ScriptPlatformAdapter {
         } else {
             QueryKind::Write
         };
+        if let Some(reason) =
+            safety::managed_ddl_block_reason(operation_pin.profile.credential_mode, script_kind)
+        {
+            record_script_run(
+                &self.store,
+                &operation_pin,
+                ScriptRunRecord {
+                    sql: &payload.sql,
+                    kind: script_kind,
+                    action: "blocked",
+                    status: "blocked",
+                    row_count: None,
+                    error: Some(reason.into()),
+                    origin: &history_origin,
+                },
+            )
+            .await;
+            let _ = self
+                .operation
+                .fail(
+                    operation_id,
+                    &serde_json::json!({"reason": "managed_ddl_unsupported"}),
+                )
+                .await;
+            return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
+                error: AppError::Blocked {
+                    reason: reason.into(),
+                },
+                _scope: Box::new(operation_scope),
+            }));
+        }
         if let Err(error) = audit::record(
             &self.store,
             RecordArgs {

@@ -49,14 +49,19 @@ their own workspaces instead of being flattened into SQL tables.
 and SQLite currently use this mode through SQLx, so selecting them requires no download.
 
 `system` drivers delegate to an official CLI installed and authenticated by the OS user.
-BigQuery uses only the fixed-path Google Cloud SDK `bq` executable: DopeDB neither reads
-Google tokens nor calls the provider API itself. SQL is passed over stdin, the executable
-identity is revalidated for every invocation, and queries are limited to server-classified
-`SELECT` statements with dry-run byte estimates, a per-connection maximum-bytes-billed
-ceiling, bounded output, timeout, and exact-job cancellation. Project and dataset identity
-can be shared in a Workspace, while every member keeps their own `gcloud` login.
+BigQuery uses an official-CLI managed variant: it first reuses a verified fixed-path Google
+Cloud SDK and otherwise prepares an unmodified, version/size/SHA-256-pinned Google archive
+in app-owned local data. macOS also verifies the pinned Python.org installer team and Apple
+notarization before extracting its framework without a system install; the Windows x64
+archive already contains Python. Activation is staged and atomic, and neither path changes
+PATH or needs administrator access. DopeDB neither reads Google tokens nor calls the provider
+API itself. SQL is passed over stdin, the executable identity is revalidated for every
+invocation, and queries are limited to server-classified `SELECT` statements with dry-run
+byte estimates, a per-connection maximum-bytes-billed ceiling, bounded output, timeout, and
+exact-job cancellation. Project and dataset identity can be shared in a Workspace, while
+every member keeps their own `gcloud` login.
 
-`managed` drivers are reserved for independently shipped executable sidecars. Rust crates
+Other `managed` drivers are reserved for independently shipped executable sidecars. Rust crates
 cannot safely be downloaded and hot-loaded like JDBC jars: Rust has no stable plugin ABI,
 and loading arbitrary dynamic libraries into the Tauri process would expand the trusted
 computing base. A managed pack therefore communicates over a versioned local protocol and
@@ -93,8 +98,8 @@ control-plane client:
 - MongoDB Atlas: the official MongoDB Rust driver for BSON/commands plus the Atlas Admin
   API for managed resources.
 - Google BigQuery: the local official `bq` CLI is the data-plane adapter. It is a
-  read-only system driver, not a reusable GCP Cloud SQL provider credential and not a
-  hosted database proxy.
+  read-only managed official-CLI driver, not a reusable GCP Cloud SQL provider credential
+  and not a hosted database proxy.
 - Neo4j Aura: a Bolt/Cypher adapter plus the Aura control plane. Graph results remain
   nodes, relationships, and paths.
 

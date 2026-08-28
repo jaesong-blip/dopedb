@@ -126,6 +126,7 @@ export const connectionsCatalog = defineCatalog(
     "connections.bigQueryGoogleAccount": "Google account",
     "connections.bigQueryServiceAccount": "Service account",
     "connections.bigQueryAuthenticating": "Connecting with Google Cloud CLI…",
+    "connections.bigQueryPreparingTools": "Preparing verified Google tools…",
     "connections.bigQueryConnected": "Connected",
     "connections.bigQueryConnectedAccount": "Connected as {account}",
     "connections.bigQueryNotConnected": "Not connected",
@@ -135,14 +136,43 @@ export const connectionsCatalog = defineCatalog(
     "connections.bigQueryReplaceCredentialFile": "Replace credential JSON",
     "connections.bigQueryProjectsLoading": "Loading accessible projects…",
     "connections.bigQueryDatasetsLoading": "Loading datasets…",
+    "connections.bigQuerySelectProject": "Select a project",
+    "connections.bigQuerySelectDataset": "Select a dataset",
+    "connections.bigQueryProjectPlaceholder": "Enter a GCP project ID",
+    "connections.bigQueryDatasetPlaceholder": "Enter a dataset ID",
+    "connections.bigQueryNoProjects":
+      "No accessible projects were returned. You can still enter a project ID.",
+    "connections.bigQueryNoDatasets":
+      "This project has no accessible datasets. You can still enter a dataset ID.",
+    "connections.bigQueryErrorTimeout":
+      "Google Cloud took too long to respond. Try again.",
+    "connections.bigQueryErrorNetwork":
+      "Google Cloud could not be reached. Check the network and try again.",
+    "connections.bigQueryAuthenticationFailed":
+      "Could not read the Google sign-in state. Connect the account again.",
+    "connections.bigQueryAuthenticationPermissionError":
+      "Google sign-in was blocked by the local security boundary. Try connecting again.",
+    "connections.bigQueryProjectsLoadFailed":
+      "Could not load projects. Check the Google account and try again.",
+    "connections.bigQueryProjectsPermissionError":
+      "The connected Google account cannot list GCP projects.",
+    "connections.bigQueryDatasetsLoadFailed":
+      "Could not load datasets. Check that the BigQuery API is enabled for this project, then try again.",
+    "connections.bigQueryDatasetsPermissionError":
+      "The connected Google account cannot list datasets in this project.",
+    "connections.bigQueryRuntimePreparationFailed":
+      "Could not prepare the official Google tools. Check the network and try again.",
+    "connections.bigQueryRuntimeVerificationError":
+      "The downloaded Google tools did not pass local verification. Download them again.",
     "connections.bigQueryLocation": "Location (optional)",
     "connections.bigQueryLocationPlaceholder": "Auto-detect, e.g. US or asia-northeast3",
     "connections.bigQueryMaximumBytesBilled": "Maximum bytes billed",
-    "connections.bigQueryCliReady": "Google Cloud CLI is available",
-    "connections.bigQueryCliRequired": "Google Cloud CLI with bq is required",
-    "connections.bigQueryCliStatus": "Local CLI",
+    "connections.bigQueryCliReady": "Official Google tools are ready",
+    "connections.bigQueryCliRequired":
+      "Prepared automatically on the first connection",
+    "connections.bigQueryCliStatus": "Google tools",
     "connections.bigQuerySecurityNote":
-      "Google sign-in and service-account import run inside the official local Google Cloud CLI. DopeDB never reads or stores Google tokens or key contents; every SELECT is server dry-run and must stay under this connection's byte-billing ceiling.",
+      "Google sign-in and service-account import run inside the unmodified official Google Cloud CLI. DopeDB reuses a verified system installation or prepares a pinned app-owned copy; it never reads or stores Google tokens or key contents. Every SELECT is server dry-run and must stay under this connection's byte-billing ceiling.",
     "connections.bigQuerySharedSecurityNote":
       "This shared record contains only the BigQuery project and dataset identity. Each member connects Google credentials locally; no token or service-account key is shared through the workspace.",
     "connections.discoveredSchemaCount": "{count} schemas",
@@ -508,6 +538,7 @@ export const connectionsCatalog = defineCatalog(
     "connections.bigQueryGoogleAccount": "Google 계정",
     "connections.bigQueryServiceAccount": "서비스 계정",
     "connections.bigQueryAuthenticating": "Google Cloud CLI로 연결 중…",
+    "connections.bigQueryPreparingTools": "검증된 Google 도구 준비 중…",
     "connections.bigQueryConnected": "연결됨",
     "connections.bigQueryConnectedAccount": "{account}(으)로 연결됨",
     "connections.bigQueryNotConnected": "연결되지 않음",
@@ -517,14 +548,42 @@ export const connectionsCatalog = defineCatalog(
     "connections.bigQueryReplaceCredentialFile": "인증 JSON 교체",
     "connections.bigQueryProjectsLoading": "접근 가능한 프로젝트 불러오는 중…",
     "connections.bigQueryDatasetsLoading": "데이터셋 불러오는 중…",
+    "connections.bigQuerySelectProject": "프로젝트 선택",
+    "connections.bigQuerySelectDataset": "데이터셋 선택",
+    "connections.bigQueryProjectPlaceholder": "GCP 프로젝트 ID 입력",
+    "connections.bigQueryDatasetPlaceholder": "데이터셋 ID 입력",
+    "connections.bigQueryNoProjects":
+      "접근 가능한 프로젝트가 없습니다. 프로젝트 ID를 직접 입력할 수도 있습니다.",
+    "connections.bigQueryNoDatasets":
+      "이 프로젝트에 접근 가능한 데이터셋이 없습니다. 데이터셋 ID를 직접 입력할 수도 있습니다.",
+    "connections.bigQueryErrorTimeout":
+      "Google Cloud 응답이 지연되었습니다. 다시 시도하세요.",
+    "connections.bigQueryErrorNetwork":
+      "Google Cloud에 연결하지 못했습니다. 네트워크를 확인하고 다시 시도하세요.",
+    "connections.bigQueryAuthenticationFailed":
+      "Google 로그인 상태를 확인하지 못했습니다. 계정을 다시 연결하세요.",
+    "connections.bigQueryAuthenticationPermissionError":
+      "로컬 보안 경계가 Google 로그인을 차단했습니다. 다시 연결하세요.",
+    "connections.bigQueryProjectsLoadFailed":
+      "프로젝트를 불러오지 못했습니다. Google 계정을 확인하고 다시 시도하세요.",
+    "connections.bigQueryProjectsPermissionError":
+      "연결한 Google 계정에 GCP 프로젝트 목록을 볼 권한이 없습니다.",
+    "connections.bigQueryDatasetsLoadFailed":
+      "데이터셋을 불러오지 못했습니다. 이 프로젝트의 BigQuery API 사용 설정을 확인한 뒤 다시 시도하세요.",
+    "connections.bigQueryDatasetsPermissionError":
+      "연결한 Google 계정에 이 프로젝트의 데이터셋 목록을 볼 권한이 없습니다.",
+    "connections.bigQueryRuntimePreparationFailed":
+      "공식 Google 도구를 준비하지 못했습니다. 네트워크를 확인하고 다시 시도하세요.",
+    "connections.bigQueryRuntimeVerificationError":
+      "다운로드한 Google 도구가 로컬 검증을 통과하지 못했습니다. 다시 다운로드하세요.",
     "connections.bigQueryLocation": "리전 (선택)",
     "connections.bigQueryLocationPlaceholder": "자동 감지, 예: US 또는 asia-northeast3",
     "connections.bigQueryMaximumBytesBilled": "최대 과금 바이트",
-    "connections.bigQueryCliReady": "Google Cloud CLI를 사용할 수 있음",
-    "connections.bigQueryCliRequired": "bq가 포함된 Google Cloud CLI 필요",
-    "connections.bigQueryCliStatus": "로컬 CLI",
+    "connections.bigQueryCliReady": "공식 Google 도구 준비됨",
+    "connections.bigQueryCliRequired": "첫 연결 때 자동으로 준비됨",
+    "connections.bigQueryCliStatus": "Google 도구",
     "connections.bigQuerySecurityNote":
-      "Google 로그인과 서비스 계정 가져오기는 공식 로컬 Google Cloud CLI 안에서 실행됩니다. DopeDB는 Google 토큰이나 키 내용을 읽거나 저장하지 않으며, 모든 SELECT를 서버에서 dry-run한 뒤 연결별 최대 과금 바이트를 넘지 않을 때만 실행합니다.",
+      "Google 로그인과 서비스 계정 가져오기는 수정하지 않은 공식 Google Cloud CLI 안에서 실행됩니다. DopeDB는 검증된 시스템 설치를 재사용하거나 버전이 고정된 앱 전용 사본을 준비하며, Google 토큰이나 키 내용을 읽거나 저장하지 않습니다. 모든 SELECT를 서버에서 dry-run한 뒤 연결별 최대 과금 바이트를 넘지 않을 때만 실행합니다.",
     "connections.bigQuerySharedSecurityNote":
       "이 공유 레코드에는 BigQuery 프로젝트와 데이터셋 식별자만 들어갑니다. 각 멤버가 Google 자격 증명을 로컬에서 연결하며, 토큰이나 서비스 계정 키는 워크스페이스를 통해 공유되지 않습니다.",
     "connections.discoveredSchemaCount": "스키마 {count}개",

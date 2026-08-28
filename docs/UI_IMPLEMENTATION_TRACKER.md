@@ -20,11 +20,11 @@ runtime과 성능 수치로 수행한다.
 | Action Search | `complete` | `features/actionSearch` | cached catalog scope, `/` action mode, focus 복구와 bounded top-k를 유지 |
 | Welcome document | `complete` | `screens/Onboarding`, `features/onboarding` | Personal 가이드 데모의 idempotent DB·Project·Environment·binding 준비와 연결 전/후 실제 command 집합을 packaged smoke에서 확인 |
 | Database Explorer | `complete` | `screens/Connections/DatabaseExplorer`, `features/catalogExplorer` | Project 바로 아래의 단일 Databases/Data sources/Analyses 계층, workspace당 connection 하나의 active Project binding, DB 행의 exact-binding 제거, connection 보존·source/grant 폐기·pinned Agent session 중단·active Article 차단을 지키는 Project 삭제, DB 행에만 보이는 Environment marker와 같은 schema group의 Diff 진입점을 유지하고, Unassigned→환경 DB 행 binding drag·loaded-only 객체 검색·대형 catalog selection/scroll을 packaged smoke에서 확인 |
-| Connection editor | `complete` | `features/connections/useConnectionEditorController` | 연결 identity·접속 옵션만 소유하고 쓰기 실행 제어는 Settings → Safety 단일 경계를 유지한다. BigQuery는 직접 ID 입력, 공식 `gcloud` 브라우저 인증, `gcloud --cred-file` 서비스 계정 연결과 검증된 project/dataset 선택을 제공하되 앱이 Google token이나 key file을 소유하지 않는지 packaged runtime에서 유지 검수한다. |
+| Connection editor | `complete` | `features/connections/useConnectionEditorController` | 연결 identity·접속 옵션만 소유하고 쓰기 실행 제어는 Settings → Safety 단일 경계를 유지한다. BigQuery는 별도 CLI 선행 설치 없이 검증된 system SDK를 재사용하거나 pinned official runtime을 최초 연결 때 준비하고, 직접 ID 입력, 공식 `gcloud` 브라우저 인증, `gcloud --cred-file` 서비스 계정 연결과 실제 project/dataset selector를 제공한다. 앱이 Google token이나 key file을 소유하지 않는지 macOS arm64/x64·Windows x64 packaged runtime에서 유지 검수한다. |
 | Provider account access | `complete` | `workspace-cloud/features/providerAccess`, provider application modules | 실제 계정 OAuth/CLI 실패·recovery와 allowlisted Vault AppRole의 role/lease/revoke packaged 검수를 유지 |
 | SQL/MongoDB query workflow | `complete` | `features/queries`, `features/documentQueries`, `screens/Sql`, `screens/Documents`, Rust query application | 수동 Run exact 승인, Agent 제안 분리, MongoDB의 지속되는 조회 surface와 collection 없는 정확한 빈 상태, 10 KiB/100 KiB/1 MiB 입력과 cancel/transaction packaged 검수를 유지 |
 | Result/Data grid | `complete` | `features/queryResults`, Rust result artifact | 30열·50,000행 selection/filter/export와 메모리 경계 검수 |
-| Services/Jobs | `complete` | `features/queryServices`, `features/jobs` | background cancel과 복원된 result handle, 쓰기 권한 차단 시 exact DB의 필요한 권한 계층·`Settings → Safety` 복구 진입을 packaged 검수 |
+| Services/Jobs | `complete` | `features/queryServices`, `features/jobs` | background cancel과 복원된 result handle, 쓰기 권한 차단 시 exact DB의 필요한 권한 계층·`Settings → Safety` 복구 진입을 검수한다. 관리형 DDL은 DB 실행 전에 DML-only 자격 증명 경계로 차단하고, 기존 실패 결과도 Safety 체크박스가 아니라 DB owner/migration 경로가 필요함을 표시한다. |
 | Agent tool window | `complete` | `features/agents`, ACP Rust runtime | `프로젝트 전체`(source + PROD DB 전체)와 `개별 DB` 두 context만 구분하고 trigger에 현재 종류·대상 이름을 계속 표시하며 Project Environment 이름은 노출하지 않는다. 공식 adapter 설치·로그아웃·permission·resume, 첫 prompt 단일 제출과 동일 권한 focus-refresh 연속성, 실제 권한·process 중단 사유와 복구의 OS별 검수를 유지 |
 | Knowledge graph | `complete` | Rust `features/knowledge`, frontend Knowledge projection | packaged GitHub 설치·기존 설치 업데이트 복귀, Local source revision, publish, mapping과 exact grant 검수 |
 | Analysis Article | `partial` | `features/analysisArticles`, cloud analysis application | Explorer 소유 문자·상태 필터와 단일 중앙 HTML document, exact 단일 query의 로컬 수동 재조회, immutable public HTML 발행과 raw run timestamp의 RFC3339 응답을 실제 환경에서 검수 |
@@ -61,9 +61,11 @@ runtime과 성능 수치로 수행한다.
 
 BigQuery는 이미 알고 있는 project/dataset ID를 직접 입력하거나, 공식 `gcloud`
 브라우저 로그인을 실행한 뒤 현재 계정이 접근할 수 있는 project와 dataset을
-`gcloud`/`bq` 결과에서 선택한다. 서비스 계정은 선택한 JSON 경로를 공식
-`gcloud auth login --cred-file` 명령에 일회성으로 넘기며, 연결별 로컬 CLI
-프로필을 사용한다.
+`gcloud`/`bq` 결과로 채운 실제 selector에서 선택한다. 검증된 system SDK가 없으면
+DopeDB가 OS·architecture별 pinned 공식 runtime을 app-owned 경로에 최초 1회 준비하므로
+별도 CLI 설치나 PATH 설정이 필요 없다. 서비스 계정은 선택한 JSON 경로를 공식
+`gcloud auth login --cred-file` 명령에 일회성으로 넘기며, 연결별 로컬 CLI 프로필을
+사용한다.
 
 Acceptance: 임의 고급 옵션, 계획 중 provider, 저장되지 않는 가짜 control이 없어야
 하며 장기 secret은 shared record에 들어가지 않는다. BigQuery 연결 과정에서도 앱은

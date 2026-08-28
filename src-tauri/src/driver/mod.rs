@@ -112,8 +112,10 @@ const DEFINITIONS: &[DriverDefinition] = &[
         name: "Google BigQuery CLI",
         engine: Engine::Bigquery,
         version: ">=2.0.29",
-        install_mode: DriverInstallMode::System,
-        // `descriptor` replaces this with a live fixed-path presence probe.
+        // Reuse a verified system SDK when present; otherwise DopeDB prepares one
+        // pinned official Google archive in app-owned local data on first sign-in.
+        install_mode: DriverInstallMode::Managed,
+        // `descriptor` replaces this with a live verified-path presence probe.
         install_state: DriverInstallState::Available,
         supported_providers: &[Provider::Generic],
         capabilities: &[DriverCapability::Sql, DriverCapability::Introspection],
@@ -230,8 +232,11 @@ pub fn install(id: &str) -> AppResult<DriverDescriptor> {
     }
     match driver.install_mode {
         DriverInstallMode::Bundled => Ok(driver.descriptor()),
+        DriverInstallMode::Managed if driver.descriptor().install_state == DriverInstallState::Installed => {
+            Ok(driver.descriptor())
+        }
         DriverInstallMode::Managed => Err(AppError::Config(format!(
-            "managed driver pack {:?} has no verified artifact for this build",
+            "managed driver pack {:?} has not been prepared",
             driver.id
         ))),
         DriverInstallMode::System => Err(AppError::Config(

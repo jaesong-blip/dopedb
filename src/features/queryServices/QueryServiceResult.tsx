@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
 import { Button } from "../../design-system/components/Button";
+import { InlineNotice } from "../../design-system/components/Status";
 import DataGrid from "../queryResults/DataGrid";
 import ResultToolbar from "../queryResults/ResultToolbar";
 import {
@@ -75,6 +76,7 @@ export default function QueryServiceResult({
         outcome={result.outcome}
         at={result.at}
         statementIndex={scriptStatementIndex}
+        connection={connection}
       />
     );
   }
@@ -194,8 +196,10 @@ function ScriptResults({
   outcome,
   at,
   statementIndex,
+  connection,
 }: Omit<Extract<QueryServiceResultModel, { kind: "script" }>, "kind"> & {
   statementIndex?: number;
+  connection: ConnectionProfile | null;
 }) {
   const { t } = useI18n();
   const summary = outcome.allReads
@@ -223,51 +227,68 @@ function ScriptResults({
         {summary} ·{" "}
         {t("sql.statementCount", { count: outcome.statements.length })} · {at}
       </ResultMeta>
-      {statements.map(({ statement, index }) => (
-        <section
-          key={`${index}:${statement.sql}`}
-          data-fill={fillsResultPane}
-          className="tw:flex tw:min-h-0 tw:flex-col tw:border-t tw:border-border-subtle tw:pt-2 tw:data-[fill=true]:flex-1"
-        >
-          <ResultMeta>
-            <span className="tw:inline-block tw:min-w-4 tw:font-semibold">
-              {index + 1}
-            </span>
-            <SqlSnippet>{statement.sql}</SqlSnippet>
-          </ResultMeta>
-          {statement.error ? (
-            <div className="tw:px-3 tw:py-2 tw:text-ui tw:text-danger">
-              {statement.error}
-            </div>
-          ) : statement.result ? (
-            <>
-              <div className="tw:mx-3 tw:my-1 tw:text-sm tw:text-muted-foreground">
-                {t(
-                  statement.result.truncated
-                    ? "agent.rowsTruncated"
-                    : "agent.rows",
-                  { count: statement.result.rowCount },
-                )}{" "}
-                · {statement.result.durationMs} ms
-                {" · "}
-                <ResultToolbar
-                  columns={statement.result.columns}
-                  rows={statement.result.rows}
-                  filenameBase={`script-stmt${index + 1}-${stamp()}`}
+      {statements.map(({ statement, index }) => {
+        const recovery =
+          statement.error && connection
+            ? writeBlockRecoveryKind(connection, {
+                kind: null,
+                message: statement.error,
+                sql: statement.sql,
+              })
+            : null;
+        return (
+          <section
+            key={`${index}:${statement.sql}`}
+            data-fill={fillsResultPane}
+            className="tw:flex tw:min-h-0 tw:flex-col tw:border-t tw:border-border-subtle tw:pt-2 tw:data-[fill=true]:flex-1"
+          >
+            <ResultMeta>
+              <span className="tw:inline-block tw:min-w-4 tw:font-semibold">
+                {index + 1}
+              </span>
+              <SqlSnippet>{statement.sql}</SqlSnippet>
+            </ResultMeta>
+            {statement.error ? (
+              <>
+                <div className="tw:px-3 tw:py-2 tw:text-ui tw:text-danger">
+                  {statement.error}
+                </div>
+                {recovery === "managedDdl" && connection ? (
+                  <InlineNotice tone="warning" icon="info" role="status">
+                    <ManagedDdlGuidance connection={connection} />
+                  </InlineNotice>
+                ) : null}
+              </>
+            ) : statement.result ? (
+              <>
+                <div className="tw:mx-3 tw:my-1 tw:text-sm tw:text-muted-foreground">
+                  {t(
+                    statement.result.truncated
+                      ? "agent.rowsTruncated"
+                      : "agent.rows",
+                    { count: statement.result.rowCount },
+                  )}{" "}
+                  · {statement.result.durationMs} ms
+                  {" · "}
+                  <ResultToolbar
+                    columns={statement.result.columns}
+                    rows={statement.result.rows}
+                    filenameBase={`script-stmt${index + 1}-${stamp()}`}
+                  />
+                </div>
+                <DataGrid
+                  result={statement.result}
+                  surface={fillsResultPane ? "workbench" : "embedded"}
                 />
+              </>
+            ) : (
+              <div className="tw:px-3 tw:py-2 tw:text-sm tw:text-muted-foreground">
+                {t("sql.affected", { count: statement.affected ?? 0 })}
               </div>
-              <DataGrid
-                result={statement.result}
-                surface={fillsResultPane ? "workbench" : "embedded"}
-              />
-            </>
-          ) : (
-            <div className="tw:px-3 tw:py-2 tw:text-sm tw:text-muted-foreground">
-              {t("sql.affected", { count: statement.affected ?? 0 })}
-            </div>
-          )}
-        </section>
-      ))}
+            )}
+          </section>
+        );
+      })}
     </>
   );
   return fillsResultPane ? (
@@ -405,6 +426,12 @@ function WriteBlockRecoveryRow({
         connection: connection.name,
       });
       break;
+    case "managedDdl":
+      permission = t("sql.writeBlock.permissionManagedDdl");
+      guidance = t("sql.writeBlock.guidanceManagedDdl", {
+        connection: connection.name,
+      });
+      break;
     case "workspaceGrant":
       permission = t("sql.writeBlock.permissionWorkspaceGrant");
       guidance = t("sql.writeBlock.guidanceWorkspaceGrant", {
@@ -428,6 +455,7 @@ function WriteBlockRecoveryRow({
     kind === "deviceSafety" ||
     kind === "localSafety" ||
     kind === "workspacePolicyAndDevice";
+  const safetyActionAvailable = kind !== "managedDdl";
   return (
     <>
       <dt>{t("sql.writeBlock.requiredPermission")}</dt>
@@ -441,21 +469,43 @@ function WriteBlockRecoveryRow({
               {guidance}
             </p>
           </div>
-          <div className="tw:shrink-0">
-            <Button
-              size="compact"
-              onClick={() => onOpenSafety(connection.id)}
-            >
-              {t(
-                canModifyHere
-                  ? "sql.writeBlock.openSafety"
-                  : "sql.writeBlock.reviewSafety",
-                { connection: connection.name },
-              )}
-            </Button>
-          </div>
+          {safetyActionAvailable ? (
+            <div className="tw:shrink-0">
+              <Button
+                size="compact"
+                onClick={() => onOpenSafety(connection.id)}
+              >
+                {t(
+                  canModifyHere
+                    ? "sql.writeBlock.openSafety"
+                    : "sql.writeBlock.reviewSafety",
+                  { connection: connection.name },
+                )}
+              </Button>
+            </div>
+          ) : null}
         </div>
       </dd>
     </>
+  );
+}
+
+function ManagedDdlGuidance({
+  connection,
+}: {
+  connection: ConnectionProfile;
+}) {
+  const { t } = useI18n();
+  return (
+    <span className="tw:block tw:min-w-0">
+      <strong className="tw:block tw:text-ui tw:text-foreground">
+        {t("sql.writeBlock.permissionManagedDdl")}
+      </strong>
+      <span className="tw:mt-0.5 tw:block tw:leading-body tw:text-muted-foreground">
+        {t("sql.writeBlock.guidanceManagedDdl", {
+          connection: connection.name,
+        })}
+      </span>
+    </span>
   );
 }

@@ -17,7 +17,10 @@ pub fn list_drivers(state: State<'_, AppState>) -> Vec<DriverDescriptor> {
 }
 
 #[tauri::command]
-pub fn install_driver(state: State<'_, AppState>, id: String) -> AppResult<DriverDescriptor> {
+pub async fn install_driver(state: State<'_, AppState>, id: String) -> AppResult<DriverDescriptor> {
+    if id == "google-bq-cli" && !crate::bigquery::is_cli_available() {
+        crate::bigquery::install_managed_cli().await?;
+    }
     state.services.connections.install_driver(&id)
 }
 

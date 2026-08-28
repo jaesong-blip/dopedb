@@ -171,6 +171,32 @@ describe("SQL run guidance", () => {
         message: "blocked: multiple statements are not allowed",
       }),
     ).toBeNull();
+    expect(
+      writeBlockRecoveryKind(
+        {
+          ...managedWorkspaceManager,
+          allowWrites: true,
+        },
+        {
+          kind: "database",
+          message: "permission denied for schema public",
+          sql: 'CREATE TABLE "events" ("id" bigint)',
+        },
+      ),
+    ).toBe("managedDdl");
+    expect(
+      writeBlockRecoveryKind(
+        {
+          ...managedWorkspaceManager,
+          allowWrites: true,
+        },
+        {
+          kind: "blocked",
+          message:
+            "managed connections use DML-only short-lived credentials; schema DDL requires a separate database owner or migration credential",
+        },
+      ),
+    ).toBe("managedDdl");
 
     const managedProfile: ConnectionProfile = {
       id: connectionId("00000000-0000-4000-8000-000000000010"),

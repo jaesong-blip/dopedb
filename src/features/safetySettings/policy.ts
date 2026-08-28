@@ -10,6 +10,7 @@ export type WriteBlockRecoveryKind =
   | "deviceSafety"
   | "localSafety"
   | "managedCredential"
+  | "managedDdl"
   | "workspaceGrant"
   | "workspacePolicy"
   | "workspacePolicyAndDevice";
@@ -17,7 +18,25 @@ export type WriteBlockRecoveryKind =
 type WriteBlockError = Readonly<{
   kind: string | null;
   message: string;
+  sql?: string;
 }>;
+
+function isDdlStatement(sql: string | undefined): boolean {
+  if (!sql) return false;
+  return /^\s*(?:(?:--[^\r\n]*(?:\r?\n|$))|(?:\/\*[\s\S]*?\*\/\s*))*\s*(?:create|alter|drop|truncate|comment|reindex)\b/i.test(
+    sql,
+  );
+}
+
+function isManagedDdlError(error: WriteBlockError): boolean {
+  const message = error.message.toLocaleLowerCase();
+  return (
+    message.includes("managed connections use dml-only short-lived credentials") ||
+    (isDdlStatement(error.sql) &&
+      (message.includes("permission denied for schema") ||
+        message.includes("must be owner of")))
+  );
+}
 
 function isWritesDisabledError(error: WriteBlockError): boolean {
   if (error.kind !== "blocked" && error.kind !== "safety") return false;
@@ -34,6 +53,12 @@ export function writeBlockRecoveryKind(
   connection: ConnectionWriteAuthority,
   error: WriteBlockError,
 ): WriteBlockRecoveryKind | null {
+  if (
+    connection.credentialMode === "managed" &&
+    isManagedDdlError(error)
+  ) {
+    return "managedDdl";
+  }
   if (!isWritesDisabledError(error)) return null;
   if (connection.credentialMode === "memberLocal") {
     return "managedCredential";

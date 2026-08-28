@@ -118,6 +118,17 @@ impl ScriptPlatformAdapter {
                 _scope: Box::new(operation_scope),
             }));
         }
+        if let Some(reason) = kinds
+            .iter()
+            .find_map(|kind| safety::managed_ddl_block_reason(pin.profile.credential_mode, *kind))
+        {
+            return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
+                error: AppError::Blocked {
+                    reason: reason.into(),
+                },
+                _scope: Box::new(operation_scope),
+            }));
+        }
         let policy = capture_policy(&pin, &settings).map_err(DesktopScriptRunError::Application)?;
         let history_origin = request.origin.unwrap_or_else(|| "manual".into());
         if request.schema_change.is_some() && request.table_change.is_some() {

@@ -89,6 +89,13 @@ impl QueryPlatformAdapter {
         if let safety::GateDecision::Block { reason } = safety::decide(&settings, &classification) {
             return Err(inspection.into_error(AppError::Blocked { reason }));
         }
+        if let Some(reason) =
+            safety::managed_ddl_block_reason(pin.profile.credential_mode, classification.kind)
+        {
+            return Err(inspection.into_error(AppError::Blocked {
+                reason: reason.into(),
+            }));
+        }
 
         let history_origin = request.origin.unwrap_or_else(|| "manual".into());
         let payload = match serde_json::to_value(StoredDesktopSqlPayload {

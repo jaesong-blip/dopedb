@@ -22,7 +22,7 @@ pub(crate) use l2_enforce::{
     run_read_only_byte_capped_parameterized_cancellable, ReadOnlyBindValue,
 };
 pub use l3_preview::preview;
-pub use l4_gate::{decide, GateDecision};
+pub use l4_gate::{decide, managed_ddl_block_reason, GateDecision};
 
 use crate::model::Engine;
 

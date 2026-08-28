@@ -19,3 +19,10 @@ export function isValidBigQueryProjectId(value: string): boolean {
 export function isValidBigQueryDatasetId(value: string): boolean {
   return value.length <= 1024 && /^[A-Za-z0-9_]+$/u.test(value);
 }
+
+export function bigQueryResourceInputMode(
+  authenticated: boolean,
+  discoveredCount: number,
+): "select" | "manual" {
+  return authenticated && discoveredCount > 0 ? "select" : "manual";
+}

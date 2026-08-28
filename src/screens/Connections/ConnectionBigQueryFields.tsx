@@ -15,6 +15,7 @@ import {
   BIGQUERY_LOCATION_PARAMETER,
   BIGQUERY_MAXIMUM_BYTES_BILLED_PARAMETER,
 } from "../../features/connections/connectionEditorModel";
+import { bigQueryResourceInputMode } from "../../features/connections/bigQueryOnboardingModel";
 import type { BigQueryAuthMode } from "../../features/connections/domain";
 import type { ConnectionEditorController } from "../../features/connections/useConnectionEditorController";
 import { useI18n } from "../../lib/i18n";
@@ -31,9 +32,24 @@ export function ConnectionBigQueryFields({
   const { t } = useI18n();
   const { form, set, flags, options, validation, bigQuery } = profile;
   const { isSharedTemplate, canEditConnection } = flags;
-  const cliReady = drivers.active?.installState === "installed";
-  const projectListId = `connection-bigquery-projects-${form.id}`;
-  const datasetListId = `connection-bigquery-datasets-${form.id}`;
+  const projectIsDiscovered = bigQuery.projects.some(
+    (project) => project.id === form.host,
+  );
+  const datasetIsDiscovered = bigQuery.datasets.some(
+    (dataset) => dataset.id === form.database,
+  );
+  const useProjectSelector =
+    !isSharedTemplate &&
+    bigQueryResourceInputMode(
+      bigQuery.auth?.authenticated === true,
+      bigQuery.projects.length,
+    ) === "select";
+  const useDatasetSelector =
+    !isSharedTemplate &&
+    bigQueryResourceInputMode(
+      bigQuery.auth?.authenticated === true,
+      bigQuery.datasets.length,
+    ) === "select";
   const authOptions: ReadonlyArray<{
     value: BigQueryAuthMode;
     label: string;
@@ -66,7 +82,11 @@ export function ConnectionBigQueryFields({
             <div className="tw:flex tw:min-h-control-md tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2">
               {bigQuery.pending ? (
                 <LoadingLabel>
-                  {t("connections.bigQueryAuthenticating")}
+                  {t(
+                    bigQuery.preparingCli
+                      ? "connections.bigQueryPreparingTools"
+                      : "connections.bigQueryAuthenticating",
+                  )}
                 </LoadingLabel>
               ) : (
                 <StatusBadge
@@ -86,9 +106,7 @@ export function ConnectionBigQueryFields({
               )}
               <Button
                 size="compact"
-                disabled={
-                  !canEditConnection || !cliReady || bigQuery.pending
-                }
+                disabled={!canEditConnection || bigQuery.pending}
                 onClick={
                   bigQuery.mode === "googleAccount"
                     ? bigQuery.connectGoogleAccount
@@ -104,12 +122,12 @@ export function ConnectionBigQueryFields({
                     : t("connections.bigQueryChooseCredentialFile")}
               </Button>
             </div>
-            {bigQuery.error ? (
+            {bigQuery.authenticationError ? (
               <p
                 className="tw:m-0 tw:text-xs tw:leading-body tw:text-danger"
                 role="alert"
               >
-                {bigQuery.error}
+                {bigQuery.authenticationError}
               </p>
             ) : null}
           </PropertyRow>
@@ -121,30 +139,66 @@ export function ConnectionBigQueryFields({
         htmlFor="connection-host"
         validation={validation.host}
       >
-        <TextInput
-          id="connection-host"
-          density="compact"
-          value={form.host}
-          list={
-            !isSharedTemplate && bigQuery.projects.length > 0
-              ? projectListId
-              : undefined
-          }
-          disabled={!canEditConnection}
-          required
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-          aria-invalid={validation.host?.tone === "danger" || undefined}
-          placeholder="my-gcp-project"
-          onChange={(event) => bigQuery.selectProject(event.target.value)}
-        />
-        {!isSharedTemplate && bigQuery.projects.length > 0 ? (
-          <datalist id={projectListId}>
+        {useProjectSelector ? (
+          <SelectInput
+            id="connection-host"
+            density="compact"
+            value={form.host}
+            disabled={!canEditConnection}
+            required
+            aria-invalid={validation.host?.tone === "danger" || undefined}
+            onChange={(event) => bigQuery.selectProject(event.target.value)}
+          >
+            <option value="">
+              {t("connections.bigQuerySelectProject")}
+            </option>
+            {form.host && !projectIsDiscovered ? (
+              <option value={form.host}>{form.host}</option>
+            ) : null}
             {bigQuery.projects.map((project) => (
-              <option key={project.id} value={project.id} label={project.name} />
+              <option key={project.id} value={project.id}>
+                {project.name && project.name !== project.id
+                  ? `${project.name} — ${project.id}`
+                  : project.id}
+              </option>
             ))}
-          </datalist>
+          </SelectInput>
+        ) : (
+          <TextInput
+            id="connection-host"
+            density="compact"
+            value={form.host}
+            disabled={!canEditConnection}
+            required
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            aria-invalid={validation.host?.tone === "danger" || undefined}
+            placeholder={t("connections.bigQueryProjectPlaceholder")}
+            onChange={(event) => bigQuery.selectProject(event.target.value)}
+          />
+        )}
+        {!isSharedTemplate && bigQuery.projectsError ? (
+          <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+            <p
+              className="tw:m-0 tw:text-xs tw:leading-body tw:text-danger"
+              role="alert"
+            >
+              {bigQuery.projectsError}
+            </p>
+            <Button size="xs" onClick={bigQuery.refreshProjects}>
+              {t("common.refresh")}
+            </Button>
+          </div>
+        ) : null}
+        {!isSharedTemplate &&
+        bigQuery.auth?.authenticated &&
+        bigQuery.projectsLoaded &&
+        bigQuery.projects.length === 0 &&
+        !bigQuery.projectsError ? (
+          <span className="tw:text-xs tw:text-muted-foreground" role="status">
+            {t("connections.bigQueryNoProjects")}
+          </span>
         ) : null}
         {!isSharedTemplate && bigQuery.projectsPending ? (
           <span className="tw:text-xs tw:text-muted-foreground" role="status">
@@ -158,30 +212,68 @@ export function ConnectionBigQueryFields({
         htmlFor="connection-database"
         validation={validation.database}
       >
-        <TextInput
-          id="connection-database"
-          density="compact"
-          value={form.database}
-          list={
-            !isSharedTemplate && bigQuery.datasets.length > 0
-              ? datasetListId
-              : undefined
-          }
-          disabled={!canEditConnection}
-          required
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-          aria-invalid={validation.database?.tone === "danger" || undefined}
-          placeholder="analytics"
-          onChange={(event) => bigQuery.selectDataset(event.target.value)}
-        />
-        {!isSharedTemplate && bigQuery.datasets.length > 0 ? (
-          <datalist id={datasetListId}>
+        {useDatasetSelector ? (
+          <SelectInput
+            id="connection-database"
+            density="compact"
+            value={form.database}
+            disabled={!canEditConnection}
+            required
+            aria-invalid={
+              validation.database?.tone === "danger" || undefined
+            }
+            onChange={(event) => bigQuery.selectDataset(event.target.value)}
+          >
+            <option value="">
+              {t("connections.bigQuerySelectDataset")}
+            </option>
+            {form.database && !datasetIsDiscovered ? (
+              <option value={form.database}>{form.database}</option>
+            ) : null}
             {bigQuery.datasets.map((dataset) => (
-              <option key={dataset.id} value={dataset.id} />
+              <option key={dataset.id} value={dataset.id}>
+                {dataset.id}
+              </option>
             ))}
-          </datalist>
+          </SelectInput>
+        ) : (
+          <TextInput
+            id="connection-database"
+            density="compact"
+            value={form.database}
+            disabled={!canEditConnection}
+            required
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            aria-invalid={
+              validation.database?.tone === "danger" || undefined
+            }
+            placeholder={t("connections.bigQueryDatasetPlaceholder")}
+            onChange={(event) => bigQuery.selectDataset(event.target.value)}
+          />
+        )}
+        {!isSharedTemplate && bigQuery.datasetsError ? (
+          <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+            <p
+              className="tw:m-0 tw:text-xs tw:leading-body tw:text-danger"
+              role="alert"
+            >
+              {bigQuery.datasetsError}
+            </p>
+            <Button size="xs" onClick={bigQuery.refreshDatasets}>
+              {t("common.refresh")}
+            </Button>
+          </div>
+        ) : null}
+        {!isSharedTemplate &&
+        form.host.trim() &&
+        bigQuery.datasetsLoaded &&
+        bigQuery.datasets.length === 0 &&
+        !bigQuery.datasetsError ? (
+          <span className="tw:text-xs tw:text-muted-foreground" role="status">
+            {t("connections.bigQueryNoDatasets")}
+          </span>
         ) : null}
         {!isSharedTemplate && bigQuery.datasetsPending ? (
           <span className="tw:text-xs tw:text-muted-foreground" role="status">
@@ -273,7 +365,9 @@ export function ConnectionBigQueryFields({
           >
             {drivers.active?.installState === "installed"
               ? t("connections.bigQueryCliReady")
-              : t("connections.bigQueryCliRequired")}
+              : bigQuery.preparingCli
+                ? t("connections.bigQueryPreparingTools")
+                : t("connections.bigQueryCliRequired")}
           </StatusBadge>
         </div>
       </PropertyRow>

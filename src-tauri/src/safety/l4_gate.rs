@@ -17,7 +17,21 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::{Classification, QueryKind, SafetySettings};
+use crate::model::{Classification, QueryKind, SafetySettings, WorkspaceCredentialMode};
+
+pub const MANAGED_DDL_BLOCK_REASON: &str =
+    "managed connections use DML-only short-lived credentials; schema DDL requires a separate database owner or migration credential";
+
+/// Managed provider leases deliberately stop at row-level DML. Granting schema
+/// CREATE to a disposable role would make it own durable objects and defeat the
+/// independently revocable least-privilege boundary.
+pub fn managed_ddl_block_reason(
+    credential_mode: WorkspaceCredentialMode,
+    kind: QueryKind,
+) -> Option<&'static str> {
+    (credential_mode == WorkspaceCredentialMode::Managed && kind == QueryKind::Ddl)
+        .then_some(MANAGED_DDL_BLOCK_REASON)
+}
 
 /// What the gate decided. Adjacently tagged so JS gets `{ decision, reason? }`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -140,6 +154,18 @@ mod tests {
                 "{kind:?} must never auto-run"
             );
         }
+        assert_eq!(
+            managed_ddl_block_reason(WorkspaceCredentialMode::Managed, QueryKind::Ddl),
+            Some(MANAGED_DDL_BLOCK_REASON)
+        );
+        assert_eq!(
+            managed_ddl_block_reason(WorkspaceCredentialMode::Managed, QueryKind::Write),
+            None
+        );
+        assert_eq!(
+            managed_ddl_block_reason(WorkspaceCredentialMode::Local, QueryKind::Ddl),
+            None
+        );
     }
 
     #[test]

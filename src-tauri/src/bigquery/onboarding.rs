@@ -17,9 +17,9 @@ use crate::model::{ConnectionProfile, Engine, Provider, WorkspaceConnectionAcces
 use crate::process_tree::ProcessTree;
 
 use super::{
-    default_cloudsdk_config, map_process_tree_error, read_bounded, safe_path, sdk_roots,
-    CommandFailure, CommandOutput, ExecutableIdentity, MAX_ERROR_BYTES, MAX_LIST_RESULTS,
-    MAX_OUTPUT_BYTES,
+    default_cloudsdk_config, discover_sdk_executable, map_process_tree_error, read_bounded,
+    safe_path, CommandFailure, CommandOutput, ResolvedSdkExecutable, MAX_ERROR_BYTES,
+    MAX_LIST_RESULTS, MAX_OUTPUT_BYTES,
 };
 
 const AUTH_MODE_PARAMETER: &str = "authMode";
@@ -65,15 +65,6 @@ enum SdkExecutable {
 }
 
 impl SdkExecutable {
-    fn file_name(self) -> &'static str {
-        match (self, cfg!(windows)) {
-            (Self::Bq, true) => "bq.cmd",
-            (Self::Bq, false) => "bq",
-            (Self::Gcloud, true) => "gcloud.cmd",
-            (Self::Gcloud, false) => "gcloud",
-        }
-    }
-
     fn label(self) -> &'static str {
         match self {
             Self::Bq => "BigQuery CLI",
@@ -364,22 +355,12 @@ fn path_has_unsafe_characters(path: &Path) -> bool {
     })
 }
 
-async fn discover_sdk_executable(kind: SdkExecutable) -> AppResult<ExecutableIdentity> {
-    let file_name = kind.file_name();
-    for root in sdk_roots() {
-        let candidate = root.join("bin").join(file_name);
-        if !candidate.is_file() {
-            continue;
-        }
-        if let Ok(identity) = ExecutableIdentity::audit_named(&candidate, &root, &[file_name]).await
-        {
-            return Ok(identity);
-        }
-    }
-    Err(AppError::Config(format!(
-        "{} is unavailable; install Google Cloud CLI and restart DopeDB",
-        kind.label()
-    )))
+async fn discover_onboarding_executable(kind: SdkExecutable) -> AppResult<ResolvedSdkExecutable> {
+    let allowed_names = match kind {
+        SdkExecutable::Bq => &["bq", "bq.cmd"][..],
+        SdkExecutable::Gcloud => &["gcloud", "gcloud.cmd"][..],
+    };
+    discover_sdk_executable(allowed_names, kind.label()).await
 }
 
 async fn run_json(
@@ -400,8 +381,9 @@ async fn run_checked(
     timeout: Duration,
 ) -> AppResult<CommandOutput> {
     validate_arguments(arguments)?;
-    let identity = discover_sdk_executable(kind).await?;
-    let executable = identity
+    let resolved = discover_onboarding_executable(kind).await?;
+    let executable = resolved
+        .identity
         .revalidate()
         .await
         .map_err(onboarding_command_failure)?;
@@ -413,14 +395,16 @@ async fn run_checked(
         .env("PATH", safe_path())
         .env("HOME", home)
         .env("CLOUDSDK_CONFIG", config)
+        .env("CLOUDSDK_CORE_DISABLE_PROMPTS", "1")
         .env("CLOUDSDK_CORE_DISABLE_USAGE_REPORTING", "true")
+        .env("CLOUDSDK_COMPONENT_MANAGER_DISABLE_UPDATE_CHECK", "1")
         .env("CLOUDSDK_CORE_LOG_HTTP", "false")
-        .env("CLOUDSDK_PYTHON_SITEPACKAGES", "0")
         .env("PYTHONIOENCODING", "utf-8")
         .kill_on_drop(true)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    resolved.environment.apply(&mut command);
     #[cfg(unix)]
     command.process_group(0);
     #[cfg(windows)]
@@ -502,10 +486,37 @@ fn safe_onboarding_error(kind: SdkExecutable, stderr: &[u8]) -> AppError {
     if text.contains("access denied")
         || text.contains("permission denied")
         || text.contains("does not have") && text.contains("permission")
+        || text.contains("accessdenied")
     {
         return AppError::Blocked {
             reason: "the connected Google Cloud account cannot list this BigQuery resource".into(),
         };
+    }
+    if text.contains("has not been used")
+        || text.contains("accessnotconfigured")
+        || text.contains("api is not enabled")
+    {
+        return AppError::Config(
+            "the BigQuery API is not enabled for the selected Google Cloud project".into(),
+        );
+    }
+    if text.contains("not found") || text.contains("notfound") {
+        return AppError::NotFound(
+            "the selected Google Cloud project or BigQuery resource was not found".into(),
+        );
+    }
+    if text.contains("quota") || text.contains("rate limit") {
+        return AppError::Config(
+            "Google Cloud temporarily rejected resource discovery because of a quota limit".into(),
+        );
+    }
+    if text.contains("timed out")
+        || text.contains("connection reset")
+        || text.contains("could not resolve")
+        || text.contains("name resolution")
+        || text.contains("network is unreachable")
+    {
+        return AppError::Network("Google Cloud resource discovery could not connect".into());
     }
     AppError::Config(format!(
         "{} rejected the request; verify the local Google Cloud login and permissions",
