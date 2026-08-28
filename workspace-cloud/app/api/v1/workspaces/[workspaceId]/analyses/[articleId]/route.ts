@@ -14,12 +14,14 @@ import {
   privateRevisionMutationJson,
 } from "../../../../../../../lib/http";
 import {
+  workspaceAnalysisArticle,
   workspaceAnalysisArticleRevision,
   workspaceAnalysisArticleRun,
 } from "../../../../../../../lib/schema";
 import { authorizeWorkspace } from "../../../../../../../lib/workspace-authorization";
 import { accessibleAnalysisArticle } from "../../../../../../../lib/workspace-analysis-article-http";
 import {
+  commitAnalysisArticleDelete,
   commitAnalysisArticleMutation,
   type AnalysisArticleMutationAuthority,
   type AnalysisArticleMutationOperation,
@@ -28,6 +30,7 @@ import {
   parseAnalysisArticleVersionPayload,
   parseSharedAnalysisArticleCreate,
   publicAnalysisArticle,
+  type AnalysisArticleVersionPayload,
   type AnalysisArticleState,
   type SharedAnalysisArticleCreate,
 } from "../../../../../../../lib/workspace-analysis-articles";
@@ -249,25 +252,40 @@ export async function DELETE(request: Request, context: RouteContext) {
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
   const match = await expectedRevision(request);
   if ("error" in match) return match.error;
-  const current = await accessibleAnalysisArticle({
-    organizationId: workspaceId,
-    articleId,
-    memberId: authorization.membership.id,
-    includeWorking: true,
-    includeDeleted: true,
+  const current = await db.query.workspaceAnalysisArticle.findFirst({
+    where: and(
+      eq(workspaceAnalysisArticle.organizationId, workspaceId),
+      eq(workspaceAnalysisArticle.id, articleId),
+    ),
+    columns: { revision: true, deletedAt: true },
   });
-  if (!current) return jsonError("Analysis Article not found", 404);
+  if (!current || current.deletedAt) return jsonError("Analysis Article not found", 404);
   if (match.value !== current.revision) {
     return jsonError("Analysis Article changed concurrently. Refresh before deleting.", 409);
   }
-  const deleted = await commitAnalysisArticleMutation({
+  const revision = await db.query.workspaceAnalysisArticleRevision.findFirst({
+    where: and(
+      eq(workspaceAnalysisArticleRevision.organizationId, workspaceId),
+      eq(workspaceAnalysisArticleRevision.articleId, articleId),
+      eq(workspaceAnalysisArticleRevision.revision, current.revision),
+    ),
+    columns: { payload: true },
+  });
+  let payload: AnalysisArticleVersionPayload | null;
+  try {
+    payload = revision ? parseAnalysisArticleVersionPayload(revision.payload) : null;
+  } catch {
+    payload = null;
+  }
+  if (!payload || payload.deleted || payload.id !== articleId) {
+    return jsonError("Analysis Article revision is invalid", 409);
+  }
+  const deleted = await commitAnalysisArticleDelete({
     organizationId: workspaceId,
-    article: articleInput(current),
+    article: payload,
     expectedRevision: current.revision,
-    state: "archived",
-    ownerMemberId: current.ownerMemberId,
+    ownerMemberId: payload.ownerMemberId,
     authority: authority(authorization),
-    operation: "delete",
   });
   if (!deleted) return jsonError("Analysis Article authority changed. Retry deletion.", 409);
   return privateRevisionMutationJson(request, {

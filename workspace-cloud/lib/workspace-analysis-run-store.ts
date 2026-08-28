@@ -3,7 +3,7 @@
 // only receipts plus already-encrypted bounded fragments.
 import "server-only";
 
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 
 import { db } from "./db";
 import { revocationGateLockKey } from "./revocation-gates";
@@ -20,6 +20,7 @@ import {
   workspaceAuditEvent,
   workspaceConnection,
   workspaceConnectionGrant,
+  workspaceResourceVersion,
 } from "./schema";
 import type {
   AnalysisResultFragmentReference,
@@ -56,6 +57,84 @@ export type SealedAnalysisFragment = Readonly<{
 }>;
 
 type RawRow = Record<string, unknown>;
+
+export type AnalysisRunStart = Readonly<{
+  run: RawRow;
+  connectionContentRevisions: Readonly<Record<string, number>>;
+}>;
+
+// These predicates intentionally recognize the immutable version-1 payload,
+// rather than guessing from two coincidentally equal revision numbers. Before
+// 0.3.74 those pins stored the internal authority epoch. A legacy Article may
+// use the current content only when its immutable current connection version
+// predates the Article revision; any later content edit remains fail-closed.
+// Every caller names the joined rows `revision`, `pin`, and `connection`, while
+// the supplied SQL fragments select the applicable revision payload and time.
+function legacyAnalysisConnectionAuthority(
+  revisionPayload: SQL,
+  revisionCreatedAt: SQL,
+) {
+  return sql`
+    ${revisionPayload} #>> '{definition,version}' = '1'
+    AND pin."connection_revision" <= connection."revision"
+    AND EXISTS (
+      SELECT 1
+      FROM ${workspaceResourceVersion} legacy_content
+      WHERE legacy_content."organization_id" = connection."organization_id"
+        AND legacy_content."resource_type" = 'connection'
+        AND legacy_content."resource_id" = connection."id"
+        AND legacy_content."branch" = 'main'
+        AND legacy_content."revision" = connection."content_revision"
+        AND legacy_content."created_at" < ${revisionCreatedAt}
+    )`;
+}
+
+function analysisConnectionMatchesPin(
+  revisionPayload: SQL,
+  revisionCreatedAt: SQL,
+) {
+  return sql`(
+    (${revisionPayload} #>> '{definition,version}' = '2'
+      AND connection."content_revision" = pin."connection_revision")
+    OR (${legacyAnalysisConnectionAuthority(revisionPayload, revisionCreatedAt)})
+  )`;
+}
+
+function analysisReceiptMatchesConnection(
+  revisionPayload: SQL,
+  revisionCreatedAt: SQL,
+) {
+  return sql`(
+    (${revisionPayload} #>> '{definition,version}' = '2'
+      AND pin."connection_revision" = requested.connection_revision
+      AND connection."content_revision" = pin."connection_revision")
+    OR (${legacyAnalysisConnectionAuthority(revisionPayload, revisionCreatedAt)}
+      AND requested.connection_revision = connection."content_revision")
+  )`;
+}
+
+function returnedAnalysisRunStart(row: RawRow | undefined): AnalysisRunStart | null {
+  if (!row) return null;
+  const rawRevisions = row.connectionContentRevisions;
+  if (!rawRevisions || typeof rawRevisions !== "object" || Array.isArray(rawRevisions)) {
+    throw new Error("Analysis run start omitted its connection content authority");
+  }
+  const connectionContentRevisions = Object.fromEntries(
+    Object.entries(rawRevisions as Record<string, unknown>).map(([connectionId, value]) => {
+      const revision = typeof value === "number" ? value : Number(value);
+      if (!Number.isSafeInteger(revision) || revision < 1) {
+        throw new Error("Analysis run start returned invalid connection content authority");
+      }
+      return [connectionId, revision];
+    }),
+  );
+  if (Object.keys(connectionContentRevisions).length === 0) {
+    throw new Error("Analysis run start returned no connection content authority");
+  }
+  const run = { ...row };
+  delete run.connectionContentRevisions;
+  return { run, connectionContentRevisions };
+}
 
 function memberLockKey(input: { organizationId: string; authority: AnalysisRunAuthority }) {
   return revocationGateLockKey({
@@ -148,7 +227,10 @@ export async function getAnalysisRunControl(input: {
             LEFT JOIN ${workspaceConnection} connection
               ON connection."organization_id" = pin."organization_id"
              AND connection."id" = pin."connection_id"
-             AND connection."content_revision" = pin."connection_revision"
+             AND ${analysisConnectionMatchesPin(
+               sql`revision."payload"`,
+               sql`revision."created_at"`,
+             )}
              AND connection."deleted_at" IS NULL
              AND connection."revocation_pending_at" IS NULL
             LEFT JOIN ${knowledgeEnvironmentConnection} environment_binding
@@ -304,7 +386,9 @@ export async function commitAnalysisRunCreate(input: {
         AND (${input.run.trigger} <> 'schedule' OR runner."background_allowed" = TRUE)
       FOR UPDATE OF runner
     ), article_authority AS MATERIALIZED (
-      SELECT article."id", article."project_environment_id", article."environment_revision"
+      SELECT article."id", article."project_environment_id", article."environment_revision",
+        revision."payload" AS "revision_payload",
+        revision."created_at" AS "revision_created_at"
       FROM ${workspaceAnalysisArticle} article
       JOIN ${workspaceAnalysisArticleRevision} revision
         ON revision."organization_id" = article."organization_id"
@@ -319,18 +403,18 @@ export async function commitAnalysisRunCreate(input: {
             AND authority."role" IN ('editor', 'admin', 'owner')))
       FOR UPDATE OF article, revision
     ), connection_authority AS MATERIALIZED (
-      SELECT pin."connection_id"
+      SELECT pin."connection_id", connection."content_revision"
       FROM ${workspaceAnalysisArticleConnection} pin
+      JOIN article_authority ON article_authority."id" = pin."article_id"
       JOIN ${workspaceConnection} connection
         ON connection."organization_id" = pin."organization_id"
        AND connection."id" = pin."connection_id"
-       -- Article definitions pin the public template/content revision. The
-       -- internal revision is a revocation/lease epoch and may advance while
-       -- the shared endpoint, driver, and saved SQL stay unchanged.
-       AND connection."content_revision" = pin."connection_revision"
+       AND ${analysisConnectionMatchesPin(
+         sql`article_authority."revision_payload"`,
+         sql`article_authority."revision_created_at"`,
+       )}
        AND connection."deleted_at" IS NULL
        AND connection."revocation_pending_at" IS NULL
-      JOIN article_authority ON article_authority."id" = pin."article_id"
       JOIN ${knowledgeEnvironmentConnection} environment_binding
         ON environment_binding."organization_id" = connection."organization_id"
        AND environment_binding."project_environment_id" = article_authority."project_environment_id"
@@ -401,10 +485,16 @@ export async function commitAnalysisRunCreate(input: {
           inserted."article_revision", 'trigger', inserted."trigger"), ${requestId}::uuid
       FROM inserted RETURNING "resource_id"
     )
-    SELECT ${runProjection()} FROM inserted run
+    SELECT ${runProjection()}, (
+      SELECT jsonb_object_agg(
+        connection_authority."connection_id"::text,
+        connection_authority."content_revision"
+      ) FROM connection_authority
+    ) AS "connectionContentRevisions"
+    FROM inserted run
     JOIN audit ON audit."resource_id" = run."id"::text
   `);
-  return result.rows[0] ?? null;
+  return returnedAnalysisRunStart(result.rows[0]);
 }
 
 function receiptRows(receipts: readonly AnalysisQueryReceiptInput[]) {
@@ -641,7 +731,8 @@ export async function commitAnalysisRunCompletion(input: {
       SELECT * FROM jsonb_to_recordset(${JSON.stringify(fragments)}::jsonb)
         AS requested(block_id text, ordinal integer, payload_hash text)
     ), current AS MATERIALIZED (
-      SELECT run.*
+      SELECT run.*, revision."payload" AS "revision_payload",
+        revision."created_at" AS "revision_created_at"
       FROM ${workspaceAnalysisArticleRun} run
       JOIN ${workspaceAnalysisRunner} runner
         ON runner."organization_id" = run."organization_id"
@@ -746,11 +837,13 @@ export async function commitAnalysisRunCompletion(input: {
        AND pin."article_id" = current."article_id"
        AND pin."article_revision" = current."article_revision"
        AND pin."connection_id" = requested.connection_id
-       AND pin."connection_revision" = requested.connection_revision
       JOIN ${workspaceConnection} connection
         ON connection."organization_id" = pin."organization_id"
        AND connection."id" = pin."connection_id"
-       AND connection."content_revision" = pin."connection_revision"
+       AND ${analysisReceiptMatchesConnection(
+         sql`current."revision_payload"`,
+         sql`current."revision_created_at"`,
+       )}
        AND connection."deleted_at" IS NULL
        AND connection."revocation_pending_at" IS NULL
       JOIN ${workspaceAnalysisArticle} article

@@ -164,5 +164,16 @@ export async function POST(request: Request, context: RouteContext) {
   if (!created) {
     return jsonError("Analysis run authority changed. Refresh the Article, grants, and runner.", 409);
   }
-  return privateJson({ run: created, article }, { status: 201 });
+  const executionConnections = article.connections.map((connection) => {
+    const connectionRevision = created.connectionContentRevisions[connection.connectionId];
+    if (typeof connectionRevision !== "number"
+      || !Number.isSafeInteger(connectionRevision) || connectionRevision < 1) {
+      throw new Error("Analysis run omitted exact connection content authority");
+    }
+    return { ...connection, connectionRevision };
+  });
+  return privateJson({
+    run: created.run,
+    article: { ...article, connections: executionConnections },
+  }, { status: 201 });
 }

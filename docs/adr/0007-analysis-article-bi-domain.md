@@ -47,6 +47,14 @@ connection existence, revocation gate, runner capability, local credential, and
 local read-only policy. The internal revocation/lease epoch is not a content pin
 and must not invalidate an unchanged saved query.
 
+Version-1 Articles created before the content-pin contract stored that internal
+epoch in the connection pin column. The compatibility boundary recognizes those
+rows only from their immutable version-1 revision payload. It may resolve the
+current content revision only when the immutable current connection version was
+created before the Article revision; a later connection-content edit remains
+stale and fails closed. The resolved content revision, not the legacy epoch, is
+returned to Desktop and recorded in the new run receipt.
+
 The query executes only after an authenticated person explicitly requests a
 manual rerun in Desktop. There is no cron, signal-triggered run, publication run,
 or hosted execution. Results remain as bounded local artifacts; the workspace
@@ -95,6 +103,12 @@ page, broaden the connection grant, or run a query from the hosted service.
 
 The screen owns database selection, SQL/result inspection, manual rerun,
 publication, revocation, deletion, and conflict recovery.
+Deletion is workspace-resource cleanup rather than database execution. It still
+requires an active write-capable workspace session, exact optimistic Article
+revision, and Article ownership or workspace administrator authority, but does
+not require a still-live Environment binding, connection grant, Knowledge grant,
+mapping, or runner. Revoked source authority must not make an orphaned Article
+impossible to remove.
 
 ## Consequences
 

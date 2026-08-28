@@ -93,8 +93,15 @@ async function runRevision(workspaceId: string, articleId: string, revision: num
   });
   if (!row) return null;
   try {
+    const rawDefinition = row.payload && typeof row.payload === "object"
+      && !Array.isArray(row.payload)
+      ? (row.payload as Record<string, unknown>).definition
+      : null;
+    const legacyConnectionPins = Boolean(rawDefinition && typeof rawDefinition === "object"
+      && !Array.isArray(rawDefinition)
+      && (rawDefinition as Record<string, unknown>).version === 1);
     const payload = parseAnalysisArticleVersionPayload(row.payload);
-    return payload.deleted ? null : payload;
+    return payload.deleted ? null : { ...payload, legacyConnectionPins };
   } catch {
     return null;
   }
@@ -204,7 +211,8 @@ export async function PATCH(request: Request, context: RouteContext) {
     const query = queryById.get(receipt.queryNodeId);
     const connection = query ? connectionByRole.get(query.connectionRole) : null;
     if (!query || !connection || receipt.connectionId !== connection.connectionId
-      || receipt.connectionRevision !== connection.connectionRevision
+      || (!revision.legacyConnectionPins
+        && receipt.connectionRevision !== connection.connectionRevision)
       || receipt.queryHash !== canonicalHash({ sql: query.sql, parameterValues: run.parameterValues })) {
       return completionError("Analysis Article query receipt does not match the immutable revision", 409);
     }

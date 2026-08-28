@@ -24,7 +24,11 @@ export async function runAnalysisLifecycleScenarios(
     imported: left,
   } = provider;
 
-  const [{ commitAnalysisArticleCreate, commitAnalysisArticleMutation }, articleContract]
+  const [{
+    commitAnalysisArticleCreate,
+    commitAnalysisArticleDelete,
+    commitAnalysisArticleMutation,
+  }, articleContract]
     = await Promise.all([
       import("../workspace-analysis-article-store"),
       import("../workspace-analysis-articles"),
@@ -177,13 +181,15 @@ export async function runAnalysisLifecycleScenarios(
   // complete it, replay that completion, and never expose a partial retained
   // manifest. Cancellation and share-off changes must close staging in SQL,
   // not merely in the route's earlier read-only checks.
-  const [runStore, runnerStore, runContract, versioning, runnerCapabilityContract] =
+  const [runStore, runnerStore, runContract, versioning, runnerCapabilityContract,
+    connectionStore] =
     await Promise.all([
       import("../workspace-analysis-run-store"),
       import("../workspace-analysis-runner-store"),
       import("../workspace-analysis-runs"),
       import("../workspace-versioning"),
       import("../workspace-analysis-runner-capability"),
+      import("../workspace-versioning-store"),
     ]);
   expect(runnerCapabilityContract.parseAnalysisRunnerCapabilityVersion(new Request(
     "https://dopedb.invalid",
@@ -375,7 +381,7 @@ export async function runAnalysisLifecycleScenarios(
   });
   const createAnalysisRun = async (revision: number) => {
     const id = randomUUID();
-    const run = await runStore.commitAnalysisRunCreate({
+    const started = await runStore.commitAnalysisRunCreate({
       organizationId,
       articleId,
       run: {
@@ -390,9 +396,12 @@ export async function runAnalysisLifecycleScenarios(
       runnerCapabilityHash: analysisRunnerCapabilityHash,
       authority,
     });
-    expect(run).toMatchObject({ id, state: "running", runnerId: analysisRunnerId });
-    expectRfc3339Timestamp(run?.startedAt);
-    expectRfc3339Timestamp(run?.createdAt);
+    expect(started?.run).toMatchObject({ id, state: "running", runnerId: analysisRunnerId });
+    expect(started?.connectionContentRevisions).toEqual({
+      [left.connection.id]: left.connection.contentRevision,
+    });
+    expectRfc3339Timestamp(started?.run.startedAt);
+    expectRfc3339Timestamp(started?.run.createdAt);
     return id;
   };
   await expect(runStore.commitAnalysisRunCreate({
@@ -567,6 +576,162 @@ export async function runAnalysisLifecycleScenarios(
          AND "resource_id" = ${analysisRunId}) AS "completionAudits"
   `;
   expect(completionDurability[0]).toEqual({ receipts: 1, completionAudits: 1 });
+
+  // v1 Articles pinned the internal epoch. Preserve unchanged content, fail
+  // after a content edit, and still let the owner delete the stale Article.
+  const legacyConnectionId = randomUUID();
+  const legacyArticleId = randomUUID();
+  const legacyConnectionPayload = {
+    name: "Legacy analysis source", engine: "postgres" as const, provider: "auto" as const,
+    driverId: null, host: "legacy-analysis.invalid", port: 5432, database: "legacy_analysis",
+    sslmode: "require" as const, readonlyDefault: true, allowWrites: false,
+    env: "development" as const, schemaGroup: null, deleted: false,
+  };
+  await expect(connectionStore.commitConnectionCreate({
+    organizationId, connectionId: legacyConnectionId, authority, input: legacyConnectionPayload,
+  })).resolves.toMatchObject({ id: legacyConnectionId, contentRevision: 1 });
+  await sql.begin(async (tx) => {
+    await tx`
+      UPDATE "workspace_control"."workspace_connection"
+      SET "revision" = 2
+      WHERE "organization_id" = ${organizationId} AND "id" = ${legacyConnectionId}::uuid
+    `;
+    await tx`
+      INSERT INTO "workspace_control"."knowledge_environment_connection"
+        ("organization_id", "project_environment_id", "environment_revision",
+         "connection_id", "connection_revision", "role", "alias")
+      VALUES (${organizationId}, ${developmentEnvironment.id}::uuid,
+        ${developmentEnvironment.revision}, ${legacyConnectionId}::uuid, 2,
+        'primary', 'Legacy harness')
+    `;
+  });
+  const { html: legacyHtml, ...legacyDefinitionWithoutHtml } = revisedArticle.definition;
+  expect(legacyHtml).toContain("Active rows");
+  const legacyDefinition = {
+    ...legacyDefinitionWithoutHtml,
+    version: 1 as const,
+    question: "How many active rows exist?",
+    summary: "Legacy exact-read definition",
+  };
+  const legacyArticle = articleContract.parseSharedAnalysisArticleCreate({
+    ...revisedArticle,
+    id: legacyArticleId,
+    connections: [{ connectionId: legacyConnectionId, connectionRevision: 2,
+      role: "primary", alias: "Legacy harness" }],
+    definition: legacyDefinition,
+  });
+  const legacyPayload = {
+    ...legacyArticle, definition: legacyDefinition, state: "draft",
+    ownerMemberId: memberId, deleted: false,
+  };
+  await sql.begin(async (tx) => {
+    await tx`
+      INSERT INTO "workspace_control"."workspace_analysis_article"
+        ("id", "organization_id", "project_environment_id", "environment_revision",
+         "definition", "owner_member_id", "updated_by_member_id")
+      VALUES (${legacyArticleId}::uuid, ${organizationId}, ${developmentEnvironment.id}::uuid,
+        ${developmentEnvironment.revision}, ${JSON.stringify(legacyDefinition)}::jsonb,
+        ${memberId}, ${memberId})
+    `;
+    await tx`
+      INSERT INTO "workspace_control"."workspace_analysis_article_connection"
+        ("organization_id", "article_id", "article_revision", "connection_id",
+         "connection_revision", "role", "alias")
+      VALUES (${organizationId}, ${legacyArticleId}::uuid, 1, ${legacyConnectionId}::uuid,
+        2, 'primary', 'Legacy harness')
+    `;
+    await tx`
+      INSERT INTO "workspace_control"."workspace_analysis_article_revision"
+        ("organization_id", "article_id", "revision", "base_revision", "operation",
+         "payload", "payload_hash", "created_by_user_id", "created_by_member_id")
+      VALUES (${organizationId}, ${legacyArticleId}::uuid, 1, 0, 'create',
+        ${JSON.stringify(legacyPayload)}::jsonb, ${versioning.canonicalHash(legacyPayload)},
+        ${userId}, ${memberId})
+    `;
+  });
+  const legacyRunId = randomUUID();
+  const legacyStarted = await runStore.commitAnalysisRunCreate({
+    organizationId,
+    articleId: legacyArticleId,
+    run: { id: legacyRunId, articleRevision: 1, runnerId: analysisRunnerId,
+      trigger: "manual", parameterValues: {} },
+    parameterHash: versioning.canonicalHash({}),
+    definitionHash: versioning.canonicalHash(legacyArticle.definition),
+    runnerCapabilityHash: analysisRunnerCapabilityHash,
+    authority,
+  });
+  expect(legacyStarted?.connectionContentRevisions).toEqual({ [legacyConnectionId]: 1 });
+  expect(legacyStarted?.run).toMatchObject({ id: legacyRunId, state: "running" });
+  expect(await runStore.getAnalysisRunControl({
+    organizationId, articleId: legacyArticleId, runId: legacyRunId,
+    membershipId: memberId, role: authority.role,
+    runnerCapabilityHash: analysisRunnerCapabilityHash,
+    leaseCapabilityHash: null,
+  })).toMatchObject({ authorized: true });
+  const legacyReceipt = {
+    ...queryReceipt, connectionId: legacyConnectionId,
+    connectionRevision: 1, queryRunId: randomUUID(),
+  };
+  const legacyCompletion = runContract.parseAnalysisRunCompletion({
+    state: "succeeded", queryReceipts: [legacyReceipt], fragmentManifest: [], error: null,
+  }, legacyArticle.definition);
+  await expect(runStore.commitAnalysisRunCompletion({
+    organizationId,
+    articleId: legacyArticleId,
+    runId: legacyRunId,
+    runnerId: analysisRunnerId,
+    runnerCapabilityHash: analysisRunnerCapabilityHash,
+    completion: legacyCompletion,
+    fragmentManifest: [],
+    authority,
+  })).resolves.toMatchObject({ id: legacyRunId, state: "succeeded" });
+
+  const changedLegacyConnectionPayload = { ...legacyConnectionPayload,
+    name: "Changed legacy analysis source" };
+  await sql.begin(async (tx) => {
+    await tx`
+      WITH parent AS (
+        SELECT "id" FROM "workspace_control"."workspace_resource_version"
+        WHERE "organization_id" = ${organizationId} AND "resource_type" = 'connection'
+          AND "resource_id" = ${legacyConnectionId}::uuid
+          AND "branch" = 'main' AND "revision" = 1
+      ), changed AS (
+        UPDATE "workspace_control"."workspace_connection"
+        SET "name" = ${changedLegacyConnectionPayload.name}, "content_revision" = 2,
+          "revision" = 3, "updated_at" = now()
+        WHERE "organization_id" = ${organizationId} AND "id" = ${legacyConnectionId}::uuid
+        RETURNING "id"
+      )
+      INSERT INTO "workspace_control"."workspace_resource_version"
+        ("organization_id", "resource_type", "resource_id", "revision", "base_revision",
+         "parent_version_id", "branch", "operation", "payload", "payload_hash",
+         "created_by_user_id")
+      SELECT ${organizationId}, 'connection', changed."id", 2, 1, parent."id", 'main',
+        'update', ${JSON.stringify(changedLegacyConnectionPayload)}::jsonb,
+        ${versioning.canonicalHash(changedLegacyConnectionPayload)}, ${userId}
+      FROM changed CROSS JOIN parent
+    `;
+    await tx`
+      UPDATE "workspace_control"."knowledge_environment_connection"
+      SET "connection_revision" = 3
+      WHERE "organization_id" = ${organizationId} AND "connection_id" = ${legacyConnectionId}::uuid
+        AND "revoked_at" IS NULL
+    `;
+  });
+  await expect(runStore.commitAnalysisRunCreate({
+    organizationId,
+    articleId: legacyArticleId,
+    run: { id: randomUUID(), articleRevision: 1, runnerId: analysisRunnerId,
+      trigger: "manual", parameterValues: {} },
+    parameterHash: versioning.canonicalHash({}),
+    definitionHash: versioning.canonicalHash(legacyArticle.definition),
+    runnerCapabilityHash: analysisRunnerCapabilityHash,
+    authority,
+  })).resolves.toBeNull();
+  await expect(commitAnalysisArticleDelete({
+    organizationId, article: legacyArticle, expectedRevision: 1,
+    ownerMemberId: memberId, authority,
+  })).resolves.toMatchObject({ id: legacyArticleId, revision: 2, state: "archived" });
 
   const cancelledRunId = await createAnalysisRun(3);
   const cancelRequestedRun = await runStore.requestAnalysisRunCancellation({
