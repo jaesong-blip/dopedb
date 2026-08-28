@@ -41,11 +41,16 @@ layers. A folder move alone would not prevent the same drift.
 - Model resumable or concurrent work with explicit state machines.
 - Delete the previous runtime path, central wrappers, and compatibility re-exports in the
   same completed feature slice.
-- Enforce boundaries, file-size ratchets, state owners, and removed symbols in CI.
+- Enforce boundaries, cohesion-aware structure ratchets, state owners, and removed
+  symbols in CI. Three hundred lines starts a review; it is not a mechanical split
+  command. Large mixed-responsibility modules and tightly coupled tiny-module clusters
+  are symmetric navigation risks.
 
 ## Consequences
 
 The main feature flow is readable without opening platform code. Adapters can change
 without changing policy. The compiler catches several identity mix-ups, and CI catches
 new direct writers or resurrected paths. Existing large modules are migrated
-incrementally, but cannot grow while waiting.
+incrementally, but cannot grow while waiting. A smaller file count is not automatically
+better: modules with one change reason and no independent contract may be recombined
+when splitting only adds import hops.

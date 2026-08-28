@@ -204,7 +204,9 @@ Run checks proportional to the change:
 - A manual app check for changed UI flows.
 - `pnpm check:code-structure` keeps reviewed mixed-responsibility hotspots and
   coupled fragment clusters from growing; use `pnpm audit:code-structure` for
-  the full ranked review before changing its baseline.
+  the full ranked review before changing its baseline. The 300-line mark starts
+  a cohesion review rather than forcing a split; merge tiny siblings when they
+  only add internal hops. Follow [`docs/CODE_STRUCTURE.md`](docs/CODE_STRUCTURE.md).
 
 The repository has a hard budget of 208 critical tests. Add a test only for a
 security/safety invariant, public wire contract, or core end-to-end journey.

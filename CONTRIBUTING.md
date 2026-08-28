@@ -79,7 +79,9 @@ ID를 확인한다. 자동화의 권한, 판정, 운영 절차는
 
 `pnpm check:code-structure`는 검토된 대형 혼합 책임 module과 결합된 작은 module
 cluster가 더 악화되는 것을 막는다. `pnpm audit:code-structure`의 전체 순위를 사람
-이 검토하지 않고 baseline을 재생성해서는 안 된다.
+이 검토하지 않고 baseline을 재생성해서는 안 된다. 300줄은 강제 분리 한도가
+아니며 내부 import 왕복만 늘리는 작은 sibling은 다시 합칠 수 있다. 분리·재결합
+판단표는 [`docs/CODE_STRUCTURE.md`](docs/CODE_STRUCTURE.md)를 따른다.
 
 ## UI 변경
 

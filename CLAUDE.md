@@ -176,7 +176,9 @@ control에는 실제 command와 state owner가 있어야 한다.
 - `pnpm dev:app`: 데스크톱 앱 개발 실행.
 - `pnpm check:code-structure`: 검토된 혼합 책임 hotspot과 결합된 fragment
   cluster가 늘어나지 않는지 확인한다. 전체 순위는 `pnpm audit:code-structure`로
-  보고 baseline 변경 전에 직접 검토한다.
+  보고 baseline 변경 전에 직접 검토한다. 300줄은 강제 분리 한도가 아니라
+  응집도 검토 기준이며, 내부 왕복만 늘리는 작은 sibling은 다시 합칠 수 있다.
+  상세 판단은 `docs/CODE_STRUCTURE.md`를 따른다.
 
 변경 범위에 맞는 명령만 실행한다. UI 변경은 build 뒤 해당 화면을 수동으로
 확인하고, Windows 또는 전체 릴리스 검증은 플랫폼·릴리스 변경일 때만 수행한다.
