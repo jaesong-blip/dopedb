@@ -2,10 +2,6 @@
   "version": 1,
   "fragmentClusters": {},
   "highRiskModules": {
-    "src/benchmarks/PackagedBenchmarkApplication.tsx": {
-      "lineBudget": 1209,
-      "riskBudget": 10
-    },
     "scripts/benchmark-packaged-release.mjs": {
       "lineBudget": 1263,
       "riskBudget": 9
