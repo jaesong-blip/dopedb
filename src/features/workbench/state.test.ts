@@ -52,6 +52,12 @@ import {
 import type { DriverDescriptor } from "../connections/domain";
 import { switchConnectionSource } from "../connections/connectionEditorModel";
 import {
+  BIGQUERY_AUTH_MODE_PARAMETER,
+  bigQueryAuthMode,
+  isValidBigQueryDatasetId,
+  isValidBigQueryProjectId,
+} from "../connections/bigQueryOnboardingModel";
+import {
   CONNECTION_SSH_ALIAS_PARAMETER,
   isConnectionOptionSupported,
 } from "../connections/options";
@@ -618,6 +624,38 @@ describe("workbench state ownership", () => {
       schemaGroup: null,
       extraParams: { maximumBytesBilled: "1073741824" },
     });
+    expect(bigQueryAuthMode(bigQuery)).toBe("googleAccount");
+    expect(isValidBigQueryProjectId("campfire-460003")).toBe(true);
+    expect(isValidBigQueryProjectId("Campfire-460003")).toBe(false);
+    expect(isValidBigQueryDatasetId("analytics_2026")).toBe(true);
+    expect(isValidBigQueryDatasetId("analytics-2026")).toBe(false);
+    const serviceAccountBigQuery = {
+      ...bigQuery,
+      extraParams: {
+        ...bigQuery.extraParams,
+        [BIGQUERY_AUTH_MODE_PARAMETER]: "serviceAccount",
+        location: "US",
+      },
+    };
+    expect(bigQueryAuthMode(serviceAccountBigQuery)).toBe("serviceAccount");
+    expect(
+      switchConnectionSource(
+        serviceAccountBigQuery,
+        "bigquery",
+        "generic",
+      ).extraParams,
+    ).toEqual({
+      authMode: "serviceAccount",
+      location: "US",
+      maximumBytesBilled: "1073741824",
+    });
+    expect(
+      switchConnectionSource(
+        serviceAccountBigQuery,
+        "postgres",
+        "auto",
+      ).extraParams,
+    ).not.toHaveProperty(BIGQUERY_AUTH_MODE_PARAMETER);
     expect(
       diagnoseConnection(
         {

@@ -46,6 +46,17 @@ pub async fn upsert_connection(
             password: password.map(Zeroizing::new),
         })
         .await?;
+    if saved.engine == crate::model::Engine::Bigquery
+        && !crate::bigquery::uses_service_account_auth(&saved)?
+    {
+        if let Err(error) = crate::bigquery::cleanup_service_account_auth(&saved).await {
+            tracing::warn!(
+                connection_id = %saved.id,
+                %error,
+                "could not remove an unused BigQuery service-account CLI profile"
+            );
+        }
+    }
     state
         .terminals
         .stop_connection(ConnectionId::from(saved.id), &app);
@@ -83,6 +94,13 @@ pub async fn delete_connection(
     let deleted = state.services.connections.delete(id).await?;
     state.terminals.stop_connection(id, &app);
     state.agents_acp.stop_connection(id);
+    if let Err(error) = crate::bigquery::cleanup_service_account_auth(&deleted).await {
+        tracing::warn!(
+            connection_id = %id,
+            %error,
+            "could not remove the deleted BigQuery service-account CLI profile"
+        );
+    }
     match state.services.connections.list_profiles().await {
         Ok(remaining) => {
             if let Err(error) =
@@ -145,4 +163,46 @@ pub async fn discover_connection_profile_databases(
         .connections
         .discover_profile_databases(profile, password.map(Zeroizing::new))
         .await
+}
+
+#[tauri::command]
+pub async fn get_bigquery_auth_state(
+    profile: ConnectionProfile,
+) -> AppResult<crate::bigquery::BigQueryAuthState> {
+    crate::bigquery::auth_state(profile).await
+}
+
+#[tauri::command]
+pub async fn authenticate_bigquery_google_account(
+    profile: ConnectionProfile,
+) -> AppResult<crate::bigquery::BigQueryAuthState> {
+    crate::bigquery::authenticate_google_account(profile).await
+}
+
+#[tauri::command]
+pub async fn authenticate_bigquery_service_account(
+    profile: ConnectionProfile,
+    credential_file: String,
+) -> AppResult<crate::bigquery::BigQueryAuthState> {
+    crate::bigquery::authenticate_service_account(profile, credential_file).await
+}
+
+#[tauri::command]
+pub async fn clear_bigquery_service_account_auth(profile: ConnectionProfile) -> AppResult<()> {
+    crate::bigquery::cleanup_service_account_auth(&profile).await
+}
+
+#[tauri::command]
+pub async fn discover_bigquery_projects(
+    profile: ConnectionProfile,
+) -> AppResult<Vec<crate::bigquery::BigQueryProjectSummary>> {
+    crate::bigquery::discover_projects(profile).await
+}
+
+#[tauri::command]
+pub async fn discover_bigquery_datasets(
+    profile: ConnectionProfile,
+    project_id: String,
+) -> AppResult<Vec<crate::bigquery::BigQueryDatasetSummary>> {
+    crate::bigquery::discover_datasets(profile, project_id).await
 }

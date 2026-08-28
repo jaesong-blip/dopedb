@@ -19,6 +19,10 @@ import {
   connectionDefaultSslMode,
 } from "./presets";
 import type { ConnectionProfile, DriverDescriptor } from "./domain";
+import {
+  BIGQUERY_AUTH_MODE_PARAMETER,
+  bigQueryAuthMode,
+} from "./bigQueryOnboardingModel";
 
 export type ConnectionEditorView = "dataSources" | "clouds" | "drivers";
 export type ConnectionInputMode = "default" | "urlOnly";
@@ -83,6 +87,7 @@ export const CONTROLLED_CONNECTION_PARAMETERS = new Set<string>([
   CONNECTION_AUTO_DISCONNECT_SECONDS_PARAMETER,
   CONNECTION_STARTUP_SCRIPT_PARAMETER,
   "srv",
+  BIGQUERY_AUTH_MODE_PARAMETER,
   BIGQUERY_LOCATION_PARAMETER,
   BIGQUERY_MAXIMUM_BYTES_BILLED_PARAMETER,
 ]);
@@ -213,12 +218,19 @@ export function clearIncompatibleSourceParameters(
 ) {
   const extraParams = { ...current.extraParams };
   if (engine === "bigquery") {
-    return {
+    const bigQueryParams: Record<string, string> = {
       [BIGQUERY_MAXIMUM_BYTES_BILLED_PARAMETER]:
         current.extraParams[BIGQUERY_MAXIMUM_BYTES_BILLED_PARAMETER] ??
         BIGQUERY_DEFAULT_MAXIMUM_BYTES_BILLED,
     };
+    const location = current.extraParams[BIGQUERY_LOCATION_PARAMETER];
+    if (location) bigQueryParams[BIGQUERY_LOCATION_PARAMETER] = location;
+    if (bigQueryAuthMode(current) === "serviceAccount") {
+      bigQueryParams[BIGQUERY_AUTH_MODE_PARAMETER] = "serviceAccount";
+    }
+    return bigQueryParams;
   }
+  delete extraParams[BIGQUERY_AUTH_MODE_PARAMETER];
   delete extraParams[BIGQUERY_LOCATION_PARAMETER];
   delete extraParams[BIGQUERY_MAXIMUM_BYTES_BILLED_PARAMETER];
   if (isDocumentEngine(engine)) {

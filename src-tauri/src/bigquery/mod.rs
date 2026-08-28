@@ -4,6 +4,8 @@
 //! sent over stdin (never argv), every read is server dry-run first, and the real job
 //! carries a byte-billing ceiling plus an exact id for cancellation.
 
+mod onboarding;
+
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::{ExitStatus, Stdio};
@@ -25,6 +27,12 @@ use crate::features::catalog::{
 };
 use crate::model::{ConnectionProfile, QueryResult};
 use crate::process_tree::{ProcessTree, ProcessTreeError};
+
+pub(crate) use onboarding::{
+    auth_state, authenticate_google_account, authenticate_service_account,
+    cleanup_service_account_auth, discover_datasets, discover_projects, uses_service_account_auth,
+    BigQueryAuthState, BigQueryDatasetSummary, BigQueryProjectSummary,
+};
 
 const MINIMUM_BQ_VERSION: &str = "2.0.29";
 pub(crate) const DEFAULT_MAXIMUM_BYTES_BILLED: u64 = 1_073_741_824;
@@ -132,13 +140,15 @@ pub(crate) fn validate_profile(profile: &ConnectionProfile) -> AppResult<()> {
             reason: "BigQuery is available only through DopeDB's read-only query adapter".into(),
         });
     }
+    onboarding::validate_auth_mode(profile)?;
     if profile
         .extra_params
         .keys()
-        .any(|key| !matches!(key.as_str(), "location" | "maximumBytesBilled"))
+        .any(|key| !matches!(key.as_str(), "authMode" | "location" | "maximumBytesBilled"))
     {
         return Err(AppError::Config(
-            "BigQuery accepts only location and maximumBytesBilled connection options".into(),
+            "BigQuery accepts only authMode, location, and maximumBytesBilled connection options"
+                .into(),
         ));
     }
     if profile
@@ -159,7 +169,7 @@ pub(crate) async fn connect(profile: &ConnectionProfile) -> AppResult<BigQueryCo
     let home = dirs::home_dir().ok_or_else(|| {
         AppError::Config("the user home directory is unavailable for Google Cloud CLI".into())
     })?;
-    let cloudsdk_config = default_cloudsdk_config(&home)?;
+    let cloudsdk_config = onboarding::cloudsdk_config(profile, &home)?;
     let executable = discover_executable().await?;
     let provisional = BigQueryConnection {
         inner: Arc::new(BigQueryConnectionInner {
@@ -747,6 +757,14 @@ impl BigQueryConnection {
 
 impl ExecutableIdentity {
     async fn audit(path: &Path, allowed_root: &Path) -> Result<Self, CommandFailure> {
+        Self::audit_named(path, allowed_root, &["bq", "bq.cmd"]).await
+    }
+
+    async fn audit_named(
+        path: &Path,
+        allowed_root: &Path,
+        allowed_names: &[&str],
+    ) -> Result<Self, CommandFailure> {
         let canonical_path = tokio::fs::canonicalize(path)
             .await
             .map_err(|_| CommandFailure::Unavailable)?;
@@ -754,10 +772,10 @@ impl ExecutableIdentity {
             .await
             .map_err(|_| CommandFailure::Unavailable)?;
         if !canonical_path.starts_with(&canonical_root)
-            || !matches!(
-                canonical_path.file_name().and_then(|name| name.to_str()),
-                Some("bq") | Some("bq.cmd")
-            )
+            || canonical_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_none_or(|name| !allowed_names.contains(&name))
         {
             return Err(CommandFailure::Unavailable);
         }
@@ -807,6 +825,16 @@ fn executable_candidates() -> Vec<PathBuf> {
 }
 
 fn executable_candidates_with_roots() -> Vec<(PathBuf, PathBuf)> {
+    sdk_roots()
+        .into_iter()
+        .map(|root| {
+            let file = if cfg!(windows) { "bq.cmd" } else { "bq" };
+            (root.join("bin").join(file), root)
+        })
+        .collect()
+}
+
+fn sdk_roots() -> Vec<PathBuf> {
     let mut roots = Vec::new();
     if let Some(home) = dirs::home_dir() {
         roots.extend([
@@ -827,12 +855,6 @@ fn executable_candidates_with_roots() -> Vec<(PathBuf, PathBuf)> {
         roots.push(local.join("Google/Cloud SDK/google-cloud-sdk"));
     }
     roots
-        .into_iter()
-        .map(|root| {
-            let file = if cfg!(windows) { "bq.cmd" } else { "bq" };
-            (root.join("bin").join(file), root)
-        })
-        .collect()
 }
 
 fn default_cloudsdk_config(home: &Path) -> AppResult<PathBuf> {
@@ -1222,6 +1244,7 @@ fn safe_path() -> &'static str {
 
 #[cfg(test)]
 pub(crate) fn assert_bigquery_contract() {
+    onboarding::assert_onboarding_contract();
     assert!(valid_project_id("campfire-460003"));
     assert!(!valid_project_id("Campfire-460003"));
     assert!(valid_dataset_id("analytics_2026"));

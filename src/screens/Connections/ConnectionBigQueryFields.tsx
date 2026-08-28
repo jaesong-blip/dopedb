@@ -1,11 +1,21 @@
 // BigQuery's official-CLI profile stays separate from socket/password fields.
-import { PropertyRow, SelectInput, TextInput } from "../../design-system/components/FormControls";
-import { StatusBadge } from "../../design-system/components/Status";
+import { Button } from "../../design-system/components/Button";
+import {
+  PropertyRow,
+  SelectInput,
+  TextInput,
+} from "../../design-system/components/FormControls";
+import { SegmentedControl } from "../../design-system/components/SegmentedControl";
+import {
+  LoadingLabel,
+  StatusBadge,
+} from "../../design-system/components/Status";
 import {
   BIGQUERY_DEFAULT_MAXIMUM_BYTES_BILLED,
   BIGQUERY_LOCATION_PARAMETER,
   BIGQUERY_MAXIMUM_BYTES_BILLED_PARAMETER,
 } from "../../features/connections/connectionEditorModel";
+import type { BigQueryAuthMode } from "../../features/connections/domain";
 import type { ConnectionEditorController } from "../../features/connections/useConnectionEditorController";
 import { useI18n } from "../../lib/i18n";
 
@@ -19,11 +29,93 @@ export function ConnectionBigQueryFields({
   drivers: Controller["catalog"]["drivers"];
 }) {
   const { t } = useI18n();
-  const { form, set, flags, options, validation } = profile;
+  const { form, set, flags, options, validation, bigQuery } = profile;
   const { isSharedTemplate, canEditConnection } = flags;
+  const cliReady = drivers.active?.installState === "installed";
+  const projectListId = `connection-bigquery-projects-${form.id}`;
+  const datasetListId = `connection-bigquery-datasets-${form.id}`;
+  const authOptions: ReadonlyArray<{
+    value: BigQueryAuthMode;
+    label: string;
+  }> = [
+    {
+      value: "googleAccount",
+      label: t("connections.bigQueryGoogleAccount"),
+    },
+    {
+      value: "serviceAccount",
+      label: t("connections.bigQueryServiceAccount"),
+    },
+  ];
 
   return (
     <section className="tw:grid tw:gap-3">
+      {!isSharedTemplate ? (
+        <>
+          <PropertyRow label={t("connections.bigQueryAuthenticationMode")}>
+            <SegmentedControl
+              value={bigQuery.mode}
+              options={authOptions}
+              label={t("connections.bigQueryAuthenticationMode")}
+              disabled={!canEditConnection || bigQuery.pending}
+              onChange={bigQuery.setMode}
+            />
+          </PropertyRow>
+
+          <PropertyRow label={t("connections.authentication")}>
+            <div className="tw:flex tw:min-h-control-md tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2">
+              {bigQuery.pending ? (
+                <LoadingLabel>
+                  {t("connections.bigQueryAuthenticating")}
+                </LoadingLabel>
+              ) : (
+                <StatusBadge
+                  tone={
+                    bigQuery.auth?.authenticated ? "success" : "warning"
+                  }
+                  title={bigQuery.auth?.account ?? undefined}
+                >
+                  {bigQuery.auth?.authenticated
+                    ? t("connections.bigQueryConnectedAccount", {
+                        account:
+                          bigQuery.auth.account ??
+                          t("connections.bigQueryConnected"),
+                      })
+                    : t("connections.bigQueryNotConnected")}
+                </StatusBadge>
+              )}
+              <Button
+                size="compact"
+                disabled={
+                  !canEditConnection || !cliReady || bigQuery.pending
+                }
+                onClick={
+                  bigQuery.mode === "googleAccount"
+                    ? bigQuery.connectGoogleAccount
+                    : bigQuery.connectServiceAccount
+                }
+              >
+                {bigQuery.mode === "googleAccount"
+                  ? bigQuery.auth?.authenticated
+                    ? t("connections.bigQueryChangeGoogleAccount")
+                    : t("connections.bigQueryConnectGoogleAccount")
+                  : bigQuery.auth?.authenticated
+                    ? t("connections.bigQueryReplaceCredentialFile")
+                    : t("connections.bigQueryChooseCredentialFile")}
+              </Button>
+            </div>
+            {bigQuery.error ? (
+              <p
+                className="tw:m-0 tw:text-xs tw:leading-body tw:text-danger"
+                role="alert"
+              >
+                {bigQuery.error}
+              </p>
+            ) : null}
+          </PropertyRow>
+        </>
+      ) : null}
+
       <PropertyRow
         label={t("connections.bigQueryProjectId")}
         htmlFor="connection-host"
@@ -33,6 +125,11 @@ export function ConnectionBigQueryFields({
           id="connection-host"
           density="compact"
           value={form.host}
+          list={
+            !isSharedTemplate && bigQuery.projects.length > 0
+              ? projectListId
+              : undefined
+          }
           disabled={!canEditConnection}
           required
           autoCapitalize="none"
@@ -40,8 +137,20 @@ export function ConnectionBigQueryFields({
           spellCheck={false}
           aria-invalid={validation.host?.tone === "danger" || undefined}
           placeholder="my-gcp-project"
-          onChange={(event) => set("host", event.target.value)}
+          onChange={(event) => bigQuery.selectProject(event.target.value)}
         />
+        {!isSharedTemplate && bigQuery.projects.length > 0 ? (
+          <datalist id={projectListId}>
+            {bigQuery.projects.map((project) => (
+              <option key={project.id} value={project.id} label={project.name} />
+            ))}
+          </datalist>
+        ) : null}
+        {!isSharedTemplate && bigQuery.projectsPending ? (
+          <span className="tw:text-xs tw:text-muted-foreground" role="status">
+            {t("connections.bigQueryProjectsLoading")}
+          </span>
+        ) : null}
       </PropertyRow>
 
       <PropertyRow
@@ -53,6 +162,11 @@ export function ConnectionBigQueryFields({
           id="connection-database"
           density="compact"
           value={form.database}
+          list={
+            !isSharedTemplate && bigQuery.datasets.length > 0
+              ? datasetListId
+              : undefined
+          }
           disabled={!canEditConnection}
           required
           autoCapitalize="none"
@@ -60,8 +174,20 @@ export function ConnectionBigQueryFields({
           spellCheck={false}
           aria-invalid={validation.database?.tone === "danger" || undefined}
           placeholder="analytics"
-          onChange={(event) => set("database", event.target.value)}
+          onChange={(event) => bigQuery.selectDataset(event.target.value)}
         />
+        {!isSharedTemplate && bigQuery.datasets.length > 0 ? (
+          <datalist id={datasetListId}>
+            {bigQuery.datasets.map((dataset) => (
+              <option key={dataset.id} value={dataset.id} />
+            ))}
+          </datalist>
+        ) : null}
+        {!isSharedTemplate && bigQuery.datasetsPending ? (
+          <span className="tw:text-xs tw:text-muted-foreground" role="status">
+            {t("connections.bigQueryDatasetsLoading")}
+          </span>
+        ) : null}
       </PropertyRow>
 
       {!isSharedTemplate ? (
@@ -136,7 +262,7 @@ export function ConnectionBigQueryFields({
         </PropertyRow>
       )}
 
-      <PropertyRow label={t("connections.authentication")}>
+      <PropertyRow label={t("connections.bigQueryCliStatus")}>
         <div className="tw:flex tw:min-h-control-md tw:flex-wrap tw:items-center tw:gap-2">
           <StatusBadge
             tone={
@@ -152,7 +278,11 @@ export function ConnectionBigQueryFields({
         </div>
       </PropertyRow>
       <p className="tw:m-0 tw:border-t tw:border-border-subtle tw:pt-3 tw:text-sm tw:leading-body tw:text-muted-foreground">
-        {t("connections.bigQuerySecurityNote")}
+        {t(
+          isSharedTemplate
+            ? "connections.bigQuerySharedSecurityNote"
+            : "connections.bigQuerySecurityNote",
+        )}
       </p>
     </section>
   );

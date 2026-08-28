@@ -4,6 +4,9 @@ import type { DatabaseSummary } from "../../ipc/types";
 import { invoke } from "../../ipc/core";
 
 import type {
+  BigQueryAuthState,
+  BigQueryDatasetSummary,
+  BigQueryProjectSummary,
   ConnectionId,
   ConnectionProfile,
   ConnectionTestReceipt,
@@ -63,6 +66,47 @@ export function discoverConnectionProfileDatabases(
     profile,
     password,
   });
+}
+
+export function getBigQueryAuthState(
+  profile: ConnectionProfile,
+): Promise<BigQueryAuthState> {
+  return invoke("get_bigquery_auth_state", { profile });
+}
+
+export function authenticateBigQueryGoogleAccount(
+  profile: ConnectionProfile,
+): Promise<BigQueryAuthState> {
+  return invoke("authenticate_bigquery_google_account", { profile });
+}
+
+export function authenticateBigQueryServiceAccount(
+  profile: ConnectionProfile,
+  credentialFile: string,
+): Promise<BigQueryAuthState> {
+  return invoke("authenticate_bigquery_service_account", {
+    profile,
+    credentialFile,
+  });
+}
+
+export function clearBigQueryServiceAccountAuth(
+  profile: ConnectionProfile,
+): Promise<void> {
+  return invoke("clear_bigquery_service_account_auth", { profile });
+}
+
+export function discoverBigQueryProjects(
+  profile: ConnectionProfile,
+): Promise<BigQueryProjectSummary[]> {
+  return invoke("discover_bigquery_projects", { profile });
+}
+
+export function discoverBigQueryDatasets(
+  profile: ConnectionProfile,
+  projectId: string,
+): Promise<BigQueryDatasetSummary[]> {
+  return invoke("discover_bigquery_datasets", { profile, projectId });
 }
 
 /** Native picker for SQLite and certificate paths; null means user cancellation. */

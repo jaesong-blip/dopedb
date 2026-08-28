@@ -21,7 +21,7 @@ export function ConnectionForm(props: ConnectionEditorProps) {
   const { t } = useI18n();
   const { profile, catalog, schema, dialogs, commands } =
     useConnectionEditorController(props);
-  const { creatingDemo, onCancel, onCreateDemoDatabase } = props;
+  const { creatingDemo, onCreateDemoDatabase } = props;
 
   return (
     <ModalBackdrop>
@@ -29,7 +29,7 @@ export function ConnectionForm(props: ConnectionEditorProps) {
         size="dataSources"
         aria-labelledby="connection-editor-title"
         aria-busy={commands.busy}
-        onRequestClose={onCancel}
+        onRequestClose={() => void commands.cancel()}
         dismissible={!commands.busy}
       >
         <div
@@ -58,7 +58,7 @@ export function ConnectionForm(props: ConnectionEditorProps) {
             title={t("connections.dataSourcesAndDrivers")}
             titleId="connection-editor-title"
             closeLabel={t("common.close")}
-            onClose={onCancel}
+            onClose={() => void commands.cancel()}
             closeDisabled={commands.busy}
           />
 
@@ -104,7 +104,7 @@ export function ConnectionForm(props: ConnectionEditorProps) {
             canEditConnection={profile.flags.canEditConnection}
             hasBlockingProblems={dialogs.problems.hasBlocking}
             commands={commands}
-            onCancel={onCancel}
+            onCancel={() => void commands.cancel()}
           />
           <ConnectionEditorDialogs
             profile={profile}

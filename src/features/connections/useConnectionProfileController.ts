@@ -43,6 +43,7 @@ import {
   testConnectionProfile,
   upsertConnection,
 } from "./tauriAdapter";
+import type { BigQueryOnboardingController } from "./useBigQueryOnboardingController";
 import type { ConnectionCatalogController } from "./useConnectionCatalogController";
 import type { ConnectionEditorDialogs } from "./useConnectionEditorDialogs";
 import type { ConnectionProfileState } from "./useConnectionProfileState";
@@ -55,6 +56,7 @@ export function useConnectionProfileController({
   profileState,
   catalog,
   dialogs,
+  bigQuery,
 }: {
   connections: ConnectionProfile[];
   onDeletedConnection: (id: string) => Promise<void>;
@@ -66,6 +68,7 @@ export function useConnectionProfileController({
   profileState: ConnectionProfileState;
   catalog: ConnectionCatalogController;
   dialogs: ConnectionEditorDialogs;
+  bigQuery: BigQueryOnboardingController;
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -240,6 +243,7 @@ export function useConnectionProfileController({
       if (url.mode === "urlOnly") {
         url.setDraft(formatConnectionUrl(saved));
       }
+      await bigQuery.finalizeSavedProfile(saved);
       identity.setIsNew(false);
       identity.setPersisted(true);
       credentials.setPassword("");
@@ -310,6 +314,21 @@ export function useConnectionProfileController({
       }
       toast(t("connections.connectionDeleted"));
       await onDeletedConnection(form.value.id);
+      onCancel();
+    } catch (error) {
+      status.setMessage(errMessage(error));
+      status.setMessageIsError(true);
+      status.setBusy(false);
+    }
+  }
+
+  async function cancelEditor() {
+    if (status.busy) return;
+    status.setBusy(true);
+    status.setMessage(null);
+    try {
+      await bigQuery.discardUnpersistedAuth();
+      status.setBusy(false);
       onCancel();
     } catch (error) {
       status.setMessage(errMessage(error));
@@ -429,6 +448,7 @@ export function useConnectionProfileController({
         ...databaseDiscovery,
         discover: discoverDatabases,
       },
+      bigQuery,
       validation,
     },
     problems: {
@@ -449,6 +469,7 @@ export function useConnectionProfileController({
       test,
       duplicate: duplicateCurrentConnection,
       remove: removeCurrentConnection,
+      cancel: cancelEditor,
       bindWorkspaceConnection,
     },
   };

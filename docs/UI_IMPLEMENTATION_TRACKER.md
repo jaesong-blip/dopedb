@@ -20,7 +20,7 @@ runtime과 성능 수치로 수행한다.
 | Action Search | `complete` | `features/actionSearch` | cached catalog scope, `/` action mode, focus 복구와 bounded top-k를 유지 |
 | Welcome document | `complete` | `screens/Onboarding`, `features/onboarding` | Personal 가이드 데모의 idempotent DB·Project·Environment·binding 준비와 연결 전/후 실제 command 집합을 packaged smoke에서 확인 |
 | Database Explorer | `complete` | `screens/Connections/DatabaseExplorer`, `features/catalogExplorer` | Project 바로 아래의 단일 Databases/Data sources/Analyses 계층, workspace당 connection 하나의 active Project binding, DB 행의 exact-binding 제거, connection 보존·source/grant 폐기·pinned Agent session 중단·active Article 차단을 지키는 Project 삭제, DB 행에만 보이는 Environment marker와 같은 schema group의 Diff 진입점을 유지하고, Unassigned→환경 DB 행 binding drag·loaded-only 객체 검색·대형 catalog selection/scroll을 packaged smoke에서 확인 |
-| Connection editor | `complete` | `features/connections/useConnectionEditorController` | 연결 identity·접속 옵션만 소유하고 쓰기 실행 제어는 Settings → Safety 단일 경계를 유지 |
+| Connection editor | `complete` | `features/connections/useConnectionEditorController` | 연결 identity·접속 옵션만 소유하고 쓰기 실행 제어는 Settings → Safety 단일 경계를 유지한다. BigQuery는 직접 ID 입력, 공식 `gcloud` 브라우저 인증, `gcloud --cred-file` 서비스 계정 연결과 검증된 project/dataset 선택을 제공하되 앱이 Google token이나 key file을 소유하지 않는지 packaged runtime에서 유지 검수한다. |
 | Provider account access | `complete` | `workspace-cloud/features/providerAccess`, provider application modules | 실제 계정 OAuth/CLI 실패·recovery와 allowlisted Vault AppRole의 role/lease/revoke packaged 검수를 유지 |
 | SQL/MongoDB query workflow | `complete` | `features/queries`, `features/documentQueries`, `screens/Sql`, `screens/Documents`, Rust query application | 수동 Run exact 승인, Agent 제안 분리, MongoDB의 지속되는 조회 surface와 collection 없는 정확한 빈 상태, 10 KiB/100 KiB/1 MiB 입력과 cancel/transaction packaged 검수를 유지 |
 | Result/Data grid | `complete` | `features/queryResults`, Rust result artifact | 30열·50,000행 selection/filter/export와 메모리 경계 검수 |
@@ -59,8 +59,15 @@ runtime과 성능 수치로 수행한다.
 4. Apply/OK 또는 데모 준비 후 Explorer, table, query, Agent가 같은 connection
    identity와 Environment binding을 사용한다.
 
+BigQuery는 이미 알고 있는 project/dataset ID를 직접 입력하거나, 공식 `gcloud`
+브라우저 로그인을 실행한 뒤 현재 계정이 접근할 수 있는 project와 dataset을
+`gcloud`/`bq` 결과에서 선택한다. 서비스 계정은 선택한 JSON 경로를 공식
+`gcloud auth login --cred-file` 명령에 일회성으로 넘기며, 연결별 로컬 CLI
+프로필을 사용한다.
+
 Acceptance: 임의 고급 옵션, 계획 중 provider, 저장되지 않는 가짜 control이 없어야
-하며 장기 secret은 shared record에 들어가지 않는다. 데모도 team membership,
+하며 장기 secret은 shared record에 들어가지 않는다. BigQuery 연결 과정에서도 앱은
+Google token, refresh token, service-account key 내용이나 경로를 읽거나 저장하지 않는다. 데모도 team membership,
 credential, 공유 권한을 꾸며내지 않고 실제 local command만 사용한다.
 
 ### 2. 공유 연결 사용

@@ -70,6 +70,23 @@ export interface ConnectionProfile {
   providerTarget: ConnectionProviderTarget | null;
 }
 
+export type BigQueryAuthMode = "googleAccount" | "serviceAccount";
+
+export interface BigQueryAuthState {
+  mode: BigQueryAuthMode;
+  authenticated: boolean;
+  account: string | null;
+}
+
+export interface BigQueryProjectSummary {
+  id: string;
+  name: string;
+}
+
+export interface BigQueryDatasetSummary {
+  id: string;
+}
+
 /**
  * Keep local filesystem ownership out of ordinary database labels. The exact
  * SQLite path remains available in connection settings, while shared chrome,

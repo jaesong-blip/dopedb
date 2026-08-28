@@ -3,6 +3,10 @@ import type {
   DriverDescriptor,
 } from "./domain";
 import {
+  isValidBigQueryDatasetId,
+  isValidBigQueryProjectId,
+} from "./bigQueryOnboardingModel";
+import {
   CONNECTION_AUTO_DISCONNECT_MAX_SECONDS,
   CONNECTION_AUTO_DISCONNECT_MIN_SECONDS,
   CONNECTION_AUTO_DISCONNECT_SECONDS_PARAMETER,
@@ -115,9 +119,7 @@ export function diagnoseConnection(
       diagnostics.push(
         issue("bigQueryProjectRequired", "danger", "connection-host"),
       );
-    } else if (
-      !/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/u.test(project)
-    ) {
+    } else if (!isValidBigQueryProjectId(project)) {
       diagnostics.push(
         issue("bigQueryProjectInvalid", "danger", "connection-host"),
       );
@@ -127,9 +129,7 @@ export function diagnoseConnection(
       diagnostics.push(
         issue("bigQueryDatasetRequired", "danger", "connection-database"),
       );
-    } else if (
-      dataset.length > 1024 || !/^[A-Za-z0-9_]+$/u.test(dataset)
-    ) {
+    } else if (!isValidBigQueryDatasetId(dataset)) {
       diagnostics.push(
         issue("bigQueryDatasetInvalid", "danger", "connection-database"),
       );

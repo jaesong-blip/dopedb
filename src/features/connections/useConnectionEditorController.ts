@@ -2,6 +2,7 @@
 // command controllers into a grouped presentation model.
 import type { ConnectionProfile } from "./domain";
 import type { ConnectionLaunchPreset } from "./presets";
+import { useBigQueryOnboardingController } from "./useBigQueryOnboardingController";
 import { useConnectionCatalogController } from "./useConnectionCatalogController";
 import { useConnectionEditorDialogs } from "./useConnectionEditorDialogs";
 import { useConnectionProfileController } from "./useConnectionProfileController";
@@ -40,6 +41,10 @@ export function useConnectionEditorController(props: ConnectionEditorProps) {
     openProviderCredentials: dialogState.providerCredentials.show,
     profileState,
   });
+  const bigQuery = useBigQueryOnboardingController(
+    profileState,
+    catalog.view.drivers.active?.installState === "installed",
+  );
   const schema = useConnectionSchemaController(profileState);
   const profileController = useConnectionProfileController({
     connections: props.connections,
@@ -49,6 +54,7 @@ export function useConnectionEditorController(props: ConnectionEditorProps) {
     profileState,
     catalog,
     dialogs: dialogState,
+    bigQuery,
   });
 
   return {
