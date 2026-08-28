@@ -85,6 +85,8 @@ export const agentsCatalog = defineCatalog(
       "The Agent process ended before it delivered a final answer. Resume to reconnect through the same official adapter and keep this local history.",
     "agent.acpInterruptedProcessUnavailable":
       "The previous Agent process is no longer available after the app restarted. Resume to reconnect through the same official adapter and keep this local history.",
+    "agent.acpInterruptedSessionMetadataUnavailable":
+      "This saved session's access metadata could not be read. Its local transcript is preserved, but the session cannot be resumed. Start a new Agent session under the current access.",
     "agent.acpInterruptedWorkspaceAuthority":
       "The workspace, account, or membership authority changed before the Agent finished. Resume to continue under the current access.",
     "agent.acpLifecycle.closed": "Closed",
@@ -471,6 +473,8 @@ export const agentsCatalog = defineCatalog(
       "최종 답변을 전달하기 전에 Agent 프로세스가 종료되었습니다. 로컬 대화 기록을 유지한 채 같은 공식 어댑터로 다시 연결하려면 세션을 이어가세요.",
     "agent.acpInterruptedProcessUnavailable":
       "앱이 다시 시작되어 이전 Agent 프로세스에 연결할 수 없습니다. 로컬 대화 기록을 유지한 채 같은 공식 어댑터로 다시 연결하려면 세션을 이어가세요.",
+    "agent.acpInterruptedSessionMetadataUnavailable":
+      "저장된 세션의 접근 정보를 읽지 못했습니다. 로컬 대화 기록은 보존되지만 이 세션은 이어갈 수 없습니다. 현재 접근 범위에서 새 Agent 세션을 시작하세요.",
     "agent.acpInterruptedWorkspaceAuthority":
       "Agent가 답변을 마치기 전에 워크스페이스·계정 또는 멤버십 권한이 변경되었습니다. 현재 권한으로 계속하려면 세션을 이어가세요.",
     "agent.acpLifecycle.closed": "닫힘",

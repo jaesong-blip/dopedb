@@ -202,6 +202,8 @@ describe("workspace auth lifecycle", () => {
       .toBe("agent.acpInterruptedProcessClosed");
     expect(agentSessionErrorLabel("agent_process_unavailable", translateKey))
       .toBe("agent.acpInterruptedProcessUnavailable");
+    expect(agentSessionErrorLabel("agent_session_metadata_unavailable", translateKey))
+      .toBe("agent.acpInterruptedSessionMetadataUnavailable");
     expect(agentSessionErrorLabel("provider detail", translateKey))
       .toBe("provider detail");
     expect(closedBeforeTurnCompleted("closed", null, [

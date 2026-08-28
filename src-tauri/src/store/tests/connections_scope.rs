@@ -1169,6 +1169,99 @@ async fn assert_agent_acp_batch_replay_is_bounded(store: &Store, connection_id: 
         .all(|events| events[0].sequence < events[1].sequence));
     assert_eq!(focus.events.last().map(|event| event.sequence), Some(609));
 
+    let legacy_environment_connections = serde_json::json!([{
+        "connectionId": connection_id,
+        "connectionRevision": 7,
+        "role": "primary",
+        "alias": "Primary",
+    }]);
+    sqlx::query(
+        "UPDATE agent_acp_sessions
+         SET environment_connections = ?1
+         WHERE id = ?2",
+    )
+    .bind(legacy_environment_connections.to_string())
+    .bind(session_id.to_string())
+    .execute(store.pool())
+    .await
+    .unwrap();
+    let legacy = store
+        .list_agent_acp_sessions()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|session| session.id == session_id)
+        .unwrap();
+    assert_eq!(legacy.environment_connections.len(), 1);
+    assert_eq!(
+        legacy.environment_connections[0].connection_content_revision,
+        7
+    );
+    assert_eq!(legacy.environment_connections[0].remote_connection_id, None);
+    assert_eq!(
+        legacy.acp_session_id.as_deref(),
+        Some("official-adapter-session")
+    );
+
+    let corrupt_session_id = AcpSessionId::from(Uuid::new_v4());
+    let mut corrupt_summary = summary.clone();
+    corrupt_summary.id = corrupt_session_id;
+    corrupt_summary.title = "Unreadable metadata".into();
+    corrupt_summary.created_at = now + chrono::Duration::milliseconds(1);
+    corrupt_summary.updated_at = corrupt_summary.created_at;
+    let corrupt_event = AcpSessionEvent {
+        session_id: corrupt_session_id,
+        sequence: 1,
+        created_at: corrupt_summary.created_at,
+        payload: AcpSessionEventPayload::SessionUpdate {
+            update: serde_json::json!({
+                "sessionUpdate": "agent_message_chunk",
+                "content": { "type": "text", "text": "preserved" }
+            }),
+        },
+    };
+    store
+        .persist_agent_acp_events(&scope, &corrupt_summary, &[corrupt_event])
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE agent_acp_sessions
+         SET environment_connections = '[{\"connectionId\":true}]'
+         WHERE id = ?1",
+    )
+    .bind(corrupt_session_id.to_string())
+    .execute(store.pool())
+    .await
+    .unwrap();
+    let recovered = store
+        .list_agent_acp_sessions()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|session| session.id == corrupt_session_id)
+        .unwrap();
+    assert_eq!(recovered.lifecycle, AcpSessionLifecycle::Failed);
+    assert_eq!(recovered.acp_session_id, None);
+    assert_eq!(
+        recovered.error.as_deref(),
+        Some("agent_session_metadata_unavailable")
+    );
+    assert!(recovered.environment_connections.is_empty());
+    let recovered_focus = store
+        .focus_agent_acp_session(corrupt_session_id, None)
+        .await
+        .unwrap();
+    assert_eq!(recovered_focus.events.len(), 1);
+    assert_eq!(
+        recovered_focus.session.error.as_deref(),
+        Some("agent_session_metadata_unavailable")
+    );
+    sqlx::query("DELETE FROM agent_acp_sessions WHERE id = ?1")
+        .bind(corrupt_session_id.to_string())
+        .execute(store.pool())
+        .await
+        .unwrap();
+
     for index in 0..=100 {
         let mut historical = summary.clone();
         historical.id = AcpSessionId::from(Uuid::new_v4());

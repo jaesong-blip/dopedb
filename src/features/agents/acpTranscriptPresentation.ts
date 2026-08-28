@@ -335,6 +335,8 @@ export function agentSessionErrorLabel(message: string, t: Translate) {
   if (message === "agent_process_unavailable") {
     return t("agent.acpInterruptedProcessUnavailable");
   }
+  if (message === "agent_session_metadata_unavailable")
+    return t("agent.acpInterruptedSessionMetadataUnavailable");
   return message;
 }
 
