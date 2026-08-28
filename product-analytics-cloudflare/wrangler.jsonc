@@ -3,7 +3,7 @@
   "name": "dopedb-product-analytics",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-14",
-  "account_id": "4813425b30d5f9a6b2393c412817867d",
+  "account_id": "0af3820c996f277b2f17ee446d03f60a",
   "workers_dev": true,
   "preview_urls": false,
   "secrets": {
@@ -13,7 +13,7 @@
     {
       "binding": "ANALYTICS_DB",
       "database_name": "dopedb-product-analytics",
-      "database_id": "cbbd811f-3522-4aed-b04a-613f707fd3f2",
+      "database_id": "b07a4643-7e4b-4f57-b0ad-14dd99b812ec",
       "migrations_dir": "migrations"
     }
   ],

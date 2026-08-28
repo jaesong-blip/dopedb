@@ -22,7 +22,8 @@ closed failure enums.
 ## Operator commands
 
 Run commands from this directory. Checked-in account and D1 IDs are non-secret
-deployment coordinates. Wrangler must hold both required secrets before deploy.
+deployment coordinates. Authenticate Wrangler to that exact account (a named
+profile is recommended) and configure both required Worker secrets before deploy.
 
 ```sh
 pnpm install --frozen-lockfile

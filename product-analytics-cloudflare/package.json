@@ -7,9 +7,9 @@
   "scripts": {
     "build": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
-    "deploy": "CLOUDFLARE_ACCOUNT_ID=4813425b30d5f9a6b2393c412817867d wrangler deploy",
+    "deploy": "wrangler deploy",
     "db:migrate:local": "wrangler d1 migrations apply dopedb-product-analytics --local",
-    "db:migrate:remote": "CLOUDFLARE_ACCOUNT_ID=4813425b30d5f9a6b2393c412817867d wrangler d1 migrations apply dopedb-product-analytics --remote"
+    "db:migrate:remote": "wrangler d1 migrations apply dopedb-product-analytics --remote"
   },
   "devDependencies": {
     "@types/node": "26.1.1",

@@ -22,7 +22,8 @@ deletes, and aggregate refreshes remain below the Free plan's daily write envelo
 ## Operator commands
 
 Run commands from this directory. The checked-in account and database IDs are
-non-secret deployment coordinates; `INGEST_TOKEN` is a Worker secret and must
+non-secret deployment coordinates. Authenticate Wrangler to that exact account
+(a named profile is recommended); `INGEST_TOKEN` is a Worker secret and must
 never be committed. Wrangler refuses deployment when that required secret is absent.
 
 ```sh

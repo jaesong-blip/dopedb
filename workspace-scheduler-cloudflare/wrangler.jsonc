@@ -3,7 +3,7 @@
   "name": "dopedb-workspace-scheduler",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-14",
-  "account_id": "4813425b30d5f9a6b2393c412817867d",
+  "account_id": "0af3820c996f277b2f17ee446d03f60a",
   "workers_dev": true,
   "preview_urls": false,
   "secrets": {
@@ -16,7 +16,7 @@
     {
       "binding": "SCHEDULER_DB",
       "database_name": "dopedb-workspace-scheduler",
-      "database_id": "ee4a2153-7fcd-459f-bd1e-848a9f259e93",
+      "database_id": "34a4d522-cb7c-4587-8510-07655764d87a",
       "migrations_dir": "migrations"
     }
   ],
