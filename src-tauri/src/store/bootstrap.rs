@@ -30,7 +30,9 @@ use sqlx::Acquire;
 /// samples but omitted the encrypted Analysis Article local-result cache table.
 /// Version 23 enforces one active Project assignment per workspace connection;
 /// legacy duplicate rows remain operable until the user removes them explicitly.
-pub(super) const LOCAL_SCHEMA_VERSION: i64 = 23;
+/// Version 24 persists the immutable multi-Environment Project resource set and
+/// its optional single database write target for resumable ACP sessions.
+pub(super) const LOCAL_SCHEMA_VERSION: i64 = 24;
 
 pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
     let version: i64 = sqlx::query_scalar("PRAGMA user_version")
@@ -165,11 +167,40 @@ pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
         set_local_schema_version(pool, 22).await?;
         migrated = true;
     }
-    if version < 23 && ensure_workspace_unique_environment_connections(pool).await? {
+    let workspace_binding_ready = if version < 23 {
+        ensure_workspace_unique_environment_connections(pool).await?
+    } else {
+        true
+    };
+    if version < 23 && workspace_binding_ready {
         set_local_schema_version(pool, 23).await?;
         migrated = true;
     }
+    if version < 24 {
+        ensure_agent_acp_resource_set(pool).await?;
+        migrated = true;
+        if workspace_binding_ready {
+            set_local_schema_version(pool, 24).await?;
+        }
+    }
     Ok(migrated)
+}
+
+async fn ensure_agent_acp_resource_set(pool: &SqlitePool) -> AppResult<()> {
+    add_column_if_missing(
+        pool,
+        "agent_acp_sessions",
+        "knowledge_scopes",
+        "ALTER TABLE agent_acp_sessions ADD COLUMN knowledge_scopes TEXT NOT NULL DEFAULT '[]'",
+    )
+    .await?;
+    add_column_if_missing(
+        pool,
+        "agent_acp_sessions",
+        "write_connection_id",
+        "ALTER TABLE agent_acp_sessions ADD COLUMN write_connection_id TEXT",
+    )
+    .await
 }
 
 async fn ensure_workspace_unique_environment_connections(pool: &SqlitePool) -> AppResult<bool> {

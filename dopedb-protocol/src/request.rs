@@ -7,7 +7,7 @@ use serde_json::Value;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-/// Version-15 command catalog. Any addition, removal, or meaning change requires a
+/// Version-16 command catalog. Any addition, removal, or meaning change requires a
 /// command-schema version bump and an explicitly negotiated compatibility range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CommandName {
@@ -31,6 +31,12 @@ pub enum CommandName {
     SkillRemove,
     #[serde(rename = "agent.session.register")]
     AgentSessionRegister,
+    #[serde(rename = "agent.config.create")]
+    ExternalAgentConfigCreate,
+    #[serde(rename = "agent.external_session.start")]
+    ExternalAgentSessionStart,
+    #[serde(rename = "agent.external_session.revoke")]
+    ExternalAgentSessionRevoke,
     #[serde(rename = "connection.list")]
     ConnectionList,
     #[serde(rename = "connection.show")]
@@ -100,7 +106,7 @@ pub enum CommandName {
 }
 
 impl CommandName {
-    pub const ALL: [Self; 41] = [
+    pub const ALL: [Self; 44] = [
         Self::Version,
         Self::Status,
         Self::AppOpen,
@@ -111,6 +117,9 @@ impl CommandName {
         Self::SkillRepair,
         Self::SkillRemove,
         Self::AgentSessionRegister,
+        Self::ExternalAgentConfigCreate,
+        Self::ExternalAgentSessionStart,
+        Self::ExternalAgentSessionRevoke,
         Self::ConnectionList,
         Self::ConnectionShow,
         Self::ConnectionTest,
@@ -156,6 +165,9 @@ impl CommandName {
             Self::SkillRepair => "skill.repair",
             Self::SkillRemove => "skill.remove",
             Self::AgentSessionRegister => "agent.session.register",
+            Self::ExternalAgentConfigCreate => "agent.config.create",
+            Self::ExternalAgentSessionStart => "agent.external_session.start",
+            Self::ExternalAgentSessionRevoke => "agent.external_session.revoke",
             Self::ConnectionList => "connection.list",
             Self::ConnectionShow => "connection.show",
             Self::ConnectionTest => "connection.test",

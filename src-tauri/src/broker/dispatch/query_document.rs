@@ -96,7 +96,7 @@ pub(super) async fn handle(
             respond(
                 request_id,
                 dispatcher
-                    .show_operation(&session, arguments.operation_id, client_protocol_version)
+                    .show_operation(&session, arguments, client_protocol_version)
                     .await,
             )
         }
@@ -123,7 +123,7 @@ pub(super) async fn handle(
                     .cancel_operation(
                         &session,
                         arguments.operation_id,
-                        None,
+                        arguments.connection.as_ref(),
                         client_protocol_version,
                     )
                     .await,
@@ -149,6 +149,11 @@ impl BrokerDispatcher {
             &arguments.connection,
             client_protocol_version,
         )?;
+        if session.agent_plugin_id.is_some()
+            && session.write_connection_id != Some(authority.connection_id)
+        {
+            return Err(ErrorCode::ScopeDenied);
+        }
         let receipt = self
             .services()?
             .queries
@@ -170,15 +175,18 @@ impl BrokerDispatcher {
     async fn show_operation(
         &self,
         session: &AuthenticatedSession,
-        operation_id: Uuid,
+        arguments: OperationArguments,
         client_protocol_version: u16,
     ) -> Result<OperationSummary, ErrorCode> {
+        let authority = match arguments.connection.as_ref() {
+            Some(connection) => {
+                terminal_authority_for_selector(session, connection, client_protocol_version)?
+            }
+            None => terminal_authority(session, client_protocol_version),
+        };
         self.services()?
             .operation
-            .show_terminal(
-                &terminal_authority(session, client_protocol_version),
-                operation_id,
-            )
+            .show_terminal(&authority, arguments.operation_id)
             .await
             .map_err(map_operation_error)
     }
@@ -193,13 +201,15 @@ impl BrokerDispatcher {
         if timeout.is_zero() || timeout > MAX_OPERATION_WAIT {
             return Err(ErrorCode::InvalidRequest);
         }
+        let authority = match arguments.connection.as_ref() {
+            Some(connection) => {
+                terminal_authority_for_selector(session, connection, client_protocol_version)?
+            }
+            None => terminal_authority(session, client_protocol_version),
+        };
         self.services()?
             .operation
-            .wait_terminal(
-                &terminal_authority(session, client_protocol_version),
-                arguments.operation_id,
-                timeout,
-            )
+            .wait_terminal(&authority, arguments.operation_id, timeout)
             .await
             .map_err(|error| {
                 if matches!(error, AppError::Safety(_)) {

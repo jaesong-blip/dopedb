@@ -195,11 +195,22 @@ impl KnowledgeSessionSource {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct KnowledgeSessionScope {
+    /// Project identity shared by every exact Environment scope in one Agent
+    /// context. Legacy persisted sessions omit it and are accepted only as a
+    /// single-Environment scope.
+    #[serde(default)]
+    pub(crate) project_id: Uuid,
     /// Exact hosted authority when this Environment has active GitHub knowledge.
     /// Local-only and database-only Environments deliberately carry no cloud grant.
     pub(crate) knowledge_grant_id: Option<Uuid>,
     pub(crate) project_environment_id: Uuid,
     pub(crate) environment_revision: u64,
+    /// A connection bound to this exact Environment revision that may authorize
+    /// source reads. It is not automatically part of the selected DB allowlist.
+    #[serde(default)]
+    pub(crate) authority_connection_id: Uuid,
+    #[serde(default)]
+    pub(crate) authority_connection_revision: i64,
     pub(crate) sources: Vec<KnowledgeSessionSource>,
     pub(crate) graph_revision_ids: Vec<Uuid>,
     pub(crate) connections: Vec<KnowledgeSessionConnection>,

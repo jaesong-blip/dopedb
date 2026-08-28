@@ -10,6 +10,14 @@ import type { AcpPromptContext, AcpTableContext } from "./domain";
 
 const MAX_DOCUMENT_CONTEXT_CHARS = 16 * 1024;
 
+export const EMPTY_ACP_PROMPT_CONTEXT: AcpPromptContext = {
+  connectionId: null,
+  database: null,
+  documentName: null,
+  documentText: null,
+  table: null,
+};
+
 type AgentSelection = AcpTableContext & {
   connectionId: string;
 };
@@ -25,14 +33,16 @@ export function buildAcpPromptContext(
   selectedTable: CatalogTable | null,
   selection: AgentSelection | null,
 ): AcpPromptContext {
+  const scopedDocument =
+    activeDocument?.connectionId === connection.id ? activeDocument : null;
   const document =
-    activeDocument?.kind === "sql"
+    scopedDocument?.kind === "sql"
       ? {
-          database: activeDocument.selectedDatabase || connection.database,
-          documentName: activeDocument.title,
+          database: scopedDocument.selectedDatabase || connection.database,
+          documentName: scopedDocument.title,
           documentText: readWorkbenchDraft(
-            activeDocument.id,
-            activeDocument.draft,
+            scopedDocument.id,
+            scopedDocument.draft,
           ).slice(0, MAX_DOCUMENT_CONTEXT_CHARS),
         }
       : {
@@ -41,10 +51,11 @@ export function buildAcpPromptContext(
           documentText: null,
         };
   const activeDataTable =
-    activeDocument?.kind === "data" ? activeDocument.table : selectedTable;
+    scopedDocument?.kind === "data" ? scopedDocument.table : selectedTable;
   if (!activeDataTable) {
     return {
       ...document,
+      connectionId: connection.id,
       database: document.database ?? connection.database,
       table: null,
     };
@@ -57,6 +68,7 @@ export function buildAcpPromptContext(
     (selection.schema ?? null) === (activeDataTable.schema ?? null);
   return {
     ...document,
+    connectionId: connection.id,
     database,
     table: selectedMatches
       ? {

@@ -540,7 +540,9 @@ DopeDB의 실제 작업 흐름과 접근성, supported viewport를 위한 제품
   database connection은 삭제하지 않고 `Unassigned`로 돌려보내며, active Analysis
   Article이 있으면 Article history를 보존하기 위해 Project 삭제를 차단한다. 삭제된
   Project의 source sync와 Agent grant는 즉시 폐기하고 해당 Environment에 고정된 실행 중
-  Agent session도 중단한다. `Databases` folder의 `plus`는 기존 connection editor를,
+  Agent session도 중단한다. `Databases` folder의 `plus`는 기존 connection editor를
+  exact Project Environment preset과 함께 열고 저장 성공 시 같은 binding command로
+  해당 Project에 즉시 넣으며,
   `Data sources` folder의 `plus`는 현재 exact Environment의 source 연결 상세를,
   `Analyses` folder는 Agent가 제안한 Article draft collection을 열며 수동 빈 draft
   `plus`를 제공하지 않는다. collection의 유일한 생성 action은 현재 Environment와
@@ -566,13 +568,22 @@ DopeDB의 실제 작업 흐름과 접근성, supported viewport를 위한 제품
   행 높이, surface, icon, selection은 이 문서의 semantic primitive가 소유한다.
   Agent/worktree 행은 DopeDB
   resource tree로 가져오지 않는다.
-- AI Chat의 context control은 `프로젝트 전체`와 `개별 DB` 두 group만 표시하고
-  Project Environment를 별도 계층이나 이름으로 노출하지 않는다. 프로젝트 전체는
-  Project source와 단일 production 내부 경계의 검증된 PROD DB 전체를, 개별 DB는
-  Project·환경 표시와 관계없이 선택한 DB 하나와 같은 내부 경계의 source revision
-  set을 새 ACP session에 immutable하게 고정한다. production 내부 경계가 없거나
-  모호한 Project의 전체 범위는 추정하지 않는다. trigger는 메뉴가 닫혀도 선택 종류와
-  대상 이름을 함께 보이며 DEV/staging 전체와 임의의 다중 DB 조합은 만들지 않는다.
+- AI Chat의 context control은 한 Project의 `Databases`와 `Source code`를 같은
+  300px scope menu 안에서 평평한 checkbox group으로 표시한다. Project Environment를
+  별도 계층이나 이름으로 노출하지 않고 DB 행에만 기존 `EnvironmentBadge`를 둔다.
+  메뉴는 여러 항목을 고르는 동안 열린 상태를 유지하고 별도 `Write target` radio
+  group에서 선택된 쓰기 가능 DB만 후보로 표시한다. `Read only`가 기본이며
+  쓰기 대상은 최대 하나다. trigger는 닫혀도 Project 이름, 선택한 DB/source 수,
+  쓰기 대상 유무를 축약해 보여준다. 선택하지 않은 resource는 새 ACP session의
+  immutable grant에 포함하지 않으며 여러 DB 결과는 UI에서 join된 것처럼 표현하지
+  않는다.
+- 외부 `dopedb agent init/start` 요청은 기존 `Modal` primitive의 wide/fill surface를
+  쓰는 전역 approval gate로 표시한다. configure 요청만 같은 Project resource
+  checkbox와 단일 write-target radio를 편집할 수 있고, start 요청은 저장된 exact
+  set의 현재 이름·읽기/쓰기 상태와 provider·canonical working directory를 읽기
+  전용으로 보여준다. resource가 사라졌거나 inventory를 불러오지 못하면 승인을
+  비활성화하고 거절만 허용한다. modal은 secret, connection URL, capability를 표시하지
+  않는다.
 - 빈 AI Chat transcript는 제목·설명 card를 만들지 않고 실제 SQL 작업,
   스키마·선택 데이터 탐색, 명시적 변경 승인 세 줄만 표시한다. 화면에 없는
   IDE capability를 본뜨거나 steady-state onboarding 문단을 반복하지 않는다.

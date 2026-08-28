@@ -152,7 +152,7 @@ impl BrokerDispatcher {
         success(request.request_id, &result)
     }
 
-    fn focus_app(&self) -> Result<AppOpenResult, ErrorCode> {
+    pub(super) fn focus_app(&self) -> Result<AppOpenResult, ErrorCode> {
         let app_handle = self.app_handle.as_ref().ok_or(ErrorCode::Internal)?;
         let window = app_handle
             .get_webview_window("main")

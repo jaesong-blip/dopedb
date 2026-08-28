@@ -75,7 +75,11 @@ pub(crate) struct AuthenticatedSession {
     pub(crate) connection_id: ConnectionId,
     pub(crate) connection_revision: i64,
     pub(crate) capabilities: BTreeSet<BrokerCapability>,
-    pub(crate) knowledge_scope: Option<KnowledgeSessionScope>,
+    pub(crate) knowledge_scopes: Vec<KnowledgeSessionScope>,
+    /// An ACP resource set may read several selected databases, but mutation
+    /// proposals are bounded to this one optional connection before Safety and
+    /// database privileges are evaluated.
+    pub(crate) write_connection_id: Option<ConnectionId>,
     pub(crate) expires_at: DateTime<Utc>,
 }
 
@@ -126,6 +130,18 @@ pub(crate) struct IssuedSessionCapability {
     pub(crate) terminal_session_id: TerminalSessionId,
     token: Zeroizing<String>,
     pub(crate) expires_at: DateTime<Utc>,
+}
+
+#[derive(Default)]
+pub(crate) struct AgentKnowledgeAuthorization {
+    pub(crate) scopes: Vec<KnowledgeSessionScope>,
+    pub(crate) write_connection_id: Option<ConnectionId>,
+}
+
+pub(crate) struct ExternalAgentProcessAuthorization {
+    pub(crate) plugin_id: AcpPluginId,
+    pub(crate) knowledge: AgentKnowledgeAuthorization,
+    pub(crate) peer: PeerProcessIdentity,
 }
 
 impl IssuedSessionCapability {
@@ -208,7 +224,14 @@ impl BrokerSessionRegistry {
         capabilities: impl IntoIterator<Item = BrokerCapability>,
         ttl: Duration,
     ) -> AppResult<IssuedSessionCapability> {
-        self.issue_with_authorization(terminal_session_id, pin, capabilities, ttl, None, None)
+        self.issue_with_authorization(
+            terminal_session_id,
+            pin,
+            capabilities,
+            ttl,
+            None,
+            AgentKnowledgeAuthorization::default(),
+        )
     }
 
     #[cfg(test)]
@@ -231,7 +254,7 @@ impl BrokerSessionRegistry {
             capabilities,
             ttl,
             Some(registration),
-            None,
+            AgentKnowledgeAuthorization::default(),
         )
     }
 
@@ -242,7 +265,7 @@ impl BrokerSessionRegistry {
         capabilities: impl IntoIterator<Item = BrokerCapability>,
         ttl: Duration,
         registration: AgentSessionRegisterArguments,
-        knowledge_scope: Option<KnowledgeSessionScope>,
+        knowledge: AgentKnowledgeAuthorization,
     ) -> AppResult<IssuedSessionCapability> {
         if !valid_agent_registration_paths(&registration) {
             return Err(AppError::Config(
@@ -255,8 +278,72 @@ impl BrokerSessionRegistry {
             capabilities,
             ttl,
             Some(registration),
-            knowledge_scope,
+            knowledge,
         )
+    }
+
+    /// Issue an exact Project resource capability directly to an owner-local
+    /// CLI process after the Desktop approval UI accepted that request. No
+    /// bearer is created or returned: the caller and its descendants are the
+    /// complete authentication boundary for this runtime-only session.
+    pub(crate) fn issue_external_agent_process(
+        &self,
+        terminal_session_id: TerminalSessionId,
+        pin: &PinnedConnection,
+        capabilities: impl IntoIterator<Item = BrokerCapability>,
+        ttl: Duration,
+        authorization: ExternalAgentProcessAuthorization,
+    ) -> AppResult<DateTime<Utc>> {
+        let ExternalAgentProcessAuthorization {
+            plugin_id,
+            knowledge,
+            peer,
+        } = authorization;
+        let AgentKnowledgeAuthorization {
+            scopes: knowledge_scopes,
+            write_connection_id,
+        } = knowledge;
+        self.ensure_authority_available()?;
+        if ttl.is_zero() {
+            return Err(AppError::Config(
+                "external Agent session capability TTL must be positive".into(),
+            ));
+        }
+        validate_write_target(&knowledge_scopes, write_connection_id)?;
+        let expires_at = Utc::now()
+            + chrono::Duration::from_std(ttl)
+                .map_err(|_| AppError::Config("Agent session TTL is too large".into()))?;
+        let account_scope = AccountScopeId::new(pin.scope.account_scope.storage_key())
+            .expect("active resource scope has a non-empty account partition");
+        let knowledge_account_scope = AccountScopeId::new(
+            pin.scope
+                .selected_account_id
+                .as_deref()
+                .unwrap_or_else(|| pin.scope.account_scope.storage_key()),
+        )
+        .expect("active resource scope has a non-empty Knowledge account partition");
+        self.sessions.insert(
+            terminal_session_id,
+            SessionRecord {
+                metadata: AuthenticatedSession {
+                    terminal_session_id,
+                    agent_plugin_id: Some(plugin_id),
+                    runtime_id: self.runtime_id,
+                    workspace_id: pin.scope.workspace_id.into(),
+                    account_scope,
+                    knowledge_account_scope,
+                    scope_generation: pin.scope.generation,
+                    connection_id: pin.connection_id.into(),
+                    connection_revision: pin.connection_revision,
+                    capabilities: capabilities.into_iter().collect(),
+                    knowledge_scopes,
+                    write_connection_id,
+                    expires_at,
+                },
+                authorization: SessionAuthorization::AgentProcess(peer),
+            },
+        );
+        Ok(expires_at)
     }
 
     fn issue_with_authorization(
@@ -266,14 +353,19 @@ impl BrokerSessionRegistry {
         capabilities: impl IntoIterator<Item = BrokerCapability>,
         ttl: Duration,
         agent_registration: Option<AgentSessionRegisterArguments>,
-        knowledge_scope: Option<KnowledgeSessionScope>,
+        knowledge: AgentKnowledgeAuthorization,
     ) -> AppResult<IssuedSessionCapability> {
+        let AgentKnowledgeAuthorization {
+            scopes: knowledge_scopes,
+            write_connection_id,
+        } = knowledge;
         self.ensure_authority_available()?;
         if ttl.is_zero() {
             return Err(AppError::Config(
                 "terminal session capability TTL must be positive".into(),
             ));
         }
+        validate_write_target(&knowledge_scopes, write_connection_id)?;
         let mut token = Zeroizing::new([0u8; SESSION_TOKEN_BYTES]);
         getrandom::fill(token.as_mut()).map_err(|_| {
             AppError::Config("operating system random source is unavailable".into())
@@ -304,7 +396,8 @@ impl BrokerSessionRegistry {
             connection_id: pin.connection_id.into(),
             connection_revision: pin.connection_revision,
             capabilities: capabilities.into_iter().collect(),
-            knowledge_scope,
+            knowledge_scopes,
+            write_connection_id,
             expires_at,
         };
         self.sessions.insert(
@@ -441,7 +534,16 @@ impl BrokerSessionRegistry {
             .sessions
             .iter()
             .filter_map(|entry| {
-                (entry.metadata.connection_id == connection_id).then_some(*entry.key())
+                let selected = entry.metadata.knowledge_scopes.iter().any(|scope| {
+                    ConnectionId::from(scope.authority_connection_id) == connection_id
+                        || scope.connections.iter().any(|connection| {
+                            ConnectionId::from(connection.connection_id) == connection_id
+                        })
+                });
+                (entry.metadata.connection_id == connection_id
+                    || entry.metadata.write_connection_id == Some(connection_id)
+                    || selected)
+                    .then_some(*entry.key())
             })
             .collect::<Vec<_>>();
         let count = ids.len();
@@ -459,6 +561,24 @@ impl BrokerSessionRegistry {
     fn len(&self) -> usize {
         self.sessions.len()
     }
+}
+
+fn validate_write_target(
+    knowledge_scopes: &[KnowledgeSessionScope],
+    write_connection_id: Option<ConnectionId>,
+) -> AppResult<()> {
+    if write_connection_id.is_some_and(|write_connection_id| {
+        !knowledge_scopes.iter().any(|scope| {
+            scope.connections.iter().any(|connection| {
+                ConnectionId::from(connection.connection_id) == write_connection_id
+            })
+        })
+    }) {
+        return Err(AppError::Config(
+            "the Agent write target is outside its selected Project resource set".into(),
+        ));
+    }
+    Ok(())
 }
 
 impl Drop for BrokerAuthorityRefreshGuard {
@@ -493,6 +613,7 @@ mod tests {
 
     use std::collections::HashMap;
 
+    use crate::features::knowledge::domain::KnowledgeSessionConnection;
     use crate::kernel::access::WorkspaceKind;
     use crate::kernel::access::{AccountScope, ActiveResourceScope, CatalogCachePolicy};
     use crate::model::{
@@ -728,6 +849,7 @@ mod tests {
         let registry = BrokerSessionRegistry::new(RuntimeId::from(Uuid::new_v4()));
         let first_connection = ConnectionId::from(Uuid::new_v4());
         let second_connection = ConnectionId::from(Uuid::new_v4());
+        let selected_connection = ConnectionId::from(Uuid::new_v4());
         registry
             .issue(
                 TerminalSessionId::from(Uuid::new_v4()),
@@ -744,7 +866,39 @@ mod tests {
                 Duration::from_secs(60),
             )
             .unwrap();
+        registry
+            .issue_agent_with_knowledge(
+                TerminalSessionId::from(Uuid::new_v4()),
+                &pin(second_connection.into()),
+                [BrokerCapability::ConnectionRead],
+                Duration::from_secs(60),
+                registration(dopedb_protocol::AcpPluginId::Codex),
+                AgentKnowledgeAuthorization {
+                    scopes: vec![KnowledgeSessionScope {
+                        project_id: Uuid::new_v4(),
+                        knowledge_grant_id: None,
+                        project_environment_id: Uuid::new_v4(),
+                        environment_revision: 1,
+                        authority_connection_id: Uuid::from(second_connection),
+                        authority_connection_revision: 11,
+                        sources: Vec::new(),
+                        graph_revision_ids: Vec::new(),
+                        connections: vec![KnowledgeSessionConnection {
+                            connection_id: Uuid::from(selected_connection),
+                            connection_revision: 3,
+                            remote_connection_id: None,
+                            connection_content_revision: 3,
+                            role: "secondary".into(),
+                            alias: "Secondary".into(),
+                        }],
+                    }],
+                    write_connection_id: None,
+                },
+            )
+            .unwrap();
         assert_eq!(registry.revoke_connection(first_connection), 1);
+        assert_eq!(registry.len(), 2);
+        assert_eq!(registry.revoke_connection(selected_connection), 1);
         assert_eq!(registry.len(), 1);
     }
 

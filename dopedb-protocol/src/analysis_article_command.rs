@@ -14,6 +14,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AnalysisArticleProposeArguments {
+    pub connection_id: Uuid,
     pub definition: AnalysisArticleDraftDefinition,
 }
 
@@ -22,12 +23,14 @@ pub struct AnalysisArticleProposeArguments {
 pub struct AnalysisArticleUpdateDraftArguments {
     pub article_id: Uuid,
     pub expected_revision: i64,
+    pub connection_id: Uuid,
     pub definition: AnalysisArticleDraftDefinition,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AnalysisArticleDraftRunArguments {
+    pub connection_id: Uuid,
     pub definition: AnalysisArticleDraftDefinition,
     #[serde(default)]
     pub parameter_values: BTreeMap<String, Value>,

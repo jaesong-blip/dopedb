@@ -4,6 +4,7 @@ pub(crate) mod acp;
 pub(crate) mod adapters;
 mod application;
 pub(crate) mod domain;
+pub(crate) mod external_transport;
 mod ports;
 pub(crate) mod runtime;
 pub(crate) mod transport;

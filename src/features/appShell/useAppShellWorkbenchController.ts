@@ -21,7 +21,9 @@ import {
 import { buildConnectionSections } from "../../lib/schemaDiff";
 import type { ConnectionProfile } from "../connections/domain";
 import type { ConnectionLaunchPreset } from "../connections/presets";
+import { bindKnowledgeEnvironmentConnectionWithRefresh } from "../knowledge/bindEnvironmentConnection";
 import type { KnowledgeEnvironmentView } from "../knowledge/domain";
+import { knowledgeQueryKeys } from "../knowledge/queryKeys";
 import { useGuidedDemoSetup } from "../onboarding/useGuidedDemoSetup";
 import { connectionCanEnterWritePath } from "../safetySettings/policy";
 import type { SettingsSection } from "../settings/domain";
@@ -90,6 +92,7 @@ export function useAppShellWorkbenchController({
     initialAppShellMode,
   );
   const selectionRestoreMarked = useRef(false);
+  const completedLaunchPresetBindings = useRef(new Set<string>());
   const {
     safety,
     error: safetyError,
@@ -358,6 +361,36 @@ export function useAppShellWorkbenchController({
     closeEditor: boolean,
   ) {
     await refresh();
+    const launchBindingKey = connectionPreset?.projectEnvironmentId
+      ? `${connectionPreset.projectEnvironmentId}:${profile.id}`
+      : null;
+    if (
+      connectionPreset?.projectEnvironmentId &&
+      launchBindingKey !== null &&
+      !completedLaunchPresetBindings.current.has(launchBindingKey)
+    ) {
+      await bindKnowledgeEnvironmentConnectionWithRefresh({
+        projectEnvironmentId: connectionPreset.projectEnvironmentId,
+        connectionId: profile.id,
+        role: "primary",
+        alias: profile.name.trim() || profile.database.trim() || "database",
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: knowledgeQueryKeys.environmentConnections(),
+          refetchType: "active",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: knowledgeQueryKeys.agentEnvironments(),
+          refetchType: "active",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: knowledgeQueryKeys.inventory(),
+          refetchType: "active",
+        }),
+      ]);
+      completedLaunchPresetBindings.current.add(launchBindingKey);
+    }
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: qk.catalog(profile.id) }),
       queryClient.invalidateQueries({

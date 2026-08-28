@@ -251,8 +251,11 @@ export default function AcpChatComposer({
         <AcpScopeSelect
           knowledge={setup.knowledge}
           starting={session.starting}
-          onSelect={(scopeKey) =>
-            void commands.composer.selectEnvironment(scopeKey)
+          onToggle={(resourceKey) =>
+            void commands.composer.selectEnvironment(resourceKey)
+          }
+          onWriteTarget={(connectionId) =>
+            void commands.composer.selectWriteTarget(connectionId)
           }
         />
       </ToolWindowComposerContext>

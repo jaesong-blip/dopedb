@@ -106,6 +106,44 @@ export type AcpSessionLifecycle =
   | "failed"
   | "closed";
 
+export interface AgentKnowledgeSourceScope {
+  sourceId: string;
+  displayName: string;
+  repositoryId: string;
+  repository: string;
+  refName: string;
+  commitSha: string;
+}
+
+export interface AgentKnowledgeConnectionScope {
+  connectionId: ConnectionId;
+  connectionRevision: number;
+  remoteConnectionId: string | null;
+  connectionContentRevision: number;
+  role: string;
+  alias: string;
+}
+
+export interface AgentKnowledgeScope {
+  projectId: string;
+  knowledgeGrantId: string | null;
+  projectEnvironmentId: string;
+  environmentRevision: number;
+  authorityConnectionId: ConnectionId;
+  authorityConnectionRevision: number;
+  sources: AgentKnowledgeSourceScope[];
+  graphRevisionIds: string[];
+  connections: AgentKnowledgeConnectionScope[];
+}
+
+/** One exact internal Environment slice of a user-selected Project resource set. */
+export interface AgentResourceScopeSelection {
+  projectEnvironmentId: string;
+  authorityConnectionId: ConnectionId;
+  connectionIds: ConnectionId[];
+  sourceIds: string[];
+}
+
 export interface AcpSessionSummary {
   id: AcpSessionId;
   connectionId: ConnectionId;
@@ -116,13 +154,11 @@ export interface AcpSessionSummary {
   knowledgeGrantId: string | null;
   projectEnvironmentId: string | null;
   environmentRevision: number | null;
+  knowledgeSources: AgentKnowledgeSourceScope[];
   graphRevisionIds: string[];
-  environmentConnections: Array<{
-    connectionId: string;
-    connectionRevision: number;
-    role: string;
-    alias: string;
-  }>;
+  environmentConnections: AgentKnowledgeConnectionScope[];
+  knowledgeScopes: AgentKnowledgeScope[];
+  writeConnectionId: ConnectionId | null;
   error: string | null;
   createdAt: string;
   updatedAt: string;
@@ -228,6 +264,7 @@ export interface AcpTableContext {
 }
 
 export interface AcpPromptContext {
+  connectionId: ConnectionId | null;
   database: string | null;
   documentName: string | null;
   documentText: string | null;

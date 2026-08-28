@@ -905,6 +905,8 @@ CREATE TABLE IF NOT EXISTS agent_acp_sessions (
     knowledge_sources TEXT NOT NULL DEFAULT '[]',
     graph_revision_ids TEXT NOT NULL DEFAULT '[]',
     environment_connections TEXT NOT NULL DEFAULT '[]',
+    knowledge_scopes TEXT NOT NULL DEFAULT '[]',
+    write_connection_id TEXT,
     error          TEXT,
     created_at     TEXT NOT NULL,
     updated_at     TEXT NOT NULL

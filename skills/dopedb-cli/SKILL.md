@@ -9,21 +9,52 @@ Use the `dopedb` CLI whenever a task concerns a database managed by DopeDB. The
 CLI talks only to the running DopeDB Desktop runtime. It never reads database
 credentials, opens a database driver, or approves its own mutation.
 
-## Inside DopeDB AI Chat
+## Inside a DopeDB Agent session
 
-When the session supplies the `dopedb-desktop-session` MCP server, its typed
-tools and the session prompt are authoritative. Do not run the public `dopedb`
-CLI, fetch this guide, repeat version/status checks, or list connections before
-ordinary work. The connection is already pinned. Prefer `catalog_search` over a
-full catalog dump and use `query_read` for SQL reads; it preserves the exact
-Broker plan/run boundary in one tool call. Use `sql_propose` for mutations.
+When built-in AI Chat or `dopedb agent start` supplies the session-scoped DopeDB
+MCP server, its typed tools and session prompt are authoritative. Do not run the
+public `dopedb` CLI, fetch this guide, repeat version/status checks, or list all
+connections before ordinary work. The exact Project resource set is already
+pinned. Call `environment_context` once, prefer `catalog_search` over a full
+catalog dump, and use `query_read` for SQL reads; it preserves the exact Broker
+plan/run boundary in one tool call. Use `sql_propose` for mutations, and only
+against the optional single write target reported by `environment_context`.
 
-The remaining instructions apply only outside the built-in ACP session.
+## Configure an official AI CLI outside Desktop
 
-## Outside ACP: start every CLI task
+From the Project root, a person initializes one secret-free config:
+
+```text
+dopedb agent init --provider codex
+# or: dopedb agent init --provider claude
+```
+
+Desktop opens a resource picker. The resulting `.dopedb/agent.json` contains
+only provider and Project/resource identifiers plus an optional single write
+target. It is safe to review and check in; it must never contain a password,
+connection URL, provider token, Broker capability, or result row.
+
+Start the configured official CLI with:
+
+```text
+dopedb agent start -- <provider arguments>
+```
+
+Desktop shows the exact current databases, BigQuery resources, source revisions,
+and write target on every start. Approval cannot widen the config. DopeDB then
+launches the user's normal locally authenticated `codex` or `claude`, injects a
+runtime-only typed MCP bridge, and revokes it when that process exits. Do not
+copy the generated MCP settings into a provider config or launch `agent mcp`
+directly.
+
+The remaining direct commands apply only in a DopeDB-created Terminal or inside
+that approved external Agent process tree.
+
+## Direct CLI commands
 
 1. Run `dopedb version --json` and `dopedb status --json`.
-2. If the runtime is unavailable, ask the user to open DopeDB Desktop.
+2. If the runtime is unavailable, open DopeDB Desktop or use `dopedb app open
+   --wait`.
 3. Use the connection pinned to the current DopeDB Terminal when the user refers
    to “this database”. Otherwise list connections and select an exact `id:<uuid>`.
 4. List reachable databases with
@@ -84,18 +115,18 @@ as you would for SQL results.
 
 ## Build an Analysis Article
 
-Analysis Articles are created only inside a Desktop-launched, Environment-pinned
-ACP session. The app-managed `dopedb-desktop-session` server supplies typed
+Analysis Articles are created only inside a Desktop-launched or Desktop-approved,
+Project-resource-pinned Agent session. The session-scoped DopeDB server supplies typed
 `analysis_article_draft_run`, `analysis_article_propose`,
 `analysis_article_update_draft`, and `analysis_article_list` tools there. Do not
 try to reproduce that authority with the public CLI, a saved query-run id, or a
 general MCP server.
 
-Outside DopeDB AI Chat, explain that the user must open the target Project /
-Environment in Desktop and ask its Agent to draft the Article. The Agent may
-verify and propose ordinary HTML with one bounded read-only saved query. A
-person edits the HTML, reruns that query when current data is needed, and
-publishes an immutable HTML copy.
+Without an approved Agent session, explain that the user must use built-in AI
+Chat or run the Project's `dopedb agent start`. The Agent may verify and propose
+ordinary HTML with one bounded read-only saved query. A person edits the HTML,
+reruns that query when current data is needed, and publishes an immutable HTML
+copy.
 
 ## Mutations
 
@@ -124,6 +155,8 @@ automatically.
   connection URLs for a DopeDB-managed connection.
 - Do not request, print, persist, transform, or transmit passwords, tokens,
   certificates, raw connection URLs, session capabilities, or keychain values.
+- Do not add secrets to `.dopedb/agent.json`, hand-edit it to widen scope, reuse
+  its identities across Projects, or persist the ephemeral MCP configuration.
 - Do not invent an approval command. No CLI or agent approval command exists.
 - Do not reuse a plan or operation across Terminal sessions, connections,
   workspaces, or users.

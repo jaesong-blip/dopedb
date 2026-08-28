@@ -304,9 +304,11 @@ fn validate_current_manifest(manifest: &CurrentManifest) -> AppResult<()> {
         .ok_or_else(|| AppError::Config("the embedded Skill install stub has no content".into()))?;
     if stub.path != "SKILL.md"
         || stub.source_path != "generated:discovery-stub"
-        || !content.contains("dopedb-desktop-session")
         || !content.contains(
-            "Outside DopeDB AI Chat, before using the CLI, run:\ndopedb skills get dopedb-cli",
+            "session-scoped MCP server through built-in AI Chat or `dopedb agent start`",
+        )
+        || !content.contains(
+            "Outside an approved Agent session, first load the version-matched setup and safety guide:\ndopedb skills get dopedb-cli",
         )
     {
         return Err(AppError::Config(

@@ -1,4 +1,24 @@
-import type { AcpSessionId } from "./domain";
+import type {
+  AcpSessionId,
+  AcpSessionLifecycle,
+  AcpSessionSummary,
+  AgentProvider,
+} from "./domain";
+
+export function isLiveSession(lifecycle: AcpSessionLifecycle) {
+  return ["starting", "ready", "running", "waitingPermission"].includes(
+    lifecycle,
+  );
+}
+
+export function selectWorkspaceSessions(
+  sessions: readonly AcpSessionSummary[],
+  enabledProviders: readonly AgentProvider[],
+) {
+  return sessions
+    .filter((session) => enabledProviders.includes(session.provider))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
 
 export type AcpFocusRequest = {
   requestId: number;

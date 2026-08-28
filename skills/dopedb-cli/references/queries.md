@@ -1,11 +1,16 @@
 # Query workflow
 
-Inside DopeDB AI Chat, use the typed `dopedb-desktop-session` MCP tools instead
-of the commands below. The session is already pinned: search metadata with
-`catalog_search` and execute a read with one `query_read` call. Do not perform
-CLI discovery/version/status handshakes inside ACP.
+Inside built-in AI Chat or a Desktop-approved `dopedb agent start` process, use
+the supplied typed DopeDB MCP tools instead of the commands below. The exact
+Project resource set is already pinned: call `environment_context`, search
+metadata with `catalog_search`, and execute a read with one `query_read` call.
+When observing or cancelling work on a non-anchor database, pass its returned
+`connectionId` back to the `operation_status`, `operation_wait`, or
+`operation_cancel` tool.
+Do not perform CLI discovery/version/status handshakes inside that session.
 
-The CLI workflow below is for an external terminal.
+The direct CLI workflow below requires a DopeDB-created Terminal or the approved
+external Agent process tree.
 
 ## Select a connection
 

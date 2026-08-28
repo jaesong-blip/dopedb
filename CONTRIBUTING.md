@@ -8,8 +8,9 @@ AI 작업자는 변경 전에 `AGENTS.md`와 `CLAUDE.md`를 읽는다. 협업 �
 팀과 AI Agent를 위한 공유 DB 접근 workspace다. workspace가 연결 정체성·정책·협업
 상태를 공유하되 장기 비밀값은 공유 레코드를 따라가지 않고, 구성원은 member-local
 OS 저장 또는 구성원별 단기 managed 자격 증명을 사용한다. 연결은 간단해야 하며,
-Agent는 정확한 workspace/account/connection revision과 local policy에 고정된
-grant 안에서 일하고 화면은 관찰·승인·중단·복구한다. 공유 분석의 단위는
+Agent는 한 프로젝트에서 사용자가 선택한 정확한 DB·BigQuery·소스 revision과
+workspace/account/local policy에 고정된 grant 안에서 일하며, 쓰기 대상 DB는 최대
+하나다. 화면은 관찰·승인·중단·복구한다. 공유 분석의 단위는
 sanitized HTML과 정확한 읽기 전용 저장 쿼리 하나를 가진 Analysis Article이다.
 result row는 exact-grant Desktop에 남고, public article은 query를 실행하거나
 노출하지 않는 immutable HTML snapshot으로만 발행한다. Dashboard·transform graph,
@@ -18,6 +19,12 @@ hosted DB proxy, 임의 executable BI block, driver 개수는 제품 방향이 �
 개별 기능의 결정 상태는
 [`docs/PRODUCT_UI_SCOPE.md`](docs/PRODUCT_UI_SCOPE.md)의
 기능 범위 결정 표가 소유한다.
+
+Desktop 내부 Agent는 공식 ACP adapter를 수정 없이 사용한다. Desktop 밖에서는
+secret-free Project 설정을 사용자가 화면에서 검토한 뒤 `dopedb agent start`가 공식
+로컬 `codex`/`claude` CLI만 실행한다. 두 경로의 typed MCP bridge는 exact
+Project-resource grant와 process ancestry에만 묶인 runtime-only endpoint이며 저장된
+범용 MCP server가 아니다. 앱과 CLI는 provider login token을 읽거나 갱신하지 않는다.
 
 ## 기본 흐름
 
@@ -64,11 +71,15 @@ ID를 확인한다. 자동화의 권한, 판정, 운영 절차는
 
 ## 테스트 변경
 
-테스트는 `tests/critical-test-budget.json`의 104개 예산 안에서 유지한다. 새
+테스트는 `tests/critical-test-budget.json`의 208개 예산 안에서 유지한다. 새
 테스트는 보안·안전, 공개 계약, 핵심 사용자 여정 중 하나를 보호해야 하며 보호
 이유를 manifest에 기록한다. 기존 테스트를 확장하거나 가치가 낮은 테스트를
 교체하고, 사용자의 명시적 결정 없이 총량이나 파일 수를 늘리지 않는다.
 `pnpm check:test-budget`와 해당 smoke 명령을 실행한다.
+
+`pnpm check:code-structure`는 검토된 대형 혼합 책임 module과 결합된 작은 module
+cluster가 더 악화되는 것을 막는다. `pnpm audit:code-structure`의 전체 순위를 사람
+이 검토하지 않고 baseline을 재생성해서는 안 된다.
 
 ## UI 변경
 

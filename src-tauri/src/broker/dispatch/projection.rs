@@ -22,22 +22,34 @@ pub(super) fn terminal_authority_for_selector(
     selector: &ConnectionSelector,
     client_protocol_version: u16,
 ) -> Result<TerminalAuthority, ErrorCode> {
+    let selected_connection = |id: Uuid| {
+        session
+            .knowledge_scopes
+            .iter()
+            .flat_map(|scope| scope.connections.iter())
+            .find(|connection| connection.connection_id == id)
+    };
+    let resource_set_enforced =
+        session.agent_plugin_id.is_some() && !session.knowledge_scopes.is_empty();
     let (connection_id, connection_revision) = match selector {
-        ConnectionSelector::Current => (session.connection_id, session.connection_revision),
-        ConnectionSelector::Id(id) if *id == Uuid::from(session.connection_id) => {
+        ConnectionSelector::Current if !resource_set_enforced => {
+            (session.connection_id, session.connection_revision)
+        }
+        ConnectionSelector::Current => {
+            let connection = selected_connection(Uuid::from(session.connection_id))
+                .ok_or(ErrorCode::ScopeDenied)?;
+            (
+                ConnectionId::from(connection.connection_id),
+                connection.connection_revision,
+            )
+        }
+        ConnectionSelector::Id(id)
+            if !resource_set_enforced && *id == Uuid::from(session.connection_id) =>
+        {
             (session.connection_id, session.connection_revision)
         }
         ConnectionSelector::Id(id) => {
-            let connection = session
-                .knowledge_scope
-                .as_ref()
-                .and_then(|scope| {
-                    scope
-                        .connections
-                        .iter()
-                        .find(|connection| connection.connection_id == *id)
-                })
-                .ok_or(ErrorCode::ScopeDenied)?;
+            let connection = selected_connection(*id).ok_or(ErrorCode::ScopeDenied)?;
             (
                 ConnectionId::from(connection.connection_id),
                 connection.connection_revision,

@@ -97,6 +97,19 @@ pub(crate) async fn open(wait: bool, mode: OutputMode) -> Result<(), ClientError
     write_open_result(result, mode)
 }
 
+/// Ensure the approval UI can be reached for a command that must continue
+/// after launch. Unlike `app open`, this always waits for the runtime.
+pub(crate) async fn client_or_launch() -> Result<BrokerClient, ClientError> {
+    match BrokerClient::discover() {
+        Ok(client) => Ok(client),
+        Err(ClientError::RuntimeUnavailable) => {
+            launch_desktop()?;
+            wait_for_runtime(Duration::from_secs(15)).await
+        }
+        Err(error) => Err(error),
+    }
+}
+
 fn write_open_result(result: AppOpenResult, mode: OutputMode) -> Result<(), ClientError> {
     match mode {
         OutputMode::Json => output::write_json(&result),

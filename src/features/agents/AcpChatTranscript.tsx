@@ -177,8 +177,7 @@ export default function AcpChatTranscript({
           </Button>
         </AgentEmpty>
       ) : !active &&
-        setup.knowledge.projectScopes.length === 0 &&
-        setup.knowledge.databaseScopes.length === 0 ? (
+        setup.knowledge.projects.length === 0 ? (
         <AgentEmpty>
           <Icon name="folder" />
           <strong>{t("agent.acpEnvironmentRequired")}</strong>
@@ -239,7 +238,7 @@ export default function AcpChatTranscript({
                 onPermission={commands.permission.respond}
                 onOpenLink={commands.links.openMessage}
                 onOpenKnowledgeAnalysis={onOpenKnowledgeAnalysis}
-                expectedConnectionId={active.connectionId}
+                expectedConnectionId={active.writeConnectionId ?? ""}
                 expectedConnectionEngine={connectionEngine}
               />
             </Fragment>

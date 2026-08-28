@@ -112,6 +112,33 @@ process, 재등록, unrelated process, PID 재사용, 만료·취소·authority 
 `authentication_denied` 경계에서 거부한다. process identity는 discovery나 SQLite에
 저장하지 않고 해당 Desktop runtime의 메모리에만 둔다.
 
+## External official Agent process-bound authentication
+
+Desktop 밖의 AI 사용은 별도 상시 MCP server나 bearer 배포가 아니라 공개 CLI의
+`dopedb agent init/start`로 연다. `agent init`은 canonical working directory와
+provider closed enum만 unauthenticated owner-local Broker에 보내고, Desktop에서
+고른 한 Project의 connection/source UUID와 선택적인 단일 write connection UUID만
+`.dopedb/agent.json`에 저장한다. 이 파일에는 connection URL, credential, provider
+token, Broker endpoint, session id나 capability가 없다.
+
+`agent start`는 config 전체와 canonical working directory를 다시 보내고 Desktop이
+현재 resource 이름·revision·읽기/쓰기 범위를 보여준 뒤 명시적으로 승인한다.
+Broker는 hosted authority를 다시 동기화하고 각 resource를 현재 revision으로
+narrowing한 뒤 요청한 public CLI peer PID/start marker에 직접 `AgentProcess`
+authority를 묶는다. 응답에는 session id와 expiry만 있고 bearer는 생성하지 않는다.
+
+public CLI는 사용자의 공식 `codex` 또는 `claude`를 child로 시작하면서 현재 CLI
+자신의 `agent mcp`를 ephemeral stdio server로 주입한다. child tree에는 runtime file,
+session id, `DOPEDB_AGENT_PROCESS_BOUND=1`만 전달하고 상속된
+`DOPEDB_SESSION_TOKEN`은 제거한다. Broker는 요청 CLI와 동일하거나 실제 descendant인
+peer에만 exact Project resource capability를 적용한다. provider가 종료되면 parent
+CLI가 process-bound revoke를 보내며, parent가 비정상 종료되어도 ancestry 검증이
+fail closed하고 runtime TTL·Desktop shutdown이 잔여 record를 정리한다.
+
+이 경로는 공식 AI CLI의 기존 로컬 로그인만 사용한다. DopeDB는 provider token을
+읽거나 `api.anthropic.com`/OpenAI backend를 직접 호출하지 않으며 config를 일반 MCP
+설정으로 설치하지 않는다.
+
 ## Bounded Agent tools and cancellation
 
 Agent의 catalog 검색은 `catalog.show` 응답을 bridge로 옮긴 뒤 필터링하지 않는다.

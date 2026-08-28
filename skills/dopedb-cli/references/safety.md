@@ -10,6 +10,13 @@ The local session token is an ephemeral capability for one DopeDB Terminal. It
 is not a database credential. Do not display it, copy it into another process,
 store it in a file, add it to shell history, or move it between sessions.
 
+An external official Agent uses no bearer. `.dopedb/agent.json` stores only
+stable Project/resource identifiers. On every `dopedb agent start`, Desktop
+reviews that exact set and the Broker binds runtime-only authority to the
+requesting CLI process and its verified descendants. A session identifier alone
+does not authorize another process. Do not run the hidden `agent mcp` entrypoint,
+copy its ephemeral provider settings, or edit the config to bypass review.
+
 ## Connection scope
 
 Database commands require an explicit selector:

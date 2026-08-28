@@ -17,9 +17,20 @@ impl AcpRuntime {
             .sessions
             .iter()
             .filter_map(|entry| {
-                (entry.value().connection_id == connection_id
+                let summary = entry.value().summary();
+                let connection_selected = summary.knowledge_scopes.iter().any(|scope| {
+                    ConnectionId::from(scope.authority_connection_id) == connection_id
+                        || scope.connections.iter().any(|connection| {
+                            ConnectionId::from(connection.connection_id) == connection_id
+                        })
+                }) || summary.environment_connections.iter().any(
+                    |connection| ConnectionId::from(connection.connection_id) == connection_id,
+                );
+                ((entry.value().connection_id == connection_id
+                    || summary.write_connection_id.map(ConnectionId::from) == Some(connection_id)
+                    || connection_selected)
                     && !matches!(
-                        entry.value().summary().lifecycle,
+                        summary.lifecycle,
                         AcpSessionLifecycle::Closed | AcpSessionLifecycle::Failed
                     ))
                 .then_some(*entry.key())
@@ -35,21 +46,23 @@ impl AcpRuntime {
         &self,
         project_environment_ids: &HashSet<Uuid>,
     ) -> usize {
-        let sessions = self
-            .sessions
-            .iter()
-            .filter_map(|entry| {
-                let summary = entry.value().summary();
-                (summary
-                    .project_environment_id
-                    .is_some_and(|id| project_environment_ids.contains(&id))
-                    && !matches!(
-                        summary.lifecycle,
-                        AcpSessionLifecycle::Closed | AcpSessionLifecycle::Failed
-                    ))
-                .then_some(*entry.key())
-            })
-            .collect::<Vec<_>>();
+        let sessions =
+            self.sessions
+                .iter()
+                .filter_map(|entry| {
+                    let summary = entry.value().summary();
+                    ((summary.knowledge_scopes.iter().any(|scope| {
+                        project_environment_ids.contains(&scope.project_environment_id)
+                    }) || summary
+                        .project_environment_id
+                        .is_some_and(|id| project_environment_ids.contains(&id)))
+                        && !matches!(
+                            summary.lifecycle,
+                            AcpSessionLifecycle::Closed | AcpSessionLifecycle::Failed
+                        ))
+                    .then_some(*entry.key())
+                })
+                .collect::<Vec<_>>();
         for id in &sessions {
             self.interrupt(*id, PROJECT_AUTHORITY_CHANGED);
         }

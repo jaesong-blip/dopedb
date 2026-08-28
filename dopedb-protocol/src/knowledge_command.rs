@@ -232,6 +232,7 @@ pub struct KnowledgeMappingProposeCommand;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EnvironmentConnectionScope {
+    pub project_environment_id: Uuid,
     pub connection_id: Uuid,
     pub connection_revision: i64,
     pub role: String,
@@ -241,6 +242,7 @@ pub struct EnvironmentConnectionScope {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EnvironmentSourceScope {
+    pub project_environment_id: Uuid,
     pub source_id: Uuid,
     pub display_name: String,
     pub repository: String,
@@ -250,12 +252,25 @@ pub struct EnvironmentSourceScope {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct EnvironmentContextResult {
+pub struct EnvironmentRevisionScope {
     pub project_environment_id: Uuid,
     pub environment_revision: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EnvironmentContextResult {
+    pub project_id: Uuid,
+    /// Legacy primary Environment fields remain as a compact compatibility
+    /// projection. `environments` is authoritative for a multi-resource set.
+    pub project_environment_id: Uuid,
+    pub environment_revision: u64,
+    pub environments: Vec<EnvironmentRevisionScope>,
     pub connections: Vec<EnvironmentConnectionScope>,
     pub sources: Vec<EnvironmentSourceScope>,
     pub graph_revision_ids: Vec<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub write_connection_id: Option<Uuid>,
 }
 
 macro_rules! knowledge_command {

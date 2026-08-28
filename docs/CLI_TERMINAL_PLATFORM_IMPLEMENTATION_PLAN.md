@@ -1,7 +1,7 @@
 # DopeDB CLI·Terminal Platform 구현 계획
 
 - 상태: **역사적 구현 기록 — 현재 제품 로드맵으로 사용하지 않음**
-- 최종 갱신: 2026-07-25
+- 최종 갱신: 2026-08-29
 - 적용 대상: DopeDB Desktop, `workspace-cloud`, 신규 `dopedb-cli`, 향후
   Plugin/Realtime 서비스
 
@@ -12,6 +12,11 @@
 > [`PRODUCT_UI_SCOPE.md`](./PRODUCT_UI_SCOPE.md)의
 > 기능 범위 결정 표가 소유한다. 이 문서의 Phase 번호나 미완료 checklist는 새 기능
 > 착수 근거가 아니다.
+>
+> 2026-08-29에는 이 기록의 미구현 `dopedb session start` 구상을 채택하지 않고,
+> 현재 제품 경계에 맞춘 `dopedb agent init/start`만 추가했다. 이 경로는
+> secret-free Project config, 매 실행 Desktop 검토, bearer 없는 process-bound
+> authority로 공식 Codex/Claude CLI를 실행하며 임의 shell에는 DB 권한을 주지 않는다.
 
 ## 1. 문서 목적
 
@@ -210,10 +215,11 @@ workspace + connection + actor + operation kind
 - 같은 OS user가 실행하더라도 Agent session에는 connection/capability scope를 적용한다.
 - Agent는 read plan/run과 proposal 생성은 가능하다.
 - Agent는 approval, credential export, raw provider token 조회가 불가능하다.
-- 첫 release의 DB 접근 CLI는 인앱 Terminal session에서만 허용한다.
+- 일반 DB 접근 CLI는 인앱 Terminal session에서만 허용한다.
 - 외부 shell에서는 version/status/app open/Skill 관리까지만 session 없이 허용한다.
-- 외부 DB 접근은 후속 `dopedb session` 흐름에서 앱 승인을 받은 단기 shell/Agent
-  session으로만 제공한다.
+- 외부 AI는 `dopedb agent init/start`가 Desktop 승인 뒤 직접 실행한 공식
+  Codex/Claude process tree에만 exact Project resource capability를 제공한다. 임의
+  child shell session과 reusable bearer는 제공하지 않는다.
 
 ### 4.5 고용량 데이터와 제어 메시지 분리
 
@@ -723,15 +729,18 @@ Agent session 오작동, connection 혼선, 다른 Terminal의 plan 재사용을
 첫 release에서는 DB 관련 broker command에 이 session capability를 필수로 요구한다.
 전역 discovery file에 bootstrap token을 저장하지 않는다.
 
-외부 OS Terminal 지원은 후속 단계로 분리한다.
+외부 임의 shell 지원은 제품 범위 밖이다. 공식 Agent CLI만 다음 형태로 지원한다.
 
 ```text
-dopedb session start --connection id:<uuid> --shell
-dopedb session start --connection id:<uuid> --agent codex
+dopedb agent init --provider codex
+dopedb agent start -- <codex arguments>
 ```
 
-이 명령은 앱에서 사용자 승인을 받은 후 CLI가 단기 token을 가진 child shell/Agent를
-직접 시작한다. token을 출력하거나 shell profile에 저장하지 않는다.
+첫 명령은 `.dopedb/agent.json`에 secret-free Project resource identity만 저장한다.
+두 번째 명령은 앱에서 현재 exact resource set을 다시 보여주고 사용자 승인을 받은
+후 공식 provider child를 직접 시작한다. Broker는 parent CLI process ancestry에
+runtime-only authority를 묶고 bearer를 생성·출력·저장하지 않으며 child 종료 시
+즉시 revoke한다.
 
 ### 6.5 CLI selector
 
@@ -782,6 +791,9 @@ dopedb skill status --target all --json
 dopedb skill install --target codex|claude-code|all --json
 dopedb skill repair --target ... --json
 dopedb skill remove --target ... --json
+
+dopedb agent init --provider codex|claude [--config .dopedb/agent.json]
+dopedb agent start [--config <path>] -- <provider arguments>
 
 dopedb connection list --json
 dopedb connection show <selector> --json

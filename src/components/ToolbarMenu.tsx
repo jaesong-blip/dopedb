@@ -17,7 +17,7 @@ function menuItems(root: HTMLElement | null) {
   if (!root) return [];
   return [
     ...root.querySelectorAll<HTMLElement>(
-      'button:not(:disabled), [role="menuitem"]:not([aria-disabled="true"]), [role="menuitemcheckbox"] input:not(:disabled)',
+      'button:not(:disabled), [role="menuitem"]:not([aria-disabled="true"]), [role="menuitemcheckbox"] input:not(:disabled), [role="menuitemradio"] input:not(:disabled)',
     ),
   ];
 }
@@ -152,9 +152,13 @@ export default function ToolbarMenu({
   }, [open, position]);
 
   function moveFocus(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.target instanceof HTMLTextAreaElement) {
+      return;
+    }
     if (
-      event.target instanceof HTMLInputElement ||
-      event.target instanceof HTMLTextAreaElement
+      event.target instanceof HTMLInputElement &&
+      event.target.type !== "checkbox" &&
+      event.target.type !== "radio"
     ) {
       return;
     }

@@ -25,7 +25,8 @@ runtime과 성능 수치로 수행한다.
 | SQL/MongoDB query workflow | `complete` | `features/queries`, `features/documentQueries`, `screens/Sql`, `screens/Documents`, Rust query application | 수동 Run exact 승인, Agent 제안 분리, MongoDB의 지속되는 조회 surface와 collection 없는 정확한 빈 상태, 10 KiB/100 KiB/1 MiB 입력과 cancel/transaction packaged 검수를 유지 |
 | Result/Data grid | `complete` | `features/queryResults`, Rust result artifact | 30열·50,000행 selection/filter/export와 메모리 경계 검수 |
 | Services/Jobs | `complete` | `features/queryServices`, `features/jobs` | background cancel과 복원된 result handle, 쓰기 권한 차단 시 exact DB의 필요한 권한 계층·`Settings → Safety` 복구 진입을 검수한다. 관리형 DDL은 DB 실행 전에 DML-only 자격 증명 경계로 차단하고, 기존 실패 결과도 Safety 체크박스가 아니라 DB owner/migration 경로가 필요함을 표시한다. |
-| Agent tool window | `complete` | `features/agents`, ACP Rust runtime | `프로젝트 전체`(source + PROD DB 전체)와 `개별 DB` 두 context만 구분하고 trigger에 현재 종류·대상 이름을 계속 표시하며 Project Environment 이름은 노출하지 않는다. 공식 adapter 설치·로그아웃·permission·resume, 첫 prompt 단일 제출과 동일 권한 focus-refresh 연속성, 실제 권한·process 중단 사유와 복구의 OS별 검수를 유지 |
+| Agent tool window | `partial` | `features/agents`, ACP Rust runtime | 한 Project의 DB·BigQuery·GitHub source를 개별/다중 선택하고 trigger에 Project·선택 개수·단일 쓰기 대상을 계속 표시한다. 선택하지 않은 resource 차단, connection별 독립 read, 단일 write target, 공식 adapter 설치·로그아웃·permission·resume, 첫 prompt 단일 제출과 동일 권한 focus-refresh 연속성을 packaged runtime에서 검수하면 `complete`로 복귀 |
+| External Agent approval | `partial` | `features/agents/ExternalAgentRequestGate`, `dopedb-cli`, Local Broker | `agent init`의 secret-free config 생성, `agent start`의 immutable resource 재검토, token 없는 process-bound MCP 주입·종료 revoke는 자동 회귀 검수한다. macOS/Windows packaged CLI에서 Codex/Claude 각각의 실제 로그인·승인·종료 흐름을 검수하면 `complete`로 전환한다. |
 | Knowledge graph | `complete` | Rust `features/knowledge`, frontend Knowledge projection | packaged GitHub 설치·기존 설치 업데이트 복귀, Local source revision, publish, mapping과 exact grant 검수 |
 | Analysis Article | `partial` | `features/analysisArticles`, cloud analysis application | Explorer 소유 문자·상태 필터와 단일 중앙 HTML document, exact 단일 query의 로컬 수동 재조회, immutable public HTML 발행과 raw run timestamp의 RFC3339 응답을 실제 환경에서 검수 |
 | Settings | `complete` | `features/settings`, `features/safetySettings` | Desktop `Settings → Safety`의 단일 쓰기 제어, 관리자용 workspace 상한 + 기기 gate의 fail-closed 저장, 미적용 변경 표시를 유지한다. 웹 DB 접근 화면은 같은 상한을 상태로만 표시하며 변경 control을 중복하지 않는다. compact viewport 검수 |
@@ -98,10 +99,14 @@ Acceptance: cancel 후 connection을 검증 없이 재사용하지 않고 write 
 
 ### 4. Agent 작업
 
-1. `프로젝트 전체`(Project source + 검증된 PROD DB 전체) 또는 `개별 DB`(Project·환경 표시와 무관한 DB 하나)를 선택하면, 선택 종류와 대상 이름을 trigger에 계속 표시하고 공식 ACP adapter를 선행 준비한 뒤 첫 prompt를 같은 제출 흐름에서 전송한다. 내부 Project Environment identity와 DEV/staging 전체 범위는 UI에 노출하지 않는다.
-2. Desktop이 exact grant와 connection/graph revision을 immutable pin으로 고정한다.
+1. 한 Project 안에서 필요한 DB·BigQuery·GitHub source를 개별 또는 다중 선택하면 trigger에 Project, DB/source 수와 쓰기 대상 유무를 계속 표시하고 공식 ACP adapter를 선행 준비한 뒤 첫 prompt를 같은 제출 흐름에서 전송한다. 내부 Project Environment identity는 계층으로 노출하지 않고 DB 행의 dev/staging/prod marker로만 설명한다.
+2. Desktop이 선택한 connection/source/Environment revision 집합과 선택적인 단일 write target을 하나의 exact grant로 immutable pin한다. 선택하지 않은 resource는 접근할 수 없고 여러 DB read는 독립 operation으로 실행한다.
 3. 화면은 tool 진행, permission, result, 중단과 복구를 보여준다.
 4. provider 인증은 로컬 CLI가 소유하며 앱은 token을 읽거나 login UI를 만들지 않는다.
+5. Desktop 밖에서는 Project root에서 `dopedb agent init --provider codex|claude`로
+   secret-free config를 만들고 `dopedb agent start -- <provider args>`를 실행한다.
+   Desktop은 시작 때마다 저장된 exact resource set을 현재 상태로 다시 보여주며,
+   승인 뒤 공식 CLI process tree에만 runtime-only 권한을 부여하고 종료 시 폐기한다.
 
 Acceptance: general MCP server, arbitrary provider API, 승인 우회 mode와 stale session
 focus가 없어야 한다.

@@ -149,6 +149,8 @@ pub fn run() {
             features::agents::transport::respond_agent_acp_permission,
             features::agents::transport::close_agent_acp_session,
             features::agents::transport::set_agent_acp_config_option,
+            features::agents::external_transport::list_external_agent_requests,
+            features::agents::external_transport::respond_external_agent_request,
             features::agents::transport::detect_agent_clis,
             features::agents::transport::list_agent_acp_plugins,
             features::agents::transport::install_agent_acp_plugin,

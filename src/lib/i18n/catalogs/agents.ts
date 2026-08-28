@@ -74,9 +74,9 @@ export const agentsCatalog = defineCatalog(
     "agent.acpAttachContext": "Attach current editor context",
     "agent.acpDetachContext": "Remove current editor context",
     "agent.acpEmptyFeatureSql": "Write, explain, and review SQL",
-    "agent.acpEmptyFeatureInspect": "Inspect schemas, tables, and selected data",
+    "agent.acpEmptyFeatureInspect": "Inspect source code, schemas, and selected data",
     "agent.acpEmptyFeatureApprove": "Run changes only after explicit approval",
-    "agent.acpEmptyTitle": "How can I help with this database?",
+    "agent.acpEmptyTitle": "How can I help with this data?",
     "agent.acpExpandComposer": "Expand composer",
     "agent.acpFailed": "Agent session failed",
     "agent.acpInterruptedConnectionAuthority":
@@ -101,7 +101,7 @@ export const agentsCatalog = defineCatalog(
       "Authentication stays in your local Claude or Codex login. DopeDB never reads or stores its token.",
     "agent.acpNew": "New Chat",
     "agent.acpMore": "More chat actions",
-    "agent.acpNoSessions": "No conversations for this connection yet.",
+    "agent.acpNoSessions": "No conversations in this workspace yet.",
     "agent.acpReplayTruncated":
       "Earlier local transcript events were removed by the replay limit.",
     "agent.acpNoToken": "Local login · no app token",
@@ -119,22 +119,50 @@ export const agentsCatalog = defineCatalog(
     "agent.acpPermissionWaiting": "Waiting for your response",
     "agent.acpPinned": "Pinned to {name}",
     "agent.acpPlan": "Plan",
-    "agent.acpPrompt": "Describe the database task for the Agent…",
+    "agent.acpPrompt": "Describe the data task for the Agent…",
     "agent.acpProvider": "Agent",
     "agent.acpScope": "Agent context",
-    "agent.acpScopeHint":
-      "Choose the entire Project with its sources and PROD databases, or one exact database regardless of Project.",
-    "agent.acpSelectScope": "Choose a Project or database",
-    "agent.acpProjectScopeTrigger": "Project · {project}",
-    "agent.acpDatabaseScopeTrigger": "DB · {database}",
-    "agent.acpCurrentProjectScope":
-      "Agent context: entire Project {project}, its sources, and {count} PROD databases",
-    "agent.acpCurrentDatabaseScope":
-      "Agent context: database {database} in {project} ({marker})",
-    "agent.acpProjectScopeGroup": "Entire Project",
-    "agent.acpDatabaseScopeGroup": "Single database",
-    "agent.acpProjectScopeDescription":
-      "Project sources · {count} PROD databases",
+    "agent.acpSelectResources": "Choose context",
+    "agent.acpResourceScopeTrigger":
+      "{project} · DB {databases} · Source {sources} · {mode}",
+    "agent.acpCurrentResourceScope":
+      "Agent context: {project}, {databases} databases, {sources} source repositories, {mode}",
+    "agent.acpDatabaseResources": "Databases",
+    "agent.acpSourceResources": "Source code",
+    "agent.acpWriteTarget": "Write target",
+    "agent.acpWriteTargetNamed": "Write · {database}",
+    "agent.acpReadOnlyContext": "Read only",
+    "agent.acpNoWritableDatabase":
+      "No selected database currently passes the write policy.",
+    "agent.externalRequestTitle": "External Agent request",
+    "agent.externalConfigureTitle": "Create external Agent configuration",
+    "agent.externalStartTitle": "Approve external Agent session",
+    "agent.externalRequestLoadFailed":
+      "Could not load external Agent requests: {error}",
+    "agent.externalRequestResponseFailed":
+      "Could not answer the external Agent request: {error}",
+    "agent.externalNoConnection":
+      "Connect at least one database before configuring an external Agent.",
+    "agent.externalReject": "Reject",
+    "agent.externalLoadingResources": "Loading exact Project resources…",
+    "agent.externalSecurityBody":
+      "The configuration stores resource IDs only. Starting the Agent still requires this Desktop approval, and the short-lived authority is bound to that Agent process tree without exposing a token.",
+    "agent.externalChooseResources": "Choose the Project context",
+    "agent.externalChooseResourcesBody":
+      "Select any databases, BigQuery resources, and source repositories from one Project. You can optionally designate one database as the write-proposal target.",
+    "agent.externalSaveConfig": "Approve and save configuration",
+    "agent.externalConfiguredResourcesMissing":
+      "One or more configured resources are unavailable in the active workspace or no longer satisfy its write policy. Reject this request, switch to the workspace that owns the Project and retry, or recreate the configuration through Desktop review.",
+    "agent.externalReviewExactScope":
+      "Review the exact resources this external Agent process will be allowed to use.",
+    "agent.externalApproveStart": "Approve and start Agent",
+    "agent.externalRefreshResources": "Refresh current resources",
+    "agent.externalResourcesChanged":
+      "A selected database revision changed. Refresh it, then review the exact current resources before approving.",
+    "agent.externalDatabaseRevision": "{engine} · revision {revision}",
+    "agent.externalWriteTarget": "Write proposals",
+    "agent.externalProvider": "Agent",
+    "agent.externalDirectory": "Working directory",
     "agent.acpEnvironmentLoadFailed": "Could not load Agent scopes",
     "agent.acpEnvironmentLoadFailedBody":
       "The Agent scope could not be verified: {error}",
@@ -148,7 +176,7 @@ export const agentsCatalog = defineCatalog(
       "Could not reconfirm the selected Project scope: {error}",
     "agent.acpProtocol": "ACP v1 · official Claude and Codex adapters",
     "agent.acpReadyBody":
-      "The selected verified database and source revisions are attached as one exact ACP scope.",
+      "The selected Project resources are attached as one exact, immutable ACP scope.",
     "agent.acpReadyTitle": "Ready to work",
     "agent.acpRenderFailed": "AI Chat could not be displayed",
     "agent.acpRenderFailedBody":
@@ -159,7 +187,7 @@ export const agentsCatalog = defineCatalog(
       "This bounded history is stored locally. Resume it through the same official adapter.",
     "agent.acpResumeFailed": "Could not resume the Agent session: {error}",
     "agent.acpRestartBody":
-      "This session stopped before the adapter created history. Start a new connection-pinned session.",
+      "This session stopped before the adapter created history. Start a new Project-resource-pinned session.",
     "agent.acpSend": "Send task",
     "agent.acpSendFailed": "Could not send the Agent task: {error}",
     "agent.acpSessions": "Agent sessions",
@@ -462,9 +490,9 @@ export const agentsCatalog = defineCatalog(
     "agent.acpAttachContext": "현재 편집기 문맥 첨부",
     "agent.acpDetachContext": "현재 편집기 문맥 제거",
     "agent.acpEmptyFeatureSql": "SQL 작성·설명·검토",
-    "agent.acpEmptyFeatureInspect": "스키마·테이블·선택 데이터 탐색",
+    "agent.acpEmptyFeatureInspect": "소스 코드·스키마·선택 데이터 탐색",
     "agent.acpEmptyFeatureApprove": "명시적 승인 뒤 변경 실행",
-    "agent.acpEmptyTitle": "이 데이터베이스에서 무엇을 도와드릴까요?",
+    "agent.acpEmptyTitle": "이 데이터에서 무엇을 도와드릴까요?",
     "agent.acpExpandComposer": "입력창 확대",
     "agent.acpFailed": "Agent 세션 실패",
     "agent.acpInterruptedConnectionAuthority":
@@ -489,7 +517,7 @@ export const agentsCatalog = defineCatalog(
       "인증은 사용자의 로컬 Claude 또는 Codex 로그인이 소유합니다. DopeDB는 토큰을 읽거나 저장하지 않습니다.",
     "agent.acpNew": "새 채팅",
     "agent.acpMore": "채팅 작업 더보기",
-    "agent.acpNoSessions": "이 연결에는 아직 대화가 없습니다.",
+    "agent.acpNoSessions": "이 워크스페이스에는 아직 대화가 없습니다.",
     "agent.acpReplayTruncated":
       "로컬 재생 한도를 넘은 이전 대화 기록은 정리되었습니다.",
     "agent.acpNoToken": "로컬 로그인 · 앱 토큰 없음",
@@ -506,21 +534,50 @@ export const agentsCatalog = defineCatalog(
     "agent.acpPermissionWaiting": "응답 대기 중",
     "agent.acpPinned": "{name}에 고정됨",
     "agent.acpPlan": "계획",
-    "agent.acpPrompt": "Agent가 수행할 데이터베이스 작업을 입력하세요…",
+    "agent.acpPrompt": "Agent가 수행할 데이터 작업을 입력하세요…",
     "agent.acpProvider": "Agent",
     "agent.acpScope": "Agent 컨텍스트",
-    "agent.acpScopeHint":
-      "프로젝트 전체의 소스와 PROD DB들을 보거나, 프로젝트와 관계없이 개별 DB 하나만 선택합니다.",
-    "agent.acpSelectScope": "프로젝트 전체 또는 개별 DB 선택",
-    "agent.acpProjectScopeTrigger": "프로젝트 · {project}",
-    "agent.acpDatabaseScopeTrigger": "DB · {database}",
-    "agent.acpCurrentProjectScope":
-      "Agent 컨텍스트: {project} 프로젝트 전체, 소스, PROD DB {count}개",
-    "agent.acpCurrentDatabaseScope":
-      "Agent 컨텍스트: {project}의 {database} DB ({marker})",
-    "agent.acpProjectScopeGroup": "프로젝트 전체",
-    "agent.acpDatabaseScopeGroup": "개별 DB",
-    "agent.acpProjectScopeDescription": "프로젝트 소스 · PROD DB {count}개",
+    "agent.acpSelectResources": "컨텍스트 선택",
+    "agent.acpResourceScopeTrigger":
+      "{project} · DB {databases} · 소스 {sources} · {mode}",
+    "agent.acpCurrentResourceScope":
+      "Agent 컨텍스트: {project}, DB {databases}개, 소스 저장소 {sources}개, {mode}",
+    "agent.acpDatabaseResources": "데이터베이스",
+    "agent.acpSourceResources": "소스 코드",
+    "agent.acpWriteTarget": "쓰기 대상",
+    "agent.acpWriteTargetNamed": "쓰기 · {database}",
+    "agent.acpReadOnlyContext": "읽기 전용",
+    "agent.acpNoWritableDatabase":
+      "현재 쓰기 정책을 통과한 선택 DB가 없습니다.",
+    "agent.externalRequestTitle": "외부 Agent 요청",
+    "agent.externalConfigureTitle": "외부 Agent 설정 만들기",
+    "agent.externalStartTitle": "외부 Agent 세션 승인",
+    "agent.externalRequestLoadFailed":
+      "외부 Agent 요청을 불러오지 못했습니다: {error}",
+    "agent.externalRequestResponseFailed":
+      "외부 Agent 요청에 응답하지 못했습니다: {error}",
+    "agent.externalNoConnection":
+      "외부 Agent를 설정하려면 먼저 데이터베이스를 하나 이상 연결하세요.",
+    "agent.externalReject": "거절",
+    "agent.externalLoadingResources": "정확한 프로젝트 리소스를 불러오는 중…",
+    "agent.externalSecurityBody":
+      "설정 파일에는 리소스 ID만 저장됩니다. Agent를 시작할 때마다 이 Desktop 승인이 필요하며, 단기 권한은 토큰을 노출하지 않고 해당 Agent 프로세스 트리에만 묶입니다.",
+    "agent.externalChooseResources": "프로젝트 컨텍스트 선택",
+    "agent.externalChooseResourcesBody":
+      "한 프로젝트에서 DB, BigQuery, 소스 저장소를 원하는 조합으로 선택하세요. 필요하면 DB 하나만 쓰기 제안 대상으로 지정할 수 있습니다.",
+    "agent.externalSaveConfig": "승인하고 설정 저장",
+    "agent.externalConfiguredResourcesMissing":
+      "설정된 리소스 중 일부가 현재 워크스페이스에 없거나 더 이상 쓰기 정책을 충족하지 않습니다. 요청을 거절한 뒤 프로젝트가 있는 워크스페이스로 전환해 재시도하거나 Desktop 검토를 거쳐 설정을 다시 만드세요.",
+    "agent.externalReviewExactScope":
+      "외부 Agent 프로세스가 사용할 수 있는 정확한 리소스를 확인하세요.",
+    "agent.externalApproveStart": "승인하고 Agent 시작",
+    "agent.externalRefreshResources": "현재 리소스 새로고침",
+    "agent.externalResourcesChanged":
+      "선택한 데이터베이스 revision이 변경되었습니다. 새로고침한 뒤 현재 리소스를 다시 확인하고 승인하세요.",
+    "agent.externalDatabaseRevision": "{engine} · revision {revision}",
+    "agent.externalWriteTarget": "쓰기 제안",
+    "agent.externalProvider": "Agent",
+    "agent.externalDirectory": "작업 폴더",
     "agent.acpEnvironmentLoadFailed": "Agent 범위를 불러오지 못했습니다",
     "agent.acpEnvironmentLoadFailedBody":
       "Agent 범위를 검증하지 못했습니다: {error}",
@@ -534,7 +591,7 @@ export const agentsCatalog = defineCatalog(
       "선택한 프로젝트 범위를 재확인하지 못했습니다: {error}",
     "agent.acpProtocol": "ACP v1 · 공식 Claude·Codex 어댑터",
     "agent.acpReadyBody":
-      "선택한 검증된 DB와 소스 리비전을 하나의 정확한 ACP 범위로 첨부합니다.",
+      "선택한 프로젝트 리소스를 변경할 수 없는 하나의 정확한 ACP 범위로 첨부합니다.",
     "agent.acpReadyTitle": "작업 준비 완료",
     "agent.acpRenderFailed": "AI Chat 화면을 표시하지 못했습니다",
     "agent.acpRenderFailedBody":
@@ -545,7 +602,7 @@ export const agentsCatalog = defineCatalog(
       "크기가 제한된 이 기록은 로컬에 저장됩니다. 같은 공식 어댑터로 세션을 이어갑니다.",
     "agent.acpResumeFailed": "Agent 세션을 이어가지 못했습니다: {error}",
     "agent.acpRestartBody":
-      "어댑터가 기록을 만들기 전에 이 세션이 중단됐습니다. 연결에 고정된 새 세션을 시작하세요.",
+      "어댑터가 기록을 만들기 전에 이 세션이 중단됐습니다. 프로젝트 리소스에 고정된 새 세션을 시작하세요.",
     "agent.acpSend": "작업 보내기",
     "agent.acpSendFailed": "Agent 작업을 보내지 못했습니다: {error}",
     "agent.acpSessions": "Agent 세션",

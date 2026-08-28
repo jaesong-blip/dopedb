@@ -1401,7 +1401,11 @@ export function DatabaseExplorer({
                 aria-label={t("connections.environmentAddDatabase")}
                 tabIndex={-1}
                 onClick={() => {
-                  if (openProjectResource("databases")) onNewConnection();
+                  if (openProjectResource("databases") && preferredEnvironment) {
+                    onNewConnection({
+                      projectEnvironmentId: preferredEnvironment.id,
+                    });
+                  }
                 }}
               >
                 <Icon name="plus" />

@@ -1,3 +1,4 @@
+mod agent_mcp;
 mod args;
 mod client;
 mod commands;
@@ -9,9 +10,9 @@ use std::process::ExitCode;
 use clap::Parser;
 
 use args::{
-    AppCommand, CatalogCommand, Cli, Command, ConnectionCommand, DatabaseCommand, DocumentCommand,
-    OperationCommand, QueryCommand, SchemaCommand, SkillCommand, SkillsCommand, SqlCommand,
-    TableCommand,
+    AgentCommand, AppCommand, CatalogCommand, Cli, Command, ConnectionCommand, DatabaseCommand,
+    DocumentCommand, OperationCommand, QueryCommand, SchemaCommand, SkillCommand, SkillsCommand,
+    SqlCommand, TableCommand,
 };
 use output::OutputMode;
 
@@ -56,6 +57,24 @@ async fn main() -> ExitCode {
                 commands::skills::remove(target.into(), OutputMode::from_json_flag(output.json))
                     .await
             }
+        },
+        Command::Agent(arguments) => match arguments.command {
+            AgentCommand::Init {
+                provider,
+                config,
+                output,
+            } => {
+                commands::external_agent::init(
+                    provider.into(),
+                    &config,
+                    OutputMode::from_json_flag(output.json),
+                )
+                .await
+            }
+            AgentCommand::Start { config, arguments } => {
+                commands::external_agent::start(config.as_deref(), &arguments).await
+            }
+            AgentCommand::Mcp => agent_mcp::serve().await,
         },
         Command::Connection(arguments) => match arguments.command {
             ConnectionCommand::List(output) => {

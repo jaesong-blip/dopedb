@@ -13,7 +13,10 @@ pub(crate) async fn show(operation_id: &str, mode: OutputMode) -> Result<(), Cli
     let operation_id = parse_uuid(operation_id)?;
     let client = BrokerClient::discover()?;
     let result: OperationSummary = client
-        .request::<OperationShowCommand>(&OperationArguments { operation_id })
+        .request::<OperationShowCommand>(&OperationArguments {
+            operation_id,
+            connection: None,
+        })
         .await?;
     write_operation(&result, mode)
 }
@@ -32,6 +35,7 @@ pub(crate) async fn wait(
         .request::<OperationWaitCommand>(&OperationWaitArguments {
             operation_id,
             timeout_ms,
+            connection: None,
         })
         .await?;
     write_operation(&result, mode)
@@ -41,7 +45,10 @@ pub(crate) async fn cancel(operation_id: &str, mode: OutputMode) -> Result<(), C
     let operation_id = parse_uuid(operation_id)?;
     let client = BrokerClient::discover()?;
     let result: OperationSummary = client
-        .request::<OperationCancelCommand>(&OperationArguments { operation_id })
+        .request::<OperationCancelCommand>(&OperationArguments {
+            operation_id,
+            connection: None,
+        })
         .await?;
     write_operation(&result, mode)
 }

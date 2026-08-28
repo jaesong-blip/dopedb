@@ -16,8 +16,14 @@ pub(crate) const INTERNAL: u8 = 10;
 pub(crate) fn for_client_error(error: &ClientError) -> u8 {
     match error {
         ClientError::InvalidArguments
+        | ClientError::AgentConfigExists
+        | ClientError::AgentConfigNotFound
+        | ClientError::AgentConfigInvalid
         | ClientError::ConnectionNotFound
         | ClientError::AmbiguousConnection(_) => USAGE,
+        ClientError::AgentProviderUnavailable => RUNTIME_UNAVAILABLE,
+        ClientError::AgentExited(Some(code)) if (1..=255).contains(code) => *code as u8,
+        ClientError::AgentExited(_) => TARGET_EXECUTION_FAILED,
         ClientError::RuntimeUnavailable => RUNTIME_UNAVAILABLE,
         ClientError::AuthenticationUnavailable => AUTHENTICATION_DENIED,
         ClientError::ProtocolMismatch => PROTOCOL_MISMATCH,

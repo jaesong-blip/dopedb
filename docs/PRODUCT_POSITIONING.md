@@ -24,7 +24,10 @@ The product promise has five parts:
 2. Each member uses an individual local credential or receives a least-privilege,
    short-lived managed credential.
 3. Each official Claude or Codex Agent session is pinned to one exact workspace,
-   account, connection revision, and policy boundary.
+   account, explicitly selected Project resource revision set, and policy
+   boundary; at most one selected database may receive write proposals. This
+   applies both to Desktop ACP and to an official local AI CLI launched through
+   a visible Desktop-approved, secret-free `dopedb agent start` configuration.
 4. Risky execution is observable, approvable, stoppable, and recoverable, with an
    immutable operation and receipt trail.
 5. A team can publish a versioned HTML Analysis Article, keep one exact read-only
@@ -72,7 +75,7 @@ system:
 | --- | --- |
 | Saved local connection | Revisioned, secretless workspace connection template |
 | One user's keychain | Member-local binding or member-specific managed lease |
-| General MCP database server | Session-local typed bridge pinned to exact authority |
+| General MCP database server | Runtime-only typed bridge inside a Desktop ACP or Desktop-approved external Agent process, pinned to an exact selected resource set and one optional write target |
 | Toggleable read-only mode | Workspace role + connection grant + DB privilege + local policy |
 | Query confirmation | Immutable proposal, exact approval, run claim, outcome receipt |
 | Local activity log | Local execution audit plus scoped collaboration audit |
@@ -96,12 +99,13 @@ English one-line description:
 
 > DopeDB is an open-source database workspace where teams share access without
 > sharing database credentials, and Codex or Claude works through one
-> connection-pinned, locally enforced session.
+> exact Project-resource-pinned, locally enforced session.
 
 Korean one-line description:
 
 > DopeDB는 팀이 DB 인증정보 대신 연결과 정책을 공유하고, Codex와 Claude가
-> 정확한 연결에 고정된 로컬 권한 경계 안에서 일하게 하는 오픈소스
+> 한 프로젝트에서 명시적으로 선택한 정확한 리소스의 로컬 권한 경계 안에서
+> 일하게 하는 오픈소스
 > 데이터베이스 워크스페이스입니다.
 
 Short headline:

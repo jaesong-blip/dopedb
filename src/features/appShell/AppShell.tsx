@@ -1,5 +1,4 @@
-// Desktop workbench shell: composes bounded workspace, tool-window, search,
-// and connection-pinned Agent controllers into the persistent IDE frame.
+// Desktop workbench shell composes workspace, tool-window, search, and Agent controllers.
 import { useCallback, useEffect, useState } from "react";
 
 import { ToastProvider, useToast } from "../../components/Toast";
@@ -10,6 +9,7 @@ import { useActionSearchItems } from "../actionSearch/useActionSearchItems";
 import type { BackgroundTask } from "../backgroundTasks/domain";
 import { useBackgroundTasks } from "../backgroundTasks/useBackgroundTasks";
 import type { AgentComposerRequest } from "../agents/domain";
+import { ExternalAgentRequestGate } from "../agents/ExternalAgentRequestGate";
 import { useGuidedDemoCommands } from "../onboarding/useGuidedDemoCommands";
 import { useQueryServices } from "../queryServices/useQueryServices";
 import SkillStartupGate from "../skills/SkillStartupGate";
@@ -32,10 +32,6 @@ import { useAgentDock } from "./useAgentDock";
 import { useToolWindowLayout } from "./useToolWindowLayout";
 import { useAppShellWorkbenchController } from "./useAppShellWorkbenchController";
 
-// Product-owned information architecture:
-// - the title toolbar opens real workbench areas and tool windows;
-// - database tools are documents inside the selected connection's workbench;
-// - interactive Shell/Agent sessions live in a connection-pinned tool window.
 export default function App() {
   return (
     <ToastProvider>
@@ -368,6 +364,11 @@ function Shell() {
 
   return (
     <>
+      <ExternalAgentRequestGate
+        catalogScopeKey={catalogScope.key}
+        connections={connections.items}
+        selectedConnection={connections.selected}
+      />
       <ShellLayout
         model={{
           workspace: {

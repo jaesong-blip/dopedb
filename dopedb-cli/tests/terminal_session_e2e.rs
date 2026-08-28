@@ -17,10 +17,12 @@ use dopedb_protocol::{
     CatalogArguments, CatalogContents, CatalogSearchArguments, CatalogSearchMatch,
     CatalogSearchMatchType, CatalogSearchResult, CatalogSnapshot, Column, CommandName,
     ConnectionSelector, DatabaseEngine, EmptyArguments, NormalizedTypeFamily, ObjectKind,
-    AcpPluginId, ErrorCode, ObjectRef, ProtocolError, QueryHealth, QueryPlanArguments, QueryPlanResult,
-    QueryResultPage, QueryRunArguments, QueryRunResult, Relation, RequestEnvelope,
-    ResponseEnvelope, RuntimeDiscovery, SchemaListResult, SchemaSummary, MAX_REQUEST_BYTES,
-    MAX_RESPONSE_BYTES, PROTOCOL_MAX, PROTOCOL_MIN,
+    AcpPluginId, ErrorCode, ExternalAgentConfig, ExternalAgentConfigCreateArguments,
+    ExternalAgentConfigCreateResult, ExternalAgentProvider, ExternalAgentResourceScope,
+    ExternalAgentSessionStartArguments, ExternalAgentSessionStartResult, ObjectRef, ProtocolError,
+    QueryHealth, QueryPlanArguments, QueryPlanResult, QueryResultPage, QueryRunArguments,
+    QueryRunResult, Relation, RequestEnvelope, ResponseEnvelope, RuntimeDiscovery, SchemaListResult,
+    SchemaSummary, MAX_REQUEST_BYTES, MAX_RESPONSE_BYTES, PROTOCOL_MAX, PROTOCOL_MIN,
 };
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
@@ -445,13 +447,25 @@ pub(super) fn run() {
                 "id": 7,
                 "method": "tools/call",
                 "params": {
-                    "name": "analysis_article_propose",
-                    "arguments": { "definition": proposal_definition }
+                "name": "analysis_article_propose",
+                "arguments": {
+                    "connectionId": connection_id,
+                    "definition": proposal_definition
+                }
+                }
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 8,
+                "method": "tools/call",
+                "params": {
+                    "name": "knowledge_search",
+                    "arguments": { "query": "users" }
                 }
             }),
         ],
     );
-    assert_eq!(bridge.len(), 7);
+    assert_eq!(bridge.len(), 8);
     let response = |id: i64| {
         bridge
             .iter()
@@ -505,6 +519,11 @@ pub(super) fn run() {
     assert_eq!(article_tool["annotations"]["destructiveHint"], false);
     assert_eq!(article_tool["annotations"]["idempotentHint"], false);
     assert_eq!(article_tool["inputSchema"]["additionalProperties"], false);
+    assert!(article_tool["inputSchema"]["required"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|property| property == "connectionId"));
     assert_eq!(
         article_tool["inputSchema"]["properties"]["definition"]["properties"]["version"]
             ["const"],
@@ -545,7 +564,7 @@ pub(super) fn run() {
     assert!(update_tool["description"]
         .as_str()
         .unwrap()
-        .contains("cross-Environment"));
+        .contains("cross-resource"));
     let draft_run_tool = tools
         .iter()
         .find(|tool| tool["name"] == "analysis_article_draft_run")
@@ -555,6 +574,13 @@ pub(super) fn run() {
         draft_run_tool["inputSchema"]["properties"]["parameterValues"]["maxProperties"],
         0,
     );
+    for name in ["operation_status", "operation_wait", "operation_cancel"] {
+        let tool = tools.iter().find(|tool| tool["name"] == name).unwrap();
+        assert_eq!(
+            tool["inputSchema"]["properties"]["connectionId"]["format"],
+            "uuid",
+        );
+    }
     assert!(!tools.iter().any(|tool| tool["name"] == "run"));
 
     assert_eq!(response(3)["result"]["isError"], false);
@@ -595,6 +621,11 @@ pub(super) fn run() {
         .as_str()
         .unwrap()
         .contains("sanitized HTML and exactly one bounded read-only query"));
+    assert_eq!(response(8)["result"]["isError"], true);
+    assert!(response(8)["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("knowledge graph tools are unavailable"));
     let serialized = serde_json::to_string(&bridge).unwrap();
     assert!(!serialized.contains("must-never-escape"));
 
@@ -808,6 +839,268 @@ pub(super) fn run() {
             launcher_session_id.to_string().as_str(),
         ]
     );
+
+    // Exercise the public external-Agent bootstrap in this same critical
+    // journey: config is secret-free, provider MCP settings contain no bearer,
+    // and the exact process-bound session is revoked after the provider exits.
+    let agent_runtime_directory = temp.path().join("agent-runtime");
+    fs::create_dir(&agent_runtime_directory).unwrap();
+    fs::set_permissions(&agent_runtime_directory, fs::Permissions::from_mode(0o700)).unwrap();
+    let agent_runtime_id = Uuid::from_u128(13);
+    let agent_runtime_id_text = agent_runtime_id.simple().to_string();
+    let agent_endpoint = agent_runtime_directory.join(format!(
+        "broker-{}.sock",
+        &agent_runtime_id_text[..16]
+    ));
+    let agent_listener = UnixListener::bind(&agent_endpoint).unwrap();
+    fs::set_permissions(&agent_endpoint, fs::Permissions::from_mode(0o600)).unwrap();
+    let agent_runtime_file = agent_runtime_directory.join("runtime.json");
+    let agent_discovery = RuntimeDiscovery::new(
+        agent_runtime_id,
+        std::process::id(),
+        env!("CARGO_PKG_VERSION"),
+        PROTOCOL_MIN,
+        PROTOCOL_MAX,
+        agent_endpoint.to_string_lossy(),
+        Utc::now(),
+    )
+    .unwrap();
+    fs::write(
+        &agent_runtime_file,
+        serde_json::to_vec(&agent_discovery).unwrap(),
+    )
+    .unwrap();
+    fs::set_permissions(&agent_runtime_file, fs::Permissions::from_mode(0o600)).unwrap();
+
+    let agent_project_directory = temp.path().join("external-project");
+    fs::create_dir(&agent_project_directory).unwrap();
+    let agent_project_directory = fs::canonicalize(agent_project_directory).unwrap();
+    let agent_project_id = Uuid::from_u128(14);
+    let agent_environment_id = Uuid::from_u128(15);
+    let agent_connection_id = Uuid::from_u128(16);
+    let external_session_id = Uuid::from_u128(17);
+    let external_config = ExternalAgentConfig {
+        schema_version: 1,
+        provider: ExternalAgentProvider::Codex,
+        project_id: agent_project_id,
+        anchor_connection_id: agent_connection_id,
+        resource_scopes: vec![ExternalAgentResourceScope {
+            project_environment_id: agent_environment_id,
+            authority_connection_id: agent_connection_id,
+            connection_ids: vec![agent_connection_id],
+            source_ids: Vec::new(),
+        }],
+        write_connection_id: None,
+    };
+    let expected_external_config = external_config.clone();
+    let expected_working_directory = agent_project_directory.to_string_lossy().into_owned();
+    let external_server = thread::spawn(move || {
+        let (mut stream, _) = agent_listener.accept().unwrap();
+        let request = read_request(&mut stream);
+        assert_eq!(request.command, CommandName::ExternalAgentConfigCreate);
+        assert!(request.authentication.is_none());
+        let arguments: ExternalAgentConfigCreateArguments =
+            serde_json::from_value(request.arguments.clone()).unwrap();
+        assert_eq!(arguments.provider, ExternalAgentProvider::Codex);
+        assert_eq!(arguments.working_directory, expected_working_directory);
+        respond(
+            &mut stream,
+            &request,
+            &ExternalAgentConfigCreateResult {
+                config: expected_external_config.clone(),
+            },
+        );
+
+        let (mut stream, _) = agent_listener.accept().unwrap();
+        let request = read_request(&mut stream);
+        assert_eq!(request.command, CommandName::ExternalAgentSessionStart);
+        assert!(request.authentication.is_none());
+        let arguments: ExternalAgentSessionStartArguments =
+            serde_json::from_value(request.arguments.clone()).unwrap();
+        assert_eq!(arguments.config, expected_external_config);
+        assert_eq!(arguments.working_directory, expected_working_directory);
+        respond(
+            &mut stream,
+            &request,
+            &ExternalAgentSessionStartResult {
+                terminal_session_id: external_session_id,
+                expires_at: Utc::now() + Duration::minutes(15),
+            },
+        );
+
+        let (mut stream, _) = agent_listener.accept().unwrap();
+        let request = read_request(&mut stream);
+        assert_eq!(request.command, CommandName::ExternalAgentSessionRevoke);
+        let authentication = request.authentication.as_ref().unwrap();
+        assert_eq!(authentication.terminal_session_id, external_session_id);
+        assert!(authentication.token().is_none());
+        respond(&mut stream, &request, &EmptyArguments::default());
+    });
+
+    let init = Command::new(env!("CARGO_BIN_EXE_dopedb-cli"))
+        .args(["agent", "init", "--provider", "codex", "--json"])
+        .current_dir(&agent_project_directory)
+        .env("DOPEDB_RUNTIME_FILE", &agent_runtime_file)
+        .output()
+        .unwrap();
+    assert!(init.status.success(), "{}", String::from_utf8_lossy(&init.stderr));
+    let init_output: serde_json::Value = serde_json::from_slice(&init.stdout).unwrap();
+    assert_eq!(init_output["provider"], "codex");
+    assert_eq!(init_output["resourceCount"], 1);
+    let config_path = agent_project_directory.join(".dopedb/agent.json");
+    let config_bytes = fs::read(&config_path).unwrap();
+    let saved_config: ExternalAgentConfig = serde_json::from_slice(&config_bytes).unwrap();
+    assert_eq!(saved_config, external_config);
+    let config_text = String::from_utf8(config_bytes).unwrap().to_ascii_lowercase();
+    for forbidden in ["password", "token", "credential", "connectionurl"] {
+        assert!(!config_text.contains(forbidden));
+    }
+
+    let fake_bin = temp.path().join("external-agent-bin");
+    fs::create_dir(&fake_bin).unwrap();
+    let fake_codex = fake_bin.join("codex");
+    fs::write(
+        &fake_codex,
+        b"#!/bin/sh\nif env | grep -q '^DOPEDB_SESSION_TOKEN='; then exit 91; fi\nprintf '%s\\n%s\\n%s\\n' \"$DOPEDB_RUNTIME_FILE\" \"$DOPEDB_TERMINAL_SESSION_ID\" \"$DOPEDB_AGENT_PROCESS_BOUND\" > \"$DOPEDB_TEST_EXTERNAL_OUTPUT\"\nfor argument in \"$@\"; do printf '%s\\n' \"$argument\" >> \"$DOPEDB_TEST_EXTERNAL_OUTPUT\"; done\n",
+    )
+    .unwrap();
+    fs::set_permissions(&fake_codex, fs::Permissions::from_mode(0o700)).unwrap();
+    let external_output = temp.path().join("external-agent-output.txt");
+    let mut test_paths = vec![fake_bin.clone()];
+    test_paths.extend(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    ));
+    let test_path = std::env::join_paths(test_paths).unwrap();
+    let start = Command::new(env!("CARGO_BIN_EXE_dopedb-cli"))
+        .args(["agent", "start", "--", "exec", "fixture prompt"])
+        .current_dir(&agent_project_directory)
+        .env("PATH", &test_path)
+        .env("DOPEDB_RUNTIME_FILE", &agent_runtime_file)
+        .env("DOPEDB_SESSION_TOKEN", "must-not-reach-provider")
+        .env("DOPEDB_TEST_EXTERNAL_OUTPUT", &external_output)
+        .output()
+        .unwrap();
+    assert!(start.status.success(), "{}", String::from_utf8_lossy(&start.stderr));
+    external_server.join().unwrap();
+    let launch = fs::read_to_string(external_output).unwrap();
+    let launch_lines = launch.lines().collect::<Vec<_>>();
+    assert_eq!(launch_lines[0], agent_runtime_file.to_string_lossy());
+    assert_eq!(launch_lines[1], external_session_id.to_string());
+    assert_eq!(launch_lines[2], "1");
+    assert!(launch_lines.iter().any(|line| line.contains("mcp_servers.dopedb.command=")));
+    assert!(launch_lines
+        .iter()
+        .any(|line| line.contains("[\"agent\",\"mcp\"]")));
+    assert!(launch_lines.contains(&"exec"));
+    assert!(launch_lines.contains(&"fixture prompt"));
+    assert!(!launch.contains("must-not-reach-provider"));
+
+    let overwrite = Command::new(env!("CARGO_BIN_EXE_dopedb-cli"))
+        .args(["agent", "init", "--provider", "codex"])
+        .current_dir(&agent_project_directory)
+        .env("DOPEDB_RUNTIME_FILE", &agent_runtime_file)
+        .output()
+        .unwrap();
+    assert_eq!(overwrite.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&overwrite.stderr).contains("already exists"));
+
+    fs::remove_file(&agent_endpoint).unwrap();
+    let claude_listener = UnixListener::bind(&agent_endpoint).unwrap();
+    fs::set_permissions(&agent_endpoint, fs::Permissions::from_mode(0o600)).unwrap();
+    let mut claude_config = external_config.clone();
+    claude_config.provider = ExternalAgentProvider::Claude;
+    fs::write(
+        &config_path,
+        serde_json::to_vec_pretty(&claude_config).unwrap(),
+    )
+    .unwrap();
+    let claude_session_id = Uuid::from_u128(18);
+    let claude_working_directory = agent_project_directory.join("nested");
+    fs::create_dir(&claude_working_directory).unwrap();
+    let claude_working_directory = fs::canonicalize(claude_working_directory).unwrap();
+    let expected_claude_working_directory =
+        claude_working_directory.to_string_lossy().into_owned();
+    let expected_claude_config = claude_config.clone();
+    let claude_server = thread::spawn(move || {
+        let (mut stream, _) = claude_listener.accept().unwrap();
+        let request = read_request(&mut stream);
+        assert_eq!(request.command, CommandName::ExternalAgentSessionStart);
+        assert!(request.authentication.is_none());
+        let arguments: ExternalAgentSessionStartArguments =
+            serde_json::from_value(request.arguments.clone()).unwrap();
+        assert_eq!(arguments.config, expected_claude_config);
+        assert_eq!(
+            arguments.working_directory,
+            expected_claude_working_directory
+        );
+        respond(
+            &mut stream,
+            &request,
+            &ExternalAgentSessionStartResult {
+                terminal_session_id: claude_session_id,
+                expires_at: Utc::now() + Duration::minutes(15),
+            },
+        );
+
+        let (mut stream, _) = claude_listener.accept().unwrap();
+        let request = read_request(&mut stream);
+        assert_eq!(request.command, CommandName::ExternalAgentSessionRevoke);
+        let authentication = request.authentication.as_ref().unwrap();
+        assert_eq!(authentication.terminal_session_id, claude_session_id);
+        assert!(authentication.token().is_none());
+        respond(&mut stream, &request, &EmptyArguments::default());
+    });
+    let fake_claude = fake_bin.join("claude");
+    fs::write(
+        &fake_claude,
+        b"#!/bin/sh\nif env | grep -q '^DOPEDB_SESSION_TOKEN='; then exit 91; fi\nprintf '%s\\n%s\\n' \"$DOPEDB_TERMINAL_SESSION_ID\" \"$DOPEDB_AGENT_PROCESS_BOUND\" > \"$DOPEDB_TEST_EXTERNAL_OUTPUT\"\nfor argument in \"$@\"; do printf '%s\\n' \"$argument\" >> \"$DOPEDB_TEST_EXTERNAL_OUTPUT\"; done\n",
+    )
+    .unwrap();
+    fs::set_permissions(&fake_claude, fs::Permissions::from_mode(0o700)).unwrap();
+    let claude_output = temp.path().join("external-claude-output.txt");
+    let claude_start = Command::new(env!("CARGO_BIN_EXE_dopedb-cli"))
+        .args(["agent", "start", "--", "--print", "fixture prompt"])
+        .current_dir(&claude_working_directory)
+        .env("PATH", &test_path)
+        .env("DOPEDB_RUNTIME_FILE", &agent_runtime_file)
+        .env("DOPEDB_SESSION_TOKEN", "must-not-reach-provider")
+        .env("DOPEDB_TEST_EXTERNAL_OUTPUT", &claude_output)
+        .output()
+        .unwrap();
+    assert!(
+        claude_start.status.success(),
+        "{}",
+        String::from_utf8_lossy(&claude_start.stderr)
+    );
+    claude_server.join().unwrap();
+    let claude_launch = fs::read_to_string(claude_output).unwrap();
+    let claude_lines = claude_launch.lines().collect::<Vec<_>>();
+    assert_eq!(claude_lines[0], claude_session_id.to_string());
+    assert_eq!(claude_lines[1], "1");
+    assert!(claude_lines.contains(&"--mcp-config"));
+    assert!(claude_lines.iter().any(|line| {
+        line.contains("\"mcpServers\"")
+            && line.contains("\"dopedb\"")
+            && line.contains("[\"agent\",\"mcp\"]")
+    }));
+    assert!(claude_lines.contains(&"--print"));
+    assert!(!claude_launch.contains("must-not-reach-provider"));
+
+    let linked_config = agent_project_directory.join(".dopedb/linked.json");
+    symlink(&config_path, &linked_config).unwrap();
+    let linked = Command::new(env!("CARGO_BIN_EXE_dopedb-cli"))
+        .args([
+            "agent",
+            "start",
+            "--config",
+            linked_config.to_str().unwrap(),
+        ])
+        .current_dir(&agent_project_directory)
+        .env("DOPEDB_RUNTIME_FILE", &agent_runtime_file)
+        .output()
+        .unwrap();
+    assert_eq!(linked.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&linked.stderr).contains("invalid"));
 }
 
 }

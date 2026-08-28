@@ -84,9 +84,9 @@ bounded, and masked result fragment may be shared into an internal Analysis Arti
 | Shared access | Secretless connection templates with per-member local credential bindings |
 | Managed access | Member-specific, expiring credentials for PlanetScale, Neon, and GCP Cloud SQL |
 | Databases | PostgreSQL, MySQL/MariaDB, SQLite, MongoDB, and read-only Google BigQuery through the official `bq` CLI, with schema introspection |
-| Agent runtime | Official Codex and Claude ACP sessions pinned to the Desktop-selected authority |
+| Agent runtime | Official Codex and Claude ACP sessions plus Desktop-approved external official CLI sessions, each pinned to an exact selected Project resource set |
 | Safety | Read-only defaults, immutable write proposals, exact human approval, cancellation, manual transaction rollback, durable results, and hash-chained audit |
-| Local tools | A version-matched `dopedb` CLI Broker with no listening port, plus an explicit connection-pinned advanced Shell under Settings → Command line |
+| Local tools | A version-matched `dopedb` CLI Broker with no listening port, secret-free `.dopedb/agent.json` setup, and an explicit connection-pinned advanced Shell under Settings → Command line |
 | Languages | English and Korean across the website, Desktop client, and GitHub README |
 
 ## Intentionally focused
@@ -100,6 +100,52 @@ The product focuses on making one database access path safely shareable and one
 Agent grant observable, approvable, stoppable, and recoverable. See the
 [canonical product direction](./docs/PRODUCT_POSITIONING.md) for the public claim
 boundary and open roadmap limits.
+
+## Use DopeDB from an official AI CLI
+
+Install the version-matched `dopedb` command from Desktop Settings, then run this
+once from a Project root:
+
+```sh
+dopedb agent init --provider codex # or: claude
+```
+
+Choose the Project databases, BigQuery resources, source repositories, and
+optional single write target in the Desktop approval window. The generated
+`.dopedb/agent.json` contains identifiers only, so it can be reviewed and checked
+in without distributing database or AI-provider credentials. Start the configured
+official CLI with:
+
+```json
+{
+  "schemaVersion": 1,
+  "provider": "codex",
+  "projectId": "11111111-1111-4111-8111-111111111111",
+  "anchorConnectionId": "22222222-2222-4222-8222-222222222222",
+  "resourceScopes": [
+    {
+      "projectEnvironmentId": "33333333-3333-4333-8333-333333333333",
+      "authorityConnectionId": "22222222-2222-4222-8222-222222222222",
+      "connectionIds": ["22222222-2222-4222-8222-222222222222"],
+      "sourceIds": ["44444444-4444-4444-8444-444444444444"]
+    }
+  ]
+}
+```
+
+`writeConnectionId` is optional and, when present, must identify exactly one of
+the selected databases. To change scope, explicitly remove the old file and run
+`agent init` through Desktop review again rather than editing IDs to widen it;
+every start resolves the current revisions and fails closed if the Project set
+changed.
+
+```sh
+dopedb agent start -- <provider arguments>
+```
+
+Desktop reviews the exact current resource set on every start. The Broker grants
+only that process tree a runtime-only session and revokes it when the CLI exits;
+it does not install an always-on MCP server or read the provider's local login.
 
 ## Download the alpha
 

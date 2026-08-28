@@ -10,8 +10,10 @@ policy, provider resources, revisions, and collaboration audit. The Tauri
 desktop app is the local execution and approval console: database traffic stays
 on the member's machine, credentials stay member-local or arrive as
 least-privilege short-lived leases, and official Claude/Codex ACP Agents run in
-connection-pinned sessions through an app-only typed bridge without receiving raw
-credentials. The canonical market promise and public claim boundary live in
+exact Project-resource-pinned sessions through an app-only typed bridge without
+receiving raw credentials. The same official local AI CLIs can run outside the
+window only through a visible Desktop-approved `dopedb agent start` session. The
+canonical market promise and public claim boundary live in
 [Product Positioning](./PRODUCT_POSITIONING.md).
 
 Current scope:
@@ -20,14 +22,16 @@ Current scope:
 - Landing site: Next.js under `site/`, hosted at https://dopedb.dev
 - Workspace control plane: Next.js under `workspace-cloud/`, hosted separately at
   `app.dopedb.dev`
-- Databases: PostgreSQL, MySQL/MariaDB, SQLite, MongoDB
-- Agent runtime: connection-pinned Claude/Codex ACP sessions plus an explicit
-  Settings → Command line advanced Shell PTY path
+- Databases: PostgreSQL, MySQL/MariaDB, SQLite, MongoDB, and read-only BigQuery
+- Agent runtime: exact Project-resource-pinned Claude/Codex ACP sessions,
+  Desktop-approved external official CLI sessions, plus an explicit Settings →
+  Command line advanced Shell PTY path
 - Shared access: team workspaces, roles, invitations, secretless connection
   templates, member-local bindings, and managed PlanetScale, Neon, and GCP Cloud
   SQL credential issuance
 - Local tools: owner-local UDS/named-pipe Broker, the optional public `dopedb`
-  CLI, and a separately bundled app-only Agent bridge
+  CLI with secret-free Project setup, and a separately bundled app-only Agent
+  bridge
 - Distribution: GitHub Releases and Tauri updater metadata
 
 The shipped workspace core and the remaining grant administration, provider
@@ -91,7 +95,7 @@ Writes and DDL require an immutable Operation proposal, an exact stored approval
 The Local Broker is the only database path for both the public `dopedb` CLI and the
 app-only Agent bridge. Public `version`, `status`, and `app open` calls do not carry a
 reusable secret. Database commands require an ephemeral in-memory capability pinned to
-one workspace/account/connection revision. ACP `session/new` and `session/load` attach a
+one workspace/account and exact resource revision set. ACP `session/new` and `session/load` attach a
 session-local typed stdio MCP server implemented by the exact bundled Agent bridge. Each
 tool maps bounded JSON directly to a protocol `CommandSpec` and `BrokerClient`; it does
 not invoke a shell, public CLI parser, or another CLI process per tool call. `query_read`
@@ -114,6 +118,16 @@ Windows may retain the bridge as the ancestry root, but neither it nor the adapt
 retains a usable bearer. The Broker accepts tokenless Agent requests only from that process or
 a verified descendant. The global discovery file contains only runtime metadata. The app opens
 no Agent HTTP or TCP listener.
+
+The public CLI also supports an external official Agent without installing a
+general MCP endpoint. `dopedb agent init` asks Desktop to choose one Project's
+databases, BigQuery resources, source revisions, and at most one write target, then writes
+only those stable identifiers to `.dopedb/agent.json`. `dopedb agent start` shows that
+exact current set for Desktop approval, pins the requester's PID/start marker directly,
+and launches the user's locally authenticated official `codex` or `claude` CLI with an
+ephemeral stdio MCP definition. No bearer is generated or returned; descendants receive
+only the runtime path, session identifier, and process-bound marker. The parent scrubs any
+inherited Terminal bearer and revokes the session when the provider exits.
 
 Stable builds also reconstruct a pinned Node LTS executable for each release
 target from the official archive SHA-256 and bundle only that executable, its
@@ -141,7 +155,8 @@ may be updated or removed automatically; repair preserves every conflicting dire
 ## Agent Sessions and CLI Behavior
 
 Opening an AI Chat starts the official Claude Agent or Codex ACP adapter and pins the
-session to the selected workspace, account, connection revision, and database policy.
+session to the selected workspace, account, exact Project resource revisions, optional
+single write target, and database policy.
 The app discovers only numbered, immutable stable ACP bundle releases; candidate tags
 are never selected by normal clients. A signed manifest must point back to the exact
 stable release that supplied it, and a missing newest release falls back only across a
@@ -155,19 +170,19 @@ of silently retargeting it. Child environments exclude database URLs, provider s
 API keys, and OS credential-store values. Provider authentication remains owned by the
 user's local `claude` or `codex` login.
 
-Outside built-in AI Chat, the signed `dopedb` CLI discovers an owner-only Unix socket or Windows named pipe.
-Database commands require an ephemeral connection-pinned Broker capability that lives
-in process memory. The protocol retains the historical `TerminalSession` wire name for
-compatibility; only the explicit connection-pinned advanced dialog consumes that path.
-The capability is never a database credential, never enters argv, and cannot be moved
-to another process. ACP does not
-execute this public CLI. Registration
+Outside built-in AI Chat, the signed `dopedb` CLI discovers an owner-only Unix socket or
+Windows named pipe. Direct database commands require either the ephemeral
+connection-pinned capability of the explicit advanced Terminal or the exact
+Project-resource capability of a Desktop-approved `dopedb agent start` process tree.
+The protocol retains the historical `TerminalSession` wire name for compatibility. A
+capability is never a database credential and cannot be moved to another process. ACP does
+not execute the public CLI. Registration
 consumes the same bearer shape only as a one-time, descriptor-bound capability inside the
 app-only Agent bridge launcher; stdio MCP settings and Agent descendants carry a session identifier,
 not the bearer, and the Broker revalidates their OS ancestry for every request. The command
-surface covers secret-free connection summaries, canonical catalog/schema/table metadata,
-typed MongoDB reads, SQL read planning/execution, declarative Analysis Article drafting,
-immutable SQL proposals, and operation receipts.
+surface and session-scoped bridge cover secret-free connection summaries, canonical
+catalog/schema/table metadata, typed MongoDB reads, SQL read planning/execution,
+declarative Analysis Article drafting, immutable SQL proposals, and operation receipts.
 
 The bounded activity projection keeps only command, request/session/connection
 identifiers, state, and a stable error code. It does not retain result rows, SQL text,

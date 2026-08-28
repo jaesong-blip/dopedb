@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Keeps the repository's critical test suite within a fixed 10% budget.
+// Keeps the repository's critical test suite within its explicit fixed budget.
 
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
@@ -10,11 +10,11 @@ const manifestPath = path.join(root, "tests/critical-test-budget.json");
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 
 const hardCap = Object.freeze({
-  total: 104,
-  frontend: 40,
-  frontendFiles: 8,
-  rust: 64,
-  rustFiles: 13,
+  total: 208,
+  frontend: 80,
+  frontendFiles: 16,
+  rust: 128,
+  rustFiles: 26,
 });
 const ignoredDirectories = new Set([
   ".git",

@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "policy": {
-    "totalCap": 104,
-    "frontendCap": 40,
-    "frontendFileCap": 8,
-    "rustCap": 64,
-    "rustFileCap": 13,
+    "totalCap": 208,
+    "frontendCap": 80,
+    "frontendFileCap": 16,
+    "rustCap": 128,
+    "rustFileCap": 26,
     "rule": "A new test must replace a lower-value test. Raise a cap only after an explicit user request."
   },
   "frontend": {

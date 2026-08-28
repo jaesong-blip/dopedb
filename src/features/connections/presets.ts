@@ -13,6 +13,8 @@ export type ConnectionLaunchPreset = {
   engine?: ConnectionEngine;
   provider?: ConnectionProvider;
   source?: "standard";
+  /** Bind a newly saved connection into this exact Project boundary. */
+  projectEnvironmentId?: string;
 };
 
 export const CONNECTION_DEFAULT_PORTS: Record<ConnectionEngine, number> = {

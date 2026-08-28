@@ -27,13 +27,13 @@ import AcpChatTranscript from "./AcpChatTranscript";
 import {
   lifecycleLabel,
   lifecycleTone,
-  providerLabel,
 } from "./acpTranscriptPresentation";
 import {
   agentDockInteraction,
   shouldDismissAgentOverlayFromEscape,
   type AgentDockLayout,
 } from "./layout";
+import { sessionMetaLabel } from "./sessionPresentation";
 import {
   useAcpChatController,
   type AcpChatControllerInput,
@@ -221,12 +221,14 @@ function AcpChatPanelContent({
                 data-active={candidate.id === active?.id}
                 onClick={() => commands.session.select(candidate.id)}
               >
-                <Icon name="database" />
+                <Icon
+                  name={candidate.knowledgeScopes.length > 0 ? "folder" : "database"}
+                />
                 <span className="tw:min-w-0 tw:flex-1 tw:truncate">
                   {candidate.title}
                 </span>
                 <span className="tw:text-xs tw:text-muted-foreground">
-                  {providerLabel(candidate.provider)}
+                  {sessionMetaLabel(candidate, setup.knowledge.projects)}
                 </span>
                 <StatusDot tone={lifecycleTone(candidate.lifecycle)} />
                 <span className="tw:sr-only">

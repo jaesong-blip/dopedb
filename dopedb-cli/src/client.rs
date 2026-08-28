@@ -27,8 +27,17 @@ const CONTROL_DATABASE_TIMEOUT: Duration = Duration::from_secs(30);
 // runtime while target cleanup is still in progress.
 const CONTROL_QUERY_RUN_TIMEOUT: Duration = Duration::from_secs(305);
 const CONTROL_OPERATION_WAIT_TIMEOUT: Duration = Duration::from_secs(35);
+// External Agent configuration and launch are intentionally blocked on a
+// visible Desktop approval. Keep the client just outside the Broker's five
+// minute approval deadline so rejection/timeout remains a typed response.
+const EXTERNAL_AGENT_APPROVAL_TIMEOUT: Duration = Duration::from_secs(305);
 
 pub(crate) struct BrokerClient {
+    #[allow(
+        dead_code,
+        reason = "the shared client module is compiled independently into the app-only bridge"
+    )]
+    runtime_file: PathBuf,
     discovery: RuntimeDiscovery,
     protocol_version: u16,
 }
@@ -50,6 +59,7 @@ impl BrokerClient {
         )
         .map_err(|_| ClientError::ProtocolMismatch)?;
         Ok(Self {
+            runtime_file,
             discovery,
             protocol_version,
         })
@@ -61,6 +71,14 @@ impl BrokerClient {
     )]
     pub(crate) fn runtime_id(&self) -> Uuid {
         self.discovery.runtime_id()
+    }
+
+    #[allow(
+        dead_code,
+        reason = "the shared client module is compiled independently into the app-only bridge"
+    )]
+    pub(crate) fn runtime_file(&self) -> &Path {
+        &self.runtime_file
     }
 
     pub(crate) async fn request<C>(
@@ -141,6 +159,9 @@ fn response_timeout(command: dopedb_protocol::CommandName) -> Duration {
         | CommandName::SqlPropose => CONTROL_DATABASE_TIMEOUT,
         CommandName::QueryRun => CONTROL_QUERY_RUN_TIMEOUT,
         CommandName::OperationWait => CONTROL_OPERATION_WAIT_TIMEOUT,
+        CommandName::ExternalAgentConfigCreate | CommandName::ExternalAgentSessionStart => {
+            EXTERNAL_AGENT_APPROVAL_TIMEOUT
+        }
         _ => CONTROL_METADATA_TIMEOUT,
     }
 }
@@ -154,8 +175,17 @@ fn remove_stale_discovery(runtime_file: &Path, runtime_id: Uuid) {
     }
 }
 
+#[allow(
+    dead_code,
+    reason = "the shared client module is compiled independently into both CLI binaries"
+)]
 pub(crate) enum ClientError {
     InvalidArguments,
+    AgentConfigExists,
+    AgentConfigNotFound,
+    AgentConfigInvalid,
+    AgentProviderUnavailable,
+    AgentExited(Option<i32>),
     RuntimeUnavailable,
     AuthenticationUnavailable,
     #[allow(
@@ -180,6 +210,24 @@ impl fmt::Display for ClientError {
             Self::InvalidArguments => formatter.write_str(
                 "the command arguments are invalid; use --help for the supported syntax",
             ),
+            Self::AgentConfigExists => formatter.write_str(
+                "the Agent configuration already exists; remove it explicitly before creating a replacement",
+            ),
+            Self::AgentConfigNotFound => formatter.write_str(
+                "no .dopedb/agent.json was found in this directory or its parents; run `dopedb agent init` first",
+            ),
+            Self::AgentConfigInvalid => formatter.write_str(
+                "the Agent configuration is invalid, unsafe, or too large; run `dopedb agent init` to create a new one",
+            ),
+            Self::AgentProviderUnavailable => formatter.write_str(
+                "the configured official Agent CLI is unavailable; install it and keep its normal local login active",
+            ),
+            Self::AgentExited(Some(code)) => {
+                write!(formatter, "the official Agent CLI exited with status {code}")
+            }
+            Self::AgentExited(None) => {
+                formatter.write_str("the official Agent CLI was terminated before it completed")
+            }
             Self::RuntimeUnavailable => formatter
                 .write_str("the DopeDB Desktop runtime is unavailable; open the app and try again"),
             Self::AuthenticationUnavailable => {
@@ -215,6 +263,11 @@ impl fmt::Debug for ClientError {
         match self {
             Self::Remote(error) => formatter.debug_tuple("Remote").field(error).finish(),
             Self::InvalidArguments => formatter.write_str("InvalidArguments"),
+            Self::AgentConfigExists => formatter.write_str("AgentConfigExists"),
+            Self::AgentConfigNotFound => formatter.write_str("AgentConfigNotFound"),
+            Self::AgentConfigInvalid => formatter.write_str("AgentConfigInvalid"),
+            Self::AgentProviderUnavailable => formatter.write_str("AgentProviderUnavailable"),
+            Self::AgentExited(code) => formatter.debug_tuple("AgentExited").field(code).finish(),
             Self::RuntimeUnavailable => formatter.write_str("RuntimeUnavailable"),
             Self::AuthenticationUnavailable => formatter.write_str("AuthenticationUnavailable"),
             Self::ConnectionNotFound => formatter.write_str("ConnectionNotFound"),

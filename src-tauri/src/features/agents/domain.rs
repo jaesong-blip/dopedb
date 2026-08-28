@@ -7,6 +7,20 @@ use crate::kernel::identity::{
     AcpSessionId, ConnectionId, RetiredChatMessageId, RetiredChatThreadId,
 };
 
+/// One internal Environment slice of the Project resource set chosen in AI Chat.
+/// IDs are untrusted transport input and are resolved again against local and
+/// hosted authority before an ACP process receives a capability.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct AgentResourceScopeSelection {
+    pub(crate) project_environment_id: uuid::Uuid,
+    pub(crate) authority_connection_id: uuid::Uuid,
+    #[serde(default)]
+    pub(crate) connection_ids: Vec<uuid::Uuid>,
+    #[serde(default)]
+    pub(crate) source_ids: Vec<uuid::Uuid>,
+}
+
 /// Subscription-backed Terminal providers whose local CLIs can be probed safely.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -90,6 +104,12 @@ pub(crate) struct AcpSessionSummary {
     #[serde(default)]
     pub(crate) environment_connections:
         Vec<crate::features::knowledge::domain::KnowledgeSessionConnection>,
+    /// Current resource-set representation. Legacy scalar fields above remain
+    /// readable so existing local transcripts can still resume safely.
+    #[serde(default)]
+    pub(crate) knowledge_scopes: Vec<crate::features::knowledge::domain::KnowledgeSessionScope>,
+    #[serde(default)]
+    pub(crate) write_connection_id: Option<uuid::Uuid>,
     pub(crate) error: Option<String>,
     pub(crate) created_at: DateTime<Utc>,
     pub(crate) updated_at: DateTime<Utc>,
@@ -204,11 +224,12 @@ impl AgentResponseLanguage {
     }
 }
 
-/// Optional editor context supplied by the frontend. The connection identity is
-/// never accepted here; it comes from the backend-pinned ACP session.
+/// Optional editor context supplied by the frontend. Its connection identity is
+/// accepted only as an exact selector inside the backend-pinned resource set.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AcpPromptContext {
+    pub(crate) connection_id: Option<uuid::Uuid>,
     pub(crate) database: Option<String>,
     pub(crate) document_name: Option<String>,
     pub(crate) document_text: Option<String>,

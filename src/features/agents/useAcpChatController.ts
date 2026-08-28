@@ -26,6 +26,7 @@ import {
 import type { WorkbenchDocument } from "../workbench/domain";
 import {
   buildAcpPromptContext,
+  EMPTY_ACP_PROMPT_CONTEXT,
   summarizeAcpPromptContext,
 } from "./acpPromptContext";
 import {
@@ -38,7 +39,6 @@ import type {
   AcpSessionConfigOption,
   AcpSessionFocus,
   AcpSessionId,
-  AcpSessionLifecycle,
   AgentComposerRequest,
   AgentProvider,
 } from "./domain";
@@ -54,6 +54,8 @@ import {
 import { useAgentSelection } from "./selectionContext";
 import {
   isCurrentAcpFocusRequest,
+  isLiveSession,
+  selectWorkspaceSessions,
   type AcpFocusRequest,
 } from "./sessionFocus";
 import {
@@ -81,6 +83,7 @@ import {
   useAgentScopeSelection,
 } from "./useAgentScopeSelection";
 import { useAcpSessionStartup } from "./useAcpSessionStartup";
+import { useAcpScopeCommands } from "./useAcpScopeCommands";
 
 const MAX_PROMPT_CHARS = 8 * 1024;
 const AGENT_SETUP_URL: Record<AgentProvider, string> = {
@@ -88,13 +91,6 @@ const AGENT_SETUP_URL: Record<AgentProvider, string> = {
   codex: "https://help.openai.com/en/articles/11096431",
 };
 const AUTO_SCROLL_THRESHOLD_PX = 96;
-const EMPTY_PROMPT_CONTEXT: AcpPromptContext = {
-  database: null,
-  documentName: null,
-  documentText: null,
-  table: null,
-};
-
 export type AcpChatControllerInput = {
   connection: ConnectionProfile;
   connections: ConnectionProfile[];
@@ -141,7 +137,10 @@ export function useAcpChatController({
   >(null);
   const [copiedSetupCommand, setCopiedSetupCommand] =
     useState<AgentProvider | null>(null);
-  const scopeConnection = useAgentScopeConnection(connection, connections);
+  const {
+    connection: scopedConnection,
+    select: selectScopedConnection,
+  } = useAgentScopeConnection(connection, connections);
   const activeIdRef = useRef<AcpSessionId | null>(null);
   const selectionGenerationRef = useRef(0);
   const focusRequestIdRef = useRef(0);
@@ -162,7 +161,8 @@ export function useAcpChatController({
   });
   const environmentInventory = useAgentEnvironmentInventory({
     catalogScopeKey: catalogScope.key,
-    connection: scopeConnection.connection,
+    connection: scopedConnection,
+    connections,
     onError: setError,
   });
   const availableKnowledgeEnvironments = environmentInventory.available;
@@ -183,16 +183,12 @@ export function useAcpChatController({
     [configuredProviders, pluginStatusQuery.data],
   );
 
-  const connectionSessions = useMemo(
-    () =>
-      sessionSnapshot.sessions
-        .filter((session) => session.connectionId === scopeConnection.connection.id)
-        .filter((session) => enabledProviders.includes(session.provider))
-        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-    [enabledProviders, scopeConnection.connection.id, sessionSnapshot.sessions],
+  const workspaceSessions = useMemo(
+    () => selectWorkspaceSessions(sessionSnapshot.sessions, enabledProviders),
+    [enabledProviders, sessionSnapshot.sessions],
   );
   const active =
-    connectionSessions.find((session) => session.id === activeId) ?? null;
+    workspaceSessions.find((session) => session.id === activeId) ?? null;
   const activeSessionId = active?.id ?? null;
   const activeProvider = active?.provider ?? null;
   const activeEventsLoaded =
@@ -209,13 +205,12 @@ export function useAcpChatController({
   const agentScope = useAgentScopeSelection({
     active,
     composerRequest,
-    connectionId: scopeConnection.connection.id,
+    connectionId: scopedConnection.id,
     inventory: environmentInventory,
     onClearError: () => setError(null),
-    onSelectConnection: scopeConnection.select,
+    onSelectConnection: selectScopedConnection,
     selectionLocked: !scopeChangeAllowed,
   });
-  const { environmentId: selectedEnvironmentId, rememberSessionScope } = agentScope;
   const richTranscriptKeys = selectRichTranscriptKeys(transcript);
   const configOptions = activeProjection?.configOptions ?? [];
   const modelOption = configOptions.find(
@@ -226,15 +221,26 @@ export function useAcpChatController({
   );
   const activeDocument =
     documents.find((document) => document.id === activeDocumentId) ?? null;
+  const editorConnectionSelected = agentScope.selectedDatabases.some(
+    (database) => database.connectionId === connection.id,
+  );
   const context = useMemo(
     () =>
-      buildAcpPromptContext(
-        scopeConnection.connection,
-        activeDocument,
-        selectedTable,
-        selection,
-      ),
-    [activeDocument, scopeConnection.connection, selectedTable, selection],
+      editorConnectionSelected
+        ? buildAcpPromptContext(
+            connection,
+            activeDocument,
+            selectedTable,
+            selection,
+          )
+        : EMPTY_ACP_PROMPT_CONTEXT,
+    [
+      activeDocument,
+      connection,
+      editorConnectionSelected,
+      selectedTable,
+      selection,
+    ],
   );
   const contextLabels = useMemo(() => summarizeAcpPromptContext(context), [context]);
   const pendingPermissionId =
@@ -271,6 +277,10 @@ export function useAcpChatController({
     : null;
   const environmentLoadError = environmentInventory.loadError;
 
+  useEffect(() => {
+    selectScopedConnection(active?.connectionId ?? connection.id);
+  }, [active?.connectionId, connection.id, selectScopedConnection]);
+
   const selectActiveSession = useCallback((next: AcpSessionId | null) => {
     if (activeIdRef.current === next) return;
     activeIdRef.current = next;
@@ -300,6 +310,16 @@ export function useAcpChatController({
       isCurrentAcpFocusRequest(request, currentFocusRequest()),
     [currentFocusRequest],
   );
+  const scopeCommands = useAcpScopeCommands({
+    active,
+    scopeChangeAllowed,
+    starting,
+    onSelectSession: selectActiveSession,
+    setError,
+    setStarting,
+    toggleResource: agentScope.toggle,
+    selectWriteTarget: agentScope.selectWriteTarget,
+  });
   const recordFocus = useCallback(
     (focus: AcpSessionFocus) =>
       recordAcpSessionFocus(catalogScope.key, focus),
@@ -333,14 +353,13 @@ export function useAcpChatController({
 
   useEffect(() => {
     if (sessionSnapshot.loading) return;
-    const next = sessionSnapshot.sessions
-      .filter((session) => session.connectionId === scopeConnection.connection.id)
-      .filter((session) => isLiveSession(session.lifecycle))
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+    const next = workspaceSessions.find((session) =>
+      isLiveSession(session.lifecycle),
+    );
     if (activeIdRef.current === null) {
       selectActiveSession(next?.id ?? null);
     }
-  }, [scopeConnection.connection.id, selectActiveSession, sessionSnapshot, t]);
+  }, [selectActiveSession, sessionSnapshot.loading, workspaceSessions]);
 
   useEffect(() => {
     selectActiveSession(null);
@@ -348,16 +367,16 @@ export function useAcpChatController({
 
   useEffect(() => {
     const next =
-      connectionSessions.find((session) =>
+      workspaceSessions.find((session) =>
         isLiveSession(session.lifecycle)
       )?.id ?? null;
     if (
       activeId &&
-      !connectionSessions.some((session) => session.id === activeId)
+      !workspaceSessions.some((session) => session.id === activeId)
     ) {
       selectActiveSession(next);
     }
-  }, [activeId, connectionSessions, selectActiveSession]);
+  }, [activeId, selectActiveSession, workspaceSessions]);
 
   useEffect(() => {
     if (activeProvider) setSelectedProvider(activeProvider);
@@ -423,27 +442,27 @@ export function useAcpChatController({
 
   const commitStartedSession = useCallback(
     (focus: AcpSessionFocus, provider: AgentProvider) => {
-      rememberSessionScope(focus.session.id);
       selectActiveSession(focus.session.id);
       setSelectedProvider(provider);
       setHistoryOpen(false);
     },
-    [rememberSessionScope, selectActiveSession],
+    [selectActiveSession],
   );
   const startSession = useAcpSessionStartup({
     activeSessionId: activeId,
     beginFocusRequest,
     catalogScope,
-    connectionId: scopeConnection.connection.id,
+    connectionId: scopedConnection.id,
     currentFocusRequest,
-    environmentScopeReady: newEnvironmentScopeReady,
+    resourceScopeReady: newEnvironmentScopeReady,
+    ensureSelectedResources: agentScope.ensureSelected,
     focusRequestIsCurrent,
     onError: setError,
     onStarted: commitStartedSession,
     onStartingChange: setStarting,
     prerequisitesReady,
-    selectedEnvironmentConnectionIds: agentScope.environmentConnectionIds,
-    selectedEnvironmentId,
+    selectedResourceScopes: agentScope.resourceScopes,
+    writeConnectionId: agentScope.writeConnectionId,
     selectedProvider,
     sessionsLoading: sessionSnapshot.loading,
   });
@@ -490,7 +509,7 @@ export function useAcpChatController({
   useEffect(() => {
     if (
       composerRequest === null ||
-      composerRequest.connectionId !== scopeConnection.connection.id ||
+      composerRequest.connectionId !== scopedConnection.id ||
       consumedComposerRequestRef.current === composerRequest.id ||
       !environmentInventory.success
     ) return;
@@ -502,8 +521,17 @@ export function useAcpChatController({
       setError(t("agent.acpEnvironmentRequiredBody"));
       return;
     }
-    if (selectedEnvironmentId !== environment.id) return;
-    if (active?.projectEnvironmentId && active.projectEnvironmentId !== environment.id) {
+    if (
+      !agentScope.resourceScopes.some(
+        (scope) => scope.projectEnvironmentId === environment.id,
+      )
+    ) return;
+    if (
+      active?.knowledgeScopes.length &&
+      !active.knowledgeScopes.some(
+        (scope) => scope.projectEnvironmentId === environment.id,
+      )
+    ) {
       selectActiveSession(null);
       return;
     }
@@ -519,7 +547,7 @@ export function useAcpChatController({
     setError(null);
     setComposerExpanded(false);
     setIncludeEditorContext(false);
-    void submitPromptText(submitted, EMPTY_PROMPT_CONTEXT)
+    void submitPromptText(submitted, EMPTY_ACP_PROMPT_CONTEXT)
       .then((sent) => {
         if (sent) setPrompt("");
       })
@@ -530,11 +558,11 @@ export function useAcpChatController({
     active,
     availableKnowledgeEnvironments,
     composerRequest,
-    scopeConnection.connection.id,
+    scopedConnection.id,
     environmentInventory.success,
     prerequisitesReady,
     selectActiveSession,
-    selectedEnvironmentId,
+    agentScope.resourceScopes,
     starting,
     submitPromptText,
     t,
@@ -551,7 +579,7 @@ export function useAcpChatController({
   }
 
   function selectSession(id: AcpSessionId) {
-    const session = connectionSessions.find((candidate) => candidate.id === id);
+    const session = workspaceSessions.find((candidate) => candidate.id === id);
     selectActiveSession(id);
     setError(null);
     if (session) setSelectedProvider(session.provider);
@@ -592,14 +620,9 @@ export function useAcpChatController({
     const submitted = prompt;
     setError(null);
     try {
-      const submittedContext: AcpPromptContext = includeEditorContext
-        ? buildAcpPromptContext(
-            scopeConnection.connection,
-            activeDocument,
-            selectedTable,
-            selection,
-          )
-        : EMPTY_PROMPT_CONTEXT;
+      const submittedContext = includeEditorContext
+        ? context
+        : EMPTY_ACP_PROMPT_CONTEXT;
       if (await submitPromptText(submitted, submittedContext)) setPrompt("");
     } catch (reason) {
       setError(t("agent.acpSendFailed", { error: errMessage(reason) }));
@@ -684,24 +707,6 @@ export function useAcpChatController({
     }
   }
 
-  async function selectAgentScope(scopeKey: string | null) {
-    if (starting || !scopeChangeAllowed) return;
-    if (active) {
-      setStarting(true);
-      setError(null);
-      try {
-        await closeAgentAcpSession(active.id);
-        selectActiveSession(null);
-      } catch (reason) {
-        setError(t("agent.acpCloseFailed", { error: errMessage(reason) }));
-        setStarting(false);
-        return;
-      }
-    }
-    await agentScope.select(scopeKey);
-    if (active) setStarting(false);
-  }
-
   function beginResize(event: ReactMouseEvent<HTMLDivElement>) {
     if (overlay || compact) return;
     event.preventDefault();
@@ -742,7 +747,7 @@ export function useAcpChatController({
     },
     session: {
       active,
-      sessions: connectionSessions,
+      sessions: workspaceSessions,
       transcript,
       richTranscriptKeys,
       activeEventsLoaded,
@@ -769,10 +774,12 @@ export function useAcpChatController({
       pluginPending: pluginStatusQuery.isPending,
       copiedSetupCommand,
       knowledge: {
-        projectScopes: environmentInventory.projectScopes,
-        databaseScopes: environmentInventory.databaseScopes,
-        selectedEnvironmentId,
-        selectedScopeKey: agentScope.selectedScopeKey,
+        projects: environmentInventory.projects,
+        selectedProject: agentScope.project,
+        selectedDatabases: agentScope.selectedDatabases,
+        selectedSources: agentScope.selectedSources,
+        selectedResourceKeys: agentScope.selectedResourceKeys,
+        writeConnectionId: agentScope.writeConnectionId,
         scopeChangeAllowed,
         pending: environmentInventory.pending,
         success: environmentInventory.success,
@@ -811,7 +818,8 @@ export function useAcpChatController({
         toggleExpanded: () => setComposerExpanded((current) => !current),
         toggleEditorContext: () =>
           setIncludeEditorContext((current) => !current),
-        selectEnvironment: selectAgentScope,
+        selectEnvironment: scopeCommands.toggle,
+        selectWriteTarget: scopeCommands.write,
         changeConfigOption,
       },
       setup: {
@@ -837,12 +845,3 @@ export function useAcpChatController({
 }
 
 export type AcpChatController = ReturnType<typeof useAcpChatController>;
-
-function isLiveSession(lifecycle: AcpSessionLifecycle) {
-  return (
-    lifecycle === "starting" ||
-    lifecycle === "ready" ||
-    lifecycle === "running" ||
-    lifecycle === "waitingPermission"
-  );
-}

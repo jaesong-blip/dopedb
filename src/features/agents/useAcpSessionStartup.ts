@@ -11,6 +11,7 @@ import { providerLabel } from "./acpTranscriptPresentation";
 import type {
   AcpSessionFocus,
   AgentProvider,
+  AgentResourceScopeSelection,
 } from "./domain";
 import {
   ownsStartedAcpSession,
@@ -26,14 +27,15 @@ type AcpSessionStartupInput = {
   catalogScope: CatalogScope;
   connectionId: ConnectionId;
   currentFocusRequest: () => AcpFocusRequest;
-  environmentScopeReady: boolean;
+  resourceScopeReady: boolean;
+  ensureSelectedResources: () => Promise<boolean>;
   focusRequestIsCurrent: (request: AcpFocusRequest) => boolean;
   onError: (message: string | null) => void;
   onStarted: (focus: AcpSessionFocus, provider: AgentProvider) => void;
   onStartingChange: (starting: boolean) => void;
   prerequisitesReady: boolean;
-  selectedEnvironmentConnectionIds: ConnectionId[] | null;
-  selectedEnvironmentId: string | null;
+  selectedResourceScopes: AgentResourceScopeSelection[];
+  writeConnectionId: ConnectionId | null;
   selectedProvider: AgentProvider;
   sessionsLoading: boolean;
 };
@@ -44,14 +46,15 @@ export function useAcpSessionStartup({
   catalogScope,
   connectionId,
   currentFocusRequest,
-  environmentScopeReady,
+  resourceScopeReady,
+  ensureSelectedResources,
   focusRequestIsCurrent,
   onError,
   onStarted,
   onStartingChange,
   prerequisitesReady,
-  selectedEnvironmentConnectionIds,
-  selectedEnvironmentId,
+  selectedResourceScopes,
+  writeConnectionId,
   selectedProvider,
   sessionsLoading,
 }: AcpSessionStartupInput) {
@@ -64,11 +67,10 @@ export function useAcpSessionStartup({
 
   const startSession = useCallback(
     (provider = selectedProvider): Promise<AcpSessionFocus | null> => {
-      const environmentId = selectedEnvironmentId;
       if (
         !prerequisitesReady ||
-        !environmentScopeReady ||
-        environmentId === null
+        !resourceScopeReady ||
+        selectedResourceScopes.length === 0
       ) {
         return Promise.resolve(null);
       }
@@ -76,8 +78,8 @@ export function useAcpSessionStartup({
         catalogScope.key,
         connectionId,
         provider,
-        environmentId,
-        selectedEnvironmentConnectionIds?.join(",") ?? "all",
+        JSON.stringify(selectedResourceScopes),
+        writeConnectionId ?? "read-only",
       ].join(":");
       if (pendingStartRef.current?.key === startKey) {
         return pendingStartRef.current.promise;
@@ -91,11 +93,15 @@ export function useAcpSessionStartup({
         onStartingChange(true);
         onError(null);
         try {
+          if (!(await ensureSelectedResources())) {
+            completeAnalytics("failed");
+            return null;
+          }
           const focus = await startAgentAcpSession(
             connectionId,
             provider,
-            environmentId,
-            selectedEnvironmentConnectionIds,
+            selectedResourceScopes,
+            writeConnectionId,
           );
           completeAnalytics("success");
           const recorded = recordAcpSessionFocus(catalogScope.key, focus);
@@ -136,16 +142,17 @@ export function useAcpSessionStartup({
       catalogScope,
       connectionId,
       currentFocusRequest,
-      environmentScopeReady,
+      ensureSelectedResources,
       focusRequestIsCurrent,
       onError,
       onStarted,
       onStartingChange,
       prerequisitesReady,
-      selectedEnvironmentConnectionIds,
-      selectedEnvironmentId,
+      resourceScopeReady,
+      selectedResourceScopes,
       selectedProvider,
       t,
+      writeConnectionId,
     ],
   );
 
@@ -158,8 +165,8 @@ export function useAcpSessionStartup({
     if (
       sessionsLoading ||
       !prerequisitesReady ||
-      !environmentScopeReady ||
-      selectedEnvironmentId === null
+      !resourceScopeReady ||
+      selectedResourceScopes.length === 0
     ) {
       return;
     }
@@ -167,24 +174,27 @@ export function useAcpSessionStartup({
       catalogScope.key,
       connectionId,
       selectedProvider,
-      selectedEnvironmentId,
-      selectedEnvironmentConnectionIds?.join(",") ?? "all",
+      JSON.stringify(selectedResourceScopes),
+      writeConnectionId ?? "read-only",
     ].join(":");
     if (prewarmAttemptRef.current === prewarmKey) return;
     prewarmAttemptRef.current = prewarmKey;
-    void startSession(selectedProvider);
+    const timeout = window.setTimeout(() => {
+      void startSession(selectedProvider);
+    }, 500);
+    return () => window.clearTimeout(timeout);
   }, [
     activeSessionId,
     catalogScope.key,
     connectionId,
     currentFocusRequest,
-    environmentScopeReady,
+    resourceScopeReady,
     prerequisitesReady,
-    selectedEnvironmentId,
-    selectedEnvironmentConnectionIds,
+    selectedResourceScopes,
     selectedProvider,
     sessionsLoading,
     startSession,
+    writeConnectionId,
   ]);
 
   return startSession;

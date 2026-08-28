@@ -1,7 +1,7 @@
 # DopeDB 클라이언트
 
 Tauri v2 기반 데이터베이스 클라이언트다. React/TypeScript 프론트엔드와
-Rust 코어, 연결 고정 ACP Agent session, 로컬 CLI Broker로 구성된다.
+Rust 코어, 프로젝트 리소스 고정 ACP Agent session, 로컬 CLI Broker로 구성된다.
 ACP와 별개인 연결 고정 고급 Shell PTY는 일반 작업 화면이 아니라
 Settings → Command line에서 사용자가 명시적으로 열 때만 표시된다.
 
@@ -62,9 +62,10 @@ integration, reset, token, 정본 primitive뿐이다. 변경한 화면은 직접
 
 DopeDB는 팀과 AI Agent를 위한 공유 DB 접근 workspace다. workspace가 연결의
 정체성, 정책, 협업 상태를 소유하고, 각 구성원은 자신의 로컬 자격 증명을
-보관하거나 최소 권한의 단기 managed 자격 증명을 받으며, 모든 Agent는 정확히
-하나의 grant 안에서 일한다. 범용 desktop DB client, text-to-SQL 제품, 범용 MCP
-server로 포지셔닝하지 않는다. Rust desktop shell, keychain 저장, read-only 검사,
+보관하거나 최소 권한의 단기 managed 자격 증명을 받으며, 모든 Agent는 사용자가
+선택한 하나의 정확한 프로젝트 리소스 grant 안에서 일한다. 범용 desktop DB
+client, text-to-SQL 제품, 범용 MCP server로 포지셔닝하지 않는다. Rust desktop
+shell, keychain 저장, read-only 검사,
 승인, 감사, 넓은 driver 지원은 필요한 기본기이지 차별점이 아니다. 시장 약속과
 공개 claim의 정본은 `docs/PRODUCT_POSITIONING.md`가 소유한다.
 
@@ -92,9 +93,11 @@ credential store에 남고, managed 접근은 최소 권한의 구성원별 단�
 passphrase, agent, ProxyJump는 앱 밖에 남는다.
 
 **3. Agent는 정확한 grant 안에서 일하고 화면은 관찰·승인·복구한다.**
-데이터베이스 작업의 대부분은 연결에 고정된 Agent가 수행한다. 권한은 저장된
-연결이나 범용 tool server에서 상속하지 않고 현재 workspace, account, connection
-revision, process ancestry, local policy에 묶는다. 기능을 넣을지는 다음 순서로
+데이터 작업의 대부분은 프로젝트 리소스에 고정된 Agent가 수행한다. 한 세션은 한
+프로젝트 안에서 명시적으로 선택한 DB, BigQuery, 소스 저장소 조합을 읽을 수 있지만
+쓰기 대상 DB는 최대 하나다. 권한은 저장된 연결이나 범용 tool server에서 상속하지
+않고 현재 workspace, account, 선택한 모든 리소스 revision, process ancestry,
+local policy에 묶는다. 기능을 넣을지는 다음 순서로
 묻는다.
 
 1. Agent가 대신할 수 없는 일인가. 자격 증명 입력, 쓰기 승인, 결과 확인,
@@ -105,16 +108,20 @@ revision, process ancestry, local policy에 묶는다. 기능을 넣을지는 �
    결과 재조회, object DDL 편집, revision 비교, inline completion은 buttons
    대신 명령 한 문장이 낫다.
 
-Agent는 ACP(Agent Client Protocol) 클라이언트로 붙인다. Anthropic과 OpenAI가
-배포하는 공식 어댑터를 수정 없이 구동하고, 인증은 사용자의 로컬 `claude`,
-`codex` 로그인이 소유한다. 앱은 토큰을 읽거나 갱신하지 않고 로그인도 제공하지
-않는다. 이 경계를 지켜야 구독 사용자가 그대로 쓸 수 있고, 한 공급자의 정책이
-바뀌어도 그 어댑터만 빠진다. 자체 채팅 프로토콜이나 provider별 통합을 따로
-만들지 않는다.
+Desktop 내부 Agent는 ACP(Agent Client Protocol) 클라이언트로 붙인다. Anthropic과
+OpenAI가 배포하는 공식 어댑터를 수정 없이 구동하고, 인증은 사용자의 로컬
+`claude`, `codex` 로그인이 소유한다. Desktop 밖에서는 화면에 표시된 secret-free
+Project resource 설정을 사용자가 다시 검토한 뒤에만 `dopedb agent start`가 같은
+사용자의 공식 로컬 CLI를 실행할 수 있다. 앱은 토큰을 읽거나 갱신하지 않고 로그인도
+제공하지 않는다. 이 경계를 지켜야 구독 사용자가 그대로 쓸 수 있고, 한 공급자의
+정책이 바뀌어도 그 어댑터 또는 CLI launcher만 빠진다. 자체 채팅 프로토콜이나
+provider별 통합을 따로 만들지 않는다.
 
 저장된 연결을 상시 실행되는 범용 MCP database server로 노출하지 않는다. typed
-MCP-compatible bridge는 Desktop이 정확한 연결에 고정해 시작하고 Broker가 process
-identity와 권한을 검증하는 ACP session 안에서만 존재할 수 있다.
+MCP-compatible bridge는 Desktop이 시작한 exact ACP session 또는 사용자가 화면에서
+승인한 `dopedb agent start` session 안에서만 존재할 수 있다. 두 경로 모두 정확한
+프로젝트 리소스 집합, process identity, runtime-only 권한을 Broker가 검증하며 저장된
+상시 MCP endpoint를 만들지 않는다.
 
 공급자 API를 앱이 직접 호출하지 않는다. 모든 공급자 트래픽은 공식 CLI
 바이너리를 거쳐야 하며 구독 사용량 표시 같은 부가 기능도 예외가 아니다.
@@ -167,11 +174,14 @@ control에는 실제 command와 state owner가 있어야 한다.
 - `pnpm test`: 가장 중요한 frontend smoke suite.
 - `pnpm test:rust`: Rust workspace 핵심 테스트.
 - `pnpm dev:app`: 데스크톱 앱 개발 실행.
+- `pnpm check:code-structure`: 검토된 혼합 책임 hotspot과 결합된 fragment
+  cluster가 늘어나지 않는지 확인한다. 전체 순위는 `pnpm audit:code-structure`로
+  보고 baseline 변경 전에 직접 검토한다.
 
 변경 범위에 맞는 명령만 실행한다. UI 변경은 build 뒤 해당 화면을 수동으로
 확인하고, Windows 또는 전체 릴리스 검증은 플랫폼·릴리스 변경일 때만 수행한다.
 
-테스트는 104개 고정 예산을 사용한다. 보안·안전 불변식, 공개 wire contract,
+테스트는 208개 고정 예산을 사용한다. 보안·안전 불변식, 공개 wire contract,
 핵심 end-to-end 흐름만 테스트하고 구현 세부, 중복 DOM, snapshot, 성능 수치
 테스트는 추가하지 않는다. 새 테스트가 필요하면 기존의 가치가 낮은 테스트를
 대체하고 `tests/critical-test-budget.json`에 보호 이유를 기록한다. 사용자의

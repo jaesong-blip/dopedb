@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Debug, Parser)]
@@ -28,6 +30,8 @@ pub(crate) enum Command {
     Skills(SkillsArguments),
     /// Inspect or manage the DopeDB Skill installation.
     Skill(SkillArguments),
+    /// Configure and run an official AI CLI inside a Desktop-approved Project grant.
+    Agent(AgentArguments),
     /// Inspect and test connection metadata in the active Terminal scope.
     Connection(ConnectionArguments),
     /// List databases reachable through one server connection.
@@ -46,6 +50,54 @@ pub(crate) enum Command {
     Sql(SqlArguments),
     /// Inspect, wait for, or cancel a Terminal-owned operation.
     Operation(OperationArguments),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct AgentArguments {
+    #[command(subcommand)]
+    pub(crate) command: AgentCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum AgentCommand {
+    /// Choose Project resources in Desktop and create .dopedb/agent.json.
+    Init {
+        /// Official local AI CLI that will use this Project configuration.
+        #[arg(long, value_enum)]
+        provider: ExternalAgentProviderArgument,
+        /// Secret-free configuration path, relative to the current Project root.
+        #[arg(long, default_value = ".dopedb/agent.json")]
+        config: PathBuf,
+        #[command(flatten)]
+        output: OutputArguments,
+    },
+    /// Ask Desktop to approve the config, then run the official Agent CLI.
+    Start {
+        /// Explicit config path; otherwise searches .dopedb/agent.json in parent directories.
+        #[arg(long)]
+        config: Option<PathBuf>,
+        /// Arguments forwarded unchanged to the configured official AI CLI.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        arguments: Vec<String>,
+    },
+    /// Session-scoped MCP entrypoint used only by `agent start`.
+    #[command(hide = true)]
+    Mcp,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub(crate) enum ExternalAgentProviderArgument {
+    Codex,
+    Claude,
+}
+
+impl From<ExternalAgentProviderArgument> for dopedb_protocol::ExternalAgentProvider {
+    fn from(value: ExternalAgentProviderArgument) -> Self {
+        match value {
+            ExternalAgentProviderArgument::Codex => Self::Codex,
+            ExternalAgentProviderArgument::Claude => Self::Claude,
+        }
+    }
 }
 
 #[derive(Debug, Args)]

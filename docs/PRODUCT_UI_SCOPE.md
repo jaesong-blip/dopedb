@@ -43,6 +43,12 @@ DopeDB의 제품 축, 실제 사용자 작업, 접근성, 운영 안전성, 지�
   필터와 Article 선택도 Explorer가 소유하며, 중앙 Analysis document는 선택한
   Article만 표시하고 별도의 collection
   rail을 만들지 않는다.
+- Project의 `Databases +`에서 시작한 PostgreSQL, MySQL, SQLite, MongoDB,
+  BigQuery 연결은 저장 성공과 같은 흐름에서 그 Project의 현재 preferred exact
+  Environment에 binding한다. 연결만 만들고 `Unassigned`에 남기는 중간 상태를
+  성공으로 표시하지 않으며 binding 실패는 connection editor에서 복구 가능하게
+  유지한다. 전역 `New connection`으로 만든 연결은 사용자가 Project를 정하지
+  않았으므로 계속 `Unassigned`에 둔다.
 - 중앙 document surface는 welcome, query, data, schema, analysis처럼 현재 작업
   하나를 소유한다. MongoDB 연결은 BSON `find`/`aggregate`/`count`를 수행하는
   조회 surface를 유지하되 이를 범용 `문서` 작성 기능으로 표현하지 않는다.
@@ -56,16 +62,28 @@ DopeDB의 제품 축, 실제 사용자 작업, 접근성, 운영 안전성, 지�
   준비된 Welcome은 sample table 탐색, exact Environment에 고정된 Agent 읽기,
   `Settings → Safety`를 거치는 Agent 쓰기 승인의 실제 command 세 개만 flat
   목록으로 보여준다.
-- 오른쪽 Agent surface는 exact 내부 grant와 검증된 database subset에 고정된
-  대화, 도구 진행, 승인과 복구를 소유한다. context control은 사용자에게
-  `프로젝트 전체`와 `개별 DB` 두 종류만 제공하고 Project Environment를 계층이나
-  이름으로 노출하지 않는다. `프로젝트 전체`는 그 Project의 source revision과
-  단일 production 내부 경계에 연결된 검증된 PROD DB 전체를, `개별 DB`는
-  Project·환경 표시와 관계없이 선택한 DB 하나와 같은 내부 경계의 source revision을
-  세션 시작 시 immutable하게 고정한다. production 내부 경계가 없거나 둘 이상이라
-  하나로 확정할 수 없는 Project에는 전체 선택을 추정해 만들지 않고 개별 DB 선택만
-  유지한다. 닫힌 trigger와 열린 menu 모두 선택 종류와 대상 이름을 함께 표시하며,
-  DEV/staging 전체나 임의의 다중 DB checkbox 조합은 제공하지 않는다.
+- 오른쪽 Agent surface는 한 Project의 명시적으로 선택된 resource set에 고정된
+  대화, 도구 진행, 승인과 복구를 소유한다. context control은 Project 안의 DB,
+  BigQuery, GitHub source revision을 같은 평평한 선택 surface에서 개별 또는 다중
+  선택하게 하며 Project Environment를 별도 계층이나 이름으로 노출하지 않는다.
+  DB 행의 dev/staging/prod marker는 실제 내부 binding을 설명하는 metadata로
+  유지한다. 세션 시작 시 선택한 각 connection revision, source commit,
+  Environment revision을 하나의 immutable exact grant로 고정하고 선택하지 않은
+  Project resource는 접근할 수 없게 한다. 여러 DB의 읽기는 connection별 독립
+  query로 실행해 대화에서만 결과를 종합하며 hosted proxy, 암묵적 cross-database
+  join 또는 source 의미를 DB 값으로 추측하는 경로를 만들지 않는다. 쓰기는 선택된
+  DB 중 최대 하나만 별도 `쓰기 대상`으로 지정할 수 있다. 이 지정은 권한 상승이
+  아니라 Agent proposal의 상한이며 `Settings → Safety`, workspace grant, 실제 DB
+  privilege와 사람의 exact approval을 모두 통과해야 한다. 닫힌 trigger는 Project
+  이름과 선택한 DB/source 수, 쓰기 대상 유무를 계속 표시한다.
+- 외부 공식 Codex/Claude CLI는 `dopedb agent init`으로 Project root의
+  `.dopedb/agent.json`을 만든다. 이 파일은 provider와 Project/resource UUID, 선택적인
+  단일 쓰기 대상만 가지며 credential, URL, capability를 저장하지 않는다. 초기
+  설정은 Desktop modal에서 한 Project의 DB·BigQuery·source를 고르고, 매
+  `dopedb agent start`는 현재 이름과 revision으로 같은 exact set을 다시 보여준 뒤
+  승인받는다. config에서 사라졌거나 권한이 바뀐 resource는 승인 control을
+  비활성화한다. 이 modal은 범위를 넓히지 않으며 실행 중인 공식 CLI가 끝나면 해당
+  process-bound session도 폐기한다.
 - 하단 Services surface는 실행, result, output, job, background task를 관찰하고
   중단하는 곳이다.
 - status surface는 현재 database/source/schema/object, transaction과 background
@@ -121,7 +139,7 @@ DopeDB의 제품 축, 실제 사용자 작업, 접근성, 운영 안전성, 지�
 | PD-01 | Version Control | `범위 밖` | 일반 project VCS는 DB 접근 workspace의 책임이 아니다. |
 | PD-02 | 자유 dock/move/detach | `구현 안 함` | left/right/bottom 고정 anchor와 resize를 유지한다. |
 | PD-03 | project Local History | `범위 밖` | SQL document revision만 제품이 소유한다. |
-| PD-04 | manual transaction | `구현` | query, table edit, connection-pinned Agent가 같은 물리 세션과 commit/rollback 경계를 공유한다. |
+| PD-04 | manual transaction | `구현` | query, table edit, Agent의 명시적 단일 write-target DB가 같은 물리 세션과 commit/rollback 경계를 공유한다. |
 | PD-05 | structured Agent conversation | `구현` | 공식 ACP adapter와 로컬 CLI 로그인을 사용하고 앱은 provider token이나 login UI를 소유하지 않는다. |
 | PD-06 | persistent multi-result | `구현` | bounded local snapshot과 capability-bound result artifact handle을 보존한다. |
 | PD-07 | SQLite In-memory | `구현 안 함` | 비영속 연결은 공유·승인·감사 모델과 맞지 않는다. |
@@ -131,7 +149,7 @@ DopeDB의 제품 축, 실제 사용자 작업, 접근성, 운영 안전성, 지�
 | PD-11 | Services session command bar | `구현 안 함` | tree toggle과 document/session 활성화만 유지한다. |
 | PD-12 | result의 광범위한 IDE command set | `구현 안 함` | bounded inspect/copy/export를 유지하고 재조회는 SQL이나 Agent가 소유한다. |
 | PD-13 | Local History compare/navigation | `구현 안 함` | SQL revision 선택·검색·복원만 제공한다. |
-| PD-14 | inline AI editor assistance | `구현 안 함` | connection-pinned Agent와 명시적 SQL context attachment가 소유한다. |
+| PD-14 | inline AI editor assistance | `구현 안 함` | Project-resource-pinned Agent와 명시적 SQL context attachment가 소유한다. |
 | PD-15 | project/files tool window | `범위 밖` | 일반 filesystem 탐색은 제품 밖이다. |
 | PD-16 | data source template lifecycle | `구현` | workspace가 redacted template과 grant를 공유하고 자격 증명은 member-local 또는 단기 managed lease로 분리한다. |
 | PD-17 | DDL file data source/mapping | `범위 밖` | 파일을 data source로 취급하지 않는다. |
@@ -154,10 +172,11 @@ DopeDB의 제품 축, 실제 사용자 작업, 접근성, 운영 안전성, 지�
 | PD-34 | realtime SQL CRDT/presence | `구현 안 함` | 일반 SQL text와 cursor는 로컬에 두고 공유할 가치가 있는 결과만 HTML Analysis Article로 저장한다. |
 | PD-35 | Arrow/Parquet plugin export | `구현 안 함` | bounded native CSV/JSON sink의 정확성과 취소 경계를 유지한다. |
 | PD-36 | Project Knowledge graph | `구현` | source identity, immutable graph revision, evidence anchor, KnowledgeGrant와 승인된 mapping을 공유한다. |
-| PD-37 | Project→Environment exact scope | `구현` | session 시작 시 connection과 graph revision 집합을 immutable pin으로 고정한다. |
+| PD-37 | Project resource-set exact scope | `구현` | session 시작 시 한 Project에서 사용자가 선택한 connection/source/Environment revision 집합을 immutable pin으로 고정한다. 읽기는 선택 집합 안에서만 connection별로 실행하고 쓰기 proposal은 명시한 단일 DB에만 허용한다. |
 | PD-38 | funnel analysis/block migration | `구현 안 함` | funnel·cohort·chart는 별도 UI domain으로 이관하지 않고 SQL 또는 Agent 결과를 일반 HTML로 설명한다. |
 | PD-39 | metric signal monitoring | `구현 안 함` | Article은 수동 재조회 문서이며 cron·signal·background runner를 소유하지 않는다. |
 | PD-40 | Analysis Article archive | `구현` | ADR 0007의 sanitized HTML, 단일 bounded read query, 로컬 수동 재조회, immutable public HTML 계약을 따른다. |
+| PD-41 | External official Agent CLI | `구현` | `dopedb agent init/start`가 secret-free Project resource config, 매 실행 Desktop 검토, process-bound runtime-only typed bridge로 공식 로컬 Codex/Claude를 실행한다. 저장된 범용 MCP와 provider token 접근은 허용하지 않는다. |
 
 ## 변경 규칙
 

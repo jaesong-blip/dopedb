@@ -33,7 +33,7 @@ Prioritize the workspace in this order:
 
 1. Reliably share one connection and give each member individual access.
 2. Complete provider discovery, issuance, expiry, revoke, and drift handling.
-3. Enforce and recover every connection-pinned Agent operation at exact authority.
+3. Enforce and recover every Project-resource-pinned Agent operation at exact authority.
 4. Add versioned Analysis Articles, bounded live team results, metric signals, and
    fixed public publications on top of that boundary.
 

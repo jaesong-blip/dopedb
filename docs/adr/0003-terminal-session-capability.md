@@ -2,12 +2,15 @@
 
 - 상태: 승인
 - 날짜: 2026-07-24
+- 최종 갱신: 2026-08-29
 - 관련 계획: Phase 3~5
 
 ## 결정
 
-첫 CLI DB 접근은 DopeDB가 만든 인앱 Terminal에서만 허용한다. session은 생성 시
-workspace와 connection에 pin하며 Workbench connection이 바뀌어도 retarget하지 않는다.
+일반 shell DB 명령은 DopeDB가 만든 인앱 Terminal session에서만 허용한다. session은
+생성 시 workspace와 connection에 pin하며 Workbench connection이 바뀌어도
+retarget하지 않는다. Desktop 밖의 공식 Codex/Claude는 별도 `dopedb agent
+init/start` 흐름에서만 한 Project의 명시적인 resource set에 pin한다.
 
 Runtime은 session마다 다음을 memory에만 보관한다.
 
@@ -42,6 +45,23 @@ bearer를 즉시 zeroize해 process-bound authority로 교체한다. bridge는 �
 따라서 Windows bridge가 process ancestry root로 계속 살아 있어도 재사용 가능한
 bearer는 남지 않는다.
 
+외부 공식 Agent도 bearer를 받지 않는다. `.dopedb/agent.json`은 provider,
+Project/resource UUID, 선택적인 단일 write target만 가진 secret-free config다.
+`dopedb agent start` 때 Desktop이 그 exact set을 현재 revision과 권한으로 다시
+보여주고 승인하면 Broker가 요청 CLI의 PID/start marker에 runtime-only authority를
+직접 묶는다. CLI가 시작한 공식 provider와 session-scoped `agent mcp` descendant는
+다음 값만 상속한다.
+
+```text
+DOPEDB_RUNTIME_FILE
+DOPEDB_TERMINAL_SESSION_ID
+DOPEDB_AGENT_PROCESS_BOUND=1
+```
+
+기존 `DOPEDB_SESSION_TOKEN`은 provider child에서 명시적으로 제거한다. session id
+단독으로는 capability가 아니며 Broker가 owner-local peer ancestry와 exact resource
+revision을 함께 확인한다.
+
 ## Revocation
 
 다음 사건에서 DB command보다 먼저 즉시 revoke한다.
@@ -51,6 +71,7 @@ bearer는 남지 않는다.
 - membership/grant revoke
 - connection update/delete
 - provider lease rotation/expiry
+- 외부 공식 Agent child 종료
 - app 종료
 
 이미 만들어진 plan은 runtime, owner session, workspace/account, connection revision을 모두
@@ -62,5 +83,7 @@ bearer는 남지 않는다.
 주장하지 않는다. 목적은 Agent 오작동, scope 혼선, 다른 Terminal의 plan 재사용을
 차단하는 것이다.
 
-외부 shell DB 접근은 후속 `dopedb session start`에서 앱의 명시적 승인 후 CLI가
-단기 token을 가진 child shell/Agent를 직접 시작하는 방식으로만 추가한다.
+외부 임의 shell에는 DB capability를 주지 않는다. 지원 범위는 Desktop이 config의
+exact Project resource set을 매번 보여주고 승인한 뒤, `dopedb agent start`가 직접
+실행한 공식 Codex/Claude process tree뿐이다. 저장된 범용 MCP endpoint나 재사용 가능한
+token을 제공하지 않는다.

@@ -3,6 +3,7 @@ pub(crate) mod catalog;
 pub(crate) mod completion;
 pub(crate) mod connection;
 pub(crate) mod document;
+pub(crate) mod external_agent;
 pub(crate) mod input;
 pub(crate) mod operation;
 pub(crate) mod query;

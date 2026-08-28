@@ -1,12 +1,13 @@
-//! Project Knowledge tools scoped to one immutable ACP revision set.
+//! Project Knowledge tools scoped to one immutable ACP resource revision set.
 
 use std::collections::BTreeSet;
 
 use dopedb_protocol::{
     CatalogArguments, ConnectionSelector, EnvironmentConnectionScope, EnvironmentContextCommand,
-    EnvironmentContextResult, EnvironmentSourceScope, FunnelTraceArguments, FunnelTraceCommand,
-    GraphBuildArtifactV1, KnowledgeDiffCommand, KnowledgeEvidenceCommand, KnowledgeEvidenceResult,
-    KnowledgeExplainCommand, KnowledgeMappingProposalResult, KnowledgeMappingProposeArguments,
+    EnvironmentContextResult, EnvironmentRevisionScope, EnvironmentSourceScope,
+    FunnelTraceArguments, FunnelTraceCommand, GraphBuildArtifactV1, KnowledgeDiffCommand,
+    KnowledgeEvidenceCommand, KnowledgeEvidenceResult, KnowledgeExplainCommand,
+    KnowledgeMappingProposalResult, KnowledgeMappingProposeArguments,
     KnowledgeMappingProposeCommand, KnowledgeMappingTargetKind, KnowledgeNeighborDirection,
     KnowledgeNeighborsArguments, KnowledgeNeighborsCommand, KnowledgeNodeArguments,
     KnowledgeNodeMatch, KnowledgePathCommand, KnowledgeSearchCommand, KnowledgeSearchResult,
@@ -37,25 +38,29 @@ pub(super) async fn handle(
         Ok(session) => session,
         Err((code, retryable)) => return failure(request_id, code, retryable),
     };
-    let Some(scope) = session.knowledge_scope.as_ref() else {
+    let scopes = &session.knowledge_scopes;
+    let Some(primary_scope) = scopes.first() else {
         return failure(request_id, ErrorCode::ScopeDenied, false);
     };
     let services = match dispatcher.services() {
         Ok(services) => services,
         Err(code) => return failure(request_id, code, false),
     };
-    let graphs = match services
-        .knowledge
-        .exact_knowledge_session_graphs(
-            scope,
-            Uuid::from(session.workspace_id),
-            session.knowledge_account_scope.as_str(),
-        )
-        .await
-    {
-        Ok(graphs) => graphs,
-        Err(error) => return failure(request_id, map_application_error(error), false),
-    };
+    let mut graphs = Vec::new();
+    for scope in scopes {
+        match services
+            .knowledge
+            .exact_knowledge_session_graphs(
+                scope,
+                Uuid::from(session.workspace_id),
+                session.knowledge_account_scope.as_str(),
+            )
+            .await
+        {
+            Ok(environment_graphs) => graphs.extend(environment_graphs),
+            Err(error) => return failure(request_id, map_application_error(error), false),
+        }
+    }
 
     match request.command {
         CommandName::EnvironmentContext => {
@@ -65,30 +70,49 @@ pub(super) async fn handle(
             respond(
                 request_id,
                 Ok::<_, ErrorCode>(EnvironmentContextResult {
-                    project_environment_id: scope.project_environment_id,
-                    environment_revision: scope.environment_revision,
-                    connections: scope
-                        .connections
+                    project_id: primary_scope.project_id,
+                    project_environment_id: primary_scope.project_environment_id,
+                    environment_revision: primary_scope.environment_revision,
+                    environments: scopes
                         .iter()
-                        .map(|connection| EnvironmentConnectionScope {
-                            connection_id: connection.connection_id,
-                            connection_revision: connection.connection_revision,
-                            role: connection.role.clone(),
-                            alias: connection.alias.clone(),
+                        .map(|scope| EnvironmentRevisionScope {
+                            project_environment_id: scope.project_environment_id,
+                            environment_revision: scope.environment_revision,
                         })
                         .collect(),
-                    sources: scope
-                        .sources
+                    connections: scopes
                         .iter()
-                        .map(|source| EnvironmentSourceScope {
-                            source_id: source.source_id,
-                            display_name: source.display_name.clone(),
-                            repository: source.repository.clone(),
-                            ref_name: source.ref_name.clone(),
-                            commit_sha: source.commit_sha.clone(),
+                        .flat_map(|scope| {
+                            scope
+                                .connections
+                                .iter()
+                                .map(|connection| EnvironmentConnectionScope {
+                                    project_environment_id: scope.project_environment_id,
+                                    connection_id: connection.connection_id,
+                                    connection_revision: connection.connection_revision,
+                                    role: connection.role.clone(),
+                                    alias: connection.alias.clone(),
+                                })
                         })
                         .collect(),
-                    graph_revision_ids: scope.graph_revision_ids.clone(),
+                    sources: scopes
+                        .iter()
+                        .flat_map(|scope| {
+                            scope.sources.iter().map(|source| EnvironmentSourceScope {
+                                project_environment_id: scope.project_environment_id,
+                                source_id: source.source_id,
+                                display_name: source.display_name.clone(),
+                                repository: source.repository.clone(),
+                                ref_name: source.ref_name.clone(),
+                                commit_sha: source.commit_sha.clone(),
+                            })
+                        })
+                        .collect(),
+                    graph_revision_ids: scopes
+                        .iter()
+                        .flat_map(|scope| scope.graph_revision_ids.iter().copied())
+                        .collect(),
+                    write_connection_id: session.write_connection_id.map(Uuid::from),
                 }),
             )
         }
@@ -97,17 +121,20 @@ pub(super) async fn handle(
                 Ok(arguments) if valid_query(&arguments.query, arguments.limit) => arguments,
                 _ => return failure(request_id, ErrorCode::InvalidRequest, false),
             };
+            let available = scopes
+                .iter()
+                .flat_map(|scope| scope.sources.iter().map(move |source| (scope, source)))
+                .collect::<Vec<_>>();
             let selected = if let Some(source_id) = arguments.source_id {
-                match scope
-                    .sources
+                match available
                     .iter()
-                    .find(|source| source.source_id == source_id)
+                    .find(|(_, source)| source.source_id == source_id)
                 {
-                    Some(source) => vec![source],
+                    Some(selected) => vec![*selected],
                     None => return failure(request_id, ErrorCode::ScopeDenied, false),
                 }
-            } else if scope.sources.len() <= 4 {
-                scope.sources.iter().collect::<Vec<_>>()
+            } else if available.len() <= 4 {
+                available
             } else {
                 return failure(request_id, ErrorCode::InvalidRequest, false);
             };
@@ -122,7 +149,7 @@ pub(super) async fn handle(
             }
             let mut matches = Vec::new();
             let mut truncated = false;
-            for source in selected {
+            for (scope, source) in selected {
                 let remaining = usize::try_from(arguments.limit)
                     .unwrap_or(0)
                     .saturating_sub(matches.len());
@@ -138,8 +165,8 @@ pub(super) async fn handle(
                             workspace_id: Uuid::from(session.workspace_id),
                             environment_id: scope.project_environment_id,
                             environment_revision: scope.environment_revision,
-                            connection_id: session.connection_id.into(),
-                            connection_revision: session.connection_revision,
+                            connection_id: scope.authority_connection_id,
+                            connection_revision: scope.authority_connection_revision,
                             source,
                         },
                         query: &arguments.query,
@@ -176,11 +203,13 @@ pub(super) async fn handle(
                 }
                 _ => return failure(request_id, ErrorCode::InvalidRequest, false),
             };
-            let Some(source) = scope
-                .sources
-                .iter()
-                .find(|source| source.source_id == arguments.source_id)
-            else {
+            let Some((scope, source)) = scopes.iter().find_map(|scope| {
+                scope
+                    .sources
+                    .iter()
+                    .find(|source| source.source_id == arguments.source_id)
+                    .map(|source| (scope, source))
+            }) else {
                 return failure(request_id, ErrorCode::ScopeDenied, false);
             };
             let remote = match services
@@ -191,8 +220,8 @@ pub(super) async fn handle(
                         workspace_id: Uuid::from(session.workspace_id),
                         environment_id: scope.project_environment_id,
                         environment_revision: scope.environment_revision,
-                        connection_id: session.connection_id.into(),
-                        connection_revision: session.connection_revision,
+                        connection_id: scope.authority_connection_id,
+                        connection_revision: scope.authority_connection_revision,
                         source,
                     },
                     path: &arguments.path,
@@ -331,9 +360,11 @@ pub(super) async fn handle(
         CommandName::KnowledgeDiff => {
             let arguments = match decode_arguments::<KnowledgeDiffCommand>(request) {
                 Ok(arguments)
-                    if scope
-                        .graph_revision_ids
-                        .contains(&arguments.to_graph_revision_id) =>
+                    if scopes.iter().any(|scope| {
+                        scope
+                            .graph_revision_ids
+                            .contains(&arguments.to_graph_revision_id)
+                    }) =>
                 {
                     arguments
                 }
@@ -392,8 +423,14 @@ pub(super) async fn handle(
         }
         CommandName::KnowledgeMappingPropose => {
             let arguments = match decode_arguments::<KnowledgeMappingProposeCommand>(request) {
-                Ok(arguments) if valid_mapping_arguments(scope, &graphs, &arguments) => arguments,
+                Ok(arguments) => arguments,
                 _ => return failure(request_id, ErrorCode::InvalidRequest, false),
+            };
+            let Some(scope) = scopes
+                .iter()
+                .find(|scope| valid_mapping_arguments(scope, &graphs, &arguments))
+            else {
+                return failure(request_id, ErrorCode::ScopeDenied, false);
             };
             respond(
                 request_id,

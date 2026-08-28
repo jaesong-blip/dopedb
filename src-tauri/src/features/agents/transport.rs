@@ -8,10 +8,10 @@ use crate::kernel::identity::{AcpSessionId, ConnectionId, RetiredChatThreadId};
 use crate::state::AppState;
 use uuid::Uuid;
 
-use super::acp::DesktopAcpRuntimePorts;
+use super::acp::{AcpResourceRequest, DesktopAcpRuntimePorts};
 use super::domain::{
     AcpPromptContext, AcpSessionFocus, AcpSessionSummary, AgentCliInfo, AgentProvider,
-    RetiredChatArchiveMessage, RetiredChatArchiveThread,
+    AgentResourceScopeSelection, RetiredChatArchiveMessage, RetiredChatArchiveThread,
 };
 use super::runtime::{AcpPluginMutationReceipt, AcpPluginStatus};
 use crate::features::knowledge::domain::KnowledgeEnvironmentSummary;
@@ -61,6 +61,8 @@ pub fn set_agent_acp_plugin_enabled(
 }
 
 /// Start one connection-pinned session through an official ACP registry adapter.
+// The flat arguments are the stable Tauri invoke wire contract used by shipped clients.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn start_agent_acp_session(
     state: State<'_, AppState>,
@@ -69,16 +71,22 @@ pub async fn start_agent_acp_session(
     provider: AgentProvider,
     project_environment_id: Option<Uuid>,
     environment_connection_ids: Option<Vec<Uuid>>,
+    resource_scopes: Option<Vec<AgentResourceScopeSelection>>,
+    write_connection_id: Option<Uuid>,
 ) -> AppResult<AcpSessionFocus> {
     state.wait_for_post_paint_recovery().await?;
-    if project_environment_id.is_some() {
+    let has_project_resource_scope = project_environment_id.is_some()
+        || resource_scopes
+            .as_ref()
+            .is_some_and(|scopes| !scopes.is_empty());
+    if has_project_resource_scope {
         let connection = state
             .services
             .knowledge
             .pin_connection_for_read(Uuid::from(connection_id))
             .await?;
         if agent_session_requires_hosted_knowledge_reconciliation(
-            project_environment_id,
+            has_project_resource_scope,
             connection.scope.selected_account_id.as_deref(),
         ) {
             state.services.knowledge.reconcile_current_access().await?;
@@ -90,18 +98,22 @@ pub async fn start_agent_acp_session(
         .start(
             connection_id,
             provider,
-            project_environment_id,
-            environment_connection_ids,
+            AcpResourceRequest {
+                project_environment_id,
+                environment_connection_ids,
+                resource_scopes,
+                write_connection_id,
+            },
             ports,
         )
         .await
 }
 
 fn agent_session_requires_hosted_knowledge_reconciliation(
-    project_environment_id: Option<Uuid>,
+    has_project_resource_scope: bool,
     selected_account_id: Option<&str>,
 ) -> bool {
-    project_environment_id.is_some() && selected_account_id.is_some()
+    has_project_resource_scope && selected_account_id.is_some()
 }
 
 /// List exact Project Environments available through this connection revision.
@@ -228,17 +240,15 @@ pub async fn detect_agent_clis(state: State<'_, AppState>) -> AppResult<Vec<Agen
 
 #[cfg(test)]
 pub(crate) fn assert_agent_transport_contract() {
-    let environment_id = Uuid::new_v4();
     assert!(!agent_session_requires_hosted_knowledge_reconciliation(
-        Some(environment_id),
-        None,
+        true, None,
     ));
     assert!(agent_session_requires_hosted_knowledge_reconciliation(
-        Some(environment_id),
+        true,
         Some("account-1"),
     ));
     assert!(!agent_session_requires_hosted_knowledge_reconciliation(
-        None,
+        false,
         Some("account-1"),
     ));
 }

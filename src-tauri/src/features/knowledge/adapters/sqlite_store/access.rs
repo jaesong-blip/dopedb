@@ -157,8 +157,8 @@ impl Store {
         connection: &PinnedConnection,
         requested_environment_id: Option<Uuid>,
     ) -> AppResult<Option<KnowledgeSessionScope>> {
-        let environment_rows: Vec<(String, i64)> = sqlx::query_as(
-            "SELECT DISTINCT environment.id, environment.revision
+        let environment_rows: Vec<(String, String, i64)> = sqlx::query_as(
+            "SELECT DISTINCT environment.id, environment.project_id, environment.revision
              FROM knowledge_environment_connections binding
              JOIN knowledge_project_environments environment
                ON environment.id = binding.project_environment_id
@@ -191,8 +191,9 @@ impl Store {
                 reason: "select one Project Environment before starting this Agent session".into(),
             });
         }
-        let (environment_id, environment_revision) = &environment_rows[0];
+        let (environment_id, project_id, environment_revision) = &environment_rows[0];
         let project_environment_id = parse_uuid(environment_id.clone())?;
+        let project_id = parse_uuid(project_id.clone())?;
         let environment_revision = u64::try_from(*environment_revision).map_err(|_| {
             AppError::Config("the stored Project Environment revision is invalid".into())
         })?;
@@ -306,9 +307,12 @@ impl Store {
             });
         }
         Ok(Some(KnowledgeSessionScope {
+            project_id,
             knowledge_grant_id,
             project_environment_id,
             environment_revision,
+            authority_connection_id: connection.connection_id,
+            authority_connection_revision: connection.connection_revision,
             sources,
             graph_revision_ids,
             connections,
@@ -327,7 +331,11 @@ impl Store {
             self.github_session_sources(scope.project_environment_id, scope.environment_revision)
                 .await?
         };
-        if active_sources != scope.sources {
+        if scope
+            .sources
+            .iter()
+            .any(|source| !active_sources.contains(source))
+        {
             return Err(AppError::Blocked {
                 reason:
                     "the Agent GitHub source scope changed; start a new session to reconfirm it"
@@ -347,13 +355,17 @@ impl Store {
         if graphs
             .iter()
             .any(|graph| graph.environment_revision != scope.environment_revision)
-            || active_ids != scope.graph_revision_ids
+            || scope
+                .graph_revision_ids
+                .iter()
+                .any(|revision_id| !active_ids.contains(revision_id))
         {
             return Err(AppError::Blocked {
                 reason: "the Agent Knowledge scope changed; start a new session to reconfirm it"
                     .into(),
             });
         }
+        graphs.retain(|graph| scope.graph_revision_ids.contains(&graph.graph_revision_id));
         let remote_graph_revision_ids = graphs
             .iter()
             .filter(|graph| {
@@ -377,7 +389,9 @@ impl Store {
                     || grant.account_id.as_str() != expected_account_id
                     || grant.project_environment_id != scope.project_environment_id
                     || grant.environment_revision != scope.environment_revision
-                    || grant.graph_revision_ids != remote_graph_revision_ids
+                    || remote_graph_revision_ids
+                        .iter()
+                        .any(|revision_id| !grant.graph_revision_ids.contains(revision_id))
                 {
                     return Err(AppError::Blocked {
                         reason: "the Agent Knowledge grant changed; start a new session".into(),
@@ -390,7 +404,7 @@ impl Store {
                 });
             }
         }
-        if scope.connections.is_empty()
+        if (scope.connections.is_empty() && scope.sources.is_empty())
             || scope.connections.len() > 32
             || scope.connections.iter().any(|connection| {
                 connection.connection_revision <= 0
@@ -400,6 +414,47 @@ impl Store {
         {
             return Err(AppError::Blocked {
                 reason: "the Agent Knowledge database scope is invalid".into(),
+            });
+        }
+        let expected_project_id = if scope.project_id.is_nil() {
+            String::new()
+        } else {
+            scope.project_id.to_string()
+        };
+        let authority_active: bool = sqlx::query_scalar(
+            "SELECT EXISTS(
+                SELECT 1
+                FROM knowledge_environment_connections binding
+                JOIN knowledge_project_environments environment
+                  ON environment.id = binding.project_environment_id
+                 AND environment.revision = binding.environment_revision
+                JOIN knowledge_projects project ON project.id = environment.project_id
+                JOIN connections current ON current.id = binding.connection_id
+                WHERE binding.project_environment_id = ?1
+                  AND binding.environment_revision = ?2
+                  AND binding.connection_id = ?3
+                  AND binding.connection_revision = ?4
+                  AND binding.revoked_at IS NULL
+                  AND current.revision = binding.connection_revision
+                  AND current.deleted_at IS NULL
+                  AND project.workspace_id = ?5
+                  AND (?6 = '' OR environment.project_id = ?6)
+            )",
+        )
+        .bind(scope.project_environment_id.to_string())
+        .bind(u64_to_i64(
+            scope.environment_revision,
+            "environment revision",
+        )?)
+        .bind(scope.authority_connection_id.to_string())
+        .bind(scope.authority_connection_revision)
+        .bind(expected_workspace_id.to_string())
+        .bind(expected_project_id)
+        .fetch_one(self.pool())
+        .await?;
+        if !authority_active {
+            return Err(AppError::Blocked {
+                reason: "the Agent Project resource authority changed; start a new session".into(),
             });
         }
         for connection in &scope.connections {

@@ -1,6 +1,7 @@
 //! Broker envelope validation, authentication sequencing, and feature-handler routing.
 mod analysis_article_operation;
 mod connection_catalog;
+mod external_agent;
 mod knowledge;
 mod projection;
 mod public_skill;
@@ -9,6 +10,7 @@ mod query_document;
 use projection::*;
 
 use super::session::{AuthenticatedSession, BrokerCapability, BrokerSessionRegistry};
+use super::ExternalAgentRequestRegistry;
 use crate::error::AppError;
 use crate::features::catalog::CatalogReadPolicy;
 use crate::features::connections::{AgentConnectionSummary, CliConnectionResolutionError};
@@ -30,17 +32,17 @@ use dopedb_protocol::{
     ConnectionTestResult, DatabaseEngine, DatabaseListCommand, DatabaseListResult,
     DatabaseSummary as ProtocolDatabaseSummary, DocumentPage as ProtocolDocumentPage,
     DocumentQuery as ProtocolDocumentQuery, DocumentRunArguments, DocumentRunCommand,
-    DocumentRunResult, EmptyArguments, ErrorCode, OperationCancelCommand, OperationShowCommand,
-    OperationSummary, OperationWaitArguments, OperationWaitCommand, ProtocolError,
-    QueryCancelCommand, QueryHealth, QueryPlanArguments, QueryPlanCommand, QueryPlanResult,
-    QueryResultPage, QueryRunArguments, QueryRunCommand, QueryRunResult, RequestEnvelope,
-    ResponseEnvelope, SchemaListCommand, SchemaListResult, SchemaSummary, SkillInstallCommand,
-    SkillMutationArguments, SkillRemoveCommand, SkillRepairCommand, SkillStatusCommand,
-    SkillsGetCommand, SkillsListCommand, SqlProposeArguments, SqlProposeCommand, StatusCommand,
-    StatusResult, TableDescribeArguments, TableDescribeCommand, TableDescribeResult,
-    VersionCommand, VersionResult, COMMAND_SCHEMA_VERSION, MAX_CATALOG_SEARCH_KINDS,
-    MAX_CATALOG_SEARCH_MATCHES, MAX_CATALOG_SEARCH_QUERY_BYTES, MAX_RESPONSE_BYTES,
-    MAX_STRING_BYTES, PROTOCOL_MAX, PROTOCOL_MIN,
+    DocumentRunResult, EmptyArguments, ErrorCode, OperationArguments, OperationCancelCommand,
+    OperationShowCommand, OperationSummary, OperationWaitArguments, OperationWaitCommand,
+    ProtocolError, QueryCancelCommand, QueryHealth, QueryPlanArguments, QueryPlanCommand,
+    QueryPlanResult, QueryResultPage, QueryRunArguments, QueryRunCommand, QueryRunResult,
+    RequestEnvelope, ResponseEnvelope, SchemaListCommand, SchemaListResult, SchemaSummary,
+    SkillInstallCommand, SkillMutationArguments, SkillRemoveCommand, SkillRepairCommand,
+    SkillStatusCommand, SkillsGetCommand, SkillsListCommand, SqlProposeArguments,
+    SqlProposeCommand, StatusCommand, StatusResult, TableDescribeArguments, TableDescribeCommand,
+    TableDescribeResult, VersionCommand, VersionResult, COMMAND_SCHEMA_VERSION,
+    MAX_CATALOG_SEARCH_KINDS, MAX_CATALOG_SEARCH_MATCHES, MAX_CATALOG_SEARCH_QUERY_BYTES,
+    MAX_RESPONSE_BYTES, MAX_STRING_BYTES, PROTOCOL_MAX, PROTOCOL_MIN,
 };
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -73,6 +75,7 @@ pub(crate) struct BrokerDispatcher {
     runtime_id: RuntimeId,
     app_version: &'static str,
     sessions: BrokerSessionRegistry,
+    external_agent_requests: ExternalAgentRequestRegistry,
     services: Option<ApplicationServices>,
     skills: Option<SkillManager>,
     app_handle: Option<tauri::AppHandle>,
@@ -84,6 +87,7 @@ impl BrokerDispatcher {
         runtime_id: RuntimeId,
         app_version: &'static str,
         sessions: BrokerSessionRegistry,
+        external_agent_requests: ExternalAgentRequestRegistry,
         services: Option<ApplicationServices>,
         skills: Option<SkillManager>,
         app_handle: Option<tauri::AppHandle>,
@@ -92,6 +96,7 @@ impl BrokerDispatcher {
             runtime_id,
             app_version,
             sessions,
+            external_agent_requests,
             services,
             skills,
             app_handle,
@@ -181,6 +186,11 @@ impl BrokerDispatcher {
 
         match request.command {
             CommandName::AgentSessionRegister => self.register_agent_session(&request),
+            CommandName::ExternalAgentConfigCreate
+            | CommandName::ExternalAgentSessionStart
+            | CommandName::ExternalAgentSessionRevoke => {
+                external_agent::handle(self, &request).await
+            }
             CommandName::Version
             | CommandName::Status
             | CommandName::AppOpen

@@ -2,6 +2,7 @@
 
 mod discovery;
 mod dispatch;
+mod external_agent_requests;
 mod peer;
 mod server;
 mod session;
@@ -18,9 +19,16 @@ use crate::skills::SkillManager;
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
+pub(crate) use external_agent_requests::{
+    ExternalAgentRequestDecision, ExternalAgentRequestKind, ExternalAgentRequestRegistry,
+    ExternalAgentRequestSummary,
+};
 #[cfg(windows)]
 pub(crate) use peer::restrict_path_to_current_user;
-pub(crate) use session::{BrokerAuthorityRefreshGuard, BrokerCapability, BrokerSessionRegistry};
+pub(crate) use session::{
+    AgentKnowledgeAuthorization, BrokerAuthorityRefreshGuard, BrokerCapability,
+    BrokerSessionRegistry, ExternalAgentProcessAuthorization,
+};
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct BrokerRuntimeStatus {
@@ -33,6 +41,7 @@ pub(crate) struct BrokerRuntimeStatus {
 struct BrokerRuntimeInner {
     runtime_id: RuntimeId,
     sessions: BrokerSessionRegistry,
+    external_agent_requests: ExternalAgentRequestRegistry,
     shutdown: CancellationToken,
     status: Mutex<BrokerRuntimeStatus>,
     spawned: AtomicBool,
@@ -51,6 +60,7 @@ impl BrokerRuntime {
             inner: Arc::new(BrokerRuntimeInner {
                 runtime_id,
                 sessions: BrokerSessionRegistry::new(runtime_id),
+                external_agent_requests: ExternalAgentRequestRegistry::default(),
                 shutdown: CancellationToken::new(),
                 status: Mutex::new(BrokerRuntimeStatus::default()),
                 spawned: AtomicBool::new(false),
@@ -66,6 +76,10 @@ impl BrokerRuntime {
 
     pub(crate) fn sessions(&self) -> &BrokerSessionRegistry {
         &self.inner.sessions
+    }
+
+    pub(crate) fn external_agent_requests(&self) -> &ExternalAgentRequestRegistry {
+        &self.inner.external_agent_requests
     }
 
     pub(crate) fn begin_authority_refresh(&self) -> BrokerAuthorityRefreshGuard {
@@ -115,6 +129,7 @@ impl BrokerRuntime {
     }
 
     pub(crate) fn shutdown(&self) {
+        self.inner.external_agent_requests.reject_all();
         self.inner.sessions.revoke_all();
         self.inner.shutdown.cancel();
     }

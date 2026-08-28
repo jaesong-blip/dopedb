@@ -5,14 +5,16 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    AuthenticationRequirement, CommandName, CommandSpec, OperationKind, OperationRiskLevel,
-    OperationState,
+    AuthenticationRequirement, CommandName, CommandSpec, ConnectionSelector, OperationKind,
+    OperationRiskLevel, OperationState,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OperationArguments {
     pub operation_id: Uuid,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection: Option<ConnectionSelector>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -20,6 +22,8 @@ pub struct OperationArguments {
 pub struct OperationWaitArguments {
     pub operation_id: Uuid,
     pub timeout_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection: Option<ConnectionSelector>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

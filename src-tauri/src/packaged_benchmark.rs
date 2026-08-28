@@ -1159,6 +1159,8 @@ async fn packaged_agent_receipt(
         knowledge_sources: Vec::new(),
         graph_revision_ids: Vec::new(),
         environment_connections: Vec::new(),
+        knowledge_scopes: Vec::new(),
+        write_connection_id: None,
         error: None,
         created_at,
         updated_at: created_at + chrono::Duration::minutes(10),

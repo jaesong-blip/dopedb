@@ -563,9 +563,12 @@ async fn assert_current_store_migration_is_write_free() {
     let current_connection_id = Uuid::from_u128(0x1291);
     let secondary_connection_id = Uuid::from_u128(0x1292);
     let mut agent_scope = Some(crate::features::knowledge::domain::KnowledgeSessionScope {
+        project_id: project.id,
         knowledge_grant_id: Some(Uuid::from_u128(0x1290)),
         project_environment_id: environment.id,
         environment_revision: environment.revision,
+        authority_connection_id: current_connection_id,
+        authority_connection_revision: 1,
         sources: Vec::new(),
         graph_revision_ids: active_set
             .iter()
@@ -590,6 +593,32 @@ async fn assert_current_store_migration_is_write_free() {
             },
         ],
     });
+    let mut resource_scope = agent_scope.clone().unwrap();
+    crate::features::agents::acp::narrow_resource_scope(
+        &mut resource_scope,
+        &[secondary_connection_id],
+        &[],
+    )
+    .unwrap();
+    assert_eq!(resource_scope.connections.len(), 1);
+    assert_eq!(
+        resource_scope.connections[0].connection_id,
+        secondary_connection_id
+    );
+    assert_eq!(
+        resource_scope.authority_connection_id,
+        current_connection_id
+    );
+    assert!(resource_scope.graph_revision_ids.is_empty());
+    assert_eq!(resource_scope.knowledge_grant_id, None);
+    assert!(matches!(
+        crate::features::agents::acp::narrow_resource_scope(
+            &mut resource_scope,
+            &[Uuid::from_u128(0xdead)],
+            &[],
+        ),
+        Err(AppError::Blocked { .. })
+    ));
     crate::features::agents::acp::narrow_knowledge_scope(
         &mut agent_scope,
         current_connection_id,
@@ -1071,6 +1100,7 @@ async fn assert_agent_acp_batch_replay_is_bounded(store: &Store, connection_id: 
         AcpSessionEvent, AcpSessionEventPayload, AcpSessionLifecycle, AcpSessionSummary,
         AgentProvider,
     };
+    use crate::features::knowledge::domain::{KnowledgeSessionConnection, KnowledgeSessionScope};
     use crate::kernel::identity::{AcpSessionId, ConnectionId};
 
     let scope = store.active_resource_scope().await.unwrap();
@@ -1089,6 +1119,25 @@ async fn assert_agent_acp_batch_replay_is_bounded(store: &Store, connection_id: 
         knowledge_sources: Vec::new(),
         graph_revision_ids: Vec::new(),
         environment_connections: Vec::new(),
+        knowledge_scopes: vec![KnowledgeSessionScope {
+            project_id: Uuid::from_u128(0xac01),
+            knowledge_grant_id: None,
+            project_environment_id: Uuid::from_u128(0xac02),
+            environment_revision: 1,
+            authority_connection_id: connection_id,
+            authority_connection_revision: 1,
+            sources: Vec::new(),
+            graph_revision_ids: Vec::new(),
+            connections: vec![KnowledgeSessionConnection {
+                connection_id,
+                connection_revision: 1,
+                remote_connection_id: None,
+                connection_content_revision: 1,
+                role: "primary".into(),
+                alias: "Primary".into(),
+            }],
+        }],
+        write_connection_id: Some(connection_id),
         error: None,
         created_at: now,
         updated_at: now,
@@ -1110,6 +1159,15 @@ async fn assert_agent_acp_batch_replay_is_bounded(store: &Store, connection_id: 
         .persist_agent_acp_events(&scope, &summary, &small_events)
         .await
         .unwrap();
+    let persisted_scope = store
+        .list_agent_acp_sessions()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|candidate| candidate.id == session_id)
+        .unwrap();
+    assert_eq!(persisted_scope.knowledge_scopes, summary.knowledge_scopes);
+    assert_eq!(persisted_scope.write_connection_id, Some(connection_id));
     store
         .persist_agent_acp_events(&scope, &summary, &small_events)
         .await

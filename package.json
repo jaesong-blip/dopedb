@@ -6,7 +6,7 @@
   "packageManager": "pnpm@11.17.0",
   "scripts": {
     "dev": "vite --config vite.config.ts",
-    "build": "pnpm check:skills && pnpm check:agent-runtime && pnpm check:issue-review && pnpm check:workspace-logs && pnpm check:release-notes && pnpm check:architecture && pnpm lint:hooks && pnpm check:ui-primitives && pnpm check:ui-palette && tsc -p tsconfig.node.json && tsc && vite build --config vite.config.ts",
+    "build": "pnpm check:skills && pnpm check:agent-runtime && pnpm check:issue-review && pnpm check:workspace-logs && pnpm check:release-notes && pnpm check:architecture && pnpm check:code-structure && pnpm lint:hooks && pnpm check:ui-primitives && pnpm check:ui-palette && tsc -p tsconfig.node.json && tsc && vite build --config vite.config.ts",
     "benchmark:data-surfaces": "node --expose-gc --no-warnings scripts/benchmark-data-surfaces.mjs",
     "benchmark:packaged-release": "node --no-warnings scripts/benchmark-packaged-release.mjs",
     "benchmark:render-hot-paths": "node --no-warnings scripts/benchmark-render-hot-paths.mjs",
@@ -18,6 +18,8 @@
     "check:workspace-logs": "node scripts/check-workspace-server-logs.mjs",
     "check:release-notes": "node scripts/release/generate-release-notes.mjs check",
     "check:architecture": "node scripts/check-architecture.mjs",
+    "check:code-structure": "node scripts/check-code-structure.mjs",
+    "audit:code-structure": "node scripts/check-code-structure.mjs --audit",
     "check:ui-primitives": "node scripts/check-ui-primitives.mjs",
     "check:ui-palette": "node scripts/check-ui-palette.mjs",
     "check:test-budget": "node scripts/check-critical-test-budget.mjs",

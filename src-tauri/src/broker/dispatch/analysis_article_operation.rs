@@ -31,9 +31,9 @@ pub(super) async fn handle(
         Ok(session) => session,
         Err((code, retryable)) => return failure(request_id, code, retryable),
     };
-    let Some(scope) = session.knowledge_scope.as_ref() else {
+    if session.knowledge_scopes.is_empty() {
         return failure(request_id, ErrorCode::ScopeDenied, false);
-    };
+    }
     let source = match session.agent_plugin_id {
         Some(dopedb_protocol::AcpPluginId::Claude) => AnalysisArticleSource::DopedbAcpClaude,
         Some(dopedb_protocol::AcpPluginId::Codex) => AnalysisArticleSource::DopedbAcpCodex,
@@ -46,16 +46,18 @@ pub(super) async fn handle(
         Ok(services) => services,
         Err(code) => return failure(request_id, code, false),
     };
-    if let Err(error) = services
-        .knowledge
-        .exact_knowledge_session_graphs(
-            scope,
-            Uuid::from(session.workspace_id),
-            session.account_scope.as_str(),
-        )
-        .await
-    {
-        return failure(request_id, map_application_error(error), false);
+    for scope in &session.knowledge_scopes {
+        if let Err(error) = services
+            .knowledge
+            .exact_knowledge_session_graphs(
+                scope,
+                Uuid::from(session.workspace_id),
+                session.account_scope.as_str(),
+            )
+            .await
+        {
+            return failure(request_id, map_application_error(error), false);
+        }
     }
 
     let result = match request.command {
@@ -63,17 +65,26 @@ pub(super) async fn handle(
             if decode_arguments::<AnalysisArticleListCommand>(request).is_err() {
                 Err(ErrorCode::InvalidRequest)
             } else {
-                services
-                    .analysis_article
-                    .list_remote(
-                        session.account_scope.as_str(),
-                        Uuid::from(session.workspace_id),
-                        Some(scope.project_environment_id),
-                    )
-                    .await
-                    .map(|articles| serde_json::to_value(AnalysisArticleListResult { articles }))
-                    .map_err(map_application_error)
-                    .and_then(|value| value.map_err(|_| ErrorCode::Internal))
+                let mut articles = Vec::new();
+                for scope in &session.knowledge_scopes {
+                    let mut environment_articles = match services
+                        .analysis_article
+                        .list_remote(
+                            session.account_scope.as_str(),
+                            Uuid::from(session.workspace_id),
+                            Some(scope.project_environment_id),
+                        )
+                        .await
+                    {
+                        Ok(articles) => articles,
+                        Err(error) => {
+                            return failure(request_id, map_application_error(error), false)
+                        }
+                    };
+                    articles.append(&mut environment_articles);
+                }
+                serde_json::to_value(AnalysisArticleListResult { articles })
+                    .map_err(|_| ErrorCode::Internal)
             }
         }
         CommandName::AnalysisArticlePropose => {
@@ -104,15 +115,12 @@ pub(super) async fn handle(
 }
 
 fn article_create(
-    session: &AuthenticatedSession,
+    scope: &crate::features::knowledge::domain::KnowledgeSessionScope,
+    connection_id: Uuid,
     source: AnalysisArticleSource,
     definition: dopedb_protocol::AnalysisArticleDraftDefinition,
     article_id: Uuid,
 ) -> Result<SharedAnalysisArticleCreate, ErrorCode> {
-    let scope = session
-        .knowledge_scope
-        .as_ref()
-        .ok_or(ErrorCode::ScopeDenied)?;
     let environment_revision =
         i64::try_from(scope.environment_revision).map_err(|_| ErrorCode::InvalidRequest)?;
     let mut definition = definition.with_source(source);
@@ -128,8 +136,11 @@ fn article_create(
     let scoped_connection = scope
         .connections
         .iter()
-        .find(|connection| connection.role == query_role)
+        .find(|connection| connection.connection_id == connection_id)
         .ok_or(ErrorCode::ScopeDenied)?;
+    if scoped_connection.role != query_role {
+        return Err(ErrorCode::ScopeDenied);
+    }
     let remote_connection_id = scoped_connection
         .remote_connection_id
         .ok_or(ErrorCode::ScopeDenied)?;
@@ -153,13 +164,36 @@ fn article_create(
         .ok_or(ErrorCode::InvalidRequest)
 }
 
+fn scope_for_connection(
+    session: &AuthenticatedSession,
+    connection_id: Uuid,
+) -> Result<&crate::features::knowledge::domain::KnowledgeSessionScope, ErrorCode> {
+    session
+        .knowledge_scopes
+        .iter()
+        .find(|scope| {
+            scope
+                .connections
+                .iter()
+                .any(|connection| connection.connection_id == connection_id)
+        })
+        .ok_or(ErrorCode::ScopeDenied)
+}
+
 async fn propose(
     dispatcher: &BrokerDispatcher,
     session: &AuthenticatedSession,
     source: AnalysisArticleSource,
     arguments: AnalysisArticleProposeArguments,
 ) -> Result<serde_json::Value, ErrorCode> {
-    let article = article_create(session, source, arguments.definition, Uuid::new_v4())?;
+    let scope = scope_for_connection(session, arguments.connection_id)?;
+    let article = article_create(
+        scope,
+        arguments.connection_id,
+        source,
+        arguments.definition,
+        Uuid::new_v4(),
+    )?;
     let created = dispatcher
         .services()?
         .analysis_article
@@ -195,17 +229,23 @@ async fn update_draft(
         )
         .await
         .map_err(map_application_error)?;
-    let scope = session
-        .knowledge_scope
-        .as_ref()
-        .ok_or(ErrorCode::ScopeDenied)?;
+    let scope = scope_for_connection(session, arguments.connection_id)?;
     if existing.state != AnalysisArticleState::Draft
         || existing.revision != arguments.expected_revision
         || existing.project_environment_id != scope.project_environment_id
     {
         return Err(ErrorCode::OperationConflict);
     }
-    let article = article_create(session, source, arguments.definition, arguments.article_id)?;
+    let article = article_create(
+        scope,
+        arguments.connection_id,
+        source,
+        arguments.definition,
+        arguments.article_id,
+    )?;
+    if existing.connections != article.connections {
+        return Err(ErrorCode::OperationConflict);
+    }
     let updated = dispatcher
         .services()?
         .analysis_article
@@ -231,7 +271,14 @@ async fn run_draft(
 ) -> Result<serde_json::Value, ErrorCode> {
     let article_id = Uuid::new_v4();
     let run_id = Uuid::new_v4();
-    let article = article_create(session, source, arguments.definition, article_id)?;
+    let scope = scope_for_connection(session, arguments.connection_id)?;
+    let article = article_create(
+        scope,
+        arguments.connection_id,
+        source,
+        arguments.definition,
+        article_id,
+    )?;
     let receipt = dispatcher
         .services()?
         .analysis_article

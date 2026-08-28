@@ -5,7 +5,9 @@ use dopedb_protocol::{
     AcpPluginUpstream, AgentSessionRegisterArguments, AppOpenCommand, AppOpenResult,
     AuthenticationRequirement, CatalogSearchCommand, CatalogShowCommand, CommandName, CommandSpec,
     ConnectionListCommand, ConnectionShowCommand, ConnectionTestCommand, DatabaseListCommand,
-    DocumentRunCommand, ErrorCode, GraphBuildArtifactV1, ManagedAccessMode, ManagedLeaseRequest,
+    DocumentRunCommand, ErrorCode, ExternalAgentConfig, ExternalAgentConfigCreateCommand,
+    ExternalAgentProvider, ExternalAgentResourceScope, ExternalAgentSessionRevokeCommand,
+    ExternalAgentSessionStartCommand, GraphBuildArtifactV1, ManagedAccessMode, ManagedLeaseRequest,
     ManagedLeaseResponse, OperationCancelCommand, OperationShowCommand, OperationWaitCommand,
     ProtocolError, QueryCancelCommand, QueryPlanCommand, QueryRunCommand, RequestEnvelope,
     ResponseEnvelope, RuntimeDiscovery, SchemaListCommand, SessionAuthentication,
@@ -855,14 +857,45 @@ fn unknown_envelope_and_active_command_fields_fail_closed() {
 }
 
 #[test]
-fn command_names_match_the_v15_catalog() {
+fn command_names_match_the_v16_catalog() {
     let actual = dopedb_protocol::CommandName::ALL
         .into_iter()
         .map(|command| command.as_str())
         .collect::<Vec<_>>();
     let expected: Vec<String> =
-        serde_json::from_str(include_str!("fixtures/command-catalog-v15.json")).unwrap();
+        serde_json::from_str(include_str!("fixtures/command-catalog-v16.json")).unwrap();
     assert_eq!(actual, expected);
+
+    let external_config = ExternalAgentConfig {
+        schema_version: 1,
+        provider: ExternalAgentProvider::Codex,
+        project_id: "018f1111-2222-7333-8444-555566667701".parse().unwrap(),
+        anchor_connection_id: "018f1111-2222-7333-8444-555566667702".parse().unwrap(),
+        resource_scopes: vec![ExternalAgentResourceScope {
+            project_environment_id: "018f1111-2222-7333-8444-555566667703".parse().unwrap(),
+            authority_connection_id: "018f1111-2222-7333-8444-555566667702".parse().unwrap(),
+            connection_ids: vec!["018f1111-2222-7333-8444-555566667702".parse().unwrap()],
+            source_ids: Vec::new(),
+        }],
+        write_connection_id: None,
+    };
+    assert!(external_config.validate());
+    let serialized_external_config = serde_json::to_string(&external_config).unwrap();
+    for forbidden in ["password", "token", "credential", "connectionUrl"] {
+        assert!(!serialized_external_config.contains(forbidden));
+    }
+    assert_eq!(
+        ExternalAgentConfigCreateCommand::AUTHENTICATION,
+        AuthenticationRequirement::None
+    );
+    assert_eq!(
+        ExternalAgentSessionStartCommand::AUTHENTICATION,
+        AuthenticationRequirement::None
+    );
+    assert_eq!(
+        ExternalAgentSessionRevokeCommand::AUTHENTICATION,
+        AuthenticationRequirement::TerminalSession
+    );
 
     let request: RequestEnvelope = serde_json::from_value(json!({
         "protocolVersion": PROTOCOL_MAX,

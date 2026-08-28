@@ -12,7 +12,7 @@ use crate::error::{AppError, AppResult};
 use crate::features::agents::domain::{
     AcpSessionEvent, AcpSessionFocus, AcpSessionLifecycle, AcpSessionSummary, AgentProvider,
 };
-use crate::features::knowledge::domain::KnowledgeSessionConnection;
+use crate::features::knowledge::domain::{KnowledgeSessionConnection, KnowledgeSessionScope};
 use crate::kernel::access::ActiveResourceScope;
 use crate::kernel::identity::{AcpSessionId, ConnectionId};
 
@@ -298,8 +298,9 @@ where
              id, connection_id, workspace_id, account_scope, provider, title,
              lifecycle, acp_session_id, project_environment_id,
              knowledge_grant_id, environment_revision, knowledge_sources, graph_revision_ids,
-             environment_connections, error, created_at, updated_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+             environment_connections, knowledge_scopes, write_connection_id,
+             error, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
          ON CONFLICT(id) DO UPDATE SET
              title = excluded.title,
              lifecycle = excluded.lifecycle,
@@ -332,6 +333,8 @@ where
     .bind(serde_json::to_string(&summary.knowledge_sources)?)
     .bind(serde_json::to_string(&summary.graph_revision_ids)?)
     .bind(serde_json::to_string(&summary.environment_connections)?)
+    .bind(serde_json::to_string(&summary.knowledge_scopes)?)
+    .bind(summary.write_connection_id.map(|value| value.to_string()))
     .bind(&summary.error)
     .bind(summary.created_at)
     .bind(summary.updated_at)
@@ -354,6 +357,8 @@ fn row_to_summary(row: &sqlx::sqlite::SqliteRow) -> AppResult<AcpSessionSummary>
         knowledge_sources: Vec::new(),
         graph_revision_ids: Vec::new(),
         environment_connections: Vec::new(),
+        knowledge_scopes: Vec::new(),
+        write_connection_id: None,
         error: row.try_get("error")?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
@@ -372,6 +377,8 @@ fn row_to_summary(row: &sqlx::sqlite::SqliteRow) -> AppResult<AcpSessionSummary>
         summary.knowledge_sources.clear();
         summary.graph_revision_ids.clear();
         summary.environment_connections.clear();
+        summary.knowledge_scopes.clear();
+        summary.write_connection_id = None;
         summary.error = Some(ACP_SESSION_METADATA_UNAVAILABLE.into());
     }
     Ok(summary)
@@ -405,6 +412,13 @@ fn hydrate_session_metadata(
             .collect::<AppResult<Vec<_>>>()?;
     summary.environment_connections =
         decode_environment_connections(&row.try_get::<String, _>("environment_connections")?)?;
+    summary.knowledge_scopes = serde_json::from_str::<Vec<KnowledgeSessionScope>>(
+        &row.try_get::<String, _>("knowledge_scopes")?,
+    )?;
+    summary.write_connection_id = row
+        .try_get::<Option<String>, _>("write_connection_id")?
+        .map(parse_uuid)
+        .transpose()?;
     Ok(())
 }
 

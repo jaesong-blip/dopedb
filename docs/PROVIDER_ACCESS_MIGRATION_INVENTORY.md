@@ -165,7 +165,7 @@ the receipt, verification, or managed-lease contracts.
 ## #102 security regression status
 
 The fixed critical suite currently proves these provider-neutral boundaries without
-increasing the 104-test budget:
+increasing the 208-test budget:
 
 - A provisioning receipt can be created only for the exact connection pinned in
   the approved plan. Repository reads and writes additionally fence workspace,

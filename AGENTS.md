@@ -16,8 +16,9 @@ tokens and shared primitives are authoritative.
 DopeDB is the shared database access workspace for teams and AI agents. The
 workspace owns connection identity, policy, and collaboration state; each member
 keeps a local credential or receives a least-privilege, short-lived managed one;
-and every Agent works inside one exact grant. It is not a universal desktop
-database client, a text-to-SQL product, or a general-purpose MCP server. Features
+and every Agent works inside one exact, user-selected Project resource grant. It
+is not a universal desktop database client, a text-to-SQL product, or a
+general-purpose MCP server. Features
 such as a Rust desktop shell, keychain storage, read-only checks, approvals,
 auditing, and broad driver support are category baseline, not differentiators.
 [`docs/PRODUCT_POSITIONING.md`](docs/PRODUCT_POSITIONING.md) owns the canonical
@@ -48,10 +49,13 @@ takes a `~/.ssh/config` host alias and spawns the system `ssh`, so keys,
 passphrases, agents, and ProxyJump stay outside the app.
 
 **3. The Agent works inside an exact grant; the screen watches, approves, and
-recovers.** A connection-pinned Agent does most database work by hand-free
-command. Its authority is bound to the current workspace, account, connection
-revision, process ancestry, and local policy rather than inherited from a saved
-connection or a general tool server.
+recovers.** A Project-resource-pinned Agent does most database work by hand-free
+command. One session may read any explicit combination of databases, BigQuery
+resources, and source repositories from one Project, but may name at most one
+selected database as its write target. Its authority is bound to the current
+workspace, account, every selected resource revision, process ancestry, and
+local policy rather than inherited from a saved connection or a general tool
+server.
 
 When deciding whether a feature belongs, ask in order:
 
@@ -64,16 +68,20 @@ When deciding whether a feature belongs, ask in order:
    it. Re-querying with new conditions, object DDL authoring, revision
    diffing, and inline completion are better as one sentence than as buttons.
 
-Agents are attached over ACP (Agent Client Protocol). Run the official adapters
-Anthropic and OpenAI publish, unmodified, and let the user's local `claude` /
-`codex` login own authentication — the app never reads or refreshes a token and
-never offers a login. Holding that line is what keeps subscription users
-working, and it means a policy change at one provider drops only that adapter.
-Do not build a bespoke chat protocol or a per-provider integration.
+Agents inside Desktop are attached over ACP (Agent Client Protocol). Run the
+official adapters Anthropic and OpenAI publish, unmodified, and let the user's
+local `claude` / `codex` login own authentication — the app never reads or
+refreshes a token and never offers a login. Outside Desktop, `dopedb agent
+start` may launch only that user's official locally authenticated CLI after a
+visible Desktop review of the checked-in, secret-free Project resource config.
+Holding that line is what keeps subscription users working, and it means a
+policy change at one provider drops only that adapter or CLI launcher. Do not
+build a bespoke chat protocol or a per-provider integration.
 Do not expose saved connections through an always-on general MCP database server.
-A typed MCP-compatible bridge may exist only inside the exact Desktop-launched,
-connection-pinned ACP session whose process identity and authority the Broker
-verifies.
+A typed MCP-compatible bridge may exist only inside an exact Desktop-launched
+ACP session or a visible Desktop-approved `dopedb agent start` session. Both are
+Project-resource-pinned, process-bound, runtime-only, and verified against each
+selected resource by the Broker; neither is a saved or always-on MCP endpoint.
 
 Never call a provider's API from the app. All provider traffic goes through the
 official CLI binary, and side features are not exempt — showing subscription
@@ -194,8 +202,11 @@ Run checks proportional to the change:
 - `pnpm test` for the critical frontend smoke suite.
 - `pnpm test:rust` for Rust behavior or wire-contract changes.
 - A manual app check for changed UI flows.
+- `pnpm check:code-structure` keeps reviewed mixed-responsibility hotspots and
+  coupled fragment clusters from growing; use `pnpm audit:code-structure` for
+  the full ranked review before changing its baseline.
 
-The repository has a hard budget of 104 critical tests. Add a test only for a
+The repository has a hard budget of 208 critical tests. Add a test only for a
 security/safety invariant, public wire contract, or core end-to-end journey.
 Prefer extending an existing test, and replace a lower-value test instead of
 increasing the count. Never raise

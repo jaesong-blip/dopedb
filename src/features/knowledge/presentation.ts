@@ -13,6 +13,14 @@ export function knowledgeRevisionLabel(
   return `${labels.snapshot} ${revision.snapshotSha256.slice(0, 8)}`;
 }
 
+export function githubSourceRevisionLabel(
+  repository: string,
+  commitSha: string,
+): string {
+  const revision = commitSha.trim().slice(0, 8);
+  return revision ? `${repository} · ${revision}` : repository;
+}
+
 export function knowledgeEnvironmentBadge(
   riskClass: KnowledgeEnvironment["riskClass"],
 ): string {
