@@ -223,147 +223,10 @@ export type NeonSafeRun = Readonly<{
   switchedFromSource: boolean;
 }>;
 
-export function neonOperationProjectId(operation: NeonBranchOperation) {
-  if (operation.plan.kind === "neon.branch.delete") {
-    return operation.plan.target.projectId;
-  }
-  return operation.plan.source.projectId;
-}
-
-function operationTime(operation: NeonBranchOperation) {
-  return Date.parse(operation.plan.issuedAt);
-}
-
-/**
- * Projects one real, auditable safe-run journey from Provider inventory and
- * durable operations. It never treats opening the screen as execution or
- * inspection evidence: an isolated run remains active until the connection is
- * explicitly moved away from the owned branch or the dedicated connection is
- * removed.
- */
-export function deriveNeonSafeRun(
-  inventory: NeonBranchInventory,
-  operations: readonly NeonBranchOperation[],
-): NeonSafeRun | null {
-  const candidate = operations
-    .filter((operation) => (
-      operation.plan.kind === "neon.branch.create"
-      && operation.plan.source.projectId === inventory.projectId
-      && operation.plan.target.endpoint === "read_write"
-      && operation.state !== "cancelled"
-    ))
-    .sort((left, right) => (
-      operationTime(right) - operationTime(left)
-      || right.id.localeCompare(left.id)
-    ))[0];
-  if (!candidate || candidate.plan.kind !== "neon.branch.create") {
-    return null;
-  }
-  const createOperation = candidate as NeonSafeRun["createOperation"];
-
-  const branchId = createOperation.branchId;
-  const branch = branchId
-    ? inventory.branches.find((item) => item.id === branchId) ?? null
-    : null;
-  const sourceBranch = inventory.branches.find(
-    (item) => item.id === createOperation.plan.source.branchId,
-  ) ?? null;
-  const base = {
-    createOperation,
-    branch,
-    sourceBranch,
-    activeConnection: null,
-    switchedConnectionId: null,
-    switchedFromSource: false,
-  } satisfies Omit<NeonSafeRun, "phase">;
-
-  if (branchId) {
-    const deletion = operations.find((operation) => (
-      operation.plan.kind === "neon.branch.delete"
-      && operation.state === "succeeded"
-      && operation.plan.target.projectId === inventory.projectId
-      && operation.plan.target.branchId === branchId
-      && operationTime(operation) >= operationTime(createOperation)
-    ));
-    if (deletion && !branch) return { ...base, phase: "discarded" };
-  }
-
-  if (createOperation.state !== "succeeded") {
-    return {
-      ...base,
-      phase: createOperation.state === "failed"
-        || createOperation.state === "needs_repair"
-        ? "needs_attention"
-        : "checkpointing",
-    };
-  }
-  if (!branchId || !branch || !sourceBranch) {
-    return { ...base, phase: "needs_attention" };
-  }
-
-  const successfulSwitches = operations
-    .filter((operation) => (
-      operation.plan.kind === "neon.branch.switch"
-      && operation.state === "succeeded"
-      && operation.plan.source.projectId === inventory.projectId
-      && operationTime(operation) >= operationTime(createOperation)
-      && (
-        operation.plan.source.branchId === branchId
-        || operation.plan.target.branchId === branchId
-      )
-    ))
-    .sort((left, right) => (
-      operationTime(right) - operationTime(left)
-      || right.id.localeCompare(left.id)
-    ));
-  const latestSwitch = successfulSwitches[0];
-  const switchedConnectionId = latestSwitch?.plan.kind === "neon.branch.switch"
-    ? latestSwitch.plan.source.connectionId
-    : null;
-  const activeConnection = switchedConnectionId
-    ? branch.connections.find((connection) => (
-      connection.connectionId === switchedConnectionId
-    )) ?? null
-    : branch.connections[0] ?? null;
-  const switchedFromSource = successfulSwitches.some((operation) => (
-    operation.plan.kind === "neon.branch.switch"
-    && operation.plan.source.branchId === sourceBranch.id
-    && operation.plan.target.branchId === branch.id
-    && operation.plan.source.connectionId === switchedConnectionId
-  ));
-  const enriched = {
-    ...base,
-    activeConnection,
-    switchedConnectionId,
-    switchedFromSource,
-  };
-
-  if (activeConnection) return { ...enriched, phase: "isolated_active" };
-  const returnedConnectionId = latestSwitch?.plan.kind === "neon.branch.switch"
-    && latestSwitch.plan.source.branchId === branch.id
-    && latestSwitch.plan.target.branchId !== branch.id
-    ? latestSwitch.plan.source.connectionId
-    : null;
-  if (
-    returnedConnectionId
-    && sourceBranch.connections.some((connection) => (
-      connection.connectionId === returnedConnectionId
-    ))
-  ) {
-    return { ...enriched, phase: "ready_to_discard" };
-  }
-  if (
-    createOperation.managedAccessState === "bootstrap_required"
-    || createOperation.managedAccessState === "not_requested"
-    || createOperation.managedAccessState === "waiting_for_provider"
-  ) {
-    return { ...enriched, phase: "access_required" };
-  }
-  if (createOperation.managedAccessState === "ready") {
-    return { ...enriched, phase: "ready_to_isolate" };
-  }
-  return { ...enriched, phase: "needs_attention" };
-}
+export {
+  deriveNeonSafeRun,
+  neonOperationProjectId,
+} from "./neonBranchSafeRun";
 
 const operationStates: readonly NeonBranchOperationState[] = [
   "awaiting_approval",
@@ -385,62 +248,6 @@ const managedAccessStates: readonly NeonManagedAccessState[] = [
   "unavailable",
 ];
 const branchStates = ["init", "resetting", "ready", "archived", "unknown"] as const;
-
-function record(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-function exact(value: unknown, fields: readonly string[]) {
-  const row = record(value);
-  return row
-    && Object.keys(row).length === fields.length
-    && fields.every((field) => Object.prototype.hasOwnProperty.call(row, field))
-    ? row
-    : null;
-}
-
-function safeText(value: unknown, maximum = 512): value is string {
-  return typeof value === "string"
-    && value.length > 0
-    && value.length <= maximum
-    && !/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/.test(value);
-}
-
-function segment(value: unknown): value is string {
-  return typeof value === "string" && /^[a-z0-9][a-z0-9-]{0,59}$/.test(value);
-}
-
-function uuid(value: unknown): value is string {
-  return typeof value === "string"
-    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-      .test(value);
-}
-
-function instant(value: unknown): value is string {
-  return typeof value === "string"
-    && value.length <= 64
-    && Number.isFinite(Date.parse(value));
-}
-
-function integer(value: unknown, maximum = 1_000_000): value is number {
-  return typeof value === "number"
-    && Number.isInteger(value)
-    && value >= 0
-    && value <= maximum;
-}
-
-function nullable<T>(
-  value: unknown,
-  predicate: (candidate: unknown) => candidate is T,
-): value is T | null {
-  return value === null || predicate(value);
-}
-
-function oneOf<T extends string>(value: unknown, values: readonly T[]): value is T {
-  return typeof value === "string" && values.includes(value as T);
-}
 
 function parseSourcePoint(value: unknown): NeonBranchSourcePoint | null {
   const row = record(value);
@@ -959,3 +766,14 @@ export function parseNeonBranchPlanResponse(value: unknown): NeonBranchOperation
     }],
   })?.operations[0] ?? null;
 }
+import {
+  exact,
+  instant,
+  integer,
+  nullable,
+  oneOf,
+  record,
+  safeText,
+  segment,
+  uuid,
+} from "./neonBranchParsingPrimitives";

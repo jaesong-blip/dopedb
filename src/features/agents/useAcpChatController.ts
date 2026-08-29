@@ -8,14 +8,12 @@ import {
   useRef,
   useState,
   type FormEvent,
-  type MouseEvent as ReactMouseEvent,
 } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import type { CatalogTable } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
-import { createFrameCoalescer } from "../../lib/frameCoalescer";
 import { useI18n } from "../../lib/i18n";
 import { useCatalogScope } from "../../lib/queries";
 import type { ConnectionProfile } from "../connections/domain";
@@ -42,11 +40,6 @@ import type {
   AgentComposerRequest,
   AgentProvider,
 } from "./domain";
-import {
-  AGENT_DOCK_DEFAULT_WIDTH,
-  agentDockLayout,
-  clampAgentDockWidth,
-} from "./layout";
 import {
   agentCliDetectionQuery,
   agentPluginStatusQuery,
@@ -84,13 +77,13 @@ import {
 } from "./useAgentScopeSelection";
 import { useAcpSessionStartup } from "./useAcpSessionStartup";
 import { useAcpScopeCommands } from "./useAcpScopeCommands";
+import { useAcpChatViewport } from "./useAcpChatViewport";
 
 const MAX_PROMPT_CHARS = 8 * 1024;
 const AGENT_SETUP_URL: Record<AgentProvider, string> = {
   claude: "https://docs.anthropic.com/en/docs/claude-code/getting-started",
   codex: "https://help.openai.com/en/articles/11096431",
 };
-const AUTO_SCROLL_THRESHOLD_PX = 96;
 export type AcpChatControllerInput = {
   connection: ConnectionProfile;
   connections: ConnectionProfile[];
@@ -146,10 +139,6 @@ export function useAcpChatController({
   const focusRequestIdRef = useRef(0);
   const catalogScopeKeyRef = useRef(catalogScope.key);
   catalogScopeKeyRef.current = catalogScope.key;
-  const transcriptRef = useRef<HTMLDivElement>(null);
-  const autoScrollFrameRef = useRef<number | null>(null);
-  const stickToBottomRef = useRef(true);
-  const previousActiveIdRef = useRef<AcpSessionId | null>(null);
   const consumedComposerRequestRef = useRef<string | null>(null);
   const cliStatusQuery = useQuery({
     ...agentCliDetectionQuery(),
@@ -276,6 +265,14 @@ export function useAcpChatController({
       })
     : null;
   const environmentLoadError = environmentInventory.loadError;
+  const viewport = useAcpChatViewport({
+    activeSessionId,
+    projectionRevision: activeProjection?.revision,
+    overlay,
+    compact,
+    width,
+    onWidthChange,
+  });
 
   useEffect(() => {
     selectScopedConnection(active?.connectionId ?? connection.id);
@@ -408,37 +405,6 @@ export function useAcpChatController({
     loadFocusReplay,
     t,
   ]);
-
-  useEffect(() => {
-    if (previousActiveIdRef.current !== active?.id) {
-      previousActiveIdRef.current = active?.id ?? null;
-      stickToBottomRef.current = true;
-    }
-    if (!stickToBottomRef.current || autoScrollFrameRef.current !== null) return;
-    autoScrollFrameRef.current = window.requestAnimationFrame(() => {
-      autoScrollFrameRef.current = null;
-      const element = transcriptRef.current;
-      if (!element || !stickToBottomRef.current) return;
-      element.scrollTop = element.scrollHeight;
-    });
-  }, [active?.id, activeProjection?.revision]);
-
-  useEffect(
-    () => () => {
-      if (autoScrollFrameRef.current !== null) {
-        window.cancelAnimationFrame(autoScrollFrameRef.current);
-      }
-    },
-    [],
-  );
-
-  const updateAutoScroll = useCallback(() => {
-    const element = transcriptRef.current;
-    if (!element) return;
-    stickToBottomRef.current =
-      element.scrollHeight - element.clientHeight - element.scrollTop <=
-      AUTO_SCROLL_THRESHOLD_PX;
-  }, []);
 
   const commitStartedSession = useCallback(
     (focus: AcpSessionFocus, provider: AgentProvider) => {
@@ -707,44 +673,12 @@ export function useAcpChatController({
     }
   }
 
-  function beginResize(event: ReactMouseEvent<HTMLDivElement>) {
-    if (overlay || compact) return;
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = width;
-    const widthAt = (clientX: number) =>
-      clampAgentDockWidth(
-        startWidth + startX - clientX,
-        window.innerWidth,
-      );
-    const coalescer = createFrameCoalescer<number>(onWidthChange);
-    const move = (next: MouseEvent) => {
-      coalescer.push(widthAt(next.clientX));
-    };
-    const up = (next: MouseEvent) => {
-      coalescer.push(widthAt(next.clientX));
-      coalescer.flush();
-      document.removeEventListener("mousemove", move);
-      document.removeEventListener("mouseup", up);
-    };
-    document.addEventListener("mousemove", move);
-    document.addEventListener("mouseup", up);
-  }
-
   const openMessageLink = useCallback((href: string) => {
     void openUrl(href).catch(() => undefined);
   }, []);
 
   return {
-    viewport: {
-      layout: agentDockLayout(compact, overlay),
-      transcriptRef,
-      onTranscriptScroll: updateAutoScroll,
-      resize: {
-        onMouseDown: beginResize,
-        onDoubleClick: () => onWidthChange(AGENT_DOCK_DEFAULT_WIDTH),
-      },
-    },
+    viewport,
     session: {
       active,
       sessions: workspaceSessions,

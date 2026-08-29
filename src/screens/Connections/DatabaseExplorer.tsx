@@ -2,7 +2,6 @@
 // drag-and-drop. Split out of the old Connections/index.tsx (see ConnectionForm.tsx
 // for the connection create/edit form that used to live alongside it).
 import {
-  useCallback,
   useEffect,
   useEffectEvent,
   useMemo,
@@ -10,11 +9,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  useQueries,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
 import type { CatalogTable } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
 import {
@@ -22,153 +16,42 @@ import {
   type ConnectionProfile,
 } from "../../features/connections/domain";
 import type { ConnectionLaunchPreset } from "../../features/connections/presets";
-import {
-  deleteConnection,
-  upsertConnection,
-} from "../../features/connections/tauriAdapter";
-import { SCHEMA_SCOPE_PARAMETER } from "../../features/catalogExplorer/scopeFilter";
-import { ProviderCredentialDialog } from "../../features/providers/ProviderCredentialDialog";
-import { connectionQueryKeys } from "../../features/connections/queries";
 import type { ProviderKind } from "../../features/providers/domain";
 import type {
   EnvironmentConnection,
-  KnowledgeEnvironment,
   KnowledgeEnvironmentView,
-  KnowledgeProject,
-  KnowledgeSource,
 } from "../../features/knowledge/domain";
-import { bindKnowledgeEnvironmentConnectionWithRefresh } from "../../features/knowledge/bindEnvironmentConnection";
 import {
-  deleteKnowledgeProject,
-  listKnowledgeEnvironmentConnections,
-  onKnowledgeSourceChanged,
-  revokeKnowledgeEnvironmentConnection,
-} from "../../features/knowledge/tauriAdapter";
-import { knowledgeInventoryQuery } from "../../features/knowledge/inventory";
-import { captureProductEvent } from "../../features/productAnalytics/client";
-import {
-  productAnalyticsAccessMode,
-  productAnalyticsConnectionEngine,
-  productAnalyticsWorkspaceContext,
-} from "../../features/productAnalytics/outcomes";
-import type {
-  AnalysisArticleRecord,
-  AnalysisArticleState,
-} from "../../features/analysisArticles/domain";
-import { listAnalysisArticles } from "../../features/analysisArticles/tauriAdapter";
-import { analysisQueryKeys } from "../../features/analysisArticles/queryKeys";
-import { EnvironmentSetupDialog } from "../../features/knowledge/components/EnvironmentSetupDialog";
-import { ProjectSetupDialog } from "../../features/knowledge/components/ProjectSetupDialog";
-import {
-  knowledgeEnvironmentBadge,
-  knowledgeRevisionLabel,
-} from "../../features/knowledge/presentation";
-import { knowledgeQueryKeys } from "../../features/knowledge/queryKeys";
-import {
-  flattenProjectEnvironmentResources,
-  preferredProjectEnvironment,
   projectResourceKey,
+  toggledResourceKeys,
 } from "../../features/catalogExplorer/projectResources";
 import { useCatalogExplorerState } from "../../features/catalogExplorer/state";
 import { useSchemaGroupDrag } from "../../features/catalogExplorer/useSchemaGroupDrag";
-import {
-  qk,
-  sharedWorkspaceScopeAvailable,
-  useCatalogScope,
-} from "../../lib/queries";
-import { useWorkspaceResourceQueryRecovery } from "../../lib/queryClient";
+import { useCatalogScope } from "../../lib/queries";
 import {
   buildConnectionSections,
-  compareCatalogs,
-  defaultSchemaBaseline,
-  diffCounts,
-  schemaGroupIsCompatible,
   type SchemaConnectionGroup,
 } from "../../lib/schemaDiff";
-import EngineMark from "../../components/EngineMark";
-import { Icon } from "../../components/Icon";
-import { Button } from "../../design-system/components/Button";
-import { EnvironmentBadge } from "../../design-system/components/EnvironmentBadge";
-import { SelectInput } from "../../design-system/components/FormControls";
+import { LoadingLabel } from "../../design-system/components/Status";
+import { ToolWindowSideSurface } from "../../design-system/components/ToolWindow";
 import {
-  LoadingLabel,
-  StatusDot,
-  type StatusTone,
-} from "../../design-system/components/Status";
-import ToolbarMenu, {
-  ToolbarMenuItem,
-} from "../../components/ToolbarMenu";
-import {
-  ToolWindowAction,
-  ToolWindowHideButton,
-  ToolWindowSearchRow,
-  ToolWindowSection,
-  ToolWindowSideSurface,
-} from "../../design-system/components/ToolWindow";
-import {
-  TreeRowActions,
-  TreeSearch,
   TreeSectionButton,
 } from "../../design-system/components/TreeControls";
 import { useTreeKeyboardNavigation } from "../../design-system/treeKeyboard";
-import WorkspaceConnectionDialog from "../../features/workspaces/components/WorkspaceConnectionDialog";
-import { deleteWorkspaceConnection } from "../../features/workspaces/tauriAdapter";
-import { useToast } from "../../components/Toast";
-import ConfirmButton from "../../components/ConfirmButton";
 import { useI18n } from "../../lib/i18n";
-import { queryResultPhase } from "../../lib/queryResultPhase";
 import ConnectionNode from "./ConnectionNode";
-import type { CatalogTreeSearchResult } from "./CatalogTree";
-import DdlModal from "./DdlModal";
 import { useCatalogTree } from "./useCatalogTree";
+import { KnowledgeProjectTree } from "./KnowledgeProjectTree";
+import { DatabaseExplorerToolbar } from "./DatabaseExplorerToolbar";
+import { useDatabaseExplorerKnowledge } from "./useDatabaseExplorerKnowledge";
+import { DatabaseExplorerOverlays } from "./DatabaseExplorerOverlays";
+import { DatabaseExplorerEmptyState } from "./DatabaseExplorerEmptyState";
+import { useDatabaseExplorerSearch } from "./useDatabaseExplorerSearch";
+import { SchemaConnectionGroupRow } from "./SchemaConnectionGroupRow";
+import { useDatabaseExplorerMutations } from "../../features/catalogExplorer/useDatabaseExplorerMutations";
+import { useCatalogExplorerLoading } from "../../features/catalogExplorer/useCatalogExplorerLoading";
+import { useProjectExplorerActions } from "../../features/catalogExplorer/useProjectExplorerActions";
 
-function knowledgeSourceTone(source: KnowledgeSource): StatusTone {
-  if (source.health === "ready") return "success";
-  if (source.health === "failed") return "danger";
-  return "warning";
-}
-
-function environmentAnalysisTone(
-  article: AnalysisArticleRecord,
-): StatusTone {
-  if (article.state === "live") return "success";
-  if (article.state === "review") return "warning";
-  return "neutral";
-}
-
-function TreeLoadFailure({
-  message,
-  detail,
-  retryLabel,
-  treeItem,
-  onRetry,
-}: {
-  message: string;
-  detail: string;
-  retryLabel: string;
-  treeItem: { key: string; parentKey: string; level: number };
-  onRetry: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className="tw:flex tw:min-h-control-sm tw:w-full tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-1.5 tw:border-0 tw:bg-transparent tw:px-2 tw:py-1 tw:text-left tw:font-sans tw:text-xs tw:text-danger tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
-      onClick={onRetry}
-      title={`${message}: ${detail}`}
-      role="treeitem"
-      aria-level={treeItem.level}
-      data-explorer-tree-item
-      data-explorer-tree-key={treeItem.key}
-      data-explorer-tree-parent-key={treeItem.parentKey}
-      data-tree-primary-action
-      tabIndex={-1}
-    >
-      <Icon name="alert" className="tw:shrink-0" />
-      <span className="tw:min-w-0 tw:flex-1 tw:truncate">{message}</span>
-      <span className="tw:shrink-0">{retryLabel}</span>
-    </button>
-  );
-}
 
 // Database Explorer: connections in the sidebar, the selected one
 // expanded to reveal its tables. Clicking a table opens its data in the main area.
@@ -230,113 +113,52 @@ export function DatabaseExplorer({
   ) => void;
 }) {
   const { t } = useI18n();
-  const toast = useToast();
-  const queryClient = useQueryClient();
   const catalogScope = useCatalogScope();
-  useWorkspaceResourceQueryRecovery(catalogScope.key, catalogScope.ready);
-  const catalogScopeKeyRef = useRef(catalogScope.key);
-  const knowledgeEnabled =
-    catalogScope.ready &&
-    (catalogScope.workspaceKind === "personal" ||
-      catalogScope.accountScope !== null);
-  const sharedKnowledgeWorkspace =
-    knowledgeEnabled && sharedWorkspaceScopeAvailable(catalogScope);
-  const inventoryQuery = knowledgeInventoryQuery(catalogScope.key, knowledgeEnabled);
-  const knowledgeProjects = useQuery({
-    ...inventoryQuery,
-    select: (inventory) => inventory.projects,
-  });
-  const knowledgeSources = useQuery({
-    ...inventoryQuery,
-    select: (inventory) => inventory.sources,
-  });
-  const knowledgeSourcesPhase = queryResultPhase(
-    knowledgeSources.data,
-    knowledgeSources.error,
-  );
-  const projectEnvironmentIds = useMemo(
-    () =>
-      (knowledgeProjects.data ?? []).flatMap((project) =>
-        project.environments.map((environment) => environment.id),
-      ),
-    [knowledgeProjects.data],
-  );
-  const projectIdByEnvironmentId = useMemo(
-    () =>
-      new Map(
-        (knowledgeProjects.data ?? []).flatMap((project) =>
-          project.environments.map((environment) => [
-            environment.id,
-            project.id,
-          ] as const),
-        ),
-      ),
-    [knowledgeProjects.data],
-  );
-  const activeProjectId = activeProjectEnvironmentId
-    ? projectIdByEnvironmentId.get(activeProjectEnvironmentId) ?? null
-    : null;
-  const environmentConnections = useQuery({
-    queryKey: knowledgeQueryKeys.environmentConnections(undefined, catalogScope.key),
-    queryFn: () => listKnowledgeEnvironmentConnections(),
+  const {
     enabled: knowledgeEnabled,
-    retry: false,
-    staleTime: 60_000,
+    sharedWorkspace: sharedKnowledgeWorkspace,
+    projects: knowledgeProjects,
+    sources: knowledgeSources,
+    sourcesPhase: knowledgeSourcesPhase,
+    projectEnvironmentIds,
+    environmentConnections,
+    environmentConnectionsPhase,
+    environmentConnectionsById,
+    retryBindings,
+    retrySources,
+    analysisFilter,
+    setAnalysisFilter,
+    analysisStateFilter,
+    setAnalysisStateFilter,
+    expandedProjectIds,
+    setExpandedProjectIds,
+    expandedResourceKeys,
+    setExpandedResourceKeys,
+    analysisQueries: environmentAnalysisQueries,
+  } = useDatabaseExplorerKnowledge({
+    catalogScope,
+    activeEnvironmentId: activeProjectEnvironmentId,
+    activeEnvironmentView: activeProjectEnvironmentView,
   });
-  const [globalFilter, setGlobalFilter] = useState("");
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [analysisFilter, setAnalysisFilter] = useState("");
-  const [analysisStateFilter, setAnalysisStateFilter] = useState<
-    "all" | AnalysisArticleState
-  >("all");
-  const [searchResultsByCatalog, setSearchResultsByCatalog] = useState<
-    Record<string, CatalogTreeSearchResult[]>
-  >({});
-  const [activeSearchResultKey, setActiveSearchResultKey] = useState<
-    string | null
-  >(null);
   const [projectSetupOpen, setProjectSetupOpen] = useState(false);
   const [environmentSetupProjectId, setEnvironmentSetupProjectId] =
     useState<string | null>(null);
-  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(
-    null,
-  );
-  const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(
-    new Set(),
-  );
-  const [expandedResourceKeys, setExpandedResourceKeys] = useState<Set<string>>(
-    new Set(),
-  );
-  const environmentAnalysisQueries = useQueries({
-    queries: projectEnvironmentIds.map((environmentId) => {
-      const projectId = projectIdByEnvironmentId.get(environmentId);
-      return {
-        queryKey: analysisQueryKeys.articles(catalogScope.key, environmentId),
-        queryFn: () => listAnalysisArticles(environmentId),
-        enabled:
-          sharedKnowledgeWorkspace &&
-          projectId !== undefined &&
-          (expandedResourceKeys.has(
-            projectResourceKey(projectId, "analyses"),
-          ) ||
-            (activeProjectEnvironmentId === environmentId &&
-              activeProjectEnvironmentView === "analyses")),
-        retry: false,
-      };
-    }),
-  });
-  const knownKnowledgeScopeRef = useRef<{
-    key: string;
-    projectIds: Set<string>;
-  } | null>(null);
   const [treeScrollElement, setTreeScrollElement] =
     useState<HTMLDivElement | null>(null);
   const treeRootRef = useRef<HTMLDivElement>(null);
   const treeKeyboard = useTreeKeyboardNavigation(treeRootRef);
-  const [savingScopeId, setSavingScopeId] = useState<string | null>(null);
-  const [unbindingBindingId, setUnbindingBindingId] = useState<string | null>(
-    null,
-  );
+  const {
+    filter: globalFilter,
+    setFilter: setGlobalFilter,
+    open: searchOpen,
+    openSearch: openExplorerSearch,
+    close: closeExplorerSearch,
+    results: searchResults,
+    activeResult: activeSearchResult,
+    activeResultKey: activeSearchResultKey,
+    onResultsChange: onSearchResultsChange,
+    move: moveSearchResult,
+  } = useDatabaseExplorerSearch(treeKeyboard.restoreFocus);
   const [localRevealRequest, setLocalRevealRequest] = useState(0);
   const [providerCredentialsOpen, setProviderCredentialsOpen] =
     useState<ProviderKind | null>(null);
@@ -361,77 +183,6 @@ export function DatabaseExplorer({
     commands.patch({ openMenuId: null });
   });
 
-  useEffect(() => {
-    if (!knowledgeProjects.data) return;
-    const projectIds = new Set(
-      knowledgeProjects.data.map((project) => project.id),
-    );
-    const previous =
-      knownKnowledgeScopeRef.current?.key === catalogScope.key
-        ? knownKnowledgeScopeRef.current
-        : null;
-    const newProjectIds = [...projectIds].filter(
-      (id) => !previous?.projectIds.has(id),
-    );
-
-    if (previous === null) {
-      setExpandedProjectIds(projectIds);
-      setExpandedResourceKeys(
-        new Set([
-          "unassigned",
-          ...[...projectIds].map(
-            (projectId) => projectResourceKey(projectId, "databases"),
-          ),
-        ]),
-      );
-    } else {
-      setExpandedProjectIds((current) =>
-        new Set([...current, ...newProjectIds]),
-      );
-      setExpandedResourceKeys(
-        (current) =>
-          new Set([
-            ...current,
-            ...newProjectIds.map(
-              (projectId) => projectResourceKey(projectId, "databases"),
-            ),
-          ]),
-      );
-    }
-    knownKnowledgeScopeRef.current = {
-      key: catalogScope.key,
-      projectIds,
-    };
-  }, [catalogScope.key, knowledgeProjects.data]);
-
-  useEffect(() => {
-    if (!knowledgeEnabled) return;
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    void onKnowledgeSourceChanged(() => {
-      if (disposed) return;
-      void queryClient.invalidateQueries({
-        queryKey: knowledgeQueryKeys.inventory(),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: knowledgeQueryKeys.agentEnvironments(),
-      });
-    }).then((stop) => {
-      if (disposed) stop();
-      else unlisten = stop;
-    });
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, [knowledgeEnabled, queryClient]);
-
-  const environmentConnectionsById = new Map<string, EnvironmentConnection[]>();
-  for (const binding of environmentConnections.data ?? []) {
-    const current = environmentConnectionsById.get(binding.projectEnvironmentId) ?? [];
-    current.push(binding);
-    environmentConnectionsById.set(binding.projectEnvironmentId, current);
-  }
   const environmentBindingsReady = environmentConnections.isSuccess;
   const boundConnectionIds = new Set(
     environmentBindingsReady
@@ -462,56 +213,6 @@ export function DatabaseExplorer({
     }),
   );
 
-  async function bindDroppedConnection(
-    connection: ConnectionProfile,
-    environmentId: string,
-  ) {
-    const environment = (knowledgeProjects.data ?? [])
-      .flatMap((project) => project.environments)
-      .find((candidate) => candidate.id === environmentId);
-    if (!environment) return;
-    try {
-      const binding = await bindKnowledgeEnvironmentConnectionWithRefresh({
-        projectEnvironmentId: environmentId,
-        connectionId: connection.id,
-        role: "primary",
-        alias:
-          connection.name.trim() || connection.database.trim() || "database",
-      });
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: knowledgeQueryKeys.environmentConnections(),
-          refetchType: "active",
-        }),
-        queryClient.invalidateQueries({
-          queryKey: knowledgeQueryKeys.agentEnvironments(),
-          refetchType: "active",
-        }),
-      ]);
-      const context = productAnalyticsWorkspaceContext(catalogScope);
-      if (context) {
-        void captureProductEvent({
-          name: "environment_connection_bound",
-          properties: {
-            accessMode: productAnalyticsAccessMode(connection.credentialMode),
-            engine: productAnalyticsConnectionEngine(connection.engine),
-          },
-          context,
-          dedupeId: binding.id,
-        });
-      }
-      toast(
-        t("connections.environmentConnectionMoved", {
-          connection:
-            connection.name || connection.database || t("app.unnamed"),
-          environment: environment.name,
-        }),
-      );
-    } catch (error) {
-      toast(errMessage(error), "error");
-    }
-  }
-
   function openProviderCredentials(provider: ProviderKind) {
     providerReturnFocusRef.current =
       document.activeElement instanceof HTMLElement
@@ -519,22 +220,6 @@ export function DatabaseExplorer({
         : null;
     setProviderCredentialsOpen(provider);
   }
-  const {
-    groupByConnectionId,
-    draggingId,
-    dropTarget,
-    dragPreview,
-    suppressClickRef,
-    pointerDown: pointerDownConnection,
-    pointerMove: pointerMoveConnection,
-    pointerUp: pointerUpConnection,
-    pointerCancel: pointerCancelConnection,
-  } = useSchemaGroupDrag(connections, onConnectionUpdated, {
-    environmentTargets: environmentDropTargets,
-    unassignedConnectionIds,
-    onDropOnEnvironment: bindDroppedConnection,
-  });
-
   useEffect(() => {
     if (!openMenuId) return;
     const closeOnOutsidePointer = (event: globalThis.PointerEvent) => {
@@ -550,41 +235,10 @@ export function DatabaseExplorer({
   // per-connection intent at the same boundary as its scoped keys so no hidden row can
   // resubscribe an old connection in the newly active account.
   useEffect(() => {
-    catalogScopeKeyRef.current = catalogScope.key;
-  }, [catalogScope.key]);
-
-  useEffect(() => {
     setProjectSetupOpen(false);
     setEnvironmentSetupProjectId(null);
   }, [catalogScope.key]);
 
-  useEffect(() => {
-    setAnalysisFilter("");
-    setAnalysisStateFilter("all");
-  }, [activeProjectId, catalogScope.key]);
-
-  useEffect(() => {
-    if (
-      !activeProjectId ||
-      activeProjectEnvironmentView !== "analyses" ||
-      !activeProjectEnvironmentId
-    ) {
-      return;
-    }
-    const analysisKey = projectResourceKey(activeProjectId, "analyses");
-    setExpandedProjectIds((current) => {
-      if (current.has(activeProjectId)) return current;
-      return new Set([...current, activeProjectId]);
-    });
-    setExpandedResourceKeys((current) => {
-      if (current.has(analysisKey)) return current;
-      return new Set([...current, analysisKey]);
-    });
-  }, [
-    activeProjectEnvironmentId,
-    activeProjectEnvironmentView,
-    activeProjectId,
-  ]);
 
   const wantedIds = useMemo(() => [...wanted].sort(), [wanted]);
   const readableWantedIds = useMemo(() => {
@@ -612,23 +266,63 @@ export function DatabaseExplorer({
     forgetOverview,
     forgetConnection,
   } = useCatalogTree(readableWantedIds, catalogScope);
+  const { ensureLoaded, retryOverview } = useCatalogExplorerLoading(
+    catalogScope,
+    commands,
+  );
+  const {
+    deletingProjectId,
+    savingScopeId,
+    unbindingBindingId,
+    bindDroppedConnection,
+    refreshSchema,
+    refreshExplorer,
+    removeConnection,
+    removeEnvironmentConnection,
+    removeProject,
+    setSchemaScope,
+  } = useDatabaseExplorerMutations({
+    catalogScope,
+    projects: knowledgeProjects.data ?? [],
+    activeProjectEnvironmentId,
+    environmentSetupProjectId,
+    setEnvironmentSetupProjectId,
+    setExpandedProjectIds,
+    setExpandedResourceKeys,
+    commands,
+    forgetConnection,
+    onDeleted,
+    onConnectionUpdated,
+    onOpenProjectEnvironment,
+  });
+  const {
+    openCreatedProject,
+    openCreatedEnvironment,
+    openEnvironmentSetup,
+  } = useProjectExplorerActions({
+    projects: knowledgeProjects.data ?? [],
+    activeEnvironmentId: activeProjectEnvironmentId,
+    setEnvironmentSetupProjectId,
+    setExpandedProjectIds,
+    setExpandedResourceKeys,
+    onOpenProjectEnvironment,
+  });
+  const {
+    groupByConnectionId,
+    draggingId,
+    dropTarget,
+    dragPreview,
+    suppressClickRef,
+    pointerDown: pointerDownConnection,
+    pointerMove: pointerMoveConnection,
+    pointerUp: pointerUpConnection,
+    pointerCancel: pointerCancelConnection,
+  } = useSchemaGroupDrag(connections, onConnectionUpdated, {
+    environmentTargets: environmentDropTargets,
+    unassignedConnectionIds,
+    onDropOnEnvironment: bindDroppedConnection,
+  });
   const errs = { ...overviewErrs, ...refreshErrs };
-
-  // Expanding a node subscribes to its catalog; the query cache decides whether that is a
-  // fetch or a free read. Retries are not automatic (see the query defaults), so a node
-  // that failed refetches when the user expands it again.
-  function ensureLoaded(id: string) {
-    commands.want(id);
-    commands.clearRefreshError(id);
-    if (
-      queryClient.getQueryState(qk.connectionDatabases(id, catalogScope.key))
-        ?.status === "error"
-    ) {
-      void queryClient.refetchQueries({
-        queryKey: qk.connectionDatabases(id, catalogScope.key),
-      });
-    }
-  }
 
   function ensureGroupLoaded(id: string) {
     const group = groupByConnectionId.get(id);
@@ -683,70 +377,6 @@ export function DatabaseExplorer({
     });
   }
 
-  function updateGlobalFilter(value: string) {
-    setGlobalFilter(value);
-  }
-
-  const onSearchResultsChange = useCallback(
-    (catalogKey: string, results: CatalogTreeSearchResult[]) => {
-      setSearchResultsByCatalog((current) => {
-        if (results.length === 0) {
-          if (!(catalogKey in current)) return current;
-          const next = { ...current };
-          delete next[catalogKey];
-          return next;
-        }
-        if (
-          current[catalogKey]?.length === results.length &&
-          current[catalogKey]?.every((result, index) =>
-            result.key === results[index]?.key,
-          )
-        ) {
-          return current;
-        }
-        return { ...current, [catalogKey]: results };
-      });
-    },
-    [],
-  );
-
-  const searchResults = useMemo(
-    () => Object.values(searchResultsByCatalog).flat(),
-    [searchResultsByCatalog],
-  );
-  const activeSearchResult = activeSearchResultKey
-    ? searchResults.find((result) => result.key === activeSearchResultKey)
-    : undefined;
-
-  useEffect(() => {
-    if (globalFilter) return;
-    setSearchResultsByCatalog({});
-    setActiveSearchResultKey(null);
-  }, [globalFilter]);
-
-  function moveSearchResult(direction: 1 | -1) {
-    if (searchResults.length === 0) return;
-    const currentIndex = activeSearchResultKey
-      ? searchResults.findIndex(
-          (result) => result.key === activeSearchResultKey,
-        )
-      : -1;
-    const nextIndex =
-      (currentIndex + direction + searchResults.length) %
-      searchResults.length;
-    setActiveSearchResultKey(searchResults[nextIndex]?.key ?? null);
-  }
-
-  function openExplorerSearch() {
-    setSearchOpen(true);
-  }
-
-  function closeExplorerSearch() {
-    setGlobalFilter("");
-    setSearchOpen(false);
-    treeKeyboard.restoreFocus();
-  }
-
   const openSelectedConnection = useEffectEvent((id: string) => {
     commands.openConnection(id);
     ensureGroupLoaded(id);
@@ -757,230 +387,6 @@ export function DatabaseExplorer({
     if (!selectedId) return;
     openSelectedConnection(selectedId);
   }, [selectedId]);
-
-  // Refresh every database target discovered through this server connection. The
-  // database-scoped endpoints are live reads; invalidating their exact prefix replaces
-  // relation and detail projections without reusing the legacy configured-database cache.
-  async function refreshSchema(id: string) {
-    const scopeKey = catalogScope.key;
-    commands.patch({ refreshingId: id });
-    commands.clearRefreshError(id);
-    try {
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: qk.connectionDatabases(id, scopeKey),
-          refetchType: "active",
-        }),
-        queryClient.invalidateQueries({
-          queryKey: ["databaseCatalogOverview", id],
-          refetchType: "active",
-        }),
-        queryClient.invalidateQueries({
-          queryKey: ["databaseCatalog", id],
-          refetchType: "active",
-        }),
-      ]);
-      if (catalogScopeKeyRef.current !== scopeKey) return;
-      commands.want(id);
-    } catch (e) {
-      if (catalogScopeKeyRef.current !== scopeKey) return;
-      commands.setRefreshError(id, errMessage(e));
-    } finally {
-      if (catalogScopeKeyRef.current === scopeKey) {
-        commands.patch({ refreshingId: null });
-      }
-    }
-  }
-
-  async function refreshExplorer() {
-    const scopeKey = catalogScope.key;
-    try {
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: connectionQueryKeys.all(scopeKey),
-          refetchType: "active",
-        }),
-        queryClient.invalidateQueries({
-          queryKey: knowledgeQueryKeys.inventory(scopeKey),
-          refetchType: "active",
-        }),
-        queryClient.invalidateQueries({
-          queryKey: knowledgeQueryKeys.environmentConnections(),
-          refetchType: "active",
-        }),
-        queryClient.invalidateQueries({
-          queryKey: analysisQueryKeys.articles(scopeKey),
-          refetchType: "active",
-        }),
-        selectedId ? refreshSchema(selectedId) : Promise.resolve(),
-      ]);
-    } catch (error) {
-      if (catalogScopeKeyRef.current === scopeKey) {
-        toast(errMessage(error), "error");
-      }
-    }
-  }
-
-  async function removeConnection(conn: ConnectionProfile) {
-    commands.patch({ deletingId: conn.id });
-    try {
-      if (conn.workspaceAccess === "manage") {
-        await deleteWorkspaceConnection(conn.id);
-      } else {
-        await deleteConnection(conn.id);
-      }
-      commands.forget(conn.id);
-      forgetConnection(conn.id);
-      queryClient.removeQueries({ queryKey: qk.catalog(conn.id, catalogScope.key) });
-      queryClient.removeQueries({
-        queryKey: qk.catalogOverview(conn.id, catalogScope.key),
-      });
-      queryClient.removeQueries({
-        queryKey: qk.catalogSnapshot(conn.id, catalogScope.key),
-      });
-      queryClient.removeQueries({
-        queryKey: qk.connectionDatabases(conn.id, catalogScope.key),
-      });
-      queryClient.removeQueries({
-        queryKey: ["databaseCatalogOverview", conn.id],
-      });
-      queryClient.removeQueries({
-        queryKey: ["databaseCatalog", conn.id],
-      });
-      toast(t("connections.connectionDeleted"));
-      onDeleted(conn.id);
-    } catch (e) {
-      toast(errMessage(e), "error");
-    } finally {
-      commands.patch({ deletingId: null });
-    }
-  }
-
-  async function removeEnvironmentConnection(
-    binding: EnvironmentConnection,
-  ) {
-    if (unbindingBindingId !== null) return;
-    commands.patch({ openMenuId: null });
-    setUnbindingBindingId(binding.id);
-    try {
-      await revokeKnowledgeEnvironmentConnection(
-        binding.projectEnvironmentId,
-        binding.id,
-      );
-      toast(
-        t("connections.environmentConnectionRemoved", {
-          connection: binding.alias || binding.connectionName,
-        }),
-      );
-    } catch (error) {
-      toast(errMessage(error), "error");
-    } finally {
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: knowledgeQueryKeys.environmentConnections(),
-          refetchType: "active",
-        }),
-        queryClient.invalidateQueries({
-          queryKey: knowledgeQueryKeys.agentEnvironments(),
-          refetchType: "active",
-        }),
-      ]);
-      setUnbindingBindingId(null);
-    }
-  }
-
-  async function removeProject(project: KnowledgeProject) {
-    if (deletingProjectId !== null) return;
-    setDeletingProjectId(project.id);
-    try {
-      await deleteKnowledgeProject(project.id, project.revision);
-      const environmentIds = new Set(
-        project.environments.map((environment) => environment.id),
-      );
-      if (
-        activeProjectEnvironmentId !== null
-        && environmentIds.has(activeProjectEnvironmentId)
-      ) {
-        onOpenProjectEnvironment(null, "databases");
-      }
-      if (environmentSetupProjectId === project.id) {
-        setEnvironmentSetupProjectId(null);
-      }
-      setExpandedProjectIds((current) => {
-        const next = new Set(current);
-        next.delete(project.id);
-        return next;
-      });
-      setExpandedResourceKeys((current) => {
-        const next = new Set(current);
-        next.delete(projectResourceKey(project.id, "databases"));
-        next.delete(projectResourceKey(project.id, "sources"));
-        next.delete(projectResourceKey(project.id, "analyses"));
-        return next;
-      });
-      for (const environmentId of environmentIds) {
-        queryClient.removeQueries({
-          queryKey: analysisQueryKeys.articles(
-            catalogScope.key,
-            environmentId,
-          ),
-        });
-      }
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: knowledgeQueryKeys.inventory(catalogScope.key),
-          refetchType: "active",
-        }),
-        queryClient.invalidateQueries({
-          queryKey: knowledgeQueryKeys.environmentConnections(),
-          refetchType: "active",
-        }),
-        queryClient.invalidateQueries({
-          queryKey: knowledgeQueryKeys.agentEnvironments(),
-          refetchType: "active",
-        }),
-        queryClient.invalidateQueries({
-          queryKey: knowledgeQueryKeys.sourceSyncProgress(catalogScope.key),
-          refetchType: "active",
-        }),
-      ]);
-      toast(t("connections.projectDeleted", { project: project.name }));
-    } catch (error) {
-      toast(errMessage(error), "error");
-    } finally {
-      setDeletingProjectId(null);
-    }
-  }
-
-  async function setSchemaScope(
-    connection: ConnectionProfile,
-    schemas: string[],
-  ) {
-    if (
-      savingScopeId !== null ||
-      connection.workspaceAccess === "view"
-    ) {
-      return;
-    }
-    setSavingScopeId(connection.id);
-    try {
-      const extraParams = { ...connection.extraParams };
-      if (schemas.length > 0) {
-        extraParams[SCHEMA_SCOPE_PARAMETER] = JSON.stringify(schemas);
-      } else {
-        delete extraParams[SCHEMA_SCOPE_PARAMETER];
-      }
-      const updated = await upsertConnection({
-        ...connection,
-        extraParams,
-      });
-      onConnectionUpdated(updated);
-    } catch (error) {
-      toast(errMessage(error), "error");
-    } finally {
-      setSavingScopeId(null);
-    }
-  }
 
   function toggleObjectSection(connectionId: string, kind: string) {
     const key = `${connectionId}:${kind}`;
@@ -1093,17 +499,9 @@ export function DatabaseExplorer({
         onForgetOverview={(database) =>
           forgetOverview(connection.id, database)
         }
-        onRetryOverview={(database) => {
-          commands.clearRefreshError(connection.id);
-          void queryClient.refetchQueries({
-            queryKey: qk.databaseCatalogOverview(
-              connection.id,
-              database,
-              catalogScope.key,
-            ),
-            exact: true,
-          });
-        }}
+        onRetryOverview={(database) =>
+          retryOverview(connection.id, database)
+        }
         onToggleRelationSection={(sectionKey) =>
           toggleRelationSection(connection.id, sectionKey)
         }
@@ -1120,684 +518,20 @@ export function DatabaseExplorer({
   }
 
   function renderGroup(group: SchemaConnectionGroup) {
-    const isDropTarget =
-      dropTarget?.kind === "group" && dropTarget.key === group.key;
-    const engine = group.connections[0]?.engine;
-    const baseline = defaultSchemaBaseline(group);
-    const baselineCatalog = baseline ? catalogs[baseline.id] : undefined;
-    const targets = group.connections.filter((connection) => connection.id !== baseline?.id);
-    const diffs = baselineCatalog
-      ? targets.flatMap((connection) => {
-          const catalog = catalogs[connection.id];
-          return catalog ? [compareCatalogs(catalog, baselineCatalog)] : [];
-        })
-      : [];
-    const complete = targets.length > 0 && diffs.length === targets.length;
-    const groupCounts = diffs.reduce(
-      (total, diff) => {
-        const counts = diffCounts(diff);
-        total.added += counts.added;
-        total.missing += counts.missing;
-        total.changed += counts.changed;
-        return total;
-      },
-      { added: 0, missing: 0, changed: 0 },
-    );
-    const groupTotal = groupCounts.added + groupCounts.missing + groupCounts.changed;
-    const groupTreeKey = `schema-group:${group.key}`;
     return (
-      <div
+      <SchemaConnectionGroupRow
         key={`group-${group.key}`}
-        data-schema-group-key={group.key}
-        data-drop-target={isDropTarget}
-        className="tw:relative tw:my-1 tw:border-l tw:border-border-strong tw:pt-0 tw:pr-0 tw:pb-1 tw:pl-1 tw:transition-colors tw:data-[drop-target=true]:border-ring tw:data-[drop-target=true]:bg-muted"
-      >
-        <div
-          data-active={activeSchemaGroupKey === group.key}
-          className="tw:flex tw:min-h-control-sm tw:items-center tw:gap-1 tw:px-1 tw:text-xs tw:text-muted-foreground tw:data-[active=true]:text-primary"
-          title={t("connections.schemaGroupTitle", { group: group.label })}
-          role="treeitem"
-          aria-level={1}
-          aria-selected={activeSchemaGroupKey === group.key}
-          data-explorer-tree-item
-          data-explorer-tree-key={groupTreeKey}
-          tabIndex={-1}
-        >
-          {engine && <EngineMark engine={engine} size="tree" />}
-          <span className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:font-bold tw:text-foreground">
-            {group.label}
-          </span>
-          <button
-            type="button"
-            className="tw:inline-flex tw:min-h-control-xs tw:min-w-0 tw:cursor-pointer tw:items-center tw:justify-center tw:gap-[2px] tw:rounded-full tw:border tw:border-border-subtle tw:bg-card tw:px-1.5 tw:font-sans tw:text-2xs tw:font-bold tw:whitespace-nowrap tw:text-muted-foreground tw:hover:border-ring tw:hover:text-primary"
-            title={t("schemaDiff.openTitle")}
-            aria-label={t("schemaDiff.openTitle")}
-            data-tree-primary-action
-            tabIndex={-1}
-            onClick={() => {
-              for (const connection of group.connections) ensureLoaded(connection.id);
-              onOpenSchemaDiff(group);
-            }}
-          >
-            {!schemaGroupIsCompatible(group) ? (
-              <Icon name="alert" />
-            ) : complete && groupTotal === 0 ? (
-              <Icon name="check" />
-            ) : complete ? (
-              <span className="tw:inline-flex tw:gap-[2px] tw:font-mono tw:[font-variant-numeric:tabular-nums]">
-                {groupCounts.added > 0 ? (
-                  <span className="tw:text-success">
-                    +{groupCounts.added}
-                  </span>
-                ) : null}
-                {groupCounts.missing > 0 ? (
-                  <span className="tw:text-danger">
-                    −{groupCounts.missing}
-                  </span>
-                ) : null}
-                {groupCounts.changed > 0 ? (
-                  <span className="tw:text-warning">
-                    ~{groupCounts.changed}
-                  </span>
-                ) : null}
-              </span>
-            ) : (
-              <span>{t("schemaDiff.open")}</span>
-            )}
-          </button>
-        </div>
-        {group.connections.map((conn) =>
-          renderConnection(conn, true, groupTreeKey, 2)
-        )}
-      </div>
+        group={group}
+        activeGroupKey={activeSchemaGroupKey}
+        dropTarget={dropTarget?.kind === "group" && dropTarget.key === group.key}
+        catalogs={catalogs}
+        onEnsureLoaded={ensureLoaded}
+        onOpenSchemaDiff={onOpenSchemaDiff}
+        renderConnection={(connection, treeParentKey) =>
+          renderConnection(connection, true, treeParentKey, 2)
+        }
+      />
     );
-  }
-
-  function toggleExpandedId(
-    setter: React.Dispatch<React.SetStateAction<Set<string>>>,
-    id: string,
-  ) {
-    setter((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  function renderUnavailableBinding(
-    binding: EnvironmentConnection,
-    environment: KnowledgeEnvironment,
-    treeParentKey: string,
-  ) {
-    const environmentLabel = knowledgeEnvironmentBadge(environment.riskClass);
-    const isEnvironmentDropTarget =
-      dropTarget?.kind === "environment" &&
-      dropTarget.id === environment.id;
-    return (
-      <div
-        key={binding.id}
-        data-knowledge-environment-drop-id={environment.id}
-        data-drop-target={isEnvironmentDropTarget}
-        className="tw:group tw:relative tw:flex tw:min-h-[var(--ds-tree-row-height)] tw:min-w-0 tw:items-stretch tw:text-sm tw:text-muted-foreground tw:data-[drop-target=true]:bg-muted tw:data-[drop-target=true]:ring-2 tw:data-[drop-target=true]:ring-ring tw:hover:bg-muted"
-        role="treeitem"
-        aria-level={3}
-        data-explorer-tree-item
-        data-explorer-tree-key={`binding:${binding.id}`}
-        data-explorer-tree-parent-key={treeParentKey}
-        tabIndex={-1}
-      >
-        <button
-          type="button"
-          className="tw:flex tw:min-w-0 tw:flex-1 tw:items-center tw:gap-1.5 tw:border-0 tw:bg-transparent tw:px-1 tw:py-[var(--ds-tree-row-padding-block)] tw:pl-5 tw:text-left tw:font-sans tw:text-inherit tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
-          onClick={() =>
-            onOpenProjectEnvironment(
-              binding.projectEnvironmentId,
-              "databases",
-            )
-          }
-          title={t("connections.environmentDatabaseUnavailable")}
-          data-tree-primary-action
-          tabIndex={-1}
-        >
-          <StatusDot tone="warning" />
-          <Icon name="database" className="tw:shrink-0" />
-          <span className="tw:min-w-0 tw:flex-1 tw:truncate">
-            {binding.alias || binding.connectionName}
-          </span>
-          <EnvironmentBadge environment={environmentLabel} />
-          <Icon name="alert" className="tw:shrink-0 tw:text-warning" />
-        </button>
-        <TreeRowActions>
-          <ConfirmButton
-            iconOnly
-            label={t("connections.removeFromProject")}
-            confirmLabel={t("connections.reallyRemoveFromProject")}
-            disabled={unbindingBindingId === binding.id}
-            size="xs"
-            tone="danger"
-            variant="dangerGhost"
-            onConfirm={() => void removeEnvironmentConnection(binding)}
-          >
-            <Icon name="trash" />
-          </ConfirmButton>
-        </TreeRowActions>
-      </div>
-    );
-  }
-
-  function renderProjectResources(project: KnowledgeProject) {
-    const projectTreeKey = `project:${project.id}`;
-    const databaseKey = projectResourceKey(project.id, "databases");
-    const sourceKey = projectResourceKey(project.id, "sources");
-    const analysisKey = projectResourceKey(project.id, "analyses");
-    const bindingQuery = environmentConnections;
-    const bindingPhase = queryResultPhase(
-      bindingQuery.data,
-      bindingQuery.error,
-    );
-    const projectBindings = flattenProjectEnvironmentResources(
-      project,
-      (environmentId) => environmentConnectionsById.get(environmentId) ?? [],
-    );
-    const projectSources = flattenProjectEnvironmentResources(
-      project,
-      (environmentId) =>
-        (knowledgeSources.data ?? []).filter(
-          (source) => source.projectEnvironmentId === environmentId,
-        ),
-    );
-    const projectAnalysisQueries = project.environments.map((environment) => ({
-      environment,
-      query:
-        environmentAnalysisQueries[
-          projectEnvironmentIds.indexOf(environment.id)
-        ],
-    }));
-    const projectAnalyses = flattenProjectEnvironmentResources(
-      project,
-      (environmentId) =>
-        environmentAnalysisQueries[
-          projectEnvironmentIds.indexOf(environmentId)
-        ]?.data ?? [],
-    );
-    const preferredEnvironment = preferredProjectEnvironment(
-      project,
-      activeProjectEnvironmentId,
-    );
-    const activeEnvironmentBelongsToProject =
-      activeProjectId === project.id;
-    const databaseExpanded = expandedResourceKeys.has(databaseKey);
-    const sourceExpanded = expandedResourceKeys.has(sourceKey);
-    const analysisExpanded = expandedResourceKeys.has(analysisKey);
-    const analysisNeedle = analysisFilter.trim().toLocaleLowerCase();
-    const analysisFilterApplies =
-      activeEnvironmentBelongsToProject &&
-      activeProjectEnvironmentView === "analyses";
-    const visibleProjectAnalyses = analysisFilterApplies
-      ? projectAnalyses.filter(
-          ({ resource: article }) =>
-              (analysisStateFilter === "all" ||
-                article.state === analysisStateFilter) &&
-              (!analysisNeedle ||
-                article.definition.title
-                  .toLocaleLowerCase()
-                  .includes(analysisNeedle) ||
-                article.definition.question
-                  .toLocaleLowerCase()
-                  .includes(analysisNeedle) ||
-                article.definition.summary
-                  .toLocaleLowerCase()
-                  .includes(analysisNeedle)),
-        )
-      : projectAnalyses;
-    const activeAnalysisIsVisible = visibleProjectAnalyses.some(
-      ({ resource: article }) =>
-        article.id === activeProjectEnvironmentResourceId,
-    );
-    const analysisErrors = projectAnalysisQueries.flatMap(({ query }) =>
-      query?.error ? [query.error] : [],
-    );
-    const analysisPending =
-      sharedKnowledgeWorkspace &&
-      projectAnalysisQueries.some(({ query }) => query?.isPending);
-    const analysisHasData = projectAnalysisQueries.some(
-      ({ query }) => query?.data !== undefined,
-    );
-    const databaseTreeKey = `${projectTreeKey}:resource:databases`;
-    const sourceTreeKey = `${projectTreeKey}:resource:sources`;
-    const analysisTreeKey = `${projectTreeKey}:resource:analyses`;
-
-    function openProjectResource(view: KnowledgeEnvironmentView) {
-      if (!preferredEnvironment) {
-        setEnvironmentSetupProjectId(project.id);
-        return false;
-      }
-      onOpenProjectEnvironment(preferredEnvironment.id, view);
-      return true;
-    }
-
-    return (
-      <div className="tw:grid">
-        <TreeSectionButton
-          expanded={databaseExpanded}
-          icon="database"
-          treeItem={{
-            key: databaseTreeKey,
-            parentKey: projectTreeKey,
-            level: 2,
-          }}
-          selected={
-            activeEnvironmentBelongsToProject &&
-            activeProjectEnvironmentView === "databases"
-          }
-          actions={
-            <TreeRowActions>
-              <Button
-                iconOnly
-                size="xs"
-                variant="ghost"
-                title={t("connections.environmentAddDatabase")}
-                aria-label={t("connections.environmentAddDatabase")}
-                tabIndex={-1}
-                onClick={() => {
-                  if (openProjectResource("databases") && preferredEnvironment) {
-                    onNewConnection({
-                      projectEnvironmentId: preferredEnvironment.id,
-                    });
-                  }
-                }}
-              >
-                <Icon name="plus" />
-              </Button>
-            </TreeRowActions>
-          }
-          onToggle={() => {
-            toggleExpandedId(setExpandedResourceKeys, databaseKey);
-            openProjectResource("databases");
-          }}
-        >
-          {t("connections.environmentDatabases")}
-        </TreeSectionButton>
-        {databaseExpanded ? (
-          <div className="tw:grid tw:border-l tw:border-border-subtle tw:pl-1">
-            {bindingPhase === "coldError" || bindingPhase === "staleError" ? (
-              <TreeLoadFailure
-                message={t("connections.environmentDatabaseLoadFailed")}
-                detail={errMessage(bindingQuery.error)}
-                retryLabel={t("app.retry")}
-                treeItem={{
-                  key: `${databaseTreeKey}:retry`,
-                  parentKey: databaseTreeKey,
-                  level: 3,
-                }}
-                onRetry={() => void bindingQuery.refetch()}
-              />
-            ) : null}
-            {bindingPhase === "coldLoading" ? (
-              <div className="tw:min-h-control-sm tw:px-2 tw:py-1 tw:text-xs">
-                <LoadingLabel>{t("common.loading")}</LoadingLabel>
-              </div>
-            ) : bindingQuery.data === undefined ? null : projectBindings.length > 0 ? (
-              projectBindings.map(({ environment, resource: binding }) => {
-                const connection = binding.connectionId
-                  ? connections.find(
-                      (candidate) => candidate.id === binding.connectionId,
-                    )
-                  : null;
-                return connection
-                  ? renderConnection(
-                      connection,
-                      true,
-                      databaseTreeKey,
-                      3,
-                      knowledgeEnvironmentBadge(environment.riskClass),
-                      environment.id,
-                      `binding:${binding.id}:connection:${connection.id}`,
-                      binding,
-                    )
-                  : renderUnavailableBinding(
-                      binding,
-                      environment,
-                      databaseTreeKey,
-                    );
-              })
-            ) : (
-              <button
-                type="button"
-                className="tw:min-h-control-sm tw:cursor-pointer tw:border-0 tw:bg-transparent tw:px-5 tw:py-1 tw:text-left tw:font-sans tw:text-xs tw:text-muted-foreground tw:hover:bg-muted tw:hover:text-foreground"
-                onClick={() => openProjectResource("databases")}
-                role="treeitem"
-                aria-level={3}
-                data-explorer-tree-item
-                data-explorer-tree-key={`${databaseTreeKey}:add`}
-                data-explorer-tree-parent-key={databaseTreeKey}
-                data-tree-primary-action
-                tabIndex={-1}
-              >
-                {t("connections.environmentAddDatabase")}
-              </button>
-            )}
-          </div>
-        ) : null}
-
-        <TreeSectionButton
-          expanded={sourceExpanded}
-          icon="branch"
-          treeItem={{
-            key: sourceTreeKey,
-            parentKey: projectTreeKey,
-            level: 2,
-          }}
-          selected={
-            activeEnvironmentBelongsToProject &&
-            activeProjectEnvironmentView === "sources"
-          }
-          actions={
-            <TreeRowActions>
-              <Button
-                iconOnly
-                size="xs"
-                variant="ghost"
-                title={t("connections.environmentAddSource")}
-                aria-label={t("connections.environmentAddSource")}
-                tabIndex={-1}
-                onClick={() => openProjectResource("sources")}
-              >
-                <Icon name="plus" />
-              </Button>
-            </TreeRowActions>
-          }
-          onToggle={() => {
-            toggleExpandedId(setExpandedResourceKeys, sourceKey);
-            openProjectResource("sources");
-          }}
-        >
-          {t("connections.environmentDataSources")}
-        </TreeSectionButton>
-        {sourceExpanded ? (
-          <div className="tw:grid tw:border-l tw:border-border-subtle tw:pl-1">
-            {knowledgeSourcesPhase === "coldError" || knowledgeSourcesPhase === "staleError" ? (
-              <TreeLoadFailure
-                message={t("connections.environmentSourceLoadFailed")}
-                detail={errMessage(knowledgeSources.error)}
-                retryLabel={t("app.retry")}
-                treeItem={{
-                  key: `${sourceTreeKey}:retry`,
-                  parentKey: sourceTreeKey,
-                  level: 3,
-                }}
-                onRetry={() => void knowledgeSources.refetch()}
-              />
-            ) : null}
-            {knowledgeSourcesPhase === "coldLoading" ? (
-              <div className="tw:min-h-control-sm tw:px-2 tw:py-1 tw:text-xs">
-                <LoadingLabel>{t("common.loading")}</LoadingLabel>
-              </div>
-            ) : knowledgeSources.data === undefined ? null : projectSources.length > 0 ? (
-              projectSources.map(({ environment, resource: source }) => (
-                <button
-                  key={source.sourceId}
-                  type="button"
-                  className="tw:flex tw:min-h-[var(--ds-tree-row-height)] tw:w-full tw:min-w-0 tw:items-center tw:gap-1.5 tw:border-0 tw:bg-transparent tw:px-1 tw:py-[var(--ds-tree-row-padding-block)] tw:pl-5 tw:text-left tw:font-sans tw:text-sm tw:text-foreground tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
-                  onClick={() =>
-                    onOpenProjectEnvironment(environment.id, "sources")
-                  }
-                  title={`${environment.name} · ${source.provider === "github" ? "GitHub" : t("connections.environmentLocalFolder")} · ${knowledgeRevisionLabel(source.revision, {
-                    dirty: t("knowledge.revisionDirty"),
-                    snapshot: t("knowledge.revisionSnapshot"),
-                  })}`}
-                  role="treeitem"
-                  aria-level={3}
-                  data-explorer-tree-item
-                  data-explorer-tree-key={`source:${source.sourceId}`}
-                  data-explorer-tree-parent-key={sourceTreeKey}
-                  data-tree-primary-action
-                  tabIndex={-1}
-                >
-                  <StatusDot tone={knowledgeSourceTone(source)} />
-                  <Icon
-                    name={source.provider === "github" ? "branch" : "folder"}
-                    className="tw:shrink-0"
-                  />
-                  <span className="tw:min-w-0 tw:flex-1 tw:truncate">
-                    {source.displayName}
-                  </span>
-                </button>
-              ))
-            ) : (
-              <button
-                type="button"
-                className="tw:min-h-control-sm tw:cursor-pointer tw:border-0 tw:bg-transparent tw:px-5 tw:py-1 tw:text-left tw:font-sans tw:text-xs tw:text-muted-foreground tw:hover:bg-muted tw:hover:text-foreground"
-                onClick={() => openProjectResource("sources")}
-                role="treeitem"
-                aria-level={3}
-                data-explorer-tree-item
-                data-explorer-tree-key={`${sourceTreeKey}:add`}
-                data-explorer-tree-parent-key={sourceTreeKey}
-                data-tree-primary-action
-                tabIndex={-1}
-              >
-                {t("connections.environmentAddSource")}
-              </button>
-            )}
-          </div>
-        ) : null}
-
-        <TreeSectionButton
-          expanded={analysisExpanded}
-          icon="chart"
-          treeItem={{
-            key: analysisTreeKey,
-            parentKey: projectTreeKey,
-            level: 2,
-          }}
-          selected={
-            activeEnvironmentBelongsToProject &&
-            activeProjectEnvironmentView === "analyses" &&
-            !activeAnalysisIsVisible
-          }
-          onToggle={() => {
-            toggleExpandedId(setExpandedResourceKeys, analysisKey);
-            openProjectResource("analyses");
-          }}
-        >
-          {t("connections.environmentAnalyses")}
-        </TreeSectionButton>
-        {analysisExpanded ? (
-          <div className="tw:grid tw:border-l tw:border-border-subtle tw:pl-1">
-            {analysisPending && !analysisHasData ? (
-              <div className="tw:min-h-control-sm tw:px-2 tw:py-1 tw:text-xs">
-                <LoadingLabel>{t("common.loading")}</LoadingLabel>
-              </div>
-            ) : null}
-            {analysisErrors.length > 0 ? (
-              <TreeLoadFailure
-                message={t("connections.environmentAnalysisLoadFailed")}
-                detail={analysisErrors.map(errMessage).join("\n")}
-                retryLabel={t("app.retry")}
-                treeItem={{
-                  key: `${analysisTreeKey}:retry`,
-                  parentKey: analysisTreeKey,
-                  level: 3,
-                }}
-                onRetry={() => {
-                  for (const { query } of projectAnalysisQueries) {
-                    if (query?.error) void query.refetch();
-                  }
-                }}
-              />
-            ) : null}
-            {visibleProjectAnalyses.length > 0 ? (
-              visibleProjectAnalyses.map(({ environment, resource: article }) => (
-                <button
-                  key={article.id}
-                  type="button"
-                  data-selected={
-                    activeProjectEnvironmentResourceId === article.id
-                  }
-                  className="tw:flex tw:min-h-[var(--ds-tree-row-height)] tw:w-full tw:min-w-0 tw:items-center tw:gap-1.5 tw:border-0 tw:bg-transparent tw:px-1 tw:py-[var(--ds-tree-row-padding-block)] tw:pl-5 tw:text-left tw:font-sans tw:text-sm tw:text-foreground tw:data-[selected=true]:bg-selection tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
-                  onClick={() =>
-                    onOpenProjectEnvironment(
-                      environment.id,
-                      "analyses",
-                      article.id,
-                    )
-                  }
-                  title={`${environment.name} · ${article.definition.question}`}
-                  role="treeitem"
-                  aria-level={3}
-                  aria-selected={
-                    activeProjectEnvironmentResourceId === article.id
-                  }
-                  data-explorer-tree-item
-                  data-explorer-tree-key={`analysis:${article.id}`}
-                  data-explorer-tree-parent-key={analysisTreeKey}
-                  data-tree-primary-action
-                  tabIndex={-1}
-                >
-                  <StatusDot tone={environmentAnalysisTone(article)} />
-                  <Icon name="chart" className="tw:shrink-0" />
-                  <span className="tw:min-w-0 tw:flex-1 tw:truncate">
-                    {article.definition.title}
-                  </span>
-                </button>
-              ))
-            ) : !analysisPending && analysisErrors.length === 0 ? (
-              <button
-                type="button"
-                className="tw:min-h-control-sm tw:cursor-pointer tw:border-0 tw:bg-transparent tw:px-5 tw:py-1 tw:text-left tw:font-sans tw:text-xs tw:text-muted-foreground tw:hover:bg-muted tw:hover:text-foreground"
-                onClick={() => openProjectResource("analyses")}
-                role="treeitem"
-                aria-level={3}
-                data-explorer-tree-item
-                data-explorer-tree-key={`${analysisTreeKey}:empty`}
-                data-explorer-tree-parent-key={analysisTreeKey}
-                data-tree-primary-action
-                tabIndex={-1}
-              >
-                {projectAnalyses.length > 0
-                  ? t("analysis.noMatch")
-                  : t("connections.environmentNoAnalyses")}
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-    );
-  }
-
-  function renderProject(project: KnowledgeProject) {
-    const projectExpanded = expandedProjectIds.has(project.id);
-    const activeEnvironmentBelongsToProject = project.environments.some(
-      (environment) => environment.id === activeProjectEnvironmentId,
-    );
-    const projectTreeKey = `project:${project.id}`;
-    return (
-      <div key={project.id} className="tw:grid">
-        <TreeSectionButton
-          expanded={projectExpanded}
-          icon="folder"
-          prominence="project"
-          treeItem={{
-            key: projectTreeKey,
-            parentKey: null,
-            level: 1,
-          }}
-          selected={activeEnvironmentBelongsToProject && !projectExpanded}
-          actions={
-            <TreeRowActions>
-              <Button
-                iconOnly
-                size="xs"
-                variant="ghost"
-                disabled={deletingProjectId !== null}
-                title={t("connections.addEnvironment")}
-                aria-label={t("connections.addEnvironment")}
-                tabIndex={-1}
-                onClick={() => setEnvironmentSetupProjectId(project.id)}
-              >
-                <Icon name="plus" />
-              </Button>
-              <ToolbarMenu
-                icon="moreVertical"
-                label={t("connections.projectMenu")}
-                triggerTabIndex={-1}
-              >
-                <div role="none" data-menu-keep-open>
-                  <ConfirmButton
-                    confirmLabel={t("connections.reallyDeleteProject")}
-                    disabled={deletingProjectId !== null}
-                    presentation="menuItem"
-                    size="compact"
-                    tone="danger"
-                    variant="ghost"
-                    onConfirm={() => void removeProject(project)}
-                  >
-                    {t("connections.deleteProject")}
-                  </ConfirmButton>
-                </div>
-              </ToolbarMenu>
-            </TreeRowActions>
-          }
-          onToggle={() => toggleExpandedId(setExpandedProjectIds, project.id)}
-        >
-          {project.name}
-        </TreeSectionButton>
-        {projectExpanded ? (
-          <div className="tw:grid tw:border-l tw:border-border-strong tw:pl-1">
-            {renderProjectResources(project)}
-          </div>
-        ) : null}
-      </div>
-    );
-  }
-
-  function handleProjectCreated(project: KnowledgeProject) {
-    const environment = project.environments[0] ?? null;
-    setExpandedProjectIds((current) => new Set([...current, project.id]));
-    if (!environment) return;
-    setExpandedResourceKeys(
-      (current) =>
-        new Set([
-          ...current,
-          projectResourceKey(project.id, "databases"),
-        ]),
-    );
-    onOpenProjectEnvironment(environment.id, "databases");
-  }
-
-  function handleEnvironmentCreated(project: KnowledgeProject) {
-    const previousEnvironmentIds = new Set(
-      (knowledgeProjects.data ?? [])
-        .find((candidate) => candidate.id === project.id)
-        ?.environments.map((environment) => environment.id) ?? [],
-    );
-    const environment =
-      project.environments.find(
-        (candidate) => !previousEnvironmentIds.has(candidate.id),
-      ) ?? project.environments[project.environments.length - 1] ?? null;
-    setExpandedProjectIds((current) => new Set([...current, project.id]));
-    if (!environment) return;
-    setExpandedResourceKeys(
-      (current) =>
-        new Set([
-          ...current,
-          projectResourceKey(project.id, "databases"),
-        ]),
-    );
-    onOpenProjectEnvironment(environment.id, "databases");
-  }
-
-  function openEnvironmentSetup() {
-    const projects = knowledgeProjects.data ?? [];
-    const activeProject = projects.find((project) =>
-      project.environments.some(
-        (environment) => environment.id === activeProjectEnvironmentId,
-      ),
-    );
-    const projectId = activeProject?.id ?? projects[0]?.id ?? null;
-    if (projectId) setEnvironmentSetupProjectId(projectId);
   }
 
   const selectedConnection =
@@ -1806,29 +540,12 @@ export function DatabaseExplorer({
   function revealEditorObject() {
     if (!selectedConnection || !selectedTableKey) return;
     setGlobalFilter("");
-    setSearchOpen(false);
+    closeExplorerSearch();
     commands.openConnection(selectedConnection.id);
     ensureGroupLoaded(selectedConnection.id);
     setLocalRevealRequest((request) => request + 1);
   }
 
-  function renderLaunchButton(
-    label: string,
-    preset: ConnectionLaunchPreset,
-  ) {
-    return (
-      <ToolWindowAction
-        leading={<EngineMark engine={preset.engine ?? "postgres"} />}
-        trailing={<Icon name="chevronRight" />}
-        onClick={(event) => {
-          event.currentTarget.focus({ preventScroll: true });
-          onNewConnection(preset);
-        }}
-      >
-        {label}
-      </ToolWindowAction>
-    );
-  }
 
   return (
     <ToolWindowSideSurface
@@ -1836,214 +553,58 @@ export function DatabaseExplorer({
       compactOpen={compactOpen}
       id="workbench-sidebar"
     >
-      <div
-        className="tw:group tw:flex tw:min-h-control-md tw:shrink-0 tw:items-center tw:gap-[2px] tw:border-b tw:border-border-subtle tw:bg-background tw:px-1"
-        role="toolbar"
-        aria-label={t("connections.databaseExplorerActions")}
-      >
-        <Button
-          iconOnly
-          size="xs"
-          variant="ghost"
-          disabled={knowledgeProjects.isPending}
-          onClick={() => setProjectSetupOpen(true)}
-          title={t("connections.addProject")}
-          aria-label={t("connections.addProject")}
-        >
-          <Icon name="folderPlus" />
-        </Button>
-        <Button
-          iconOnly
-          size="xs"
-          variant="ghost"
-          disabled={
-            knowledgeProjects.isPending ||
-            (knowledgeProjects.data?.length ?? 0) === 0
-          }
-          onClick={openEnvironmentSetup}
-          title={t("connections.addEnvironment")}
-          aria-label={t("connections.addEnvironment")}
-        >
-          <Icon name="plus" />
-        </Button>
-        <Button
-          iconOnly
-          size="xs"
-          variant="ghost"
-          disabled={
-            knowledgeProjects.isFetching ||
-            knowledgeSources.isFetching ||
-            refreshing !== null
-          }
-          onClick={() => void refreshExplorer()}
-          title={t("connections.refreshExplorer")}
-          aria-label={t("connections.refreshExplorer")}
-        >
-          <Icon name="refresh" />
-        </Button>
-        <Button
-          iconOnly
-          size="xs"
-          variant="ghost"
-          active={searchOpen}
-          disabled={connections.length === 0}
-          onClick={openExplorerSearch}
-          title={t("connections.searchLoadedObjects")}
-          aria-label={t("connections.searchLoadedObjects")}
-          aria-pressed={searchOpen}
-        >
-          <Icon name="search" />
-        </Button>
-        <ToolbarMenu
-          icon="view"
-          label={t("connections.viewOptions")}
-        >
-          <ToolbarMenuItem
-            icon="target"
-            disabled={!selectedTableKey}
-            onClick={revealEditorObject}
-          >
-            {t("connections.scrollFromEditor")}
-          </ToolbarMenuItem>
-          <ToolbarMenuItem
-            icon="chevronsRight"
-            disabled={
-              connections.length === 0 &&
-              (knowledgeProjects.data?.length ?? 0) === 0
-            }
-            onClick={expandAllConnections}
-          >
-            {t("connections.expandAll")}
-          </ToolbarMenuItem>
-          <ToolbarMenuItem
-            icon="chevronsLeft"
-            disabled={
-              open.size === 0 &&
-              expandedProjectIds.size === 0 &&
-              expandedResourceKeys.size === 0
-            }
-            onClick={collapseAllConnections}
-          >
-            {t("connections.collapseAll")}
-          </ToolbarMenuItem>
-          <ToolbarMenuItem
-            icon="search"
-            disabled={connections.length === 0}
-            onClick={openExplorerSearch}
-          >
-            {t("connections.filterTables")}
-          </ToolbarMenuItem>
-          <ToolbarMenuItem
-            icon={showRowCounts ? "check" : "list"}
-            onClick={() =>
-              commands.patch({ showRowCounts: !showRowCounts })
-            }
-          >
-            {t("connections.showRowCounts")}
-          </ToolbarMenuItem>
-        </ToolbarMenu>
-        <span className="tw:pointer-events-none tw:ml-auto tw:opacity-0 tw:transition-opacity tw:group-hover:pointer-events-auto tw:group-hover:opacity-100 tw:group-focus-within:pointer-events-auto tw:group-focus-within:opacity-100">
-          <ToolWindowHideButton
-            label={t("common.close")}
-            onClick={onClose}
-          />
-        </span>
-      </div>
-      {workspaceHeader}
-      {connections.length > 0 && searchOpen ? (
-        <ToolWindowSearchRow>
-          <div className="tw:min-w-0 tw:flex-1">
-            <TreeSearch
-              value={globalFilter}
-              placeholder={t("connections.filterLoadedObjectsPlaceholder")}
-              clearLabel={t("common.close")}
-              onChange={updateGlobalFilter}
-              autoFocus
-              onEscape={() => {
-                if (globalFilter) {
-                  setGlobalFilter("");
-                  return;
-                }
-                closeExplorerSearch();
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowDown") {
-                  event.preventDefault();
-                  moveSearchResult(1);
-                }
-                if (event.key === "ArrowUp") {
-                  event.preventDefault();
-                  moveSearchResult(-1);
-                }
-                if (event.key === "Enter" && activeSearchResult) {
-                  event.preventDefault();
-                  if (
-                    activeSearchResult.kind === "relation" &&
-                    activeSearchResult.table
-                  ) {
-                    const connection = connections.find(
-                      (candidate) =>
-                        candidate.id === activeSearchResult.connectionId,
-                    );
-                    if (connection) {
-                      onOpenTable(
-                        {
-                          ...connection,
-                          database: activeSearchResult.database,
-                        },
-                        activeSearchResult.table,
-                      );
-                    }
-                  } else {
-                    treeKeyboard.focusKey(activeSearchResult.treeKey);
-                  }
-                }
-              }}
-            />
-          </div>
-          {globalFilter ? (
-            <span
-              className="tw:shrink-0 tw:px-1 tw:text-2xs tw:text-muted-foreground"
-              aria-live="polite"
-            >
-              {t("connections.filterResultCount", {
-                count: searchResults.length,
-              })}
-            </span>
-          ) : null}
-        </ToolWindowSearchRow>
-      ) : activeProjectEnvironmentId &&
-        activeProjectEnvironmentView === "analyses" ? (
-        <ToolWindowSearchRow>
-          <div className="tw:min-w-0 tw:flex-1">
-            <TreeSearch
-              value={analysisFilter}
-              placeholder={t("analysis.filterPlaceholder")}
-              clearLabel={t("common.close")}
-              onChange={setAnalysisFilter}
-              onEscape={() => setAnalysisFilter("")}
-            />
-          </div>
-          <div className="tw:w-[112px] tw:shrink-0">
-            <SelectInput
-              density="compact"
-              aria-label={t("analysis.stateFilterLabel")}
-              value={analysisStateFilter}
-              onChange={(event) =>
-                setAnalysisStateFilter(
-                  event.target.value as "all" | AnalysisArticleState,
-                )
-              }
-            >
-              <option value="all">{t("analysis.filterAll")}</option>
-              <option value="draft">{t("analysis.stateDraft")}</option>
-              <option value="review">{t("analysis.stateReview")}</option>
-              <option value="live">{t("analysis.stateLive")}</option>
-              <option value="archived">{t("analysis.stateArchived")}</option>
-            </SelectInput>
-          </div>
-        </ToolWindowSearchRow>
-      ) : null}
+      <DatabaseExplorerToolbar
+        connections={connections}
+        projectCount={knowledgeProjects.data?.length ?? 0}
+        projectsPending={knowledgeProjects.isPending}
+        projectsFetching={knowledgeProjects.isFetching}
+        sourcesFetching={knowledgeSources.isFetching}
+        refreshing={refreshing !== null}
+        searchOpen={searchOpen}
+        globalFilter={globalFilter}
+        searchResults={searchResults}
+        activeSearchResult={activeSearchResult}
+        activeEnvironmentId={activeProjectEnvironmentId}
+        activeEnvironmentView={activeProjectEnvironmentView}
+        analysisFilter={analysisFilter}
+        analysisStateFilter={analysisStateFilter}
+        selectedTableKey={selectedTableKey}
+        showRowCounts={showRowCounts}
+        hasExpandedItems={
+          open.size > 0 ||
+          expandedProjectIds.size > 0 ||
+          expandedResourceKeys.size > 0
+        }
+        workspaceHeader={workspaceHeader}
+        onAddProject={() => setProjectSetupOpen(true)}
+        onAddEnvironment={openEnvironmentSetup}
+        onRefresh={() => void refreshExplorer(selectedId)}
+        onOpenSearch={openExplorerSearch}
+        onCloseSearch={closeExplorerSearch}
+        onFilterChange={setGlobalFilter}
+        onMoveSearchResult={moveSearchResult}
+        onOpenSearchResult={(result) => {
+          if (!result.table) return;
+          const connection = connections.find(
+            (candidate) => candidate.id === result.connectionId,
+          );
+          if (!connection) return;
+          onOpenTable(
+            { ...connection, database: result.database },
+            result.table,
+          );
+        }}
+        onFocusSearchResult={treeKeyboard.focusKey}
+        onRevealEditorObject={revealEditorObject}
+        onExpandAll={expandAllConnections}
+        onCollapseAll={collapseAllConnections}
+        onToggleRowCounts={() =>
+          commands.patch({ showRowCounts: !showRowCounts })
+        }
+        onAnalysisFilterChange={setAnalysisFilter}
+        onAnalysisStateFilterChange={setAnalysisStateFilter}
+        onClose={onClose}
+      />
 
       <div
         ref={setTreeScrollElement}
@@ -2073,64 +634,12 @@ export function DatabaseExplorer({
           </div>
         ) : null}
         {connections.length === 0 ? (
-          <div className="tw:grid tw:gap-5 tw:p-3">
-            <ToolWindowSection title={t("connections.createDataSource")}>
-              {renderLaunchButton("PostgreSQL", {
-                engine: "postgres",
-                source: "standard",
-              })}
-              {renderLaunchButton("MySQL / MariaDB", {
-                engine: "mysql",
-                source: "standard",
-              })}
-              {renderLaunchButton("SQLite", {
-                engine: "sqlite",
-                provider: "generic",
-                source: "standard",
-              })}
-              {renderLaunchButton("MongoDB", {
-                engine: "mongodb",
-                source: "standard",
-              })}
-              <ToolWindowAction
-                leading={<Icon name="moreVertical" />}
-                trailing={<Icon name="chevronRight" />}
-                onClick={(event) => {
-                  event.currentTarget.focus({ preventScroll: true });
-                  onNewConnection();
-                }}
-              >
-                {t("connections.allDataSources")}
-              </ToolWindowAction>
-            </ToolWindowSection>
-
-            <ToolWindowSection
-              title={t("connections.dataSourceFromCloudProvider")}
-            >
-              <ToolWindowAction
-                leading={<Icon name="key" />}
-                trailing={<Icon name="chevronRight" />}
-                onClick={() =>
-                  openProviderCredentials("gcpCloudSql")
-                }
-              >
-                {t("connections.providerGcpCloudSql")}
-              </ToolWindowAction>
-            </ToolWindowSection>
-
-            <ToolWindowSection title={t("connections.sampleDatabase")}>
-              <ToolWindowAction
-                leading={<EngineMark engine="sqlite" />}
-                trailing={<Icon name="download" />}
-                disabled={creatingDemo}
-                onClick={onCreateDemoDatabase}
-              >
-                {creatingDemo
-                  ? t("connections.demoCreating")
-                  : t("connections.demoSqlite")}
-              </ToolWindowAction>
-            </ToolWindowSection>
-          </div>
+          <DatabaseExplorerEmptyState
+            creatingDemo={creatingDemo}
+            onNewConnection={onNewConnection}
+            onOpenProviderCredentials={openProviderCredentials}
+            onCreateDemoDatabase={onCreateDemoDatabase}
+          />
         ) : null}
         <div
           ref={treeRootRef}
@@ -2139,7 +648,56 @@ export function DatabaseExplorer({
           onFocusCapture={treeKeyboard.onFocusCapture}
           onKeyDown={treeKeyboard.onKeyDown}
         >
-          {knowledgeProjects.data?.map(renderProject)}
+          {knowledgeProjects.data?.map((project) => (
+            <KnowledgeProjectTree
+              key={project.id}
+              project={project}
+              connections={connections}
+              projectEnvironmentIds={projectEnvironmentIds}
+              environmentConnections={environmentConnections.data}
+              environmentConnectionsError={environmentConnections.error}
+              environmentConnectionsPhase={environmentConnectionsPhase}
+              sources={knowledgeSources.data}
+              sourcesError={knowledgeSources.error}
+              sourcesPhase={knowledgeSourcesPhase}
+              analysisQueries={environmentAnalysisQueries}
+              sharedWorkspace={sharedKnowledgeWorkspace}
+              expanded={expandedProjectIds.has(project.id)}
+              expandedResourceKeys={expandedResourceKeys}
+              deleting={deletingProjectId !== null}
+              unbindingBindingId={unbindingBindingId}
+              dropTargetEnvironmentId={
+                dropTarget?.kind === "environment" ? dropTarget.id : null
+              }
+              activeEnvironmentId={activeProjectEnvironmentId}
+              activeView={activeProjectEnvironmentView}
+              activeResourceId={activeProjectEnvironmentResourceId}
+              analysisFilter={analysisFilter}
+              analysisStateFilter={analysisStateFilter}
+              renderConnection={renderConnection}
+              onToggleProject={() =>
+                setExpandedProjectIds((current) =>
+                  toggledResourceKeys(current, project.id),
+                )
+              }
+              onToggleResource={(resourceKey) =>
+                setExpandedResourceKeys((current) =>
+                  toggledResourceKeys(current, resourceKey),
+                )
+              }
+              onAddEnvironment={() => setEnvironmentSetupProjectId(project.id)}
+              onDeleteProject={() => void removeProject(project)}
+              onOpenEnvironment={onOpenProjectEnvironment}
+              onNewConnection={(projectEnvironmentId) =>
+                onNewConnection({ projectEnvironmentId })
+              }
+              onRetryBindings={() => void retryBindings()}
+              onRetrySources={() => void retrySources()}
+              onRemoveBinding={(binding) =>
+                void removeEnvironmentConnection(binding)
+              }
+            />
+          ))}
           {knowledgeEnabled &&
           (knowledgeProjects.data?.length ?? 0) > 0 &&
           unassignedSections.length > 0 ? (
@@ -2153,7 +711,9 @@ export function DatabaseExplorer({
                   level: 1,
                 }}
                 onToggle={() =>
-                  toggleExpandedId(setExpandedResourceKeys, "unassigned")
+                  setExpandedResourceKeys((current) =>
+                    toggledResourceKeys(current, "unassigned"),
+                  )
                 }
               >
                 {t("connections.unassigned")}
@@ -2183,73 +743,29 @@ export function DatabaseExplorer({
         </div>
       </div>
 
-      {workspaceAccount ? (
-        <div className="ds-control-row tw:flex tw:min-w-0 tw:shrink-0 tw:items-center tw:gap-2 tw:border-t tw:border-border-subtle tw:bg-background tw:p-2">
-          {workspaceAccount}
-        </div>
-      ) : null}
-
-      {projectSetupOpen ? (
-        <ProjectSetupDialog
-          catalogScopeKey={catalogScope.key}
-          onClose={() => setProjectSetupOpen(false)}
-          onCreated={handleProjectCreated}
-        />
-      ) : null}
-
-      {environmentSetupProjectId ? (
-        <EnvironmentSetupDialog
-          projects={knowledgeProjects.data ?? []}
-          preferredProjectId={environmentSetupProjectId}
-          catalogScopeKey={catalogScope.key}
-          onClose={() => setEnvironmentSetupProjectId(null)}
-          onCreated={handleEnvironmentCreated}
-        />
-      ) : null}
-
-      {dragPreview &&
-        (() => {
-          const conn =
-            connections.find((connection) => connection.id === dragPreview.id) ??
-            null;
-          if (!conn) return null;
-          return (
-            <div
-              className="tw:pointer-events-none tw:fixed tw:top-0 tw:left-0 tw:z-[var(--ds-z-popover)] tw:inline-flex tw:max-w-[min(280px,70vw)] tw:items-center tw:gap-2 tw:rounded-sm tw:border tw:border-border-strong tw:bg-popover tw:p-2 tw:text-ui tw:font-semibold tw:text-popover-foreground tw:shadow-popover"
-              style={{
-                transform: `translate3d(${Math.round(dragPreview.x + 12)}px, ${Math.round(dragPreview.y + 12)}px, 0)`,
-              }}
-            >
-              <EngineMark engine={conn.engine} />
-              <span className="tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
-                {conn.name || t("app.unnamed")}
-              </span>
-            </div>
-          );
-        })()}
-
-      {ddlDialog && (
-        <DdlModal
-          connection={ddlDialog.connection}
-          table={ddlDialog.table}
-          onClose={() => commands.patch({ ddlDialog: null })}
-        />
-      )}
-      {workspaceDialog ? (
-        <WorkspaceConnectionDialog
-          connection={workspaceDialog.connection}
-          mode={workspaceDialog.mode}
-          onBound={onConnectionUpdated}
-          onClose={() => commands.patch({ workspaceDialog: null })}
-        />
-      ) : null}
-      {providerCredentialsOpen ? (
-        <ProviderCredentialDialog
-          initialProvider={providerCredentialsOpen}
-          onClose={() => setProviderCredentialsOpen(null)}
-          returnFocusRef={providerReturnFocusRef}
-        />
-      ) : null}
+      <DatabaseExplorerOverlays
+        workspaceAccount={workspaceAccount}
+        catalogScopeKey={catalogScope.key}
+        projects={knowledgeProjects.data ?? []}
+        projectSetupOpen={projectSetupOpen}
+        environmentSetupProjectId={environmentSetupProjectId}
+        dragPreview={dragPreview}
+        connections={connections}
+        ddlDialog={ddlDialog}
+        workspaceDialog={workspaceDialog}
+        providerCredentialsOpen={providerCredentialsOpen}
+        providerReturnFocusRef={providerReturnFocusRef}
+        onProjectCreated={openCreatedProject}
+        onEnvironmentCreated={openCreatedEnvironment}
+        onCloseProjectSetup={() => setProjectSetupOpen(false)}
+        onCloseEnvironmentSetup={() => setEnvironmentSetupProjectId(null)}
+        onConnectionUpdated={onConnectionUpdated}
+        onCloseDdl={() => commands.patch({ ddlDialog: null })}
+        onCloseWorkspaceDialog={() =>
+          commands.patch({ workspaceDialog: null })
+        }
+        onCloseProviderCredentials={() => setProviderCredentialsOpen(null)}
+      />
     </ToolWindowSideSurface>
   );
 }

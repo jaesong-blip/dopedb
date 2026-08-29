@@ -1,11 +1,13 @@
 //! Postgres introspection through bounded `pg_catalog` scans.
 
 mod queries;
+#[path = "pg_timeout.rs"]
+mod timeout;
 
 use queries::objects_sql_for_version;
+use timeout::*;
 
 use std::collections::HashMap;
-use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
 use dopedb_protocol::{Constraint, ConstraintKind, IndexKey, ObjectKind, ObjectRef, SortDirection};
@@ -260,94 +262,6 @@ WHERE con.contype IN ('p', 'u', 'c')
   AND n.nspname NOT IN ('pg_catalog', 'information_schema')
 ORDER BY n.nspname, c.relname, con.conname
 "#;
-
-/// The core relation tree has a fixed ceiling.  It is intentionally separate from
-/// target connection establishment and workspace authorization, which complete
-/// before this module is entered and must retain their own error semantics.
-const CORE_RELATION_TIMEOUT: Duration = Duration::from_secs(5);
-/// Detailed metadata shares one bounded scan budget so a large schema cannot turn
-/// six individually-valid statements into an unbounded foreground operation.
-const DETAIL_SCAN_BUDGET: Duration = Duration::from_secs(45);
-const DETAIL_STAGE_MIN_TIMEOUT: Duration = Duration::from_secs(10);
-const DETAIL_STAGE_MAX_TIMEOUT: Duration = Duration::from_secs(20);
-
-#[derive(Clone, Copy, Debug)]
-enum MetadataStage {
-    Columns,
-    Constraints,
-    ForeignKeys,
-    Indexes,
-    ServerVersion,
-    Objects,
-}
-
-impl MetadataStage {
-    const fn name(self) -> &'static str {
-        match self {
-            Self::Columns => "columns",
-            Self::Constraints => "constraints",
-            Self::ForeignKeys => "foreign_keys",
-            Self::Indexes => "indexes",
-            Self::ServerVersion => "server_version",
-            Self::Objects => "objects",
-        }
-    }
-}
-
-/// Scale the maximum wait for one detail stage with the useful part of the schema,
-/// then clamp it.  The remaining global budget is applied separately at execution
-/// time, so this function cannot increase total foreground latency.
-fn adaptive_detail_stage_timeout(relation_count: usize) -> Duration {
-    let extra = Duration::from_millis((relation_count as u64).saturating_mul(25));
-    DETAIL_STAGE_MIN_TIMEOUT
-        .saturating_add(extra)
-        .min(DETAIL_STAGE_MAX_TIMEOUT)
-}
-
-fn remaining_detail_timeout(started: Instant, relation_count: usize) -> Option<Duration> {
-    let remaining = DETAIL_SCAN_BUDGET.checked_sub(started.elapsed())?;
-    if remaining < DETAIL_STAGE_MIN_TIMEOUT {
-        return None;
-    }
-    Some(adaptive_detail_stage_timeout(relation_count).min(remaining))
-}
-
-fn statement_timeout_sql(timeout: Duration) -> String {
-    // The duration is generated only from the bounded constants above.  PostgreSQL
-    // does not consistently accept a bind parameter for SET LOCAL across versions.
-    format!(
-        "SET LOCAL statement_timeout = {}",
-        timeout.as_millis().max(1)
-    )
-}
-
-fn is_statement_timeout_details(code: Option<&str>, message: &str) -> bool {
-    // SQLSTATE 57014 covers both a local statement_timeout and an explicit
-    // cancellation (for example pg_cancel_backend). Only rewrite the timeout we
-    // installed; callers must still see manual/admin cancellation as a DB error.
-    code == Some("57014") && message.to_ascii_lowercase().contains("statement timeout")
-}
-
-fn is_statement_timeout(error: &sqlx::Error) -> bool {
-    error.as_database_error().is_some_and(|database| {
-        is_statement_timeout_details(database.code().as_deref(), database.message())
-    })
-}
-
-fn catalog_stage_timeout(stage: &str, elapsed: Duration, limit: Duration) -> AppError {
-    AppError::Timeout(format!(
-        "PostgreSQL catalog {stage} metadata timed out after {} ms (limit {} ms); retry schema loading",
-        elapsed.as_millis(),
-        limit.as_millis()
-    ))
-}
-
-fn catalog_detail_budget_exhausted(stage: &str, elapsed: Duration) -> AppError {
-    AppError::Timeout(format!(
-        "PostgreSQL catalog detail budget expired before {stage} after {} ms; retry schema loading",
-        elapsed.as_millis()
-    ))
-}
 
 /// Minimal, cache-safe relation projection for consumers that intentionally show
 /// only the database tree. Full [`introspect`] never returns this as a complete
@@ -834,88 +748,6 @@ pub async fn introspect(pool: &PgPool) -> AppResult<Catalog> {
     Ok(Catalog { tables, objects })
 }
 
-/// Synthesize CREATE TABLE + CREATE INDEX from the introspected catalog. This is a
-/// best-effort reconstruction (types come from information_schema, composite FKs emit
-/// one line per column), NOT a pg_dump-exact dump.
-pub async fn table_ddl(pool: &PgPool, schema: Option<&str>, table: &str) -> AppResult<String> {
-    let cat = introspect(pool).await?;
-    let t = cat
-        .tables
-        .iter()
-        .find(|t| t.name == table && schema.is_none_or(|s| t.schema.as_deref() == Some(s)))
-        .ok_or_else(|| AppError::NotFound(format!("table {table}")))?;
-    Ok(synthesize_ddl(t))
-}
-
-fn q(ident: &str) -> String {
-    format!("\"{}\"", ident.replace('"', "\"\""))
-}
-
-fn qualified(schema: Option<&str>, name: &str) -> String {
-    match schema {
-        Some(s) => format!("{}.{}", q(s), q(name)),
-        None => q(name),
-    }
-}
-
-fn synthesize_ddl(t: &Table) -> String {
-    let full = qualified(t.schema.as_deref(), &t.name);
-    let mut out = String::new();
-    let _ = writeln!(out, "-- Synthesized from catalog (not pg_dump-exact).");
-    let _ = writeln!(out, "CREATE TABLE {full} (");
-
-    let mut lines: Vec<String> = t
-        .columns
-        .iter()
-        .map(|c| {
-            format!(
-                "    {} {}{}",
-                q(&c.name),
-                c.data_type,
-                if c.nullable { "" } else { " NOT NULL" }
-            )
-        })
-        .collect();
-
-    let pk: Vec<String> = t
-        .columns
-        .iter()
-        .filter(|c| c.pk)
-        .map(|c| q(&c.name))
-        .collect();
-    if !pk.is_empty() {
-        lines.push(format!("    PRIMARY KEY ({})", pk.join(", ")));
-    }
-    for fk in &t.foreign_keys {
-        lines.push(format!(
-            "    FOREIGN KEY ({}) REFERENCES {} ({})",
-            q(&fk.column),
-            qualified(fk.references_schema.as_deref(), &fk.references_table),
-            q(&fk.references_column),
-        ));
-    }
-    out.push_str(&lines.join(",\n"));
-    let _ = write!(out, "\n);");
-
-    for i in &t.indexes {
-        let cols = i
-            .columns
-            .iter()
-            .map(|c| q(c))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let _ = write!(
-            out,
-            "\n{} {} ON {} ({});",
-            if i.unique {
-                "CREATE UNIQUE INDEX"
-            } else {
-                "CREATE INDEX"
-            },
-            q(&i.name),
-            full,
-            cols,
-        );
-    }
-    out
-}
+#[path = "pg_ddl.rs"]
+mod ddl;
+pub use ddl::table_ddl;

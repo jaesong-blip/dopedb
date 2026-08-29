@@ -150,15 +150,15 @@
   "runtimeStates": [
     {
       "name": "connectionPools",
-      "owner": "src-tauri/src/connection/runtime.rs",
+      "owner": "src-tauri/src/connection/runtime_manager.rs",
       "writerTokens": [
-        "struct ConnectionManagerInner",
+        "impl ConnectionManager",
         "slots.remove("
       ]
     },
     {
       "name": "workspaceScope",
-      "owner": "src-tauri/src/connection/runtime.rs",
+      "owner": "src-tauri/src/connection/runtime_manager.rs",
       "writerTokens": [
         "pub(crate) async fn activate_workspace(",
         "pub(crate) async fn activate_workspace_account(",

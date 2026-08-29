@@ -2,7 +2,6 @@
 // cancellation, and Services projection for the manual query workbench.
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SqlLanguage } from "sql-formatter";
-import { useQuery } from "@tanstack/react-query";
 
 import type { ConnectionProfile } from "../connections/domain";
 import { approveOperation } from "../operations/tauriAdapter";
@@ -15,7 +14,6 @@ import { useSqlEditorBuffer } from "../query/useSqlEditorBuffer";
 import {
   findSqlParameters,
   materializeSqlParameters,
-  type SqlParameter,
 } from "../query/sqlParameters";
 import {
   nextQueryServiceSessionId,
@@ -33,20 +31,10 @@ import {
   publishWorkbenchDraft,
   useWorkbenchDraft,
 } from "../workbench/draftStore";
-import type {
-  AppErrorDetails,
-  ExecOutcome,
-  SafetySettings,
-  ScriptOutcome,
-} from "../../ipc/types";
+import type { SafetySettings, ScriptOutcome } from "../../ipc/types";
 import { errDetails, errMessage } from "../../ipc/types";
 import { useI18n } from "../../lib/i18n";
 import { useEventCallback } from "../../lib/useEventCallback";
-import {
-  connectionDatabasesQuery,
-  databaseCatalogQuery,
-  useCatalogScope,
-} from "../../lib/queries";
 import { splitStatements } from "../../lib/sqlStatements";
 import { useQueryRun } from "../../lib/useQueryRun";
 import type { PreviewReport } from "./domain";
@@ -59,10 +47,6 @@ import {
   clearSqlEditorCursor,
   publishSqlEditorCursor,
 } from "./editorStatusStore";
-import {
-  effectiveSqlNamespace,
-  sqlNamespaceOptions,
-} from "./namespace";
 import type { SqlResolveMode } from "./resolveMode";
 import {
   approveManualOperationIfRequired,
@@ -84,86 +68,17 @@ import {
   runSqlReadStream,
   runSqlStream,
 } from "./tauriAdapter";
-import { useManualTransaction } from "./useManualTransaction";
 import { useSqlResultStream } from "./useSqlResultStream";
-
-interface Run {
-  sql: string;
-  outcome: ExecOutcome;
-  at: string;
-}
-interface QueryErrorInfo extends AppErrorDetails {
-  sql: string;
-  at: string;
-}
-
-interface LastAttempt {
-  sql: string;
-  at: string;
-  documentVersion: number;
-  source: SqlRunSource;
-}
-
-type ResultKind = "single" | "script";
-
-interface ParameterDialogState {
-  sql: string;
-  source: SqlRunSource;
-  parameters: SqlParameter[];
-  action: "apply" | "explain" | "run";
-}
-
-function wholeDocumentRunSource(draft: string): SqlRunSource | null {
-  const sql = draft.trim();
-  if (!sql) return null;
-  const from = draft.indexOf(sql);
-  return {
-    sql,
-    from,
-    to: from + sql.length,
-  };
-}
-function buildSqlHelpPrompt({
-  connection,
-  database,
-  namespace,
-  sql,
-  error,
-}: {
-  connection: ConnectionProfile;
-  database: string;
-  namespace: string;
-  sql: string;
-  error: QueryErrorInfo | null;
-}) {
-  const lines = [
-    "DopeDB SQL context",
-    "",
-    `Connection: ${connection.name || "(unnamed)"}`,
-    `Engine: ${connection.engine}`,
-    `Database: ${database}`,
-    `Schema: ${namespace}`,
-    "",
-    "SQL:",
-    "```sql",
-    sql.trim(),
-    "```",
-  ];
-  if (error) {
-    lines.push(
-      "",
-      "Error:",
-      error.kind ? `Kind: ${error.kind}` : "Kind: unknown",
-      `Message: ${error.message}`,
-      "",
-      "Raw error:",
-      "```json",
-      error.raw,
-      "```",
-    );
-  }
-  return lines.join("\n");
-}
+import {
+  buildSqlHelpPrompt,
+  wholeDocumentRunSource,
+  type SqlParameterDialogState,
+  type SqlWorkbenchErrorInfo,
+  type SqlWorkbenchLastAttempt,
+  type SqlWorkbenchResultKind,
+  type SqlWorkbenchRun,
+} from "./sqlWorkbenchModel";
+import { useSqlWorkbenchTarget } from "./useSqlWorkbenchTarget";
 
 export type SqlWorkbenchProps = {
   connection: ConnectionProfile;
@@ -240,8 +155,9 @@ export function useSqlWorkbenchController({
     [analysisCurrent, draftAnalysis.runSignal, t],
   );
 
-  const [resultKind, setResultKind] = useState<ResultKind | null>(null);
-  const [run, setRun] = useState<Run | null>(null);
+  const [resultKind, setResultKind] =
+    useState<SqlWorkbenchResultKind | null>(null);
+  const [run, setRun] = useState<SqlWorkbenchRun | null>(null);
   const {
     stream,
     start: startDesktopStream,
@@ -253,14 +169,15 @@ export function useSqlWorkbenchController({
     at: string;
   } | null>(null);
   const { running, cancelled, execute, cancel, track } = useQueryRun();
-  const [runErr, setRunErr] = useState<QueryErrorInfo | null>(null);
-  const [lastAttempt, setLastAttempt] = useState<LastAttempt | null>(null);
+  const [runErr, setRunErr] = useState<SqlWorkbenchErrorInfo | null>(null);
+  const [lastAttempt, setLastAttempt] =
+    useState<SqlWorkbenchLastAttempt | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [parameterValues, setParameterValues] = useState<
     Record<string, string>
   >({});
   const [parameterDialog, setParameterDialog] =
-    useState<ParameterDialogState | null>(null);
+    useState<SqlParameterDialogState | null>(null);
   const serviceSessionRef = useRef<
     Omit<QueryServiceSession, "status" | "result" | "updatedAt"> | undefined
   >(undefined);
@@ -270,7 +187,21 @@ export function useSqlWorkbenchController({
   const [planErr, setPlanErr] = useState<string | null>(null);
   const [explaining, setExplaining] = useState(false);
   const [formatting, setFormatting] = useState(false);
-  const catalogScope = useCatalogScope();
+  const {
+    catalogScope,
+    catalog,
+    databaseOptions,
+    effectiveDatabase,
+    effectiveNamespace,
+    namespaceOptions,
+    manualTransaction,
+  } = useSqlWorkbenchTarget({
+    connection,
+    selectedDatabase,
+    setSelectedDatabase,
+    selectedSchema,
+    setSelectedSchema,
+  });
   const scriptAnalytics = scriptOut
     ? scriptProductAnalyticsSummary(scriptOut.outcome)
     : null;
@@ -290,64 +221,6 @@ export function useSqlWorkbenchController({
     streamRowCount: stream.rowCount,
     streamDurationMs: stream.durationMs,
   });
-  const databasesQuery = useQuery(
-    connectionDatabasesQuery(connection.id, catalogScope),
-  );
-  const databaseOptions = useMemo(() => {
-    if (!databasesQuery.data) {
-      return [selectedDatabase || connection.database].filter(Boolean);
-    }
-    const names = databasesQuery.data?.map((database) => database.name) ?? [];
-    return names.includes(connection.database)
-      ? names
-      : [connection.database, ...names].filter(Boolean);
-  }, [connection.database, databasesQuery.data, selectedDatabase]);
-  const effectiveDatabase = databaseOptions.includes(selectedDatabase)
-    ? selectedDatabase
-    : (databaseOptions[0] ?? connection.database);
-  const targetConnection = useMemo(
-    () => ({ ...connection, database: effectiveDatabase }),
-    [connection, effectiveDatabase],
-  );
-  const catalogQueryResult = useQuery(
-    databaseCatalogQuery(connection.id, effectiveDatabase, catalogScope),
-  );
-  const catalog = catalogQueryResult.data;
-  const namespaceOptions = useMemo(
-    () => sqlNamespaceOptions(targetConnection, catalog),
-    [catalog, targetConnection],
-  );
-  const effectiveNamespace = useMemo(
-    () =>
-      effectiveSqlNamespace(targetConnection, selectedSchema, namespaceOptions),
-    [namespaceOptions, selectedSchema, targetConnection],
-  );
-  const manualTransaction = useManualTransaction(
-    connection.id,
-    effectiveDatabase,
-  );
-
-  useEffect(() => {
-    if (!databasesQuery.data) return;
-    if (!effectiveDatabase || selectedDatabase === effectiveDatabase) return;
-    setSelectedDatabase(effectiveDatabase);
-  }, [
-    databasesQuery.data,
-    effectiveDatabase,
-    selectedDatabase,
-    setSelectedDatabase,
-  ]);
-
-  useEffect(() => {
-    if (!catalogQueryResult.data) return;
-    if (!effectiveNamespace || selectedSchema === effectiveNamespace) return;
-    setSelectedSchema(effectiveNamespace);
-  }, [
-    catalogQueryResult.data,
-    effectiveNamespace,
-    selectedSchema,
-    setSelectedSchema,
-  ]);
   const resolveModeHint =
     resolveMode === "script"
       ? t("sql.resolveModeScriptHint")

@@ -42,6 +42,57 @@ feature/
 모든 기능이 위 파일을 전부 가져야 하는 것은 아니다. 한 책임이 짧고 독립성이 없다면
 진입점 안에 그대로 둔다.
 
+## DopeDB 저장소 경계
+
+같은 이름의 책임은 플랫폼이 달라도 같은 의존 방향을 따른다. 디렉터리는 파일을
+분산시키는 분류함이 아니라 **상태와 효과의 소유권**을 드러내는 경계다.
+
+### Desktop React
+
+- `src/screens/`는 route/tool-window 조합 leaf다. 기능 상태, TanStack Query 계약,
+  Tauri command lifecycle을 새로 소유하지 않는다.
+- `src/features/<domain>/`은 controller, query key/options, domain policy, adapter를
+  소유한다. 화면 여러 곳에서 쓰인다는 이유로 `src/lib/`로 올리지 않는다.
+- `src/components/`와 `src/design-system/`은 제품 기능 adapter나 feature state를
+  import하지 않는 표현 계층이다.
+- 한 화면이 여러 기능을 조합하면 화면 전용 controller를 억지로 `lib`에 두지 않고,
+  가장 좁은 조합 기능(예: `features/settings/agentTools`)을 이름 붙인다.
+
+### Workspace Cloud
+
+- `workspace-cloud/features/<domain>/`은 use case와 정책의 공개 진입점이다.
+- `workspace-cloud/lib/`에는 인증, HTTP, DB, 암호화처럼 실제로 여러 기능이 공유하는
+  기반만 둔다. 특정 provider나 Knowledge/Analysis 흐름 하나만 소유하면 해당 feature로
+  이동한다.
+- route는 입력 검증, 권한 확인, feature command 호출, 응답 변환만 조합한다. provider
+  API lifecycle이나 persistence transaction을 route에서 구현하지 않는다.
+
+### Rust Desktop와 CLI
+
+- `features/<domain>/application`은 use case 순서를, `domain`은 순수 계약과 정책을,
+  `ports`는 외부 요구 계약을, `adapters`는 DB/HTTP/process 구현을 소유한다.
+- `commands`와 `services`는 조합 경계다. SQL 실행, credential 정책, process lifecycle의
+  세부 구현을 다시 소유하지 않는다.
+- `connection`, `executor`, `store`, `broker` 같은 platform 디렉터리는 여러 feature가
+  의존하는 실제 platform capability일 때 유지한다. 특정 feature만 소비하면 feature
+  내부로 내린다.
+- CLI도 같은 domain/application/adapter 방향을 따르며, Desktop 구현 파일을 단순히
+  복제해 별도 정책 writer를 만들지 않는다.
+
+## 완료 계약
+
+저장소 전체 구조 작업은 다음을 모두 만족해야 완료다.
+
+1. audit의 모든 high-risk 모듈을 직접 검토하고, 혼합 책임은 이름 있는 경계로
+   분리한다.
+2. 분리하지 않는 800줄 이상 수작업 모듈은 한 state writer, 한 effect lifecycle,
+   또는 선언적 catalogue라는 유지 근거가 있어야 한다.
+3. baseline에서 해소된 항목을 제거하고 새 high-risk 또는 fragment cluster가 0인지
+   `pnpm check:code-structure`로 확인한다.
+4. TS/TSX, Rust, Cloud, CLI 각각의 build/test/lint를 변경 범위에 맞게 실행한다.
+5. Graphify를 갱신한 뒤 공개 진입점과 의존 방향을 다시 질의해 실제 탐색 경로가
+   짧아졌는지 확인한다.
+
 ## 재결합 판단
 
 다음 조건이 함께 나타나면 과도하게 흩어진 구조인지 검토한다.

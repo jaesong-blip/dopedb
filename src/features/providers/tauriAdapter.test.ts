@@ -2,11 +2,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import adapterSource from "./tauriAdapter.ts?raw";
 import authRouteSource from "../../../workspace-cloud/app/api/auth/[...all]/route.ts?raw";
-import gcpBootstrapSource from "../../../workspace-cloud/lib/providers/gcp-cloud-bootstrap.ts?raw";
+import gcpBootstrapFacadeSource from "../../../workspace-cloud/lib/providers/gcp-cloud-bootstrap.ts?raw";
+import gcpBootstrapApplicationSource from "../../../workspace-cloud/lib/providers/gcp-cloud-bootstrap-application.ts?raw";
+import gcpBootstrapCoreSource from "../../../workspace-cloud/lib/providers/gcp-cloud-bootstrap-core.ts?raw";
+import gcpBootstrapDatabaseSource from "../../../workspace-cloud/lib/providers/gcp-cloud-bootstrap-database.ts?raw";
+import gcpBootstrapIamSource from "../../../workspace-cloud/lib/providers/gcp-cloud-bootstrap-iam.ts?raw";
+import gcpBootstrapSqlSource from "../../../workspace-cloud/lib/providers/gcp-cloud-bootstrap-sql.ts?raw";
 import gcpCloudSqlSource from "../../../workspace-cloud/lib/providers/gcp-cloud-sql.ts?raw";
 import vaultProviderSource from "../../../workspace-cloud/lib/providers/vault.ts?raw";
 import boundedJsonResponseSource from "../../../workspace-cloud/lib/bounded-json-response.ts?raw";
-import neonSource from "../../../workspace-cloud/lib/providers/neon.ts?raw";
+import neonFacadeSource from "../../../workspace-cloud/lib/providers/neon.ts?raw";
+import neonApiSource from "../../../workspace-cloud/lib/providers/neon-api.ts?raw";
+import neonBranchApiSource from "../../../workspace-cloud/lib/providers/neon-branch-api.ts?raw";
+import neonManagedAccessSource from "../../../workspace-cloud/lib/providers/neon-managed-access.ts?raw";
 import neonBranchesSource from "../../../workspace-cloud/lib/providers/neon-branches.ts?raw";
 import neonCoreSource from "../../../workspace-cloud/lib/providers/neon-core.ts?raw";
 import neonBootstrapSource from "../../../workspace-cloud/lib/providers/neon-bootstrap.ts?raw";
@@ -57,7 +65,15 @@ import neonBranchOperationsLiveContextsSource from "../../../workspace-cloud/lib
 import neonBranchOperationsSwitchSource from "../../../workspace-cloud/lib/providers/neon-branch-operations/switch.ts?raw";
 import neonBranchOperationCommandSource from "../../../workspace-cloud/lib/providers/neon-branch-operation-command.ts?raw";
 import managedAccessTargetRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/connections/[connectionId]/managed-access-target/route.ts?raw";
-import providerOperationStoreSource from "../../../workspace-cloud/lib/provider-operation-store.ts?raw";
+import providerOperationStoreFacadeSource from "../../../workspace-cloud/lib/provider-operation-store.ts?raw";
+import providerOperationAuthoritySource from "../../../workspace-cloud/lib/provider-operation-authority.ts?raw";
+import providerOperationBootstrapSource from "../../../workspace-cloud/lib/provider-operation-bootstrap.ts?raw";
+import providerOperationExecutionSource from "../../../workspace-cloud/lib/provider-operation-execution.ts?raw";
+import providerOperationManagedAccessSource from "../../../workspace-cloud/lib/provider-operation-managed-access.ts?raw";
+import providerOperationPlanSource from "../../../workspace-cloud/lib/provider-operation-plan.ts?raw";
+import providerOperationReconciliationSource from "../../../workspace-cloud/lib/provider-operation-reconciliation.ts?raw";
+import providerOperationRecordsSource from "../../../workspace-cloud/lib/provider-operation-records.ts?raw";
+import providerOperationSwitchSource from "../../../workspace-cloud/lib/provider-operation-switch.ts?raw";
 import providerOperationMarkerSource from "../../../workspace-cloud/lib/provider-operation-marker.ts?raw";
 import providerOperationMigrationSource from "../../../workspace-cloud/drizzle/0016_first_changeling.sql?raw";
 import providerOperationKindMigrationSource from "../../../workspace-cloud/drizzle/0017_lying_hex.sql?raw";
@@ -147,6 +163,32 @@ import {
   revokeProviderCredentialBinding,
   verifyProviderCredentialBinding,
 } from "./tauriAdapter";
+
+const gcpBootstrapSource = [
+  gcpBootstrapFacadeSource,
+  gcpBootstrapApplicationSource,
+  gcpBootstrapCoreSource,
+  gcpBootstrapDatabaseSource,
+  gcpBootstrapIamSource,
+  gcpBootstrapSqlSource,
+].join("\n");
+const neonSource = [
+  neonFacadeSource,
+  neonApiSource,
+  neonBranchApiSource,
+  neonManagedAccessSource,
+].join("\n");
+const providerOperationStoreSource = [
+  providerOperationStoreFacadeSource,
+  providerOperationRecordsSource,
+  providerOperationManagedAccessSource,
+  providerOperationAuthoritySource,
+  providerOperationBootstrapSource,
+  providerOperationPlanSource,
+  providerOperationExecutionSource,
+  providerOperationReconciliationSource,
+  providerOperationSwitchSource,
+].join("\n");
 
 const integrationId = "11111111-1111-4111-8111-111111111111";
 const bindingId = "22222222-2222-4222-8222-222222222222";

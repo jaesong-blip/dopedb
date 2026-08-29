@@ -9,9 +9,6 @@ import {
 } from "react";
 import type {
   Catalog,
-  CatalogConstraint,
-  CatalogForeignKey,
-  CatalogIndex,
   CatalogObject,
   CatalogOverview,
   CatalogTable,
@@ -27,28 +24,17 @@ import {
   VirtualTreeRows,
   type VirtualTreeRow,
 } from "../../design-system/components/VirtualTreeRows";
-import { LoadingLabel } from "../../design-system/components/Status";
 import { isDocumentEngine } from "../../lib/capabilities";
 import { useI18n } from "../../lib/i18n";
+import type { SchemaConnectionGroup } from "../../lib/schemaDiff";
+import { tableKey } from "../../lib/tableRef";
 import {
-  orderTablesBySchemaDiff,
-  tableDiffTone,
-  type SchemaConnectionGroup,
-} from "../../lib/schemaDiff";
-import { tableKey, tableLabel } from "../../lib/tableRef";
-import {
-  schemaDiffForConnection,
-  schemaTableDiffTitle,
-} from "./schemaDiffPresentation";
-import { catalogFromOverview } from "./catalogOverview";
-import {
-  catalogObjectLabel,
-  filterLoadedCatalogObjects,
-  SQL_OBJECT_SECTIONS,
-  supportedObjectKinds,
-  tableMatchesFilter,
-} from "../../features/catalogExplorer/catalogDomain";
-import { filterCatalog } from "../../features/catalogExplorer/scopeFilter";
+  CatalogMissingRelationRow,
+  CatalogObjectRow,
+  CatalogRelationRow,
+} from "./CatalogTreeRows";
+import { useCatalogTreeProjection } from "./useCatalogTreeProjection";
+import { CatalogTreeStatus } from "./CatalogTreeStatus";
 
 type Props = {
   connection: ConnectionProfile;
@@ -86,12 +72,6 @@ type Props = {
   revealNamespace: string | null;
   treeParentKey: string;
   treeLevel: number;
-};
-
-type SchemaContents = {
-  tables: CatalogTable[];
-  views: CatalogTable[];
-  objectsByKind: Map<string, CatalogObject[]>;
 };
 
 export type CatalogTreeSearchResult = {
@@ -146,90 +126,15 @@ export default function CatalogTree(props: Props) {
     tables,
     objectSections,
     schemaGroups,
-  } = useMemo(() => {
-    const nextUnfilteredCatalog = overview
-      ? catalogFromOverview(overview, fullCatalog)
-      : fullCatalog;
-    const nextCatalog = nextUnfilteredCatalog
-      ? props.applySchemaScope === false
-        ? nextUnfilteredCatalog
-        : filterCatalog(connection, nextUnfilteredCatalog)
-      : undefined;
-    const nextDiff = schemaDiffForConnection(
-      connection,
-      groupByConnectionId,
-      catalogs,
-    );
-    const {
-      normalizedFilter: nextNormalizedFilter,
-      tables: nextFilteredTables,
-      objects: nextFilteredObjects,
-    } = filterLoadedCatalogObjects(nextCatalog, filter);
-    const nextOrdered = orderTablesBySchemaDiff(
-      nextFilteredTables,
-      nextDiff,
-    );
-    const nextMissingTables = nextDiff
-      ? nextNormalizedFilter
-        ? nextDiff.missingTables.filter((table) =>
-            tableMatchesFilter(table, nextNormalizedFilter),
-          )
-        : nextDiff.missingTables
-      : [];
-    const nextTables = nextOrdered.filter((table) => table.kind !== "view");
-    const supportedKinds = supportedObjectKinds(connection.engine);
-    const nextObjectSections = SQL_OBJECT_SECTIONS.filter(
-      (section) =>
-        supportedKinds.has(section.kind) ||
-        nextFilteredObjects.some((object) => object.kind === section.kind),
-    );
-    const groups = new Map<string, SchemaContents>();
-    const contentsFor = (schema: string) => {
-      const existing = groups.get(schema);
-      if (existing) return existing;
-      const created: SchemaContents = {
-        tables: [],
-        views: [],
-        objectsByKind: new Map(),
-      };
-      groups.set(schema, created);
-      return created;
-    };
-    for (const table of nextOrdered) {
-      const contents = contentsFor(table.schema ?? "");
-      if (table.kind === "view") contents.views.push(table);
-      else contents.tables.push(table);
-    }
-    for (const object of nextFilteredObjects) {
-      const objectsByKind = contentsFor(object.schema ?? "").objectsByKind;
-      const objects = objectsByKind.get(object.kind) ?? [];
-      objects.push(object);
-      objectsByKind.set(object.kind, objects);
-    }
-    const nextSchemaGroups = [...groups.entries()].sort(
-      ([left], [right]) => left.localeCompare(right),
-    );
-    return {
-      unfilteredCatalog: nextUnfilteredCatalog,
-      catalog: nextCatalog,
-      diff: nextDiff,
-      normalizedFilter: nextNormalizedFilter,
-      filteredObjects: nextFilteredObjects,
-      ordered: nextOrdered,
-      missingTables: nextMissingTables,
-      tables: nextTables,
-      objectSections: nextObjectSections,
-      schemaGroups: nextSchemaGroups,
-    };
-  }, [
-    catalogs,
+  } = useCatalogTreeProjection({
     connection,
-    filter,
-    fullCatalog,
-    groupByConnectionId,
     overview,
-    props.applySchemaScope,
-  ]);
+    fullCatalog,
+    applySchemaScope: props.applySchemaScope,
+    filter,
+    groupByConnectionId,
+    catalogs,
+  });
   const databaseSectionKey = (section: string) =>
     `${connection.database}\u0000${section}`;
   const catalogKey = `${connection.id}\u0000${connection.database}`;
@@ -360,300 +265,35 @@ export default function CatalogTree(props: Props) {
     });
   }
 
-  function metadataSectionIsOpen(table: CatalogTable, section: string) {
-    return !collapsedMetadataSections.has(`${tableKey(table)}:${section}`);
-  }
-
-  function renderColumnRows(table: CatalogTable) {
-    return table.columns.map((column) => (
-      <div
-        className="ds-object-row tw:cursor-default tw:gap-1 tw:rounded-xs tw:pl-4 tw:text-ui"
-        key={`${tableKey(table)}:column:${column.ordinal}:${column.name}`}
-        title={[
-          column.dataType,
-          column.nullable ? t("connections.nullable") : t("connections.notNull"),
-          column.defaultExpression
-            ? `${t("connections.defaultValue")}: ${column.defaultExpression}`
-            : null,
-        ]
-          .filter(Boolean)
-          .join(" · ")}
-      >
-        <Icon
-          className="tw:shrink-0 tw:text-[length:var(--ds-icon-sm)] tw:text-muted-foreground"
-          name={column.pk ? "key" : "columns"}
-        />
-        <span className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
-          {column.name}
-        </span>
-        <span className="tw:max-w-[48%] tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:font-mono tw:text-2xs tw:text-muted-foreground">
-          {column.dataType}
-        </span>
-      </div>
-    ));
-  }
-
-  function keyLabel(
-    constraint: CatalogConstraint | CatalogForeignKey,
-    index: number,
-  ) {
-    if ("kind" in constraint) {
-      return constraint.name ||
-        `${constraint.kind} (${constraint.columns.join(", ")})`;
-    }
-    const target = [
-      constraint.referencesSchema,
-      constraint.referencesTable,
-      constraint.referencesColumn,
-    ]
-      .filter(Boolean)
-      .join(".");
-    return constraint.name ||
-      `${constraint.column} → ${target || `#${index + 1}`}`;
-  }
-
-  function renderKeyRows(table: CatalogTable) {
-    const keys: Array<CatalogConstraint | CatalogForeignKey> =
-      table.constraints.length > 0
-        ? table.constraints
-        : table.foreignKeys;
-    return keys.map((constraint, index) => (
-      <div
-        className="ds-object-row tw:cursor-default tw:gap-1 tw:rounded-xs tw:pl-4 tw:text-ui"
-        key={`${tableKey(table)}:key:${keyLabel(constraint, index)}:${index}`}
-        title={keyLabel(constraint, index)}
-      >
-        <Icon
-          className="tw:shrink-0 tw:text-[length:var(--ds-icon-sm)] tw:text-muted-foreground"
-          name="key"
-        />
-        <span className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
-          {keyLabel(constraint, index)}
-        </span>
-        {"kind" in constraint && (
-          <span className="tw:font-mono tw:text-2xs tw:text-muted-foreground">
-            {constraint.kind}
-          </span>
-        )}
-      </div>
-    ));
-  }
-
-  function indexLabel(index: CatalogIndex) {
-    const columns = index.keys.length > 0
-      ? index.keys.map((key) => key.column ?? key.expression).filter(Boolean)
-      : index.columns;
-    return `${index.name} (${columns.join(", ")})`;
-  }
-
-  function renderIndexRows(table: CatalogTable) {
-    return table.indexes.map((index) => (
-      <div
-        className="ds-object-row tw:cursor-default tw:gap-1 tw:rounded-xs tw:pl-4 tw:text-ui"
-        key={`${tableKey(table)}:index:${index.name}`}
-        title={indexLabel(index)}
-      >
-        <Icon
-          className="tw:shrink-0 tw:text-[length:var(--ds-icon-sm)] tw:text-muted-foreground"
-          name="list"
-        />
-        <span className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
-          {indexLabel(index)}
-        </span>
-        {index.unique && (
-          <span className="tw:font-mono tw:text-2xs tw:text-muted-foreground">
-            {t("connections.unique")}
-          </span>
-        )}
-      </div>
-    ));
-  }
-
-  function renderMetadataSection(
-    table: CatalogTable,
-    section: "columns" | "keys" | "indexes",
-    count: number,
-    children: ReturnType<typeof renderColumnRows>,
-  ) {
-    if (count === 0) return null;
-    const expanded = metadataSectionIsOpen(table, section);
-    return (
-      <div
-        className="tw:flex tw:flex-col tw:gap-px"
-        key={`${tableKey(table)}:${section}`}
-      >
-        <TreeSectionButton
-          expanded={expanded}
-          icon={section === "keys" ? "key" : section === "indexes" ? "list" : "columns"}
-          treeItemContent
-          onToggle={() => toggleMetadataSection(table, section)}
-        >
-          {t(
-            section === "keys"
-              ? "connections.keys"
-              : section === "indexes"
-                ? "connections.indexes"
-                : "connections.columns",
-            { count },
-          )}
-        </TreeSectionButton>
-        {expanded && children}
-      </div>
-    );
-  }
-
-  function renderTableDetails(table: CatalogTable) {
-    if (!fullCatalog) {
-      return (
-        <div className="tw:pl-5 tw:text-xs tw:text-muted-foreground">
-          <LoadingLabel>{t("connections.loadingMetadata")}</LoadingLabel>
-        </div>
-      );
-    }
-    const keyCount = table.constraints.length > 0
-      ? table.constraints.length
-      : table.foreignKeys.length;
-    return (
-      <div className="tw:flex tw:flex-col tw:gap-px tw:pl-3">
-        {renderMetadataSection(
-          table,
-          "columns",
-          table.columns.length,
-          renderColumnRows(table),
-        )}
-        {renderMetadataSection(
-          table,
-          "keys",
-          keyCount,
-          renderKeyRows(table),
-        )}
-        {renderMetadataSection(
-          table,
-          "indexes",
-          table.indexes.length,
-          renderIndexRows(table),
-        )}
-        {table.columns.length + keyCount + table.indexes.length === 0 && (
-          <div className="tw:pl-5 tw:text-xs tw:text-muted-foreground">
-            {t("connections.noMetadata")}
-          </div>
-        )}
-      </div>
-    );
-  }
-
   function renderTable(table: CatalogTable) {
     const key = tableKey(table);
-    const tableDiff = diff?.tableDiffs[key];
-    const tone = tableDiffTone(tableDiff);
     const detailsOpen = expandedTables.has(key);
     return (
-      <div className="tw:flex tw:flex-col tw:gap-px" key={key}>
-        <div
-          className="ds-object-row tw:group tw:relative tw:gap-1 tw:rounded-xs tw:select-none tw:text-ui tw:data-[search-active=true]:bg-selection tw:data-[search-active=true]:text-selection-foreground"
-          data-table-key={key}
-          data-explorer-search-result={
-            normalizedFilter ? tableSearchResultKey(table) : undefined
-          }
-          data-search-active={
-            activeSearchResult?.key === tableSearchResultKey(table) || undefined
-          }
-          data-diff={tone ?? "none"}
-          aria-selected={selected && selectedTableKey === key}
-          title={
-            tableDiff
-              ? schemaTableDiffTitle(t, tableDiff)
-              : fullCatalog
-                ? t("connections.columns", { count: table.columns.length })
-                : undefined
-          }
-        >
-          {!isDocumentEngine(connection.engine) && (
-            <button
-              type="button"
-              className="tw:grid tw:size-3 tw:shrink-0 tw:cursor-pointer tw:place-items-center tw:rounded-xs tw:border-0 tw:bg-transparent tw:p-0 tw:text-2xs tw:text-muted-foreground tw:hover:text-foreground"
-              aria-expanded={detailsOpen}
-              data-tree-expander
-              tabIndex={-1}
-              aria-label={
-                detailsOpen
-                  ? t("connections.collapseMetadata", { table: table.name })
-                  : t("connections.expandMetadata", { table: table.name })
-              }
-              onClick={() => toggleTableDetails(table)}
-            >
-              <Icon name={detailsOpen ? "chevronDown" : "chevronRight"} />
-            </button>
-          )}
-          <span
-            data-diff={tone ?? "none"}
-            className="tw:size-[7px] tw:shrink-0 tw:rounded-full tw:bg-transparent tw:data-[diff=added]:bg-success tw:data-[diff=missing]:bg-danger tw:data-[diff=changed]:bg-warning tw:data-[diff=mixed]:border tw:data-[diff=mixed]:border-danger tw:data-[diff=mixed]:bg-warning"
-            title={
-              tableDiff ? schemaTableDiffTitle(t, tableDiff) : undefined
-            }
-            aria-hidden="true"
-          />
-          <Icon
-            className="tw:shrink-0 tw:text-[length:var(--ds-icon-sm)] tw:text-muted-foreground tw:group-hover:text-current"
-            name={
-              isDocumentEngine(connection.engine)
-                ? "collection"
-                : table.kind === "view"
-                  ? "view"
-                  : "table"
-            }
-          />
-          <button
-            type="button"
-            className="tbl-name tw:min-w-[10ch] tw:flex-1 tw:cursor-pointer tw:overflow-hidden tw:border-0 tw:bg-transparent tw:p-0 tw:text-left tw:font-sans tw:text-inherit tw:text-ellipsis tw:whitespace-nowrap"
-            data-tree-primary-action
-            tabIndex={-1}
-            onClick={() => props.onOpenTable(table)}
-          >
-            {table.schema ? table.name : tableLabel(connection.engine, table)}
-          </button>
-          {showRowCounts &&
-            table.rowEstimate != null &&
-            table.rowEstimate >= 0 && (
-              <span className="tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-xs tw:text-muted-foreground tw:opacity-60 tw:[font-variant-numeric:tabular-nums] tw:group-hover:opacity-100">
-                ~{table.rowEstimate.toLocaleString()}
-              </span>
-            )}
-        </div>
-        {detailsOpen && renderTableDetails(table)}
-      </div>
+      <CatalogRelationRow
+        connection={connection}
+        table={table}
+        tableDiff={diff?.tableDiffs[key]}
+        fullCatalogLoaded={Boolean(fullCatalog)}
+        detailsOpen={detailsOpen}
+        collapsedMetadataSections={collapsedMetadataSections}
+        searchResultKey={
+          normalizedFilter ? tableSearchResultKey(table) : undefined
+        }
+        activeSearchResultKey={activeSearchResult?.key}
+        selected={selected && selectedTableKey === key}
+        showRowCounts={showRowCounts}
+        onToggleDetails={() => toggleTableDetails(table)}
+        onToggleMetadataSection={(section) =>
+          toggleMetadataSection(table, section)
+        }
+        onOpen={() => props.onOpenTable(table)}
+      />
     );
   }
 
   function renderMissingTable(table: CatalogTable) {
     return (
-      <div
-        key={`missing-${tableKey(table)}`}
-        className="ds-object-row tw:cursor-default tw:gap-1 tw:rounded-xs tw:text-muted-foreground"
-        title={t("connections.schemaDiffTableMissing")}
-      >
-        <span
-          className="tw:size-[7px] tw:shrink-0 tw:rounded-full tw:bg-danger"
-          aria-hidden="true"
-        />
-        <Icon
-          className="tw:shrink-0 tw:text-[length:var(--ds-icon-sm)] tw:text-muted-foreground"
-          name={table.kind === "view" ? "view" : "table"}
-        />
-        <span className="tbl-name tw:min-w-[10ch] tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
-          {tableLabel(connection.engine, table)}
-        </span>
-        <span className="tw:shrink-0 tw:text-2xs tw:font-bold tw:tracking-[0.04em] tw:text-muted-foreground tw:uppercase">
-          {t(
-            table.kind === "view"
-              ? "schemaDiff.objectView"
-              : "schemaDiff.objectTable",
-          )}
-        </span>
-        <span className="tw:shrink-0 tw:text-2xs tw:font-bold tw:text-danger">
-          base
-        </span>
-      </div>
+      <CatalogMissingRelationRow connection={connection} table={table} />
     );
   }
 
@@ -663,49 +303,16 @@ export default function CatalogTree(props: Props) {
     index: number,
     insideSchema = false,
   ) {
-    const label =
-      insideSchema &&
-        (object.kind === "function" || object.kind === "procedure") &&
-        object.detail != null
-        ? `${object.name}(${object.detail})`
-        : insideSchema
-          ? object.name
-          : catalogObjectLabel(object);
     return (
-      <div
-        className="ds-object-row tw:cursor-default tw:gap-1 tw:rounded-xs tw:text-ui tw:data-[search-active=true]:bg-selection tw:data-[search-active=true]:text-selection-foreground"
-        key={`${object.schema ?? ""}:${object.kind}:${object.name}:${
-          object.detail ?? index
-        }`}
-        data-explorer-search-result={
+      <CatalogObjectRow
+        object={object}
+        icon={icon}
+        insideSchema={insideSchema}
+        searchResultKey={
           normalizedFilter ? objectSearchResultKey(object, index) : undefined
         }
-        data-search-active={
-          activeSearchResult?.key === objectSearchResultKey(object, index) || undefined
-        }
-        title={[
-          catalogObjectLabel(object),
-          object.parent
-            ? `${t("connections.objectOn")} ${object.parent}`
-            : null,
-          object.detail && object.kind === "trigger" ? object.detail : null,
-        ]
-          .filter(Boolean)
-          .join(" · ")}
-      >
-        <Icon
-          className="tw:shrink-0 tw:text-[length:var(--ds-icon-sm)] tw:text-muted-foreground"
-          name={icon}
-        />
-        <span className="tbl-name tw:min-w-[10ch] tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
-          {label}
-        </span>
-        {object.parent && (
-          <span className="tw:max-w-[42%] tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-xs tw:text-muted-foreground">
-            {t("connections.objectOn")} {object.parent}
-          </span>
-        )}
-      </div>
+        activeSearchResultKey={activeSearchResult?.key}
+      />
     );
   }
 
@@ -1120,95 +727,23 @@ export default function CatalogTree(props: Props) {
         </TreeSectionButton>
         {databaseVisible ? (
           <div className="tw:flex tw:flex-col tw:gap-px tw:pl-3">
-            {accessIssue ? (
-              <div className="tw:grid tw:gap-1 tw:px-2 tw:py-2 tw:text-sm">
-                <strong className="tw:text-foreground">
-                  {accessIssue === "grant"
-                    ? t("workspace.connectionUseRequired")
-                    : t("workspace.credentialsRequiredTitle")}
-                </strong>
-                <span className="tw:text-xs tw:leading-body tw:text-muted-foreground">
-                  {accessIssue === "grant"
-                    ? t("workspace.connectionUseRequiredBody")
-                    : t("workspace.credentialsRequiredBody")}
-                </span>
-                {accessIssue === "credentials" && props.onResolveAccess ? (
-                  <button
-                    type="button"
-                    className="tw:mt-1 tw:w-fit tw:cursor-pointer tw:rounded-xs tw:border tw:border-border-subtle tw:bg-card tw:px-2 tw:py-1 tw:font-sans tw:text-xs tw:text-foreground tw:hover:border-ring"
-                    onClick={props.onResolveAccess}
-                    role="treeitem"
-                    aria-level={props.treeLevel + 1}
-                    data-explorer-tree-item
-                    data-explorer-tree-key={`${databaseTreeKey}:resolve-access`}
-                    data-explorer-tree-parent-key={databaseTreeKey}
-                    data-tree-primary-action
-                    tabIndex={-1}
-                  >
-                    {t("workspace.bindCredentialsShort")}
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-            {error ? (
-              <div className="tw:flex tw:items-start tw:gap-2 tw:px-2 tw:py-1 tw:text-sm tw:text-danger">
-                <span className="tw:min-w-0 tw:flex-1 tw:wrap-break-word">
-                  {error}
-                </span>
-                <button
-                  type="button"
-                  className="tw:shrink-0 tw:cursor-pointer tw:rounded-xs tw:border tw:border-border-subtle tw:bg-card tw:px-1.5 tw:py-px tw:font-sans tw:text-2xs tw:text-foreground tw:hover:border-ring"
-                  onClick={props.onRetryOverview}
-                  role="treeitem"
-                  aria-level={props.treeLevel + 1}
-                  data-explorer-tree-item
-                  data-explorer-tree-key={`${databaseTreeKey}:retry-overview`}
-                  data-explorer-tree-parent-key={databaseTreeKey}
-                  data-tree-primary-action
-                  tabIndex={-1}
-                >
-                  {t("common.refresh")}
-                </button>
-              </div>
-            ) : null}
-            {detailError ? (
-              <div className="tw:flex tw:items-start tw:gap-2 tw:px-2 tw:py-1 tw:text-sm tw:text-muted-foreground">
-                <span className="tw:min-w-0 tw:flex-1 tw:wrap-break-word">
-                  {detailError}
-                </span>
-                <button
-                  type="button"
-                  className="tw:shrink-0 tw:cursor-pointer tw:rounded-xs tw:border tw:border-border-subtle tw:bg-card tw:px-1.5 tw:py-px tw:font-sans tw:text-2xs tw:text-foreground tw:hover:border-ring"
-                  onClick={props.onRequestDetails}
-                  role="treeitem"
-                  aria-level={props.treeLevel + 1}
-                  data-explorer-tree-item
-                  data-explorer-tree-key={`${databaseTreeKey}:retry-details`}
-                  data-explorer-tree-parent-key={databaseTreeKey}
-                  data-tree-primary-action
-                  tabIndex={-1}
-                >
-                  {t("common.refresh")}
-                </button>
-              </div>
-            ) : null}
-            {!catalog && !error && !accessIssue ? (
-              <div className="tw:px-2 tw:py-1 tw:text-sm">
-                <LoadingLabel>{t("connections.loadingSchema")}</LoadingLabel>
-              </div>
-            ) : null}
-            {catalog &&
-            ordered.length === 0 &&
-            filteredObjects.length === 0 &&
-            missingTables.length === 0 ? (
-              <div className="tw:px-2 tw:py-1 tw:text-sm tw:text-muted-foreground">
-                {normalizedFilter
-                  ? t("connections.noTablesMatch", {
-                      filter: normalizedFilter,
-                    })
-                  : t("connections.noObjects")}
-              </div>
-            ) : null}
+            <CatalogTreeStatus
+              accessIssue={accessIssue}
+              error={error}
+              detailError={detailError}
+              catalogLoaded={Boolean(catalog)}
+              empty={
+                ordered.length === 0 &&
+                filteredObjects.length === 0 &&
+                missingTables.length === 0
+              }
+              normalizedFilter={normalizedFilter}
+              databaseTreeKey={databaseTreeKey}
+              treeLevel={props.treeLevel}
+              onResolveAccess={props.onResolveAccess}
+              onRetryOverview={props.onRetryOverview}
+              onRequestDetails={props.onRequestDetails}
+            />
             {databaseRows.length > 0 ? (
               <VirtualTreeRows
                 rows={databaseRows}

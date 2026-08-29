@@ -40,10 +40,11 @@ const controlPlaneHttpAdapters = new Set([
 ]);
 
 const hostedProviderJsonAdapters = [
-  "workspace-cloud/lib/providers/gcp-cloud-bootstrap.ts",
+  "workspace-cloud/lib/providers/gcp-cloud-bootstrap-core.ts",
   "workspace-cloud/lib/providers/gcp-cloud-oauth.ts",
   "workspace-cloud/lib/providers/gcp-cloud-sql.ts",
-  "workspace-cloud/lib/providers/neon.ts",
+  "workspace-cloud/lib/providers/neon-api.ts",
+  "workspace-cloud/lib/providers/neon-branch-api.ts",
   "workspace-cloud/lib/providers/planetscale.ts",
   "workspace-cloud/lib/providers/vercel-oidc.ts",
   "workspace-cloud/lib/workspace-kms.ts",

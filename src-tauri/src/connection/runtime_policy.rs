@@ -1,0 +1,378 @@
+//! Provider-managed database policy verification.
+
+use super::*;
+use crate::connection::DbPool;
+
+pub(super) async fn verify_neon_policy(
+    live: &Live,
+    engine: Engine,
+    access: ConnectionAccess,
+) -> AppResult<()> {
+    if engine != Engine::Postgres {
+        return Err(AppError::Blocked {
+            reason: "Neon policy opened the wrong engine".into(),
+        });
+    }
+    let sql = live.sql()?;
+    let DbPool::Postgres(pool) = &sql.read_pool else {
+        return Err(AppError::Blocked {
+            reason: "Neon policy opened the wrong engine".into(),
+        });
+    };
+    let role = sqlx::query(
+        "SELECT \
+           current_user::text ~ '^dopedb_[a-z0-9]{1,8}_[a-z0-9]{1,32}$' AS owned_name, \
+           role.rolcanlogin, role.rolsuper, role.rolcreaterole, role.rolcreatedb, \
+           role.rolreplication, role.rolbypassrls, \
+           role.rolconnlimit = 4 AS bounded_connections, \
+           role.rolvaliduntil > now() \
+             AND role.rolvaliduntil <= now() + interval '20 minutes' AS bounded_expiry, \
+           NOT EXISTS (SELECT 1 FROM pg_catalog.pg_auth_members membership \
+             WHERE membership.member = role.oid) AS no_memberships, \
+           NOT EXISTS (SELECT 1 FROM pg_catalog.pg_auth_members membership \
+             WHERE membership.roleid = role.oid) AS no_members, \
+           NOT has_database_privilege(current_user, current_database(), 'CREATE') \
+             AS no_database_create, \
+           NOT has_database_privilege( \
+             current_user, current_database(), 'CONNECT WITH GRANT OPTION') \
+             AS no_connect_grant, \
+           NOT has_database_privilege(current_user, current_database(), 'TEMPORARY') \
+             AS no_temporary, \
+           NOT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace schema \
+             WHERE schema.nspname <> 'information_schema' \
+               AND schema.nspname !~ '^pg_' \
+               AND has_schema_privilege(current_user, schema.oid, 'CREATE')) \
+             AS no_schema_create, \
+           NOT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace schema \
+             WHERE schema.nspname <> 'information_schema' \
+               AND schema.nspname !~ '^pg_' \
+               AND has_schema_privilege( \
+                 current_user, schema.oid, 'USAGE WITH GRANT OPTION')) \
+             AS no_schema_grant, \
+           current_setting('statement_timeout') = '5min' AS bounded_statement, \
+           current_setting('idle_in_transaction_session_timeout') = '1min' \
+             AS bounded_transaction_idle, \
+           current_setting('idle_session_timeout') = '5min' AS bounded_session_idle, \
+           current_setting('default_transaction_read_only') = $1 AS read_only_default \
+         FROM pg_catalog.pg_roles role WHERE role.rolname = current_user",
+    )
+    .bind(if access == ConnectionAccess::Read {
+        "on"
+    } else {
+        "off"
+    })
+    .fetch_one(pool)
+    .await?;
+    let safe_role = [
+        role.try_get::<bool, _>("owned_name")?,
+        role.try_get::<bool, _>("rolcanlogin")?,
+        !role.try_get::<bool, _>("rolsuper")?,
+        !role.try_get::<bool, _>("rolcreaterole")?,
+        !role.try_get::<bool, _>("rolcreatedb")?,
+        !role.try_get::<bool, _>("rolreplication")?,
+        !role.try_get::<bool, _>("rolbypassrls")?,
+        role.try_get::<bool, _>("bounded_connections")?,
+        role.try_get::<bool, _>("bounded_expiry")?,
+        role.try_get::<bool, _>("no_memberships")?,
+        role.try_get::<bool, _>("no_members")?,
+        role.try_get::<bool, _>("no_database_create")?,
+        role.try_get::<bool, _>("no_connect_grant")?,
+        role.try_get::<bool, _>("no_temporary")?,
+        role.try_get::<bool, _>("no_schema_create")?,
+        role.try_get::<bool, _>("no_schema_grant")?,
+        role.try_get::<bool, _>("bounded_statement")?,
+        role.try_get::<bool, _>("bounded_transaction_idle")?,
+        role.try_get::<bool, _>("bounded_session_idle")?,
+        role.try_get::<bool, _>("read_only_default")?,
+    ]
+    .into_iter()
+    .all(|value| value);
+
+    let write = access == ConnectionAccess::Write;
+    let privileges = sqlx::query(
+        "SELECT \
+           NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class object \
+             JOIN pg_catalog.pg_namespace schema ON schema.oid = object.relnamespace \
+             WHERE schema.nspname <> 'information_schema' \
+               AND schema.nspname !~ '^pg_' \
+               AND has_schema_privilege(current_user, schema.oid, 'USAGE') \
+               AND object.relkind IN ('r', 'p', 'v', 'm', 'f') \
+               AND NOT has_table_privilege(current_user, object.oid, 'SELECT')) AS all_read, \
+           NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class object \
+             JOIN pg_catalog.pg_namespace schema ON schema.oid = object.relnamespace \
+             WHERE schema.nspname <> 'information_schema' \
+               AND schema.nspname !~ '^pg_' \
+               AND has_schema_privilege(current_user, schema.oid, 'USAGE') \
+               AND object.relkind IN ('r', 'p', 'v', 'm', 'f') \
+               AND CASE WHEN $1 THEN \
+                 NOT has_table_privilege(current_user, object.oid, 'INSERT') \
+                 OR NOT has_table_privilege(current_user, object.oid, 'UPDATE') \
+                 OR NOT has_table_privilege(current_user, object.oid, 'DELETE') \
+               ELSE \
+                 has_table_privilege(current_user, object.oid, 'INSERT') \
+                 OR has_table_privilege(current_user, object.oid, 'UPDATE') \
+                 OR has_table_privilege(current_user, object.oid, 'DELETE') \
+               END) AS exact_table_mode, \
+           NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class object \
+             JOIN pg_catalog.pg_namespace schema ON schema.oid = object.relnamespace \
+             WHERE schema.nspname <> 'information_schema' \
+               AND schema.nspname !~ '^pg_' \
+               AND has_schema_privilege(current_user, schema.oid, 'USAGE') \
+               AND object.relkind = 'S' \
+               AND (NOT has_sequence_privilege(current_user, object.oid, 'SELECT') \
+                 OR CASE WHEN $1 THEN \
+                   NOT has_sequence_privilege(current_user, object.oid, 'USAGE') \
+                   OR NOT has_sequence_privilege(current_user, object.oid, 'UPDATE') \
+                 ELSE \
+                   has_sequence_privilege(current_user, object.oid, 'USAGE') \
+                   OR has_sequence_privilege(current_user, object.oid, 'UPDATE') \
+                 END)) AS exact_sequence_mode, \
+           NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class object \
+             JOIN pg_catalog.pg_namespace schema ON schema.oid = object.relnamespace \
+             WHERE schema.nspname <> 'information_schema' \
+               AND schema.nspname !~ '^pg_' \
+               AND has_schema_privilege(current_user, schema.oid, 'USAGE') \
+               AND object.relkind IN ('r', 'p', 'v', 'm', 'f') \
+               AND (has_table_privilege(current_user, object.oid, 'TRUNCATE') \
+                 OR has_table_privilege(current_user, object.oid, 'REFERENCES') \
+                 OR has_table_privilege(current_user, object.oid, 'TRIGGER') \
+                 OR has_table_privilege(current_user, object.oid, 'SELECT WITH GRANT OPTION') \
+                 OR has_table_privilege(current_user, object.oid, 'INSERT WITH GRANT OPTION') \
+                 OR has_table_privilege(current_user, object.oid, 'UPDATE WITH GRANT OPTION') \
+                 OR has_table_privilege(current_user, object.oid, 'DELETE WITH GRANT OPTION'))) \
+             AS no_table_escalation, \
+           NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class object \
+             JOIN pg_catalog.pg_namespace schema ON schema.oid = object.relnamespace \
+             WHERE schema.nspname <> 'information_schema' \
+               AND schema.nspname !~ '^pg_' \
+               AND has_schema_privilege(current_user, schema.oid, 'USAGE') \
+               AND object.relkind = 'S' \
+               AND (has_sequence_privilege(current_user, object.oid, 'SELECT WITH GRANT OPTION') \
+                 OR has_sequence_privilege(current_user, object.oid, 'USAGE WITH GRANT OPTION') \
+                 OR has_sequence_privilege(current_user, object.oid, 'UPDATE WITH GRANT OPTION'))) \
+             AS no_sequence_escalation",
+    )
+    .bind(write)
+    .fetch_one(pool)
+    .await?;
+    let safe_privileges = [
+        privileges.try_get::<bool, _>("all_read")?,
+        privileges.try_get::<bool, _>("exact_table_mode")?,
+        privileges.try_get::<bool, _>("exact_sequence_mode")?,
+        privileges.try_get::<bool, _>("no_table_escalation")?,
+        privileges.try_get::<bool, _>("no_sequence_escalation")?,
+    ]
+    .into_iter()
+    .all(|value| value);
+    if !safe_role || !safe_privileges {
+        return Err(AppError::Blocked {
+            reason: "Neon credential exceeded its approved database policy".into(),
+        });
+    }
+    Ok(())
+}
+
+pub(super) async fn verify_planetscale_policy(
+    live: &Live,
+    engine: Engine,
+    access: ConnectionAccess,
+) -> AppResult<()> {
+    if engine != Engine::Postgres {
+        // Vitess enforces the provider-created `reader`/`readwriter` password
+        // role. A live SELECT plus the server-side exact role request is the
+        // non-mutating proof; unlike PostgreSQL it exposes no stable catalog
+        // membership contract that can be checked without touching user data.
+        return Ok(());
+    }
+    let sql = live.sql()?;
+    let DbPool::Postgres(pool) = &sql.read_pool else {
+        return Err(AppError::Blocked {
+            reason: "PlanetScale PostgreSQL policy opened the wrong engine".into(),
+        });
+    };
+    let row = sqlx::query(
+        "SELECT \
+           pg_has_role(current_user, 'pg_read_all_data', 'member') AS can_read, \
+           pg_has_role(current_user, 'pg_write_all_data', 'member') AS can_write, \
+           EXISTS ( \
+             SELECT 1 FROM pg_catalog.pg_roles admin \
+             WHERE admin.rolname = 'postgres' \
+               AND pg_has_role(current_user, admin.oid, 'member') \
+           ) AS is_admin, \
+           role.rolsuper, role.rolcreaterole, role.rolcreatedb, \
+           role.rolreplication, role.rolbypassrls, \
+           has_schema_privilege(current_user, 'public', 'CREATE') AS can_create \
+         FROM pg_catalog.pg_roles role WHERE role.rolname = current_user",
+    )
+    .fetch_one(pool)
+    .await?;
+    let can_read: bool = row.try_get("can_read")?;
+    let can_write: bool = row.try_get("can_write")?;
+    let is_admin: bool = row.try_get("is_admin")?;
+    let elevated = [
+        row.try_get::<bool, _>("rolsuper")?,
+        row.try_get::<bool, _>("rolcreaterole")?,
+        row.try_get::<bool, _>("rolcreatedb")?,
+        row.try_get::<bool, _>("rolreplication")?,
+        row.try_get::<bool, _>("rolbypassrls")?,
+        row.try_get::<bool, _>("can_create")?,
+    ]
+    .into_iter()
+    .any(|value| value);
+    if !can_read || can_write != (access == ConnectionAccess::Write) || is_admin || elevated {
+        return Err(AppError::Blocked {
+            reason: "PlanetScale credential exceeded its approved database policy".into(),
+        });
+    }
+    Ok(())
+}
+
+pub(super) async fn verify_gcp_cloud_sql_policy(
+    live: &Live,
+    engine: Engine,
+    access: ConnectionAccess,
+    database: &str,
+) -> AppResult<()> {
+    let sql = live.sql()?;
+    match (&sql.read_pool, engine) {
+        (DbPool::Postgres(pool), Engine::Postgres) => {
+            let row = sqlx::query(
+                "SELECT \
+                   EXISTS ( \
+                     SELECT 1 FROM pg_catalog.pg_roles granted \
+                     WHERE (granted.rolname = 'pg_read_all_data' \
+                            OR granted.rolname ~ '^dopedb_r_[0-9a-f]{14}$') \
+                       AND pg_has_role(current_user, granted.oid, 'USAGE') \
+                   ) AS can_read, \
+                   EXISTS ( \
+                     SELECT 1 FROM pg_catalog.pg_roles granted \
+                     WHERE (granted.rolname = 'pg_write_all_data' \
+                            OR granted.rolname ~ '^dopedb_w_[0-9a-f]{14}$') \
+                       AND pg_has_role(current_user, granted.oid, 'USAGE') \
+                   ) AS can_write, \
+                   EXISTS ( \
+                     SELECT 1 FROM pg_catalog.pg_roles admin \
+                     WHERE admin.rolname IN ('postgres', 'cloudsqlsuperuser') \
+                       AND pg_has_role(current_user, admin.oid, 'MEMBER') \
+                   ) AS is_admin, \
+                   role.rolsuper, role.rolcreaterole, role.rolcreatedb, \
+                   role.rolreplication, role.rolbypassrls, \
+                   has_database_privilege(current_user, current_database(), 'CREATE') \
+                     AS can_create_database, \
+                   has_schema_privilege(current_user, 'public', 'CREATE') AS can_create_schema \
+                 FROM pg_catalog.pg_roles role WHERE role.rolname = current_user",
+            )
+            .fetch_one(pool)
+            .await?;
+            let can_read: bool = row.try_get("can_read")?;
+            let can_write: bool = row.try_get("can_write")?;
+            let is_admin: bool = row.try_get("is_admin")?;
+            let elevated = [
+                row.try_get::<bool, _>("rolsuper")?,
+                row.try_get::<bool, _>("rolcreaterole")?,
+                row.try_get::<bool, _>("rolcreatedb")?,
+                row.try_get::<bool, _>("rolreplication")?,
+                row.try_get::<bool, _>("rolbypassrls")?,
+                row.try_get::<bool, _>("can_create_database")?,
+                row.try_get::<bool, _>("can_create_schema")?,
+            ]
+            .into_iter()
+            .any(|value| value);
+            if !can_read || can_write != (access == ConnectionAccess::Write) || is_admin || elevated
+            {
+                return Err(AppError::Blocked {
+                    reason: "GCP Cloud SQL credential exceeded its approved PostgreSQL policy"
+                        .into(),
+                });
+            }
+        }
+        (DbPool::Mysql(pool), Engine::Mysql) => {
+            let rows = sqlx::query("SHOW GRANTS FOR CURRENT_USER")
+                .fetch_all(pool)
+                .await?;
+            let grants = rows
+                .iter()
+                .map(|row| row.try_get::<String, _>(0))
+                .collect::<Result<Vec<_>, _>>()?;
+            if !mysql_grants_match_policy(&grants, database, access) {
+                return Err(AppError::Blocked {
+                    reason: "GCP Cloud SQL credential exceeded its approved MySQL policy".into(),
+                });
+            }
+        }
+        _ => {
+            return Err(AppError::Blocked {
+                reason: "GCP Cloud SQL policy opened the wrong engine".into(),
+            });
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn mysql_grants_match_policy(
+    grants: &[String],
+    database: &str,
+    access: ConnectionAccess,
+) -> bool {
+    if grants.is_empty() || database.is_empty() || database.contains('`') {
+        return false;
+    }
+    let expected_object = format!("`{database}`.*");
+    let expected_privileges = match access {
+        ConnectionAccess::Read => BTreeSet::from(["SELECT"]),
+        ConnectionAccess::Write => BTreeSet::from(["DELETE", "INSERT", "SELECT", "UPDATE"]),
+    };
+    let mut found_data_grant = false;
+    for grant in grants {
+        let upper = grant.to_ascii_uppercase();
+        if !upper.starts_with("GRANT ") || upper.contains("WITH GRANT OPTION") {
+            return false;
+        }
+        let Some(on_index) = upper.find(" ON ") else {
+            return false;
+        };
+        let privileges = upper[6..on_index]
+            .split(',')
+            .map(str::trim)
+            .collect::<BTreeSet<_>>();
+        let object_and_principal = &grant[on_index + 4..];
+        let object_and_principal_upper = &upper[on_index + 4..];
+        let Some(to_index) = object_and_principal_upper.find(" TO ") else {
+            return false;
+        };
+        let object = object_and_principal[..to_index].trim();
+        if object == "*.*" && privileges == BTreeSet::from(["USAGE"]) {
+            continue;
+        }
+        if object != expected_object || privileges != expected_privileges || found_data_grant {
+            return false;
+        }
+        found_data_grant = true;
+    }
+    found_data_grant
+}
+
+#[cfg(test)]
+pub(crate) fn assert_gcp_mysql_grant_contract() {
+    let usage = "GRANT USAGE ON *.* TO `dopedb-r`@`%` REQUIRE SSL".to_owned();
+    let read = "GRANT SELECT ON `app`.* TO `dopedb-r`@`%`".to_owned();
+    let write = "GRANT SELECT, INSERT, UPDATE, DELETE ON `app`.* TO `dopedb-w`@`%`".to_owned();
+    assert!(mysql_grants_match_policy(
+        &[usage.clone(), read],
+        "app",
+        ConnectionAccess::Read,
+    ));
+    assert!(mysql_grants_match_policy(
+        &[usage.clone(), write],
+        "app",
+        ConnectionAccess::Write,
+    ));
+    assert!(!mysql_grants_match_policy(
+        &[
+            usage,
+            "GRANT SELECT, CREATE ON `app`.* TO `dopedb-r`@`%`".into(),
+        ],
+        "app",
+        ConnectionAccess::Read,
+    ));
+}

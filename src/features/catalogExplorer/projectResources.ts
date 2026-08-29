@@ -16,6 +16,16 @@ export function projectResourceKey(
   return `${projectId}:${view}`;
 }
 
+export function toggledResourceKeys(
+  current: ReadonlySet<string>,
+  key: string,
+): Set<string> {
+  const next = new Set(current);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  return next;
+}
+
 export function preferredProjectEnvironment(
   project: KnowledgeProject,
   activeEnvironmentId: string | null,
