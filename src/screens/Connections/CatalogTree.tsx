@@ -18,6 +18,8 @@ import {
   type ConnectionAccessIssue,
   type ConnectionProfile,
 } from "../../features/connections/domain";
+import { bigQueryAuthMode } from "../../features/connections/bigQueryOnboardingModel";
+import type { CatalogLoadIssue } from "../../features/catalogExplorer/catalogDomain";
 import { Icon } from "../../components/Icon";
 import { TreeSectionButton } from "../../design-system/components/TreeControls";
 import {
@@ -43,8 +45,8 @@ type Props = {
   selectedTableKey: string | null;
   overview?: CatalogOverview;
   fullCatalog?: Catalog;
-  error?: string;
-  detailError?: string;
+  error?: CatalogLoadIssue;
+  detailError?: CatalogLoadIssue;
   applySchemaScope?: boolean;
   initiallyOpen?: boolean;
   scrollElement: HTMLDivElement | null;
@@ -65,6 +67,9 @@ type Props = {
   onRequestDetails: () => void;
   onRetryOverview: () => void;
   onResolveAccess?: () => void;
+  onRecoverAuthentication?: () => void;
+  authenticationRecoveryPending?: boolean;
+  authenticationRecoveryError?: CatalogLoadIssue;
   onToggleRelationSection: (key: string) => void;
   onToggleObjectSection: (kind: string) => void;
   revealRequest: number;
@@ -740,7 +745,17 @@ export default function CatalogTree(props: Props) {
               normalizedFilter={normalizedFilter}
               databaseTreeKey={databaseTreeKey}
               treeLevel={props.treeLevel}
+              authenticationMode={
+                connection.engine === "bigquery"
+                  ? bigQueryAuthMode(connection)
+                  : undefined
+              }
+              authenticationRecoveryPending={
+                props.authenticationRecoveryPending
+              }
+              authenticationRecoveryError={props.authenticationRecoveryError}
               onResolveAccess={props.onResolveAccess}
+              onRecoverAuthentication={props.onRecoverAuthentication}
               onRetryOverview={props.onRetryOverview}
               onRequestDetails={props.onRequestDetails}
             />

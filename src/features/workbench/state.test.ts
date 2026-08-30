@@ -81,7 +81,9 @@ import {
   virtualTreeFocusIndex,
 } from "../../design-system/treeKeyboard";
 import {
+  catalogLoadIssue,
   filterLoadedCatalogObjects,
+  isAuthenticationRequired,
   supportedObjectKinds,
 } from "../catalogExplorer/catalogDomain";
 import {
@@ -633,6 +635,15 @@ describe("workbench state ownership", () => {
     expect(bigQueryResourceInputMode(true, 2)).toBe("select");
     expect(bigQueryResourceInputMode(true, 0)).toBe("manual");
     expect(bigQueryResourceInputMode(false, 2)).toBe("manual");
+    const expiredAuthentication = catalogLoadIssue({
+      kind: "authenticationRequired",
+      message: "Google Cloud authentication is required",
+    });
+    expect(isAuthenticationRequired(expiredAuthentication)).toBe(true);
+    expect(expiredAuthentication.message).not.toContain("config error:");
+    expect(
+      isAuthenticationRequired(catalogLoadIssue(new Error("network"))),
+    ).toBe(false);
     const serviceAccountBigQuery = {
       ...bigQuery,
       extraParams: {

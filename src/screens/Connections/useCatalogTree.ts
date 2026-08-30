@@ -6,7 +6,10 @@ import type {
   CatalogOverview,
   DatabaseSummary,
 } from "../../ipc/types";
-import { errMessage } from "../../ipc/types";
+import {
+  catalogLoadIssue,
+  type CatalogLoadIssue,
+} from "../../features/catalogExplorer/catalogDomain";
 import {
   connectionDatabasesQuery,
   databaseCatalogOverviewQuery,
@@ -71,11 +74,11 @@ export function useCatalogTree(
     queries: connectionIds.map((id) => connectionDatabasesQuery(id, scope)),
     combine: (results) => {
       const databasesByConnection: Record<string, DatabaseSummary[]> = {};
-      const databaseErrs: Record<string, string> = {};
+      const databaseErrs: Record<string, CatalogLoadIssue> = {};
       results.forEach((result, index) => {
         const id = connectionIds[index];
         if (result.data) databasesByConnection[id] = result.data;
-        else if (result.error) databaseErrs[id] = errMessage(result.error);
+        else if (result.error) databaseErrs[id] = catalogLoadIssue(result.error);
       });
       return { databasesByConnection, databaseErrs };
     },
@@ -238,7 +241,7 @@ export function useCatalogTree(
     }),
     combine: (results) => {
       const databaseOverviews: Record<string, CatalogOverview> = {};
-      const overviewErrsByDatabase: Record<string, string> = {};
+      const overviewErrsByDatabase: Record<string, CatalogLoadIssue> = {};
       results.forEach((result, index) => {
         const target = targets[index];
         const key = databaseCatalogKey(
@@ -247,7 +250,7 @@ export function useCatalogTree(
         );
         if (result.data) databaseOverviews[key] = result.data;
         else if (result.error) {
-          overviewErrsByDatabase[key] = errMessage(result.error);
+          overviewErrsByDatabase[key] = catalogLoadIssue(result.error);
         }
       });
       return { databaseOverviews, overviewErrsByDatabase };
@@ -275,7 +278,7 @@ export function useCatalogTree(
     }),
     combine: (results) => {
       const databaseCatalogs: Record<string, Catalog> = {};
-      const detailErrsByDatabase: Record<string, string> = {};
+      const detailErrsByDatabase: Record<string, CatalogLoadIssue> = {};
       results.forEach((result, index) => {
         const target = targets[index];
         const key = databaseCatalogKey(
@@ -284,7 +287,7 @@ export function useCatalogTree(
         );
         if (result.data) databaseCatalogs[key] = result.data;
         else if (result.error) {
-          detailErrsByDatabase[key] = errMessage(result.error);
+          detailErrsByDatabase[key] = catalogLoadIssue(result.error);
         }
       });
       return { databaseCatalogs, detailErrsByDatabase };
@@ -294,9 +297,9 @@ export function useCatalogTree(
   // Schema comparison remains connection-level and uses the configured database.
   // Secondary databases are independent targets, never accidental schema siblings.
   const overviews: Record<string, CatalogOverview> = {};
-  const overviewErrs: Record<string, string> = { ...databaseErrs };
+  const overviewErrs: Record<string, CatalogLoadIssue> = { ...databaseErrs };
   const catalogs: Record<string, Catalog> = {};
-  const detailErrs: Record<string, string> = {};
+  const detailErrs: Record<string, CatalogLoadIssue> = {};
   for (const target of targets) {
     if (!target.isDefault) continue;
     const key = databaseCatalogKey(target.connectionId, target.database);

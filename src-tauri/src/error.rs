@@ -59,6 +59,12 @@ pub enum AppError {
     #[error("shared connection credentials are required on this device")]
     CredentialBindingRequired,
 
+    /// An official provider adapter is available, but its member-local login is no
+    /// longer usable. The frontend may route this to that provider's explicit
+    /// authentication flow; it must not retry the failed operation automatically.
+    #[error("{0} authentication is required")]
+    AuthenticationRequired(String),
+
     /// The safety gate blocked an action; `reason` is shown verbatim in the UI.
     #[error("blocked: {reason}")]
     Blocked { reason: String },
@@ -93,6 +99,7 @@ impl AppError {
             AppError::Config(_) => "config",
             AppError::NotFound(_) => "notFound",
             AppError::CredentialBindingRequired => "credentialBindingRequired",
+            AppError::AuthenticationRequired(_) => "authenticationRequired",
             AppError::Blocked { .. } => "blocked",
             AppError::ProposalRequired => "proposalRequired",
             AppError::OutcomeUnknown(_) => "outcomeUnknown",

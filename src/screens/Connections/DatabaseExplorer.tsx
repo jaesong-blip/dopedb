@@ -25,6 +25,10 @@ import {
   projectResourceKey,
   toggledResourceKeys,
 } from "../../features/catalogExplorer/projectResources";
+import {
+  catalogLoadIssue,
+  type CatalogLoadIssue,
+} from "../../features/catalogExplorer/catalogDomain";
 import { useCatalogExplorerState } from "../../features/catalogExplorer/state";
 import { useSchemaGroupDrag } from "../../features/catalogExplorer/useSchemaGroupDrag";
 import { useCatalogScope } from "../../lib/queries";
@@ -266,10 +270,14 @@ export function DatabaseExplorer({
     forgetOverview,
     forgetConnection,
   } = useCatalogTree(readableWantedIds, catalogScope);
-  const { ensureLoaded, retryOverview } = useCatalogExplorerLoading(
-    catalogScope,
-    commands,
-  );
+  const {
+    ensureLoaded,
+    retryOverview,
+    recoverAuthentication,
+    authenticationRecoveryPendingId,
+    authenticationRecoveryErrorId,
+    authenticationRecoveryError,
+  } = useCatalogExplorerLoading(catalogScope, commands);
   const {
     deletingProjectId,
     savingScopeId,
@@ -322,7 +330,10 @@ export function DatabaseExplorer({
     unassignedConnectionIds,
     onDropOnEnvironment: bindDroppedConnection,
   });
-  const errs = { ...overviewErrs, ...refreshErrs };
+  const errs: Record<string, CatalogLoadIssue> = { ...overviewErrs };
+  for (const [connectionId, message] of Object.entries(refreshErrs)) {
+    errs[connectionId] = catalogLoadIssue(message);
+  }
 
   function ensureGroupLoaded(id: string) {
     const group = groupByConnectionId.get(id);
@@ -501,6 +512,20 @@ export function DatabaseExplorer({
         }
         onRetryOverview={(database) =>
           retryOverview(connection.id, database)
+        }
+        onRecoverAuthentication={
+          connection.engine === "bigquery" &&
+          connection.workspaceAccess === "local"
+            ? () => recoverAuthentication(connection)
+            : undefined
+        }
+        authenticationRecoveryPending={
+          authenticationRecoveryPendingId === connection.id
+        }
+        authenticationRecoveryError={
+          authenticationRecoveryErrorId === connection.id
+            ? authenticationRecoveryError
+            : undefined
         }
         onToggleRelationSection={(sectionKey) =>
           toggleRelationSection(connection.id, sectionKey)

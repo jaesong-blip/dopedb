@@ -81,6 +81,10 @@ fn connection_test_failure(error: &AppError) -> ConnectionTestFailure {
         AppError::Db(sqlx::Error::Database(database)) => {
             classify_database_failure(database.as_ref())
         }
+        AppError::AuthenticationRequired(_) => (
+            ConnectionTestFailureCode::Authentication,
+            Some(ConnectionTestFailureField::Credentials),
+        ),
         AppError::Config(_) => (ConnectionTestFailureCode::DatabaseConfig, None),
         _ => (ConnectionTestFailureCode::Unknown, None),
     };
@@ -148,6 +152,9 @@ fn safe_connection_test_detail(error: &AppError) -> String {
         AppError::Db(sqlx::Error::Tls(_)) => "TLS negotiation or certificate verification failed",
         AppError::Timeout(_) => "the bounded connection attempt timed out",
         AppError::Network(_) | AppError::Io(_) => "the network connection failed",
+        AppError::AuthenticationRequired(_) => {
+            "the connection credential is no longer authenticated"
+        }
         AppError::Config(_) => "the driver rejected the connection configuration",
         AppError::Keychain(_) => "the OS credential store could not supply this connection",
         AppError::Mongo(_) => "the MongoDB driver rejected the connection",
@@ -183,6 +190,14 @@ pub(crate) fn assert_connection_test_failure_contract() {
     assert_eq!(
         connection_test_failure(&AppError::Timeout("probe".into())).code,
         ConnectionTestFailureCode::TimeoutNetwork,
+    );
+    assert_eq!(
+        connection_test_failure(&AppError::AuthenticationRequired("Google Cloud".into())),
+        ConnectionTestFailure {
+            code: ConnectionTestFailureCode::Authentication,
+            field: Some(ConnectionTestFailureField::Credentials),
+            detail: "the connection credential is no longer authenticated".into(),
+        },
     );
     assert_eq!(
         connection_test_failure(&AppError::Db(sqlx::Error::Tls(Box::new(

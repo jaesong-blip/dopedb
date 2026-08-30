@@ -1,8 +1,10 @@
-import type {
-  Catalog,
-  CatalogObject,
-  CatalogObjectKind,
-  CatalogTable,
+import {
+  errDetails,
+  type AppErrorDetails,
+  type Catalog,
+  type CatalogObject,
+  type CatalogObjectKind,
+  type CatalogTable,
 } from "../../ipc/types";
 import type { ConnectionProfile } from "../connections/domain";
 import type { IconName } from "../../components/Icon";
@@ -11,6 +13,19 @@ export type DropTarget =
   | { kind: "connection"; id: string }
   | { kind: "group"; key: string }
   | { kind: "environment"; id: string };
+
+export type CatalogLoadIssue = Pick<AppErrorDetails, "kind" | "message">;
+
+export function catalogLoadIssue(error: unknown): CatalogLoadIssue {
+  const { kind, message } = errDetails(error);
+  return { kind, message };
+}
+
+export function isAuthenticationRequired(
+  issue: CatalogLoadIssue | undefined,
+): boolean {
+  return issue?.kind === "authenticationRequired";
+}
 
 export const SQL_OBJECT_SECTIONS: Array<{
   kind: CatalogObjectKind;

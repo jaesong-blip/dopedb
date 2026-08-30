@@ -32,7 +32,10 @@ import type { SchemaConnectionGroup } from "../../lib/schemaDiff";
 import { SchemaDiffTrigger } from "./schemaDiffPresentation";
 import CatalogTree from "./CatalogTree";
 import type { CatalogTreeSearchResult } from "./CatalogTree";
-import type { DropTarget } from "../../features/catalogExplorer/catalogDomain";
+import type {
+  CatalogLoadIssue,
+  DropTarget,
+} from "../../features/catalogExplorer/catalogDomain";
 import {
   nextSchemaScopeSelection,
   relationNamespace,
@@ -65,13 +68,13 @@ type Props = {
   onSetSchemaScope: (schemas: string[]) => void;
   overview?: CatalogOverview;
   fullCatalog?: Catalog;
-  error?: string;
-  detailError?: string;
+  error?: CatalogLoadIssue;
+  detailError?: CatalogLoadIssue;
   databases?: DatabaseSummary[];
   databaseOverviews: Record<string, CatalogOverview>;
   databaseCatalogs: Record<string, Catalog>;
-  overviewErrorsByDatabase: Record<string, string>;
-  detailErrorsByDatabase: Record<string, string>;
+  overviewErrorsByDatabase: Record<string, CatalogLoadIssue>;
+  detailErrorsByDatabase: Record<string, CatalogLoadIssue>;
   treeScrollElement: HTMLDivElement | null;
   filter: string;
   activeSearchResultKey?: string | null;
@@ -104,6 +107,9 @@ type Props = {
   onForgetOverview: (database: string) => void;
   onRequestDetails: (database: string) => void;
   onRetryOverview: (database: string) => void;
+  onRecoverAuthentication?: () => void;
+  authenticationRecoveryPending?: boolean;
+  authenticationRecoveryError?: CatalogLoadIssue;
   onToggleRelationSection: (key: string) => void;
   onToggleObjectSection: (kind: string) => void;
   revealRequest: number;
@@ -526,6 +532,11 @@ export default function ConnectionNode(props: Props) {
                 onRetryOverview={() =>
                   props.onRetryOverview(database.name)
                 }
+                onRecoverAuthentication={props.onRecoverAuthentication}
+                authenticationRecoveryPending={
+                  props.authenticationRecoveryPending
+                }
+                authenticationRecoveryError={props.authenticationRecoveryError}
                 onResolveAccess={
                   accessIssue === "credentials"
                     ? () => props.onWorkspaceDialog("credentials")
@@ -574,6 +585,11 @@ export default function ConnectionNode(props: Props) {
             onRetryOverview={() =>
               props.onRetryOverview(connection.database)
             }
+            onRecoverAuthentication={props.onRecoverAuthentication}
+            authenticationRecoveryPending={
+              props.authenticationRecoveryPending
+            }
+            authenticationRecoveryError={props.authenticationRecoveryError}
             onResolveAccess={
               accessIssue === "credentials"
                 ? () => props.onWorkspaceDialog("credentials")

@@ -132,6 +132,10 @@ export const connectionsCatalog = defineCatalog(
     "connections.bigQueryNotConnected": "Not connected",
     "connections.bigQueryConnectGoogleAccount": "Connect Google account",
     "connections.bigQueryChangeGoogleAccount": "Change account",
+    "connections.bigQueryReconnectGoogleAccount": "Reconnect Google account",
+    "connections.bigQueryReconnecting": "Reconnecting…",
+    "connections.bigQueryAuthenticationExpired":
+      "Google Cloud authentication has expired.",
     "connections.bigQueryChooseCredentialFile": "Choose credential JSON",
     "connections.bigQueryReplaceCredentialFile": "Replace credential JSON",
     "connections.bigQueryProjectsLoading": "Loading accessible projects…",
@@ -544,6 +548,10 @@ export const connectionsCatalog = defineCatalog(
     "connections.bigQueryNotConnected": "연결되지 않음",
     "connections.bigQueryConnectGoogleAccount": "Google 계정 연결",
     "connections.bigQueryChangeGoogleAccount": "계정 변경",
+    "connections.bigQueryReconnectGoogleAccount": "Google 계정 다시 연결",
+    "connections.bigQueryReconnecting": "다시 연결 중…",
+    "connections.bigQueryAuthenticationExpired":
+      "Google Cloud 인증이 만료되었습니다.",
     "connections.bigQueryChooseCredentialFile": "인증 JSON 선택",
     "connections.bigQueryReplaceCredentialFile": "인증 JSON 교체",
     "connections.bigQueryProjectsLoading": "접근 가능한 프로젝트 불러오는 중…",

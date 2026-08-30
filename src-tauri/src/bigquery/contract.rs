@@ -16,9 +16,7 @@ pub(super) fn safe_cli_error(stderr: &[u8]) -> AppError {
         || text.contains("invalid_grant")
         || text.contains("login required")
     {
-        return AppError::Config(
-            "Google Cloud CLI authentication expired; run `gcloud auth login`, then retry".into(),
-        );
+        return AppError::AuthenticationRequired("Google Cloud".into());
     }
     if text.contains("access denied")
         || text.contains("permission denied")
@@ -346,6 +344,20 @@ pub(super) fn safe_path() -> &'static str {
 pub(crate) fn assert_bigquery_contract() {
     onboarding::assert_onboarding_contract();
     runtime::assert_runtime_contract();
+    let authentication_required = safe_cli_error(b"invalid_grant: login required");
+    assert_eq!(authentication_required.kind(), "authenticationRequired");
+    assert_eq!(
+        authentication_required.to_string(),
+        "Google Cloud authentication is required",
+    );
+    assert_eq!(
+        serde_json::to_value(&authentication_required)
+            .expect("authentication-required error contract"),
+        serde_json::json!({
+            "kind": "authenticationRequired",
+            "message": "Google Cloud authentication is required",
+        }),
+    );
     assert!(valid_project_id("campfire-460003"));
     assert!(!valid_project_id("Campfire-460003"));
     assert!(valid_dataset_id("analytics_2026"));
