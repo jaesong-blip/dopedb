@@ -267,7 +267,6 @@ impl DesktopSqlResultWriter {
 }
 
 #[cfg(feature = "packaged-benchmark")]
-
 impl Drop for DesktopSqlResultWriter {
     fn drop(&mut self) {
         if !self.published {

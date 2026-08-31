@@ -97,7 +97,7 @@ impl ScriptPlatformAdapter {
             }));
         }
         let has_write = script_has_write(&kinds);
-        let has_ddl = kinds.iter().any(|kind| *kind == QueryKind::Ddl);
+        let has_ddl = kinds.contains(&QueryKind::Ddl);
         let access_allowed = if has_ddl {
             pin.profile.workspace_access.can_manage()
         } else if has_write {

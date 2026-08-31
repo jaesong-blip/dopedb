@@ -403,7 +403,6 @@ async fn ensure_connection_integrity_guards(pool: &SqlitePool) -> AppResult<()> 
 /// their original operation ids and hashes; only the retired parent's descriptive
 /// kind is normalized. Foreign-key enforcement is disabled on the one acquired
 /// startup connection only for the parent-table swap and is verified before return.
-
 async fn set_local_schema_version(pool: &SqlitePool, version: i64) -> AppResult<()> {
     sqlx::query(AssertSqlSafe(format!("PRAGMA user_version = {version}")))
         .execute(pool)

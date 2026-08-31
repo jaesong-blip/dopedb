@@ -2,6 +2,8 @@
 
 use super::super::*;
 
+type SafetyConnectionRow = (i64, String, String, bool, Option<String>, String, String);
+
 pub(in crate::store) async fn ensure_safety_row(
     tx: &mut Transaction<'_, Sqlite>,
     connection_id: Uuid,
@@ -79,16 +81,15 @@ impl Store {
         sqlx::query("UPDATE app_settings SET value = value WHERE key = 'active_scope_generation'")
             .execute(&mut *tx)
             .await?;
-        let connection: Option<(i64, String, String, bool, Option<String>, String, String)> =
-            sqlx::query_as(
-                "SELECT revision, workspace_access, credential_mode, allow_writes, remote_id,
+        let connection: Option<SafetyConnectionRow> = sqlx::query_as(
+            "SELECT revision, workspace_access, credential_mode, allow_writes, remote_id,
                     provider, engine
              FROM connections
              WHERE id = ?1 AND deleted_at IS NULL",
-            )
-            .bind(connection_id.to_string())
-            .fetch_optional(&mut *tx)
-            .await?;
+        )
+        .bind(connection_id.to_string())
+        .fetch_optional(&mut *tx)
+        .await?;
         let Some((
             revision,
             workspace_access,
