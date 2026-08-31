@@ -15,7 +15,6 @@ import {
   ModalSurface,
   ModalTitleBar,
 } from "../../design-system/components/Modal";
-import { SegmentedControl } from "../../design-system/components/SegmentedControl";
 import {
   InlineNotice,
   LoadingLabel,
@@ -29,7 +28,6 @@ import type {
   ProviderProvisioningDriverStatus,
   ProviderProvisioningPlan,
   ProviderProvisioningTarget,
-  ProvisioningAccessMode,
   ProvisioningAction,
   ProvisioningReadiness,
   ProvisioningState,
@@ -113,9 +111,11 @@ function planTone(plan: ProviderProvisioningPlan): StatusTone {
 export function ManagedAccessLauncher({
   connectionId,
   provider,
+  allowWrites,
 }: {
   connectionId: string;
   provider: ProviderKind;
+  allowWrites: boolean;
 }) {
   const { t } = useI18n();
   const statuses = useQuery(providerProvisioningStatusesQuery());
@@ -137,6 +137,7 @@ export function ManagedAccessLauncher({
         <ManagedAccessDialog
           connectionId={connectionId}
           initialProvider={provider}
+          allowWrites={allowWrites}
           onClose={() => setOpen(false)}
           returnFocusRef={triggerRef}
         />
@@ -148,11 +149,13 @@ export function ManagedAccessLauncher({
 export function ManagedAccessDialog({
   connectionId,
   initialProvider,
+  allowWrites,
   onClose,
   returnFocusRef,
 }: {
   connectionId: string;
   initialProvider?: ProviderKind;
+  allowWrites: boolean;
   onClose: () => void;
   returnFocusRef?: RefObject<HTMLElement | null>;
 }) {
@@ -163,7 +166,6 @@ export function ManagedAccessDialog({
   const [provider, setProvider] = useState<ProviderKind | null>(initialProvider ?? null);
   const [targets, setTargets] = useState<ProviderProvisioningTarget[] | null>(null);
   const [targetId, setTargetId] = useState<string | null>(null);
-  const [access, setAccess] = useState<ProvisioningAccessMode>("read");
   const [plan, setPlan] = useState<ProviderProvisioningPlan | null>(null);
   const [pending, setPending] = useState<
     | "discover"
@@ -233,7 +235,7 @@ export function ManagedAccessDialog({
       const nextPlan = await prepareProviderProvisioning(
         selectedTarget.discoveryId,
         connectionId,
-        access,
+        allowWrites ? "write" : "read",
       );
       setPlan(nextPlan);
       await queryClient.invalidateQueries({
@@ -495,21 +497,9 @@ export function ManagedAccessDialog({
                     </div>
                   )}
                   {selectedTarget ? (
-                    <div className="tw:grid tw:gap-2 tw:border-t tw:border-border-subtle tw:pt-3">
-                      <span className="tw:text-sm tw:font-medium tw:text-muted-foreground">
-                        {t("managedAccess.access")}
-                      </span>
-                      <SegmentedControl
-                        value={access}
-                        label={t("managedAccess.access")}
-                        options={[
-                          { value: "read", label: t("managedAccess.accessRead") },
-                          { value: "write", label: t("managedAccess.accessWrite") },
-                        ]}
-                        onChange={setAccess}
-                        disabled={pending !== null}
-                      />
-                    </div>
+                    <InlineNotice tone="warning" icon="info" role="status">
+                      {t("managedAccess.accessOwnedBySafety")}
+                    </InlineNotice>
                   ) : null}
                 </section>
               ) : null}

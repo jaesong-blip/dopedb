@@ -2,7 +2,7 @@
 // leases. Secret-bearing adapters narrow external responses into these shapes.
 
 export type ManagedEngine = "postgres" | "mysql";
-export type ManagedAccessMode = "read" | "write";
+export type ManagedAccessMode = "read" | "write" | "schema";
 export type ManagedSslMode = "verify-ca" | "verify-full";
 export type ProviderProductionClassification = true | false | "unknown";
 

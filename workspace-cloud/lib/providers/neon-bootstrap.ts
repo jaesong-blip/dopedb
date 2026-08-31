@@ -17,6 +17,7 @@ import {
 import {
   NEON_ROLE_CONNECTION_LIMIT,
   neonDatabaseName,
+  neonPolicyRoleIdentity,
   neonSchemaName,
   type NeonCredential,
   type NeonResource,
@@ -111,16 +112,6 @@ function canonical(value: unknown): string {
 
 function planHash(value: unknown) {
   return createHash("sha256").update(canonical(value), "utf8").digest("hex");
-}
-
-function markerIdentity(resource: NeonResource) {
-  const fingerprint = createHash("sha256")
-    .update(`${resource.project}\n${resource.branch}\n${resource.databaseId}`, "utf8")
-    .digest("hex");
-  return {
-    name: `dopedb_policy_${fingerprint.slice(0, 16)}`,
-    comment: `dopedb:neon-bootstrap:v1:${fingerprint}`,
-  };
 }
 
 function finding(input: Omit<NeonBootstrapFinding, "rollbackAvailable"> & {
@@ -371,27 +362,35 @@ export async function inspectNeonBootstrap(input: {
     });
   }
 
+  const marker = neonPolicyRoleIdentity(target.resource);
   const unsafeSchemaRows = await sql.query(
     "SELECT n.nspname AS schema_name FROM pg_namespace n "
       + "WHERE n.nspname = ANY($1::text[]) AND ("
-      + "(n.nspowner <> current_user::regrole AND NOT EXISTS ("
+      + "(n.nspowner <> current_user::regrole "
+      + "AND NOT EXISTS (SELECT 1 FROM pg_roles policy_owner "
+      + "WHERE policy_owner.rolname = $2 AND policy_owner.oid = n.nspowner) "
+      + "AND NOT EXISTS ("
       + "SELECT 1 FROM pg_roles owner_role WHERE owner_role.oid = n.nspowner "
       + "AND owner_role.rolname = 'pg_database_owner')) OR EXISTS ("
       + "SELECT 1 FROM aclexplode(COALESCE(n.nspacl, acldefault('n', n.nspowner))) acl "
       + "WHERE acl.privilege_type = 'CREATE' "
       + "AND acl.grantee <> 0 "
       + "AND acl.grantee <> current_user::regrole::oid "
+      + "AND NOT EXISTS (SELECT 1 FROM pg_roles policy_owner "
+      + "WHERE policy_owner.rolname = $2 AND policy_owner.oid = acl.grantee) "
       + "AND NOT EXISTS (SELECT 1 FROM pg_roles creator_role "
       + "WHERE creator_role.oid = acl.grantee "
       + "AND creator_role.rolname = 'pg_database_owner'))) LIMIT 1",
-    [target.resource.schemas],
+    [target.resource.schemas, marker.name],
   );
   const foreignObjectRows = await sql.query(
     "SELECT 1 AS unsafe FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
       + "WHERE n.nspname = ANY($1::text[]) "
       + "AND c.relkind IN ('r', 'p', 'v', 'm', 'f', 'S') "
-      + "AND c.relowner <> current_user::regrole LIMIT 1",
-    [target.resource.schemas],
+      + "AND c.relowner <> current_user::regrole "
+      + "AND NOT EXISTS (SELECT 1 FROM pg_roles policy_owner "
+      + "WHERE policy_owner.rolname = $2 AND policy_owner.oid = c.relowner) LIMIT 1",
+    [target.resource.schemas, marker.name],
   );
   if (unsafeSchemaRows.length > 0 || foreignObjectRows.length > 0) {
     findings.push(blocker(
@@ -470,10 +469,10 @@ export async function inspectNeonBootstrap(input: {
     ));
   }
 
-  const marker = markerIdentity(target.resource);
   const markerRows = await sql.query(
     "SELECT r.rolcanlogin AS can_login, r.rolsuper AS superuser, "
-      + "r.rolcreaterole AS create_role, r.rolcreatedb AS create_database, "
+      + "r.rolinherit AS inherits, r.rolcreaterole AS create_role, "
+      + "r.rolcreatedb AS create_database, "
       + "r.rolreplication AS replication, r.rolbypassrls AS bypass_rls, "
       + "shobj_description(r.oid, 'pg_authid') AS marker "
       + "FROM pg_roles r WHERE r.rolname = $1",
@@ -503,6 +502,7 @@ export async function inspectNeonBootstrap(input: {
       markerRows.length !== 1
       || row?.can_login !== false
       || row?.superuser !== false
+      || row?.inherits !== true
       || row?.create_role !== false
       || row?.create_database !== false
       || row?.replication !== false
@@ -514,6 +514,61 @@ export async function inspectNeonBootstrap(input: {
         "기존 DopeDB marker가 예상 정책과 달라 자동으로 인수하지 않습니다.",
         marker.name,
       ));
+    } else {
+      const [version] = await sql.query(
+        "SELECT current_setting('server_version_num')::integer AS version",
+      );
+      const membershipOptionsSupported = Number(version?.version) >= 160_000;
+      const legacyMembershipRows = membershipOptionsSupported
+        ? []
+        : await sql.query(
+          "SELECT count(*)::integer AS member_count FROM pg_auth_members membership "
+            + "JOIN pg_roles granted ON granted.oid = membership.roleid "
+            + "WHERE granted.rolname = $1",
+          [marker.name],
+        );
+      const unexpectedMembers = membershipOptionsSupported
+        ? await sql.query(
+          "SELECT 1 AS unexpected FROM pg_auth_members membership "
+            + "JOIN pg_roles granted ON granted.oid = membership.roleid "
+            + "JOIN pg_roles member_role ON member_role.oid = membership.member "
+            + "WHERE granted.rolname = $1 AND member_role.rolname <> current_user LIMIT 1",
+          [marker.name],
+        )
+        : [];
+      const ownerMembershipRows = membershipOptionsSupported
+        ? await sql.query(
+          "SELECT count(*)::integer AS grant_count, "
+            + "COALESCE(bool_or(membership.admin_option), FALSE) AS admin_option, "
+            + "COALESCE(bool_or(membership.inherit_option), FALSE) AS inherit_option, "
+            + "COALESCE(bool_or(membership.set_option), FALSE) AS set_option "
+            + "FROM pg_auth_members membership "
+            + "JOIN pg_roles granted ON granted.oid = membership.roleid "
+            + "JOIN pg_roles member_role ON member_role.oid = membership.member "
+            + "WHERE granted.rolname = $1 AND member_role.rolname = current_user",
+          [marker.name],
+        )
+        : [];
+      const membership = ownerMembershipRows[0];
+      const grantCount = Number(membership?.grant_count ?? 0);
+      const inactive = membershipOptionsSupported
+        ? grantCount === 0 && unexpectedMembers.length === 0
+        : Number(legacyMembershipRows[0]?.member_count ?? 0) === 0;
+      const active = membershipOptionsSupported
+        && unexpectedMembers.length === 0
+        && ownerMembershipRows.length === 1
+        && grantCount >= 1
+        && grantCount <= 2
+        && membership?.admin_option === true
+        && membership?.inherit_option === true
+        && membership?.set_option === true;
+      if (!inactive && !active) {
+        findings.push(blocker(
+          "NEON_OWNERSHIP_MARKER_MEMBERSHIP_DRIFT",
+          "DopeDB 정책 owner의 구성원 경계가 예상 상태와 다릅니다.",
+          marker.name,
+        ));
+      }
     }
   }
 

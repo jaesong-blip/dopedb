@@ -97,7 +97,10 @@ impl ScriptPlatformAdapter {
             }));
         }
         let has_write = script_has_write(&kinds);
-        let access_allowed = if has_write {
+        let has_ddl = kinds.iter().any(|kind| *kind == QueryKind::Ddl);
+        let access_allowed = if has_ddl {
+            pin.profile.workspace_access.can_manage()
+        } else if has_write {
             pin.profile.workspace_access.can_write()
         } else {
             pin.profile.workspace_access.can_read()
@@ -105,7 +108,11 @@ impl ScriptPlatformAdapter {
         if !access_allowed {
             return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
                 error: AppError::Blocked {
-                    reason: "your workspace role no longer grants this script access".into(),
+                    reason: if has_ddl {
+                        "your workspace role does not permit schema changes".into()
+                    } else {
+                        "your workspace role no longer grants this script access".into()
+                    },
                 },
                 _scope: Box::new(operation_scope),
             }));
@@ -118,13 +125,11 @@ impl ScriptPlatformAdapter {
                 _scope: Box::new(operation_scope),
             }));
         }
-        if let Some(reason) = kinds
-            .iter()
-            .find_map(|kind| safety::managed_ddl_block_reason(pin.profile.credential_mode, *kind))
-        {
+        if has_ddl && !settings.allow_schema_changes {
             return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
                 error: AppError::Blocked {
-                    reason: reason.into(),
+                    reason: "schema changes are disabled for this connection. Enable the Schema changes level in Settings → Safety to propose this DDL."
+                        .into(),
                 },
                 _scope: Box::new(operation_scope),
             }));

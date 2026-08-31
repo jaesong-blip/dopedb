@@ -261,36 +261,18 @@ pub async fn connect(
         ))
     })?;
     Ok(match adapter {
-        RuntimeAdapter::Postgres => Live::Sql(
-            connect_sqlx(
-                Engine::Postgres,
-                profile,
-                secret,
-                access == ConnectionAccess::Write,
-            )
-            .await?,
-        ),
-        RuntimeAdapter::Mysql => Live::Sql(
-            connect_sqlx(
-                Engine::Mysql,
-                profile,
-                secret,
-                access == ConnectionAccess::Write,
-            )
-            .await?,
-        ),
-        RuntimeAdapter::Sqlite => Live::Sql(
-            connect_sqlx(
-                Engine::Sqlite,
-                profile,
-                secret,
-                access == ConnectionAccess::Write,
-            )
-            .await?,
-        ),
+        RuntimeAdapter::Postgres => {
+            Live::Sql(connect_sqlx(Engine::Postgres, profile, secret, access.is_mutation()).await?)
+        }
+        RuntimeAdapter::Mysql => {
+            Live::Sql(connect_sqlx(Engine::Mysql, profile, secret, access.is_mutation()).await?)
+        }
+        RuntimeAdapter::Sqlite => {
+            Live::Sql(connect_sqlx(Engine::Sqlite, profile, secret, access.is_mutation()).await?)
+        }
         RuntimeAdapter::Mongodb => Live::Mongo(crate::mongo::connect(profile, secret).await?),
         RuntimeAdapter::Bigquery => {
-            if access == ConnectionAccess::Write {
+            if access.is_mutation() {
                 return Err(AppError::Blocked {
                     reason: "BigQuery connections are read-only in DopeDB".into(),
                 });

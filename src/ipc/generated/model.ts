@@ -63,7 +63,12 @@ export type SafetySettings = {
  * Legacy persisted compatibility field. Exact Operation approval is always
  * required for target mutations regardless of this value.
  */
-requireApproval: boolean, allowWrites: boolean, wrapWritesInTx: boolean, explainPreview: boolean, autoRunReads: boolean,
+requireApproval: boolean, allowWrites: boolean,
+/**
+ * Device-local opt-in for DDL. This can only narrow a local owner credential
+ * or a workspace-managed schema lease authorized by an exact manage grant.
+ */
+allowSchemaChanges: boolean, wrapWritesInTx: boolean, explainPreview: boolean, autoRunReads: boolean,
 /**
  * Row cap applied to read result sets.
  */

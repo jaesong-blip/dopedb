@@ -71,7 +71,13 @@ impl SafetyPlatformAdapter {
         let profile = &pin.profile;
         let update_local_write_ceiling = profile.credential_mode == WorkspaceCredentialMode::Local
             && profile.workspace_access == crate::model::WorkspaceConnectionAccess::Local;
-        if !update_local_write_ceiling {
+        let local_mutations_supported = !matches!(
+            profile.engine,
+            crate::model::Engine::Bigquery | crate::model::Engine::Mongodb
+        );
+        if update_local_write_ceiling && !local_mutations_supported {
+            settings.allow_writes = false;
+        } else if !update_local_write_ceiling {
             settings.allow_writes = settings.allow_writes
                 && profile.credential_mode == WorkspaceCredentialMode::Managed
                 && profile.allow_writes
@@ -79,6 +85,15 @@ impl SafetyPlatformAdapter {
         } else if !profile.workspace_access.can_write() {
             settings.allow_writes = false;
         }
+        settings.allow_schema_changes = settings.allow_schema_changes
+            && settings.allow_writes
+            && if profile.credential_mode == WorkspaceCredentialMode::Managed {
+                profile.workspace_access.can_manage()
+                    && profile.provider == crate::model::Provider::Neon
+                    && profile.engine == crate::model::Engine::Postgres
+            } else {
+                update_local_write_ceiling && local_mutations_supported
+            };
         let expected_connection_revision = pin.connection_revision;
         settings.max_rows = settings.max_rows.clamp(1, 100_000);
         settings.exec_preview_row_limit = settings.exec_preview_row_limit.clamp(0, 1_000_000);

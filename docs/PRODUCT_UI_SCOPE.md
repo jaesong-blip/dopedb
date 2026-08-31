@@ -111,9 +111,15 @@ DopeDB의 제품 축, 실제 사용자 작업, 접근성, 운영 안전성, 지�
   진입만 제공한다. 관리형 연결의 `manage` 권한 보유자는 같은 Safety control로
   workspace 쓰기 상한과 현재 기기 gate를 함께 변경한다. 그 밖의 구성원에게
   workspace가 부여한 권한은 상한이고 기기별 Safety 설정은 이를 좁힐 수만 있다.
-  관리형 단기 쓰기 자격 증명의 상한은 행 단위 DML이며 DDL 권한은 포함하지 않는다.
-  관리형 연결의 DDL은 승인 화면이나 DB까지 보내지 않고, DB owner/migration
-  자격 증명 또는 기존 migration 도구가 필요한 별도 경계임을 결과 화면에서 밝힌다.
+  이 화면은 `읽기 → 데이터 변경(DML) → 스키마 변경(DDL)`의 단일 계층을 한 번에
+  저장하며, provider 설정·연결 편집기·실행 오류 화면에 별도 권한 control을 만들지
+  않는다. DDL은 workspace `manage` grant, 현재 기기의 명시적 DDL opt-in, 정확한
+  Operation 승인과 provider가 검증한 짧은 스키마 자격 증명을 모두 만족할 때만
+  가능하다. 기존 객체를 개인 단기 role 소유로 남기지 않고 provider adapter가
+  안정적인 정책 owner로 인수·회수할 수 있는 연결에서만 DDL 단계를 활성화한다.
+  이 계약을 충족하지 못하는 provider는 같은 Safety 화면에서 지원하지 않는 이유만
+  표시하고 권한이 있는 것처럼 보이는 control이나 우회용 장기 owner secret을 만들지
+  않는다.
 - enabled control은 반드시 실제 command와 state owner를 가진다. 아직 없는 기능은
   tracker에 `missing`으로 기록하고 가짜 control을 만들지 않는다.
 
@@ -155,7 +161,7 @@ DopeDB의 제품 축, 실제 사용자 작업, 접근성, 운영 안전성, 지�
 | PD-15 | project/files tool window | `범위 밖` | 일반 filesystem 탐색은 제품 밖이다. |
 | PD-16 | data source template lifecycle | `구현` | workspace가 redacted template과 grant를 공유하고 자격 증명은 member-local 또는 단기 managed lease로 분리한다. |
 | PD-17 | DDL file data source/mapping | `범위 밖` | 파일을 data source로 취급하지 않는다. |
-| PD-18 | 검증된 DBMS/driver/credential broker 확장 | `구현` | 실제 수요가 있고 discovery·발급·TTL·회수·drift·E2E 경계를 닫은 adapter만 추가한다. 일반 PostgreSQL/MySQL은 서버 allowlist의 HashiCorp Vault Database Secrets AppRole로 구성원별 15분 이하 동적 자격증명을 발급할 수 있으며, 공용 static DB 비밀번호 배포는 금지한다. BigQuery는 수정하지 않은 공식 `bq`/`gcloud` CLI와 구성원별 인증만 사용하고 server dry-run·SELECT 제한·과금 바이트 상한·exact job 취소를 갖춘 read-only managed official-CLI driver로 한정한다. 검증된 system SDK가 있으면 우선 재사용하고, 없으면 macOS arm64/x64 또는 Windows x64용 버전·크기·SHA-256 고정 공식 archive와 macOS Python installer 서명을 검증해 app-owned 경로에 원자적으로 준비한다. 연결 onboarding은 project/dataset ID 직접 입력, `gcloud auth login` 브라우저 인증, 서비스 계정 JSON 경로를 `gcloud auth login --cred-file`에 일회성으로 넘기는 세 경로를 제공하며, 인증 뒤 `gcloud` project/`bq` dataset 결과를 실제 selector로 표시한다. 앱은 Google OAuth client, token, refresh token, service-account key 내용이나 경로를 읽거나 저장하지 않는다. |
+| PD-18 | 검증된 DBMS/driver/credential broker 확장 | `구현` | 실제 수요가 있고 discovery·발급·TTL·회수·drift·E2E 경계를 닫은 adapter만 추가한다. 일반 PostgreSQL/MySQL은 서버 allowlist의 HashiCorp Vault Database Secrets AppRole로 구성원별 15분 이하 동적 자격증명을 발급할 수 있으며, 공용 static DB 비밀번호 배포는 금지한다. 관리형 DDL은 stable policy owner, 구성원별 단기 schema lease, exact `manage` grant, 객체 소유권 회수와 drift 검증을 모두 구현한 adapter에서만 `Settings → Safety`의 스키마 단계로 제공한다. BigQuery는 수정하지 않은 공식 `bq`/`gcloud` CLI와 구성원별 인증만 사용하고 server dry-run·SELECT 제한·과금 바이트 상한·exact job 취소를 갖춘 read-only managed official-CLI driver로 한정한다. 검증된 system SDK가 있으면 우선 재사용하고, 없으면 macOS arm64/x64 또는 Windows x64용 버전·크기·SHA-256 고정 공식 archive와 macOS Python installer 서명을 검증해 app-owned 경로에 원자적으로 준비한다. 연결 onboarding은 project/dataset ID 직접 입력, `gcloud auth login` 브라우저 인증, 서비스 계정 JSON 경로를 `gcloud auth login --cred-file`에 일회성으로 넘기는 세 경로를 제공하며, 인증 뒤 `gcloud` project/`bq` dataset 결과를 실제 selector로 표시한다. 앱은 Google OAuth client, token, refresh token, service-account key 내용이나 경로를 읽거나 저장하지 않는다. |
 | PD-19 | 고급 connection/session option | `구현` | direct TLS와 시스템 OpenSSH Host alias 하나만 제공하며 키와 passphrase는 OS가 소유한다. |
 | PD-20 | Explorer object authoring | `구현 안 함` | DDL은 Agent가 작성하고 사람은 승인한다. |
 | PD-21 | Settings staged apply/scope | `구현 안 함` | 즉시 또는 section별 저장을 유지한다. |

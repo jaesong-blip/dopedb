@@ -5,11 +5,14 @@
 //! - `Query` bodies are recursed for DML CTEs; any `INSERT`/`UPDATE` inside a CTE
 //!   reclassifies the whole statement to `Write`.
 //! - `UPDATE`/`DELETE` with `selection.is_none()` → `no_where` + High risk.
-//! - **Any parse error or ambiguity → `Write` / High risk (fail safe), never an
-//!   `Err`** — a swallowed statement is a data-loss bug, so we surface it as a
-//!   write the gate can hard-stop.
+//! - **Any parse error or ambiguity → `Privilege` / High risk (fail safe), never
+//!   an `Err`** — once DML and DDL have separate authority, an unknown statement
+//!   must not inherit the narrower data-change credential. The privilege gate
+//!   hard-stops it.
 
-use sqlparser::ast::{FromTable, Query, SetExpr, Statement, TableFactor, TableWithJoins};
+use sqlparser::ast::{
+    FromTable, ObjectType, Query, SetExpr, Statement, TableFactor, TableWithJoins,
+};
 use sqlparser::dialect::{
     BigQueryDialect, Dialect, MySqlDialect, PostgreSqlDialect, SQLiteDialect,
 };
@@ -71,14 +74,15 @@ fn dialect_for(engine: Engine) -> Option<Box<dyn Dialect>> {
     }
 }
 
-/// Fail-safe classification: treat as a High-risk write so the gate can stop it.
+/// Fail-safe classification: treat as a High-risk privilege change so the gate
+/// hard-stops it instead of letting ambiguous DDL inherit a DML credential.
 fn fail_safe(
     note: impl Into<String>,
     integrity: ClassificationIntegrity,
 ) -> ClassificationAnalysis {
     ClassificationAnalysis {
         classification: Classification {
-            kind: QueryKind::Write,
+            kind: QueryKind::Privilege,
             risk: RiskLevel::High,
             statement_count: 1,
             no_where: false,
@@ -104,7 +108,7 @@ pub fn classify_with_integrity(sql: &str, engine: Engine) -> AppResult<Classific
         Ok(s) => s,
         Err(e) => {
             return Ok(fail_safe(
-                format!("parse error — treated as a write (fail-safe): {e}"),
+                format!("parse error — blocked as privileged (fail-safe): {e}"),
                 ClassificationIntegrity::ParseFailed,
             ))
         }
@@ -201,8 +205,8 @@ fn classify_stmt(
                 (QueryKind::Write, ClassificationIntegrity::ExactSingle)
             } else if query_selects_into(q) {
                 // SELECT ... INTO <table> creates and populates a table — not a read.
-                notes.push("SELECT ... INTO creates a table — reclassified as a write".into());
-                (QueryKind::Write, ClassificationIntegrity::ExactSingle)
+                notes.push("SELECT ... INTO creates a table — reclassified as DDL".into());
+                (QueryKind::Ddl, ClassificationIntegrity::ExactSingle)
             } else if !q.locks.is_empty() {
                 // FOR UPDATE / FOR SHARE takes row locks (would fail on a read-only txn).
                 notes.push(
@@ -239,26 +243,70 @@ fn classify_stmt(
             (QueryKind::Write, ClassificationIntegrity::ExactSingle)
         }
 
+        Statement::Drop {
+            object_type: ObjectType::Role | ObjectType::User,
+            ..
+        } => (QueryKind::Privilege, ClassificationIntegrity::ExactSingle),
+
         Statement::CreateTable(_)
         | Statement::CreateIndex(_)
         | Statement::CreateView { .. }
+        | Statement::CreateVirtualTable { .. }
         | Statement::CreateSchema { .. }
         | Statement::CreateDatabase { .. }
+        | Statement::CreateFunction(_)
+        | Statement::CreateTrigger(_)
+        | Statement::CreateProcedure { .. }
+        | Statement::CreateSequence { .. }
+        | Statement::CreateDomain(_)
+        | Statement::CreateType { .. }
+        | Statement::CreateExtension(_)
+        | Statement::CreateCollation(_)
+        | Statement::CreateOperator(_)
+        | Statement::CreateOperatorFamily(_)
+        | Statement::CreateOperatorClass(_)
         | Statement::AlterTable { .. }
+        | Statement::AlterSchema(_)
+        | Statement::AlterIndex { .. }
+        | Statement::AlterView { .. }
+        | Statement::AlterFunction(_)
+        | Statement::AlterType(_)
+        | Statement::AlterCollation(_)
+        | Statement::AlterOperator(_)
+        | Statement::AlterOperatorFamily(_)
+        | Statement::AlterOperatorClass(_)
         | Statement::Drop { .. }
+        | Statement::DropFunction(_)
+        | Statement::DropDomain(_)
+        | Statement::DropProcedure { .. }
+        | Statement::DropTrigger(_)
+        | Statement::DropExtension(_)
+        | Statement::DropOperator(_)
+        | Statement::DropOperatorFamily(_)
+        | Statement::DropOperatorClass(_)
+        | Statement::RenameTable(_)
+        | Statement::Comment { .. }
         | Statement::Truncate { .. } => (QueryKind::Ddl, ClassificationIntegrity::ExactSingle),
 
-        Statement::Grant { .. } | Statement::Revoke { .. } => {
-            (QueryKind::Privilege, ClassificationIntegrity::ExactSingle)
-        }
+        Statement::CreateRole(_)
+        | Statement::AlterRole { .. }
+        | Statement::CreateUser(_)
+        | Statement::AlterUser(_)
+        | Statement::CreatePolicy(_)
+        | Statement::AlterPolicy(_)
+        | Statement::DropPolicy(_)
+        | Statement::Grant { .. }
+        | Statement::Deny(_)
+        | Statement::Revoke { .. } => (QueryKind::Privilege, ClassificationIntegrity::ExactSingle),
 
-        // Unknown / unmodeled statement: fail safe to write so it is gated.
+        // Unknown / unmodeled statement: the privilege gate hard-stops it. This
+        // prevents new parser variants from silently inheriting DML authority.
         other => {
             notes.push(format!(
-                "unrecognized statement shape — treated as a write (fail-safe): {}",
+                "unrecognized statement shape — blocked as privileged (fail-safe): {}",
                 short_kind(other)
             ));
-            (QueryKind::Write, ClassificationIntegrity::Ambiguous)
+            (QueryKind::Privilege, ClassificationIntegrity::Ambiguous)
         }
     }
 }
@@ -458,7 +506,14 @@ mod tests {
 
     #[test]
     fn ddl_is_ddl() {
-        assert_eq!(c("DROP TABLE users").kind, QueryKind::Ddl);
+        for sql in [
+            "DROP TABLE users",
+            "CREATE FUNCTION answer() RETURNS integer LANGUAGE SQL AS 'SELECT 42'",
+            "ALTER TYPE mood ADD VALUE 'calm'",
+            "COMMENT ON TABLE users IS 'accounts'",
+        ] {
+            assert_eq!(c(sql).kind, QueryKind::Ddl, "{sql}");
+        }
     }
 
     #[test]
@@ -475,7 +530,7 @@ mod tests {
     fn select_into_is_not_read() {
         let r = c("SELECT * INTO backup FROM users");
         assert_ne!(r.kind, QueryKind::Read);
-        assert_eq!(r.kind, QueryKind::Write);
+        assert_eq!(r.kind, QueryKind::Ddl);
     }
 
     #[test]
@@ -486,16 +541,16 @@ mod tests {
     }
 
     #[test]
-    fn garbage_fails_safe_to_write() {
+    fn garbage_fails_safe_to_privilege_block() {
         let r = c("this is not sql");
-        assert_eq!(r.kind, QueryKind::Write);
+        assert_eq!(r.kind, QueryKind::Privilege);
         assert_eq!(r.risk, RiskLevel::High);
     }
 
     #[test]
     fn mongodb_is_rejected_by_the_sql_classifier() {
         let r = classify(r#"{ "find": "users" }"#, Engine::Mongodb).unwrap();
-        assert_eq!(r.kind, QueryKind::Write);
+        assert_eq!(r.kind, QueryKind::Privilege);
         assert_eq!(r.risk, RiskLevel::High);
         assert!(r.notes[0].contains("typed document-query API"));
     }

@@ -19,6 +19,94 @@ pub(super) async fn verify_neon_policy(
             reason: "Neon policy opened the wrong engine".into(),
         });
     };
+    if access == ConnectionAccess::Schema {
+        let row = sqlx::query(
+            "SELECT \
+               session_user::text ~ '^dopedb_[a-z0-9]{1,8}_[a-z0-9]{1,32}$' AS owned_name, \
+               current_user::text ~ '^dopedb_policy_[0-9a-f]{16}$' \
+                 AND current_user <> session_user AS exact_policy_owner, \
+               lease.rolcanlogin AND NOT lease.rolsuper AND NOT lease.rolcreaterole \
+                 AND NOT lease.rolcreatedb AND NOT lease.rolreplication \
+                 AND NOT lease.rolbypassrls AND lease.rolconnlimit = 4 \
+                 AND lease.rolvaliduntil > now() \
+                 AND lease.rolvaliduntil <= now() + interval '10 minutes' AS bounded_role, \
+               ((SELECT count(*) = 1 FROM pg_catalog.pg_auth_members membership \
+                 JOIN pg_catalog.pg_roles policy ON policy.oid = membership.roleid \
+                 WHERE membership.member = lease.oid \
+                   AND policy.rolname ~ '^dopedb_policy_[0-9a-f]{16}$' \
+                   AND NOT policy.rolcanlogin AND NOT policy.rolsuper \
+                   AND NOT policy.rolcreaterole AND NOT policy.rolcreatedb \
+                   AND NOT policy.rolreplication AND NOT policy.rolbypassrls \
+                   AND membership.admin_option = FALSE \
+                   AND membership.inherit_option = FALSE \
+                   AND membership.set_option = TRUE) \
+                 AND (SELECT count(*) = 1 FROM pg_catalog.pg_auth_members all_memberships \
+                   WHERE all_memberships.member = lease.oid)) AS exact_policy_membership, \
+               ((SELECT count(DISTINCT membership.member) = 1 \
+                   AND COALESCE(bool_or(membership.admin_option), FALSE) \
+                   AND COALESCE(bool_or(membership.inherit_option), FALSE) \
+                   AND COALESCE(bool_or(membership.set_option), FALSE) \
+                 FROM pg_catalog.pg_auth_members membership \
+                 JOIN pg_catalog.pg_roles cleanup_owner ON cleanup_owner.oid = membership.member \
+                 JOIN pg_catalog.pg_database database ON database.datdba = cleanup_owner.oid \
+                 WHERE membership.roleid = lease.oid \
+                   AND database.datname = current_database()) \
+                 AND (SELECT count(DISTINCT all_members.member) = 1 \
+                   FROM pg_catalog.pg_auth_members all_members \
+                   WHERE all_members.roleid = lease.oid)) AS exact_cleanup_member, \
+               NOT has_database_privilege(current_user, current_database(), 'CREATE') \
+                 AS no_database_create, \
+               NOT has_database_privilege(current_user, current_database(), 'TEMPORARY') \
+                 AS no_temporary, \
+               NOT has_database_privilege( \
+                 current_user, current_database(), 'CONNECT WITH GRANT OPTION') \
+                 AS no_connect_grant, \
+               EXISTS (SELECT 1 FROM pg_catalog.pg_namespace schema \
+                 WHERE schema.nspname <> 'information_schema' \
+                   AND schema.nspname !~ '^pg_' \
+                   AND has_schema_privilege(current_user, schema.oid, 'CREATE')) \
+                 AS has_schema_create, \
+               NOT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace schema \
+                 WHERE schema.nspname <> 'information_schema' \
+                   AND schema.nspname !~ '^pg_' \
+                   AND (has_schema_privilege(current_user, schema.oid, 'USAGE') \
+                     OR has_schema_privilege(current_user, schema.oid, 'CREATE')) \
+                   AND (NOT has_schema_privilege(current_user, schema.oid, 'USAGE') \
+                     OR NOT has_schema_privilege(current_user, schema.oid, 'CREATE') \
+                     OR pg_get_userbyid(schema.nspowner) !~ '^dopedb_policy_[0-9a-f]{16}$')) \
+                 AS exact_schema_scope, \
+               current_setting('statement_timeout') = '5min' AS bounded_statement, \
+               current_setting('idle_in_transaction_session_timeout') = '1min' \
+                 AS bounded_transaction_idle, \
+               current_setting('idle_session_timeout') = '5min' AS bounded_session_idle \
+             FROM pg_catalog.pg_roles lease WHERE lease.rolname = session_user",
+        )
+        .fetch_one(pool)
+        .await?;
+        let safe = [
+            row.try_get::<bool, _>("owned_name")?,
+            row.try_get::<bool, _>("exact_policy_owner")?,
+            row.try_get::<bool, _>("bounded_role")?,
+            row.try_get::<bool, _>("exact_policy_membership")?,
+            row.try_get::<bool, _>("exact_cleanup_member")?,
+            row.try_get::<bool, _>("no_database_create")?,
+            row.try_get::<bool, _>("no_temporary")?,
+            row.try_get::<bool, _>("no_connect_grant")?,
+            row.try_get::<bool, _>("has_schema_create")?,
+            row.try_get::<bool, _>("exact_schema_scope")?,
+            row.try_get::<bool, _>("bounded_statement")?,
+            row.try_get::<bool, _>("bounded_transaction_idle")?,
+            row.try_get::<bool, _>("bounded_session_idle")?,
+        ]
+        .into_iter()
+        .all(|value| value);
+        if !safe {
+            return Err(AppError::Blocked {
+                reason: "Neon schema credential exceeded its approved database policy".into(),
+            });
+        }
+        return Ok(());
+    }
     let role = sqlx::query(
         "SELECT \
            current_user::text ~ '^dopedb_[a-z0-9]{1,8}_[a-z0-9]{1,32}$' AS owned_name, \
@@ -177,6 +265,11 @@ pub(super) async fn verify_planetscale_policy(
     engine: Engine,
     access: ConnectionAccess,
 ) -> AppResult<()> {
+    if access == ConnectionAccess::Schema {
+        return Err(AppError::Blocked {
+            reason: "PlanetScale managed schema access is not supported".into(),
+        });
+    }
     if engine != Engine::Postgres {
         // Vitess enforces the provider-created `reader`/`readwriter` password
         // role. A live SELECT plus the server-side exact role request is the
@@ -233,6 +326,11 @@ pub(super) async fn verify_gcp_cloud_sql_policy(
     access: ConnectionAccess,
     database: &str,
 ) -> AppResult<()> {
+    if access == ConnectionAccess::Schema {
+        return Err(AppError::Blocked {
+            reason: "Cloud SQL managed schema access is not supported".into(),
+        });
+    }
     let sql = live.sql()?;
     match (&sql.read_pool, engine) {
         (DbPool::Postgres(pool), Engine::Postgres) => {
@@ -321,6 +419,7 @@ pub(super) fn mysql_grants_match_policy(
     let expected_privileges = match access {
         ConnectionAccess::Read => BTreeSet::from(["SELECT"]),
         ConnectionAccess::Write => BTreeSet::from(["DELETE", "INSERT", "SELECT", "UPDATE"]),
+        ConnectionAccess::Schema => return false,
     };
     let mut found_data_grant = false;
     for grant in grants {

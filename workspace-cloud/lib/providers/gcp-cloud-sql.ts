@@ -623,6 +623,13 @@ export async function issueGcpCloudSqlLease(input: {
   accessMode: ManagedAccessMode;
   externalCredentialId: string;
 }): Promise<ManagedProviderLease> {
+  if (input.accessMode === "schema") {
+    throw new ProviderRequestError(
+      "gcpCloudSql",
+      "Cloud SQL managed schema access is not supported",
+      409,
+    );
+  }
   if (input.resource.project !== input.credential.projectId) {
     throw new ProviderRequestError(
       "gcpCloudSql",

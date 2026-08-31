@@ -175,6 +175,7 @@ export async function authorizeWorkspaceConnectionAction(
       id: workspaceConnection.id,
       revision: workspaceConnection.revision,
       contentRevision: workspaceConnection.contentRevision,
+      engine: workspaceConnection.engine,
       readonlyDefault: workspaceConnection.readonlyDefault,
       allowWrites: workspaceConnection.allowWrites,
       credentialMode: workspaceConnection.credentialMode,

@@ -592,6 +592,13 @@ async function issueVaultLeaseWithToken(
   accessMode: ManagedAccessMode,
   session: VaultSession,
 ): Promise<ManagedProviderLease & { providerAuditId: string }> {
+  if (accessMode === "schema") {
+    throw new ProviderRequestError(
+      "vault",
+      "Vault schema access requires a separately verified dynamic role",
+      409,
+    );
+  }
   const role = accessMode === "write" ? resource.writeRole : resource.readRole;
   if (!role) {
     throw new ProviderRequestError("vault", "Vault write access is not configured", 403);
@@ -726,6 +733,13 @@ export async function issueVaultLease(input: {
   resource: VaultManagedResource;
   accessMode: ManagedAccessMode;
 }) {
+  if (input.accessMode === "schema") {
+    throw new ProviderRequestError(
+      "vault",
+      "Vault schema access requires a separately verified dynamic role",
+      409,
+    );
+  }
   assertVaultResourceMatches(input.credential, input.resource);
   const session = await vaultLogin(input.credential);
   try {

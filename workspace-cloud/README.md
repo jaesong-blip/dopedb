@@ -389,12 +389,12 @@ second BI model cannot continue accumulating.
   creation. Provider-internal propagation remains outside DopeDB's clock. Credentials
   already delivered remain bounded by their actual Provider expiry of at most 15
   minutes, while the desktop retires its pool earlier when workspace authority changes.
-- Managed lease POSTs must send
-  `x-dopedb-managed-lease-contract: access-v3` and an explicit `read` or `write`
-  access mode. The service temporarily accepts `access-v2` for the three original
-  provider-backed connection types, but brokered generic connections fail with HTTP
-  426 unless the Desktop sends `access-v3`. This preserves existing access while the
-  control plane is deployed before the matching Desktop release.
+- Managed lease POSTs send
+  `x-dopedb-managed-lease-contract: access-v4` and an explicit `read`, `write`, or
+  `schema` access mode. The service temporarily accepts `access-v3` and `access-v2`
+  for read/write compatibility, but schema credentials fail with HTTP 426 unless the
+  Desktop sends `access-v4`. This preserves existing access while the control plane is
+  deployed before the matching Desktop release.
 - Independently deployed Desktop and Workspace Cloud decode the same versioned
   `dopedb-protocol/tests/fixtures/control-plane-contracts-v1.json` golden for ordered
   workspace sync, managed lease request/response, and Analysis Article creation.

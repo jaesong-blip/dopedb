@@ -28,6 +28,7 @@ import {
 } from "../../../../../../../lib/workspace-authorization";
 import {
   parseSharedConnection,
+  providerResourceSupportsSchema,
   providerResourceSupportsWrite,
   publicConnection,
 } from "../../../../../../../lib/workspace-connections";
@@ -78,14 +79,14 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
   const body = parsed.value as { action?: unknown } | null;
-  if (body?.action !== "read" && body?.action !== "write") {
-    return jsonError("Action must be read or write", 400);
+  if (body?.action !== "read" && body?.action !== "write" && body?.action !== "schema") {
+    return jsonError("Action must be read, write, or schema", 400);
   }
   const authorization = await authorizeWorkspaceConnectionAction(
     request,
     workspaceId,
     connectionId,
-    "use",
+    body.action === "schema" ? "manage" : "use",
   );
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
   const connection = authorization.connection;
@@ -110,13 +111,27 @@ export async function POST(request: Request, context: RouteContext) {
   if (connection.credentialMode !== "member_local" && connection.credentialMode !== "managed") {
     return jsonError("Shared connection template is unsafe", 409);
   }
-  if (body.action === "write" && (
+  if (body.action !== "read" && (
     connection.credentialMode !== "managed"
     || !connection.allowWrites
     || !hasWorkspaceCapability(authorization.role, "write")
     || !providerResourceSupportsWrite(connection.providerCapabilityManifest)
   )) {
     return jsonError("Managed write access is not allowed for this member and connection", 403);
+  }
+  if (body.action === "schema" && (
+    !hasWorkspaceCapability(authorization.role, "manage")
+    || authorization.accessMode !== "manage"
+    || !providerResourceSupportsSchema({
+      provider: connection.integrationProvider ?? "",
+      engine: connection.engine,
+      capabilityManifest: connection.providerCapabilityManifest,
+    })
+  )) {
+    return jsonError(
+      "Managed schema access requires connection manage permission and a supported provider",
+      403,
+    );
   }
   return privateJson({
     allowed: true,
@@ -259,7 +274,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       revocation = await revokeActiveLeases({
         organizationId: workspaceId,
         connectionId,
-        ...(leaseRevocationScope === "write" ? { accessMode: "write" as const } : {}),
+        ...(leaseRevocationScope === "write" ? { mutationOnly: true } : {}),
       });
     } catch (error) {
       await abandonClaim(claim);
@@ -270,7 +285,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     await abandonClaim(claim);
     return jsonError(
       leaseRevocationScope === "write"
-        ? "Active write access cannot be revoked until its short-lived credential expires. Retry shortly."
+        ? "Active data or schema change access cannot be revoked until its short-lived credential expires. Retry shortly."
         : "Active database access could not be revoked. Retry the update.",
       409,
     );

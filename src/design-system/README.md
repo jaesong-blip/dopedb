@@ -353,7 +353,8 @@ Elevation은 세 단계만 허용한다.
 - `IconRailTabs`: desktop dialog의 42px 세로 category navigation. icon-only
   tab의 selection, tooltip, roving arrow/Home/End keyboard focus를 소유한다.
 - `SegmentedControl`: 속성 편집기의 소수 상호 배타 선택을 위한 compact
-  radiogroup, keyboard focus와 semantic selection treatment.
+  radiogroup. 전체 또는 capability가 없는 개별 option의 비활성화와 이를
+  건너뛰는 keyboard focus, semantic selection treatment를 소유한다.
 - `EnvironmentBadge`: database context에서 dev/staging/prod를 neutral 대문자와
   작은 의미색 점으로 표시한다. Explorer에서는 Project의 단일 `Databases`
   folder 아래 DB connection row에만 두고 Data source·Analysis Article·Project

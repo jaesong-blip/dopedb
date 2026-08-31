@@ -9,6 +9,7 @@ import {
   canManageWorkspaceWritePolicy,
   effectiveSafetySettings,
   requestedSafetySettings,
+  safetySchemaControlAvailable,
   safetyWriteControlAvailable,
   writeBlockRecoveryKind,
 } from "../safetySettings/policy";
@@ -18,6 +19,7 @@ import { buildRunSignal } from "./runSignal";
 const safety: SafetySettings = {
   requireApproval: true,
   allowWrites: false,
+  allowSchemaChanges: false,
   wrapWritesInTx: true,
   explainPreview: true,
   autoRunReads: true,
@@ -67,6 +69,10 @@ describe("SQL run guidance", () => {
       workspaceAccess: "local" as const,
     };
     expect(safetyWriteControlAvailable(localConnection)).toBe(true);
+    expect(safetyWriteControlAvailable({
+      ...localConnection,
+      engine: "bigquery",
+    })).toBe(false);
     expect(
       requestedSafetySettings(localConnection, {
         ...safety,
@@ -99,15 +105,35 @@ describe("SQL run guidance", () => {
       allowWrites: false,
       credentialMode: "managed" as const,
       workspaceAccess: "manage" as const,
+      provider: "neon" as const,
+      engine: "postgres" as const,
     };
     expect(canManageWorkspaceWritePolicy(managedWorkspaceManager)).toBe(true);
     expect(safetyWriteControlAvailable(managedWorkspaceManager)).toBe(true);
+    expect(safetySchemaControlAvailable(managedWorkspaceManager)).toBe(true);
     expect(
       requestedSafetySettings(managedWorkspaceManager, {
         ...safety,
         allowWrites: true,
       }).allowWrites,
     ).toBe(true);
+    expect(
+      requestedSafetySettings(managedWorkspaceManager, {
+        ...safety,
+        allowWrites: true,
+        allowSchemaChanges: true,
+      }),
+    ).toMatchObject({ allowWrites: true, allowSchemaChanges: true });
+    expect(safetySchemaControlAvailable({
+      ...managedWorkspaceManager,
+      provider: "gcpCloudSql",
+    })).toBe(false);
+    expect(
+      requestedSafetySettings(
+        { ...managedWorkspaceManager, provider: "gcpCloudSql" },
+        { ...safety, allowWrites: true, allowSchemaChanges: true },
+      ),
+    ).toMatchObject({ allowWrites: true, allowSchemaChanges: false });
     expect(canManageWorkspaceWritePolicy({
       ...managedWorkspaceManager,
       workspaceAccess: "write",
@@ -183,7 +209,7 @@ describe("SQL run guidance", () => {
           sql: 'CREATE TABLE "events" ("id" bigint)',
         },
       ),
-    ).toBe("managedDdl");
+    ).toBe("schemaSafety");
     expect(
       writeBlockRecoveryKind(
         {
@@ -192,11 +218,10 @@ describe("SQL run guidance", () => {
         },
         {
           kind: "blocked",
-          message:
-            "managed connections use DML-only short-lived credentials; schema DDL requires a separate database owner or migration credential",
+          message: "schema changes are disabled for this connection",
         },
       ),
-    ).toBe("managedDdl");
+    ).toBe("schemaSafety");
 
     const managedProfile: ConnectionProfile = {
       id: connectionId("00000000-0000-4000-8000-000000000010"),
@@ -315,6 +340,36 @@ describe("SQL run guidance", () => {
       "UPDATE users SET active = 0 WHERE id = 1",
       [],
       { ...safety, allowWrites: true },
+      t,
+    )).toEqual({
+      tone: "warning",
+      icon: "alert",
+      text: "sql.signalWriteStatement",
+    });
+    expect(buildRunSignal(
+      "CREATE TABLE events (id bigint)",
+      [],
+      { ...safety, allowWrites: true },
+      t,
+    )).toEqual({
+      tone: "danger",
+      icon: "alert",
+      text: "sql.signalSchemaDisabled",
+    });
+    expect(buildRunSignal(
+      "SELECT * INTO archived_users FROM users",
+      [],
+      { ...safety, allowWrites: true },
+      t,
+    )).toEqual({
+      tone: "danger",
+      icon: "alert",
+      text: "sql.signalSchemaDisabled",
+    });
+    expect(buildRunSignal(
+      "CREATE TABLE events (id bigint)",
+      [],
+      { ...safety, allowWrites: true, allowSchemaChanges: true },
       t,
     )).toEqual({
       tone: "warning",

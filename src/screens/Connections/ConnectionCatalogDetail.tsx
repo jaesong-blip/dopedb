@@ -56,6 +56,7 @@ export function ConnectionCatalogDetail({
                   <ManagedAccessLauncher
                     connectionId={profile.form.id}
                     provider={clouds.selected}
+                    allowWrites={profile.form.allowWrites}
                   />
                 ) : null}
               </div>

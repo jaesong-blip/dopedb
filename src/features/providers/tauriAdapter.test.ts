@@ -1001,7 +1001,10 @@ describe("provider credential Tauri adapter", () => {
     );
     expect(hostedControlPlaneSource).toContain(".or(value.error.as_deref())");
     expect(gcpSetupRouteSource).toContain("writeAccess: true");
-    expect(managedLeaseRouteSource).toContain('let requestedAccessMode: "read" | "write"');
+    expect(managedLeaseRouteSource).toContain(
+      'let requestedAccessMode: "read" | "write" | "schema"',
+    );
+    expect(managedLeaseRouteSource).toContain("providerResourceSupportsSchema");
     expect(managedLeaseRouteSource).toContain("providerResourceSupportsWrite");
     expect(managedLeaseRouteSource).toContain("export const maxDuration = 60");
     expect(providerLeaseIssuanceSource.match(
@@ -1065,6 +1068,14 @@ describe("provider credential Tauri adapter", () => {
     expect(neonCoreSource).toContain("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES");
     expect(neonCoreSource).toContain("REVOKE ALL PRIVILEGES ON TABLES");
     expect(neonCoreSource).toContain("REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA");
+    expect(neonCoreSource).toContain("NEON_SCHEMA_LEASE_SECONDS = 5 * 60");
+    expect(neonManagedAccessSource).toContain(
+      "Neon managed schema access requires PostgreSQL 16 or newer",
+    );
+    expect(workspaceRevocationGatesSource).toContain("schema_busy");
+    expect(providerLeaseCleanupSource).toContain('["write", "schema"]');
+    expect(neonCoreSource).toContain("REASSIGN OWNED BY");
+    expect(neonCoreSource).toContain("WITH INHERIT FALSE, SET TRUE, ADMIN FALSE");
     expect(neonSource).toContain("FROM pg_default_acl d");
     expect(neonSource).toContain("Neon future-object privilege verification failed");
     expect(neonSource).toContain('apiRequest(credential, "/auth")');
@@ -1310,6 +1321,9 @@ describe("provider credential Tauri adapter", () => {
     expect(neonBootstrapSource).toContain("NEON_PUBLIC_SECURITY_DEFINER");
     expect(neonBootstrapSource).toContain("NEON_LEASE_ROLE_DRIFT");
     expect(neonBootstrapSource).toContain("NEON_ACTIVE_LEASE_ROLE_PRESENT");
+    expect(neonBootstrapSource).toContain("NEON_OWNERSHIP_MARKER_MEMBERSHIP_DRIFT");
+    expect(neonBootstrapSource).toContain("policy_owner.rolname = $2");
+    expect(neonBootstrapSource).toContain("server_version_num");
     expect(neonBootstrapSource).toContain("NEON_READ_WRITE_SMOKE_PLANNED");
     expect(neonBootstrapSource).toContain("expectedPlanHash");
     expect(neonBootstrapSource).toContain("expectedReadyHash");

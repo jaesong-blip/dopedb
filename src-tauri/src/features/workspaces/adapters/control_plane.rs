@@ -25,10 +25,10 @@ use crate::connection::keychain::{
     fetch_workspace_session, store_workspace_session,
 };
 use crate::connection::{
-    GcpCloudSqlNetworkMode, ManagedConnectionLease as RuntimeManagedConnectionLease,
-    ProviderLocalResource, ProviderLocalTarget as RuntimeProviderLocalTarget,
-    RemoteAuthorityFuture, RemoteConnectionAuthority as RuntimeRemoteConnectionAuthority,
-    RemoteConnectionAuthorityPort,
+    ConnectionAccess, GcpCloudSqlNetworkMode,
+    ManagedConnectionLease as RuntimeManagedConnectionLease, ProviderLocalResource,
+    ProviderLocalTarget as RuntimeProviderLocalTarget, RemoteAuthorityFuture,
+    RemoteConnectionAuthority as RuntimeRemoteConnectionAuthority, RemoteConnectionAuthorityPort,
 };
 use crate::error::{AppError, AppResult};
 use crate::features::workspaces::{
@@ -265,14 +265,14 @@ impl RemoteConnectionAuthorityPort for HostedWorkspaceControlPlane {
         account_id: &'a AccountId,
         workspace_id: WorkspaceId,
         connection_id: ConnectionId,
-        write: bool,
+        access: ConnectionAccess,
     ) -> RemoteAuthorityFuture<'a, RuntimeRemoteConnectionAuthority> {
         Box::pin(async move {
             let authority = authorize_connection(
                 account_id.as_str(),
                 workspace_id.into(),
                 connection_id.into(),
-                write,
+                access,
             )
             .await?;
             Ok(RuntimeRemoteConnectionAuthority {
@@ -286,14 +286,14 @@ impl RemoteConnectionAuthorityPort for HostedWorkspaceControlPlane {
         account_id: &'a AccountId,
         workspace_id: WorkspaceId,
         profile: &'a ConnectionProfile,
-        write: bool,
+        access: ConnectionAccess,
     ) -> RemoteAuthorityFuture<'a, RuntimeManagedConnectionLease> {
         Box::pin(async move {
             let lease = issue_managed_connection_lease(
                 account_id.as_str(),
                 workspace_id.into(),
                 profile,
-                write,
+                access,
             )
             .await?;
             Ok(RuntimeManagedConnectionLease {

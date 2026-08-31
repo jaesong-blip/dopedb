@@ -84,10 +84,12 @@ impl QueryPlatformAdapter {
         let history_origin = payload.history_origin;
         let is_write = !matches!(classification.kind, QueryKind::Read);
 
-        let access_allowed = if is_write {
-            operation_pin.profile.workspace_access.can_write()
-        } else {
-            operation_pin.profile.workspace_access.can_read()
+        let access_allowed = match classification.kind {
+            QueryKind::Read => operation_pin.profile.workspace_access.can_read(),
+            QueryKind::Ddl => operation_pin.profile.workspace_access.can_manage(),
+            QueryKind::Write | QueryKind::Privilege => {
+                operation_pin.profile.workspace_access.can_write()
+            }
         };
         if !access_allowed {
             return Err(DesktopSqlRunError::Blocked(DesktopSqlRunBlocked {
@@ -116,16 +118,6 @@ impl QueryPlatformAdapter {
                 _scope: operation_scope,
             }));
         }
-        if let Some(reason) = safety::managed_ddl_block_reason(
-            operation_pin.profile.credential_mode,
-            classification.kind,
-        ) {
-            return Err(DesktopSqlRunError::Blocked(DesktopSqlRunBlocked {
-                reason: reason.into(),
-                _scope: operation_scope,
-            }));
-        }
-
         let cancellation = executor::cancel::register(operation_id.into());
         let claimed = self
             .operation
@@ -179,10 +171,10 @@ impl QueryPlatformAdapter {
         let lease = match operation_scope
             .connect_to_database(
                 operation_pin.clone(),
-                if is_write {
-                    ConnectionAccess::Write
-                } else {
-                    ConnectionAccess::Read
+                match classification.kind {
+                    QueryKind::Read => ConnectionAccess::Read,
+                    QueryKind::Ddl => ConnectionAccess::Schema,
+                    QueryKind::Write | QueryKind::Privilege => ConnectionAccess::Write,
                 },
                 Some(payload.database.clone()),
             )
@@ -249,23 +241,25 @@ impl QueryPlatformAdapter {
             }
         };
 
-        let manual_execution = if is_write {
-            self.manual_transactions
-                .run_write(
-                    ManualExecutionTarget {
-                        connection_id: operation_pin.connection_id,
-                        database: &payload.database,
-                        namespace: namespace.clone(),
-                    },
-                    &classification,
-                    &payload.sql,
-                    &settings,
-                    claimed.grant(),
-                    &cancellation,
-                )
-                .await
-        } else {
-            self.manual_transactions
+        let manual_execution = match classification.kind {
+            QueryKind::Write => {
+                self.manual_transactions
+                    .run_write(
+                        ManualExecutionTarget {
+                            connection_id: operation_pin.connection_id,
+                            database: &payload.database,
+                            namespace: namespace.clone(),
+                        },
+                        &classification,
+                        &payload.sql,
+                        &settings,
+                        claimed.grant(),
+                        &cancellation,
+                    )
+                    .await
+            }
+            QueryKind::Read => self
+                .manual_transactions
                 .run_read(
                     ManualExecutionTarget {
                         connection_id: operation_pin.connection_id,
@@ -284,7 +278,10 @@ impl QueryPlatformAdapter {
                         committed: false,
                         manual_transaction: true,
                     })
-                })
+                }),
+            // DDL has its own exact schema authority and must never be routed
+            // through an older manual read/write transaction pool.
+            QueryKind::Ddl | QueryKind::Privilege => None,
         };
         let (manual_transaction, execution) = match manual_execution {
             Some(execution) => (true, execution),

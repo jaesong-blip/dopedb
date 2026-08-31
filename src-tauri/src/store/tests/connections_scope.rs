@@ -215,6 +215,7 @@ async fn assert_current_store_migration_is_write_free() {
         .unwrap();
     let mut local_safety = store.get_safety(integrity_connection_id).await.unwrap();
     local_safety.allow_writes = true;
+    local_safety.allow_schema_changes = true;
     assert!(store
         .set_safety(integrity_connection_id, 1, true, &local_safety)
         .await
@@ -233,6 +234,21 @@ async fn assert_current_store_migration_is_write_free() {
             .unwrap()
             .allow_writes
     );
+    assert!(
+        store
+            .get_safety(integrity_connection_id)
+            .await
+            .unwrap()
+            .allow_schema_changes
+    );
+    let mut invalid_schema_safety = local_safety.clone();
+    invalid_schema_safety.allow_writes = false;
+    assert!(matches!(
+        store
+            .set_safety(integrity_connection_id, 2, true, &invalid_schema_safety,)
+            .await,
+        Err(AppError::Blocked { .. })
+    ));
     local_safety.max_rows = 321;
     assert!(!store
         .set_safety(integrity_connection_id, 2, true, &local_safety)
@@ -253,6 +269,7 @@ async fn assert_current_store_migration_is_write_free() {
         Err(AppError::Blocked { .. })
     ));
     local_safety.allow_writes = false;
+    local_safety.allow_schema_changes = false;
     assert!(store
         .set_safety(integrity_connection_id, 2, true, &local_safety)
         .await

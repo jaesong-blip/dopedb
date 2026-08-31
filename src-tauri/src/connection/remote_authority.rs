@@ -40,7 +40,7 @@ pub(crate) trait RemoteConnectionAuthorityPort: Send + Sync {
         account_id: &'a AccountId,
         workspace_id: WorkspaceId,
         connection_id: ConnectionId,
-        write: bool,
+        access: super::ConnectionAccess,
     ) -> RemoteAuthorityFuture<'a, RemoteConnectionAuthority>;
 
     fn issue_managed_lease<'a>(
@@ -48,7 +48,7 @@ pub(crate) trait RemoteConnectionAuthorityPort: Send + Sync {
         account_id: &'a AccountId,
         workspace_id: WorkspaceId,
         profile: &'a ConnectionProfile,
-        write: bool,
+        access: super::ConnectionAccess,
     ) -> RemoteAuthorityFuture<'a, ManagedConnectionLease>;
 
     fn release_managed_lease<'a>(

@@ -54,6 +54,19 @@ export function providerResourceSupportsWrite(value: unknown): boolean {
     && manifest.write === true;
 }
 
+/** Managed schema leases are enabled only where the adapter can retain durable
+ * object ownership outside the disposable member credential. Neon PostgreSQL is
+ * the first provider with that verified policy-owner contract. */
+export function providerResourceSupportsSchema(input: {
+  provider: string;
+  engine: string;
+  capabilityManifest: unknown;
+}): boolean {
+  return input.provider === "neon"
+    && input.engine === "postgres"
+    && providerResourceSupportsWrite(input.capabilityManifest);
+}
+
 const neonBranchStates = ["init", "resetting", "ready", "archived", "unknown"] as const;
 
 function safeProviderTargetText(value: unknown, maxLength: number) {

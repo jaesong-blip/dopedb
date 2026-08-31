@@ -367,7 +367,9 @@ export async function revokeActiveLeases(
   if (filter.integrationId) {
     predicates.push(eq(workspaceCredentialLease.integrationId, filter.integrationId));
   }
-  if (filter.accessMode) {
+  if (filter.mutationOnly) {
+    predicates.push(inArray(workspaceCredentialLease.accessMode, ["write", "schema"]));
+  } else if (filter.accessMode) {
     predicates.push(eq(workspaceCredentialLease.accessMode, filter.accessMode));
   }
   const leases = await db.select({

@@ -3,16 +3,19 @@ import { defineCatalog } from "../types";
 
 export const safetyCatalog = defineCatalog(
   {
-    "safety.allowWrites": "Allow writes",
-    "safety.allowWritesHint":
-      "The single Desktop gate for write execution on this connection. Workspace authority can only narrow it.",
+    "safety.accessLevel": "Database access",
+    "safety.accessLevelHint":
+      "Choose the highest operation class this connection may propose. Each level includes the levels before it, and every mutation still needs exact approval.",
+    "safety.accessRead": "Read only",
+    "safety.accessWrite": "Data changes",
+    "safety.accessSchema": "Schema changes",
     "safety.apply": "Apply safety settings",
     "safety.applying": "Applying...",
     "safety.autoRunReads": "Auto-run reads",
     "safety.autoRunReadsHint":
       "Run read-only SELECTs without a manual approve.",
     "safety.body":
-      "This is the only Desktop control for this connection's write execution. Run approves SQL you authored; Agent proposals still require an explicit approval.",
+      "This is the only Desktop control for read, data-change, and schema-change authority on this connection. Run approves SQL you authored; Agent proposals still require an explicit approval.",
     "safety.execPreviewRowLimit": "Exec-preview row limit",
     "safety.execPreviewRowLimitHint":
       "Skip execute-preview above this estimate (L3 gate).",
@@ -26,8 +29,11 @@ export const safetyCatalog = defineCatalog(
     "safety.maxRowsHint": "Row cap applied to read result sets.",
     "safety.memberLocalReadOnlyHint":
       "Member-local credentials are read-only. Workspace writes require a managed connection and an administrator-enabled write policy.",
+    "safety.memberLocalSchemaUnavailable":
+      "Schema changes are unavailable for member-local credentials. Configure managed access, then return to this Safety screen.",
     "safety.modeReadOnly": "Agent-safe read mode",
     "safety.modeSharedReadOnly": "Workspace read-only",
+    "safety.modeSchemaChanges": "Schema changes allowed",
     "safety.modeWorkspaceWrites": "Workspace writes allowed",
     "safety.modeWrites": "Writes allowed",
     "safety.noUnsavedChanges": "Current settings are applied.",
@@ -68,7 +74,13 @@ export const safetyCatalog = defineCatalog(
     "safety.sharedWritesHint":
       "A workspace administrator sets the maximum DB authority. This device switch can narrow an allowed write grant but cannot broaden it.",
     "safety.sharedWritesManagerHint":
-      "Saving here changes both the workspace's role-based write policy and this device gate. The managed provider must have a separate write identity.",
+      "One Apply updates the workspace mutation ceiling and this device gate together. Data and schema changes still use separate short-lived credentials.",
+    "safety.mutationsEngineUnavailable":
+      "This engine is read-only in DopeDB, so data and schema changes are unavailable.",
+    "safety.schemaProviderUnavailable":
+      "Managed schema changes currently require a Neon PostgreSQL connection. Other providers remain available for read and data-change access.",
+    "safety.schemaRequiresManage":
+      "Schema changes require the exact manage grant for this connection. A connection manager can choose the level here; there is no second permission screen.",
     "safety.workspacePolicyRollbackFailed":
       "The device stayed read-only, but the workspace write policy could not be rolled back. Retry with this switch off. {error}",
     "safety.title": "Safety settings",
@@ -76,15 +88,18 @@ export const safetyCatalog = defineCatalog(
       "Not applied yet. Apply to update this device and, for a managed connection, the workspace ceiling together.",
   },
   {
-    "safety.allowWrites": "쓰기 허용",
-    "safety.allowWritesHint":
-      "이 연결의 쓰기 실행을 제어하는 유일한 Desktop 게이트입니다. 워크스페이스 권한보다 넓힐 수는 없습니다.",
+    "safety.accessLevel": "데이터베이스 접근",
+    "safety.accessLevelHint":
+      "이 연결에서 제안할 수 있는 가장 높은 작업 범위를 선택합니다. 상위 단계는 이전 단계를 포함하며 모든 변경은 여전히 정확한 승인이 필요합니다.",
+    "safety.accessRead": "읽기 전용",
+    "safety.accessWrite": "데이터 변경",
+    "safety.accessSchema": "스키마 변경",
     "safety.apply": "안전 설정 적용",
     "safety.applying": "적용 중...",
     "safety.autoRunReads": "읽기 자동 실행",
     "safety.autoRunReadsHint": "읽기 전용 SELECT를 수동 승인 없이 실행합니다.",
     "safety.body":
-      "이 연결의 쓰기 실행을 제어하는 유일한 Desktop 화면입니다. 직접 작성한 SQL은 실행 동작이 승인이고, Agent 제안은 별도 승인이 필요합니다.",
+      "이 연결의 읽기·데이터 변경·스키마 변경 권한을 제어하는 유일한 Desktop 화면입니다. 직접 작성한 SQL은 실행 동작이 승인이고, Agent 제안은 별도 승인이 필요합니다.",
     "safety.execPreviewRowLimit": "실행 미리보기 행 제한",
     "safety.execPreviewRowLimitHint":
       "예상 행 수가 이 값을 넘으면 실행 미리보기를 건너뜁니다 (L3 게이트).",
@@ -98,8 +113,11 @@ export const safetyCatalog = defineCatalog(
     "safety.maxRowsHint": "읽기 결과 집합에 적용되는 행 수 제한입니다.",
     "safety.memberLocalReadOnlyHint":
       "구성원 로컬 자격 증명 연결은 읽기 전용입니다. 워크스페이스 쓰기는 관리형 연결과 관리자가 활성화한 쓰기 정책이 필요합니다.",
+    "safety.memberLocalSchemaUnavailable":
+      "구성원 로컬 자격 증명에서는 스키마 변경을 사용할 수 없습니다. 관리형 접근을 구성한 뒤 이 안전 화면으로 돌아오세요.",
     "safety.modeReadOnly": "에이전트 안전 읽기 모드",
     "safety.modeSharedReadOnly": "워크스페이스 읽기 전용",
+    "safety.modeSchemaChanges": "스키마 변경 허용",
     "safety.modeWorkspaceWrites": "워크스페이스 쓰기 허용",
     "safety.modeWrites": "쓰기 허용",
     "safety.noUnsavedChanges": "현재 설정이 적용되어 있습니다.",
@@ -140,7 +158,13 @@ export const safetyCatalog = defineCatalog(
     "safety.sharedWritesHint":
       "워크스페이스 관리자가 DB 권한의 상한을 정합니다. 이 기기의 스위치는 허용된 쓰기 권한을 좁힐 수 있지만 더 넓힐 수는 없습니다.",
     "safety.sharedWritesManagerHint":
-      "여기서 저장하면 워크스페이스의 역할 기반 쓰기 정책과 이 기기의 gate를 함께 변경합니다. 관리형 공급자에 별도 쓰기 계정이 있어야 합니다.",
+      "한 번의 적용으로 워크스페이스 변경 상한과 이 기기의 gate를 함께 갱신합니다. 데이터 변경과 스키마 변경에는 서로 다른 단기 자격 증명을 사용합니다.",
+    "safety.mutationsEngineUnavailable":
+      "이 엔진은 DopeDB에서 읽기 전용이므로 데이터 변경과 스키마 변경을 사용할 수 없습니다.",
+    "safety.schemaProviderUnavailable":
+      "관리형 스키마 변경은 현재 Neon PostgreSQL 연결에서 지원합니다. 다른 공급자는 읽기와 데이터 변경을 계속 사용할 수 있습니다.",
+    "safety.schemaRequiresManage":
+      "스키마 변경에는 이 연결의 정확한 관리 권한이 필요합니다. 연결 관리자가 이 화면에서 단계를 선택하며 별도의 권한 화면은 없습니다.",
     "safety.workspacePolicyRollbackFailed":
       "이 기기는 읽기 전용으로 유지됐지만 워크스페이스 쓰기 정책을 되돌리지 못했습니다. 스위치를 끈 상태로 다시 저장하세요. {error}",
     "safety.title": "안전 설정",

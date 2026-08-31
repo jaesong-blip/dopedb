@@ -165,6 +165,10 @@ pub struct SafetySettings {
     /// required for target mutations regardless of this value.
     pub require_approval: bool,
     pub allow_writes: bool,
+    /// Device-local opt-in for DDL. This can only narrow a local owner credential
+    /// or a workspace-managed schema lease authorized by an exact manage grant.
+    #[serde(default)]
+    pub allow_schema_changes: bool,
     pub wrap_writes_in_tx: bool,
     pub explain_preview: bool,
     pub auto_run_reads: bool,
@@ -197,6 +201,7 @@ impl Default for SafetySettings {
         SafetySettings {
             require_approval: true,
             allow_writes: false,
+            allow_schema_changes: false,
             wrap_writes_in_tx: true,
             explain_preview: true,
             auto_run_reads: true,

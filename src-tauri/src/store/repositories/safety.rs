@@ -22,10 +22,14 @@ pub(in crate::store) async fn reconcile_safety_write_ceiling(
     // Workspace authority is an upper bound. A refresh may revoke a local
     // device opt-in, but it must never silently turn that opt-in back on.
     if !write_ceiling {
-        sqlx::query("UPDATE connection_safety SET allow_writes = 0 WHERE connection_id = ?1")
-            .bind(connection_id.to_string())
-            .execute(&mut **tx)
-            .await?;
+        sqlx::query(
+            "UPDATE connection_safety
+             SET allow_writes = 0, allow_schema_changes = 0
+             WHERE connection_id = ?1",
+        )
+        .bind(connection_id.to_string())
+        .execute(&mut **tx)
+        .await?;
     }
     Ok(())
 }
@@ -37,7 +41,8 @@ impl Store {
     pub async fn get_safety(&self, connection_id: Uuid) -> AppResult<SafetySettings> {
         self.get_connection(connection_id).await?;
         let row = sqlx::query(
-            "SELECT require_approval, allow_writes, wrap_writes_in_tx, explain_preview,
+            "SELECT require_approval, allow_writes, allow_schema_changes,
+                    wrap_writes_in_tx, explain_preview,
                     auto_run_reads, max_rows, exec_preview_row_limit
              FROM connection_safety WHERE connection_id = ?1",
         )
@@ -50,6 +55,7 @@ impl Store {
             Some(r) => SafetySettings {
                 require_approval: r.try_get("require_approval")?,
                 allow_writes: r.try_get("allow_writes")?,
+                allow_schema_changes: r.try_get("allow_schema_changes")?,
                 wrap_writes_in_tx: r.try_get("wrap_writes_in_tx")?,
                 explain_preview: r.try_get("explain_preview")?,
                 auto_run_reads: r.try_get("auto_run_reads")?,
@@ -73,16 +79,25 @@ impl Store {
         sqlx::query("UPDATE app_settings SET value = value WHERE key = 'active_scope_generation'")
             .execute(&mut *tx)
             .await?;
-        let connection: Option<(i64, String, String, bool, Option<String>)> = sqlx::query_as(
-            "SELECT revision, workspace_access, credential_mode, allow_writes, remote_id
+        let connection: Option<(i64, String, String, bool, Option<String>, String, String)> =
+            sqlx::query_as(
+                "SELECT revision, workspace_access, credential_mode, allow_writes, remote_id,
+                    provider, engine
              FROM connections
              WHERE id = ?1 AND deleted_at IS NULL",
-        )
-        .bind(connection_id.to_string())
-        .fetch_optional(&mut *tx)
-        .await?;
-        let Some((revision, workspace_access, credential_mode, previous_ceiling, remote_id)) =
-            connection
+            )
+            .bind(connection_id.to_string())
+            .fetch_optional(&mut *tx)
+            .await?;
+        let Some((
+            revision,
+            workspace_access,
+            credential_mode,
+            previous_ceiling,
+            remote_id,
+            provider,
+            engine,
+        )) = connection
         else {
             return Err(AppError::NotFound(format!("connection {connection_id}")));
         };
@@ -99,13 +114,29 @@ impl Store {
                     .into(),
             });
         }
-        let previous_safety = sqlx::query_scalar::<_, bool>(
-            "SELECT allow_writes FROM connection_safety WHERE connection_id = ?1",
+        let schema_authorized = s.allow_writes
+            && if is_local {
+                matches!(engine.as_str(), "postgres" | "mysql" | "sqlite")
+            } else {
+                credential_mode == "managed"
+                    && workspace_access == "manage"
+                    && previous_ceiling
+                    && provider == "neon"
+                    && engine == "postgres"
+            };
+        if s.allow_schema_changes && !schema_authorized {
+            return Err(AppError::Blocked {
+                reason: "schema changes exceed the connection's current safety authority".into(),
+            });
+        }
+        let previous_safety = sqlx::query_as::<_, (bool, bool)>(
+            "SELECT allow_writes, allow_schema_changes
+             FROM connection_safety WHERE connection_id = ?1",
         )
         .bind(connection_id.to_string())
         .fetch_optional(&mut *tx)
         .await?
-        .unwrap_or(false);
+        .unwrap_or((false, false));
         let ceiling_changed = is_local && previous_ceiling != s.allow_writes;
         if ceiling_changed {
             let updated = sqlx::query(
@@ -129,17 +160,19 @@ impl Store {
         }
         sqlx::query(
             r#"INSERT INTO connection_safety
-                (connection_id, require_approval, allow_writes, wrap_writes_in_tx,
-                 explain_preview, auto_run_reads, max_rows, exec_preview_row_limit)
-               VALUES (?1,?2,?3,?4,?5,?6,?7,?8)
+                (connection_id, require_approval, allow_writes, allow_schema_changes,
+                 wrap_writes_in_tx, explain_preview, auto_run_reads, max_rows,
+                 exec_preview_row_limit)
+               VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)
                ON CONFLICT(connection_id) DO UPDATE SET
-                 require_approval=?2, allow_writes=?3, wrap_writes_in_tx=?4,
-                 explain_preview=?5, auto_run_reads=?6, max_rows=?7,
-                 exec_preview_row_limit=?8"#,
+                 require_approval=?2, allow_writes=?3, allow_schema_changes=?4,
+                 wrap_writes_in_tx=?5, explain_preview=?6, auto_run_reads=?7,
+                 max_rows=?8, exec_preview_row_limit=?9"#,
         )
         .bind(connection_id.to_string())
         .bind(s.require_approval)
         .bind(s.allow_writes)
+        .bind(s.allow_schema_changes)
         .bind(s.wrap_writes_in_tx)
         .bind(s.explain_preview)
         .bind(s.auto_run_reads)
@@ -148,6 +181,6 @@ impl Store {
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;
-        Ok(previous_safety != s.allow_writes || ceiling_changed)
+        Ok(previous_safety != (s.allow_writes, s.allow_schema_changes) || ceiling_changed)
     }
 }

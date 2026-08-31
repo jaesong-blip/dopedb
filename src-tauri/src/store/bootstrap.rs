@@ -45,8 +45,9 @@ pub(super) use legacy::{add_sql_document_database_scope, migrate_agent_acp_provi
 /// Version 23 enforces one active Project assignment per workspace connection;
 /// legacy duplicate rows remain operable until the user removes them explicitly.
 /// Version 24 persists the immutable multi-Environment Project resource set and
-/// its optional single database write target for resumable ACP sessions.
-pub(super) const LOCAL_SCHEMA_VERSION: i64 = 24;
+/// its optional single database write target for resumable ACP sessions. Version
+/// 25 adds the device-local DDL opt-in without widening any existing connection.
+pub(super) const LOCAL_SCHEMA_VERSION: i64 = 25;
 
 pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
     let version: i64 = sqlx::query_scalar("PRAGMA user_version")
@@ -197,7 +198,43 @@ pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
             set_local_schema_version(pool, 24).await?;
         }
     }
+    if version < 25 {
+        ensure_safety_schema_access(pool).await?;
+        migrated = true;
+        if version >= 24 || workspace_binding_ready {
+            set_local_schema_version(pool, 25).await?;
+        }
+    }
     Ok(migrated)
+}
+
+async fn ensure_safety_schema_access(pool: &SqlitePool) -> AppResult<()> {
+    // Some supported pre-versioned stores were created before the Safety table
+    // became part of the bootstrap schema. Recreate the complete fail-closed
+    // table before adding the v25 column so an upgraded store never advances
+    // while leaving the settings authority absent.
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS connection_safety (
+             connection_id          TEXT PRIMARY KEY REFERENCES connections(id) ON DELETE CASCADE,
+             require_approval       INTEGER NOT NULL DEFAULT 1,
+             allow_writes           INTEGER NOT NULL DEFAULT 0,
+             allow_schema_changes   INTEGER NOT NULL DEFAULT 0,
+             wrap_writes_in_tx      INTEGER NOT NULL DEFAULT 1,
+             explain_preview        INTEGER NOT NULL DEFAULT 1,
+             auto_run_reads         INTEGER NOT NULL DEFAULT 1,
+             max_rows               INTEGER NOT NULL DEFAULT 1000,
+             exec_preview_row_limit INTEGER NOT NULL DEFAULT 50000
+         )",
+    )
+    .execute(pool)
+    .await?;
+    add_column_if_missing(
+        pool,
+        "connection_safety",
+        "allow_schema_changes",
+        "ALTER TABLE connection_safety ADD COLUMN allow_schema_changes INTEGER NOT NULL DEFAULT 0",
+    )
+    .await
 }
 
 async fn ensure_agent_acp_resource_set(pool: &SqlitePool) -> AppResult<()> {

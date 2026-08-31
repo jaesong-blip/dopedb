@@ -33,6 +33,7 @@ export type LeaseRevocationFilter = {
   connectionId?: string;
   integrationId?: string;
   accessMode?: ManagedAccessMode;
+  mutationOnly?: boolean;
 };
 
 export type LeaseRevocationResult = {

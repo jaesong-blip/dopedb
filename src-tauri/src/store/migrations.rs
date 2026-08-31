@@ -283,6 +283,7 @@ CREATE TABLE IF NOT EXISTS connection_safety (
     connection_id         TEXT PRIMARY KEY REFERENCES connections(id) ON DELETE CASCADE,
     require_approval      INTEGER NOT NULL DEFAULT 1,
     allow_writes          INTEGER NOT NULL DEFAULT 0,
+    allow_schema_changes  INTEGER NOT NULL DEFAULT 0,
     wrap_writes_in_tx     INTEGER NOT NULL DEFAULT 1,
     explain_preview       INTEGER NOT NULL DEFAULT 1,
     auto_run_reads        INTEGER NOT NULL DEFAULT 1,

@@ -77,6 +77,7 @@ export default function QueryServiceResult({
         at={result.at}
         statementIndex={scriptStatementIndex}
         connection={connection}
+        onOpenSafety={onOpenSafety}
       />
     );
   }
@@ -197,9 +198,11 @@ function ScriptResults({
   at,
   statementIndex,
   connection,
+  onOpenSafety,
 }: Omit<Extract<QueryServiceResultModel, { kind: "script" }>, "kind"> & {
   statementIndex?: number;
   connection: ConnectionProfile | null;
+  onOpenSafety: (connectionId: ConnectionProfile["id"]) => void;
 }) {
   const { t } = useI18n();
   const summary = outcome.allReads
@@ -221,22 +224,41 @@ function ScriptResults({
           ]
         : [];
   const fillsResultPane = statementIndex !== undefined;
+  const hasSafetyRecovery = connection !== null && statements.some(({ statement }) => (
+    statement.error
+      ? writeBlockRecoveryKind(connection, {
+          kind: null,
+          message: statement.error,
+          sql: statement.sql,
+        }) !== null
+      : false
+  ));
   const content = (
     <>
       <ResultMeta>
         {summary} ·{" "}
         {t("sql.statementCount", { count: outcome.statements.length })} · {at}
       </ResultMeta>
-      {statements.map(({ statement, index }) => {
-        const recovery =
-          statement.error && connection
-            ? writeBlockRecoveryKind(connection, {
-                kind: null,
-                message: statement.error,
-                sql: statement.sql,
-              })
-            : null;
-        return (
+      {hasSafetyRecovery && connection ? (
+        <InlineNotice
+          tone="warning"
+          icon="info"
+          role="status"
+          action={(
+            <Button
+              size="compact"
+              onClick={() => onOpenSafety(connection.id)}
+            >
+              {t("sql.writeBlock.reviewSafety", {
+                connection: connection.name,
+              })}
+            </Button>
+          )}
+        >
+          {t("sql.writeBlock.scriptGuidance")}
+        </InlineNotice>
+      ) : null}
+      {statements.map(({ statement, index }) => (
           <section
             key={`${index}:${statement.sql}`}
             data-fill={fillsResultPane}
@@ -249,16 +271,9 @@ function ScriptResults({
               <SqlSnippet>{statement.sql}</SqlSnippet>
             </ResultMeta>
             {statement.error ? (
-              <>
-                <div className="tw:px-3 tw:py-2 tw:text-ui tw:text-danger">
-                  {statement.error}
-                </div>
-                {recovery === "managedDdl" && connection ? (
-                  <InlineNotice tone="warning" icon="info" role="status">
-                    <ManagedDdlGuidance connection={connection} />
-                  </InlineNotice>
-                ) : null}
-              </>
+              <div className="tw:px-3 tw:py-2 tw:text-ui tw:text-danger">
+                {statement.error}
+              </div>
             ) : statement.result ? (
               <>
                 <div className="tw:mx-3 tw:my-1 tw:text-sm tw:text-muted-foreground">
@@ -287,8 +302,7 @@ function ScriptResults({
               </div>
             )}
           </section>
-        );
-      })}
+        ))}
     </>
   );
   return fillsResultPane ? (
@@ -426,9 +440,9 @@ function WriteBlockRecoveryRow({
         connection: connection.name,
       });
       break;
-    case "managedDdl":
-      permission = t("sql.writeBlock.permissionManagedDdl");
-      guidance = t("sql.writeBlock.guidanceManagedDdl", {
+    case "schemaSafety":
+      permission = t("sql.writeBlock.permissionSchemaSafety");
+      guidance = t("sql.writeBlock.guidanceSchemaSafety", {
         connection: connection.name,
       });
       break;
@@ -454,8 +468,8 @@ function WriteBlockRecoveryRow({
   const canModifyHere =
     kind === "deviceSafety" ||
     kind === "localSafety" ||
+    kind === "schemaSafety" ||
     kind === "workspacePolicyAndDevice";
-  const safetyActionAvailable = kind !== "managedDdl";
   return (
     <>
       <dt>{t("sql.writeBlock.requiredPermission")}</dt>
@@ -469,43 +483,21 @@ function WriteBlockRecoveryRow({
               {guidance}
             </p>
           </div>
-          {safetyActionAvailable ? (
-            <div className="tw:shrink-0">
-              <Button
-                size="compact"
-                onClick={() => onOpenSafety(connection.id)}
-              >
-                {t(
-                  canModifyHere
-                    ? "sql.writeBlock.openSafety"
-                    : "sql.writeBlock.reviewSafety",
-                  { connection: connection.name },
-                )}
-              </Button>
-            </div>
-          ) : null}
+          <div className="tw:shrink-0">
+            <Button
+              size="compact"
+              onClick={() => onOpenSafety(connection.id)}
+            >
+              {t(
+                canModifyHere
+                  ? "sql.writeBlock.openSafety"
+                  : "sql.writeBlock.reviewSafety",
+                { connection: connection.name },
+              )}
+            </Button>
+          </div>
         </div>
       </dd>
     </>
-  );
-}
-
-function ManagedDdlGuidance({
-  connection,
-}: {
-  connection: ConnectionProfile;
-}) {
-  const { t } = useI18n();
-  return (
-    <span className="tw:block tw:min-w-0">
-      <strong className="tw:block tw:text-ui tw:text-foreground">
-        {t("sql.writeBlock.permissionManagedDdl")}
-      </strong>
-      <span className="tw:mt-0.5 tw:block tw:leading-body tw:text-muted-foreground">
-        {t("sql.writeBlock.guidanceManagedDdl", {
-          connection: connection.name,
-        })}
-      </span>
-    </span>
   );
 }

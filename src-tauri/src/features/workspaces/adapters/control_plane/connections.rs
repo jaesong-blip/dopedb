@@ -330,7 +330,7 @@ pub(super) async fn authorize_connection(
     user_id: &str,
     workspace_id: Uuid,
     connection_id: Uuid,
-    write: bool,
+    access: crate::connection::ConnectionAccess,
 ) -> AppResult<RemoteConnectionAuthority> {
     let token = fetch_workspace_session(user_id)
         .await?
@@ -344,7 +344,11 @@ pub(super) async fn authorize_connection(
             "{origin}/api/v1/workspaces/{workspace_id}/connections/{connection_id}"
         ))
         .bearer_auth(token.as_str())
-        .json(&json!({ "action": if write { "write" } else { "read" } }))
+        .json(&json!({ "action": match access {
+            crate::connection::ConnectionAccess::Read => "read",
+            crate::connection::ConnectionAccess::Write => "write",
+            crate::connection::ConnectionAccess::Schema => "schema",
+        } }))
         .send()
         .await
         .map_err(|error| request_error("authorizing shared connection", error))?;
@@ -361,14 +365,19 @@ pub(super) async fn authorize_connection(
             MAX_AUTH_RESPONSE_BYTES,
         )
         .await?;
-    let expected_action = if write { "write" } else { "read" };
-    let access = crate::store::parse_workspace_access(authority.access_mode)?;
+    let expected_action = match access {
+        crate::connection::ConnectionAccess::Read => "read",
+        crate::connection::ConnectionAccess::Write => "write",
+        crate::connection::ConnectionAccess::Schema => "schema",
+    };
+    let workspace_access = crate::store::parse_workspace_access(authority.access_mode)?;
     if !authority.allowed
         || authority.action != expected_action
         || authority.revision < 1
-        || access == WorkspaceConnectionAccess::Local
-        || (write && !access.can_write())
-        || (!write && !access.can_read())
+        || workspace_access == WorkspaceConnectionAccess::Local
+        || (access == crate::connection::ConnectionAccess::Schema && !workspace_access.can_manage())
+        || (access == crate::connection::ConnectionAccess::Write && !workspace_access.can_write())
+        || (access == crate::connection::ConnectionAccess::Read && !workspace_access.can_read())
     {
         return Err(AppError::Network(
             "shared connection authorization returned invalid authority".into(),
@@ -386,7 +395,7 @@ pub(super) async fn issue_managed_connection_lease(
     user_id: &str,
     workspace_id: Uuid,
     profile: &ConnectionProfile,
-    write: bool,
+    access: crate::connection::ConnectionAccess,
 ) -> AppResult<ManagedConnectionLease> {
     if profile.credential_mode != WorkspaceCredentialMode::Managed {
         return Err(AppError::Config(
@@ -400,10 +409,10 @@ pub(super) async fn issue_managed_connection_lease(
             AppError::Config("managed database access requires an authenticated session".into())
         })?;
     let origin = origin()?;
-    let requested_access = if write {
-        ManagedAccessMode::Write
-    } else {
-        ManagedAccessMode::Read
+    let requested_access = match access {
+        crate::connection::ConnectionAccess::Read => ManagedAccessMode::Read,
+        crate::connection::ConnectionAccess::Write => ManagedAccessMode::Write,
+        crate::connection::ConnectionAccess::Schema => ManagedAccessMode::Schema,
     };
     let lease_request = ManagedLeaseRequest {
         access_mode: requested_access,
@@ -452,7 +461,8 @@ pub(super) async fn issue_managed_connection_lease(
     if engine != profile.engine
         || provider != profile.provider
         || lease.access_mode != requested_access
-        || (write && !profile.workspace_access.can_write())
+        || (requested_access == ManagedAccessMode::Schema && !profile.workspace_access.can_manage())
+        || (requested_access == ManagedAccessMode::Write && !profile.workspace_access.can_write())
     {
         return Err(AppError::Network(
             "managed database access returned invalid connection material".into(),

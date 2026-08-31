@@ -5,6 +5,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { neon } from "@neondatabase/serverless";
 import {
   NEON_LEASE_SECONDS,
+  NEON_SCHEMA_LEASE_SECONDS,
   NEON_PUBLIC_DATABASE_ESCAPE_SQL,
   NEON_PUBLIC_SCHEMA_CREATE_SQL,
   NEON_PUBLIC_SCHEMA_ESCAPE_SQL,
@@ -14,6 +15,7 @@ import {
   neonLeaseRole,
   neonLeaseRoleName,
   neonOwnerRoleName,
+  neonPolicyRoleIdentity,
   neonPublicDatabaseBoundaryError,
   neonRoleRevokeStatements,
   neonRoleStatements,
@@ -179,8 +181,197 @@ class NeonBoundaryError extends Error {
   }
 }
 
+function identifier(value: string) {
+  return `"${value.replaceAll("\"", "\"\"")}"`;
+}
+
+async function neonPolicyOwner(
+  sql: NeonSqlClient,
+  resource: NeonResource,
+  expectedOwner: string,
+  allowedLeaseRole?: string,
+): Promise<{ name: string; active: boolean }> {
+  const marker = neonPolicyRoleIdentity(resource);
+  const [version] = await sql.query(
+    "SELECT current_setting('server_version_num')::integer AS version",
+  );
+  const supportsMembershipOptions = Number(version?.version) >= 160_000;
+  const rows = await sql.query(
+    "SELECT r.rolcanlogin AS can_login, r.rolsuper AS superuser, "
+      + "r.rolinherit AS inherits, r.rolcreaterole AS create_role, "
+      + "r.rolcreatedb AS create_database, r.rolreplication AS replication, "
+      + "r.rolbypassrls AS bypass_rls, "
+      + "shobj_description(r.oid, 'pg_authid') AS marker "
+      + "FROM pg_roles r WHERE r.rolname = $1",
+    [marker.name],
+  );
+  if (rows.length === 0) return { name: expectedOwner, active: false };
+  const row = rows[0];
+  if (
+    rows.length !== 1
+    || row?.can_login !== false
+    || row?.superuser !== false
+    || row?.inherits !== true
+    || row?.create_role !== false
+    || row?.create_database !== false
+    || row?.replication !== false
+    || row?.bypass_rls !== false
+    || row?.marker !== marker.comment
+  ) {
+    throw new NeonBoundaryError(
+      "Neon schema policy owner does not match the expected DopeDB boundary",
+    );
+  }
+  if (!supportsMembershipOptions) return { name: expectedOwner, active: false };
+  const unexpectedMembers = await sql.query(
+    "SELECT 1 AS unexpected FROM pg_auth_members m "
+      + "JOIN pg_roles granted ON granted.oid = m.roleid "
+      + "JOIN pg_roles member_role ON member_role.oid = m.member "
+      + "WHERE granted.rolname = $1 AND member_role.rolname <> $2 "
+      + "AND ($3::text IS NULL OR member_role.rolname <> $3) LIMIT 1",
+    [marker.name, expectedOwner, allowedLeaseRole ?? null],
+  );
+  if (unexpectedMembers.length > 0) {
+    throw new NeonBoundaryError("Neon schema policy owner has an unexpected member");
+  }
+  const memberships = await sql.query(
+    "SELECT count(*)::integer AS grant_count, "
+      + "COALESCE(bool_or(m.admin_option), FALSE) AS admin_option, "
+      + "COALESCE(bool_or(m.inherit_option), FALSE) AS inherit_option, "
+      + "COALESCE(bool_or(m.set_option), FALSE) AS set_option FROM pg_auth_members m "
+      + "JOIN pg_roles granted ON granted.oid = m.roleid "
+      + "JOIN pg_roles member_role ON member_role.oid = m.member "
+      + "WHERE granted.rolname = $1 AND member_role.rolname = $2",
+    [marker.name, expectedOwner],
+  );
+  const grantCount = Number(memberships[0]?.grant_count ?? 0);
+  if (grantCount === 0) return { name: expectedOwner, active: false };
+  if (
+    memberships.length !== 1
+    || grantCount > 2
+    || memberships[0]?.admin_option !== true
+    || memberships[0]?.inherit_option !== true
+    || memberships[0]?.set_option !== true
+  ) {
+    throw new NeonBoundaryError(
+      "Neon schema policy owner membership has drifted",
+    );
+  }
+  return { name: marker.name, active: true };
+}
+
+async function generatedOwnershipStatements(
+  sql: NeonSqlClient,
+  resource: NeonResource,
+  policyOwner: string,
+) {
+  const relationRows = await sql.query(
+    "SELECT CASE c.relkind "
+      + "WHEN 'r' THEN format('ALTER TABLE %I.%I OWNER TO %I', n.nspname, c.relname, $2) "
+      + "WHEN 'p' THEN format('ALTER TABLE %I.%I OWNER TO %I', n.nspname, c.relname, $2) "
+      + "WHEN 'v' THEN format('ALTER VIEW %I.%I OWNER TO %I', n.nspname, c.relname, $2) "
+      + "WHEN 'm' THEN format('ALTER MATERIALIZED VIEW %I.%I OWNER TO %I', n.nspname, c.relname, $2) "
+      + "WHEN 'f' THEN format('ALTER FOREIGN TABLE %I.%I OWNER TO %I', n.nspname, c.relname, $2) "
+      + "WHEN 'S' THEN format('ALTER SEQUENCE %I.%I OWNER TO %I', n.nspname, c.relname, $2) "
+      + "WHEN 'c' THEN format('ALTER TYPE %I.%I OWNER TO %I', n.nspname, c.relname, $2) "
+      + "END AS ddl FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+      + "WHERE n.nspname = ANY($1::text[]) "
+      + "AND c.relkind IN ('r', 'p', 'v', 'm', 'f', 'S', 'c') "
+      + "AND c.relowner = current_user::regrole "
+      + "AND NOT EXISTS (SELECT 1 FROM pg_depend extension_dependency "
+      + "WHERE extension_dependency.classid = 'pg_class'::regclass "
+      + "AND extension_dependency.objid = c.oid AND extension_dependency.deptype = 'e') "
+      + "AND (c.relkind <> 'S' OR NOT EXISTS (SELECT 1 FROM pg_depend owned_sequence "
+      + "WHERE owned_sequence.classid = 'pg_class'::regclass "
+      + "AND owned_sequence.objid = c.oid AND owned_sequence.refclassid = 'pg_class'::regclass "
+      + "AND owned_sequence.deptype IN ('a', 'i'))) ORDER BY n.nspname, c.relname",
+    [resource.schemas, policyOwner],
+  );
+  const routineRows = await sql.query(
+    "SELECT format('ALTER %s %I.%I(%s) OWNER TO %I', "
+      + "CASE p.prokind WHEN 'p' THEN 'PROCEDURE' WHEN 'a' THEN 'AGGREGATE' ELSE 'FUNCTION' END, "
+      + "n.nspname, p.proname, pg_get_function_identity_arguments(p.oid), $2) AS ddl "
+      + "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+      + "WHERE n.nspname = ANY($1::text[]) AND p.proowner = current_user::regrole "
+      + "AND NOT EXISTS (SELECT 1 FROM pg_depend extension_dependency "
+      + "WHERE extension_dependency.classid = 'pg_proc'::regclass "
+      + "AND extension_dependency.objid = p.oid AND extension_dependency.deptype = 'e') "
+      + "ORDER BY n.nspname, p.proname, p.oid",
+    [resource.schemas, policyOwner],
+  );
+  const typeRows = await sql.query(
+    "SELECT format('ALTER %s %I.%I OWNER TO %I', "
+      + "CASE t.typtype WHEN 'd' THEN 'DOMAIN' ELSE 'TYPE' END, "
+      + "n.nspname, t.typname, $2) AS ddl "
+      + "FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace "
+      + "WHERE n.nspname = ANY($1::text[]) AND t.typowner = current_user::regrole "
+      + "AND t.typrelid = 0 AND t.typelem = 0 AND t.typtype IN ('b', 'c', 'd', 'e', 'm', 'r') "
+      + "AND NOT EXISTS (SELECT 1 FROM pg_depend extension_dependency "
+      + "WHERE extension_dependency.classid = 'pg_type'::regclass "
+      + "AND extension_dependency.objid = t.oid AND extension_dependency.deptype = 'e') "
+      + "ORDER BY n.nspname, t.typname",
+    [resource.schemas, policyOwner],
+  );
+  const schemaRows = await sql.query(
+    "SELECT format('ALTER SCHEMA %I OWNER TO %I', n.nspname, $2) AS ddl "
+      + "FROM pg_namespace n WHERE n.nspname = ANY($1::text[]) "
+      + "AND pg_get_userbyid(n.nspowner) <> $2 ORDER BY n.nspname",
+    [resource.schemas, policyOwner],
+  );
+  const rows = [...relationRows, ...routineRows, ...typeRows, ...schemaRows];
+  if (rows.some((row) => typeof row.ddl !== "string" || row.ddl.length > 16_384)) {
+    throw new NeonBoundaryError("Neon schema ownership plan is invalid");
+  }
+  return rows.map((row) => row.ddl as string);
+}
+
+async function ensureNeonSchemaPolicy(
+  sql: NeonSqlClient,
+  resource: NeonResource,
+  expectedOwner: string,
+) {
+  const [version] = await sql.query(
+    "SELECT current_setting('server_version_num')::integer AS version",
+  );
+  if (Number(version?.version) < 160_000) {
+    throw new NeonBoundaryError(
+      "Neon managed schema access requires PostgreSQL 16 or newer",
+    );
+  }
+  const marker = neonPolicyRoleIdentity(resource);
+  const state = await neonPolicyOwner(sql, resource, expectedOwner);
+  const ownership = await generatedOwnershipStatements(sql, resource, marker.name);
+  if (state.active) {
+    if (ownership.length > 0) {
+      await sql.transaction(ownership.map((statement) => sql.query(statement)));
+    }
+    return marker.name;
+  }
+
+  const existing = await sql.query(
+    "SELECT 1 AS present FROM pg_roles WHERE rolname = $1",
+    [marker.name],
+  );
+  const setup = existing.length === 0
+    ? [
+      `CREATE ROLE ${identifier(marker.name)} NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`,
+      `COMMENT ON ROLE ${identifier(marker.name)} IS '${marker.comment}'`,
+    ]
+    : [];
+  await sql.transaction([
+    ...setup,
+    `GRANT ${identifier(marker.name)} TO ${identifier(expectedOwner)} WITH INHERIT TRUE, SET TRUE`,
+    ...ownership,
+  ].map((statement) => sql.query(statement)));
+  const active = await neonPolicyOwner(sql, resource, expectedOwner);
+  if (!active.active || active.name !== marker.name) {
+    throw new NeonBoundaryError("Neon schema policy owner could not be activated");
+  }
+  return marker.name;
+}
+
 function writeTableGrantCheck(accessMode: ManagedAccessMode) {
-  return accessMode === "write"
+  return accessMode !== "read"
     ? " OR NOT has_table_privilege(c.oid, 'INSERT WITH GRANT OPTION')"
       + " OR NOT has_table_privilege(c.oid, 'UPDATE WITH GRANT OPTION')"
       + " OR NOT has_table_privilege(c.oid, 'DELETE WITH GRANT OPTION')"
@@ -188,7 +379,7 @@ function writeTableGrantCheck(accessMode: ManagedAccessMode) {
 }
 
 function writeSequenceGrantCheck(accessMode: ManagedAccessMode) {
-  return accessMode === "write"
+  return accessMode !== "read"
     ? " OR NOT has_sequence_privilege(c.oid, 'USAGE WITH GRANT OPTION')"
       + " OR NOT has_sequence_privilege(c.oid, 'UPDATE WITH GRANT OPTION')"
     : "";
@@ -213,6 +404,16 @@ async function assertNeonManagedBoundary(
   ) {
     throw new NeonBoundaryError(
       "Neon owner credential identity does not match the database owner",
+    );
+  }
+  const policyOwner = await neonPolicyOwner(
+    sql,
+    resource,
+    expectedOwner,
+  );
+  if (accessMode === "schema" && !policyOwner.active) {
+    throw new NeonBoundaryError(
+      "Neon schema policy owner has not been activated",
     );
   }
   const databaseRows = await sql.query(
@@ -254,28 +455,57 @@ async function assertNeonManagedBoundary(
   const unsafeSchemaCreators = await sql.query(
     "SELECT n.nspname AS schema_name FROM pg_namespace n "
       + "WHERE n.nspname = ANY($1::text[]) AND ("
-      + "(n.nspowner <> current_user::regrole AND NOT EXISTS ("
+      + "(n.nspowner <> current_user::regrole "
+      + "AND n.nspowner <> $2::name::regrole AND NOT EXISTS ("
       + "SELECT 1 FROM pg_roles owner_role WHERE owner_role.oid = n.nspowner "
       + "AND owner_role.rolname = 'pg_database_owner')) OR EXISTS ("
       + "SELECT 1 FROM aclexplode(COALESCE(n.nspacl, acldefault('n', n.nspowner))) acl "
       + "WHERE acl.privilege_type = 'CREATE' "
       + "AND acl.grantee <> current_user::regrole::oid "
+      + "AND acl.grantee <> $2::name::regrole::oid "
       + "AND NOT EXISTS (SELECT 1 FROM pg_roles creator_role "
       + "WHERE creator_role.oid = acl.grantee "
       + "AND creator_role.rolname = 'pg_database_owner'))) LIMIT 1",
-    [resource.schemas],
+    [resource.schemas, policyOwner.name],
   );
   const foreignOwnedObjects = await sql.query(
     "SELECT n.nspname AS schema_name, c.relname AS object_name "
       + "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
       + "WHERE n.nspname = ANY($1::text[]) "
-      + "AND c.relkind IN ('r', 'p', 'v', 'm', 'f', 'S') "
-      + "AND c.relowner <> current_user::regrole LIMIT 1",
-    [resource.schemas],
+      + "AND c.relkind IN ('r', 'p', 'v', 'm', 'f', 'S', 'c') "
+      + "AND c.relowner <> $2::name::regrole "
+      + "AND NOT EXISTS (SELECT 1 FROM pg_depend extension_dependency "
+      + "WHERE extension_dependency.classid = 'pg_class'::regclass "
+      + "AND extension_dependency.objid = c.oid AND extension_dependency.deptype = 'e') LIMIT 1",
+    [resource.schemas, policyOwner.name],
   );
-  if (unsafeSchemaCreators.length > 0 || foreignOwnedObjects.length > 0) {
+  const foreignOwnedRoutines = await sql.query(
+    "SELECT n.nspname AS schema_name, p.proname AS routine_name "
+      + "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+      + "WHERE n.nspname = ANY($1::text[]) AND p.proowner <> $2::name::regrole "
+      + "AND NOT EXISTS (SELECT 1 FROM pg_depend extension_dependency "
+      + "WHERE extension_dependency.classid = 'pg_proc'::regclass "
+      + "AND extension_dependency.objid = p.oid AND extension_dependency.deptype = 'e') LIMIT 1",
+    [resource.schemas, policyOwner.name],
+  );
+  const foreignOwnedTypes = await sql.query(
+    "SELECT n.nspname AS schema_name, t.typname AS type_name "
+      + "FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace "
+      + "WHERE n.nspname = ANY($1::text[]) AND t.typowner <> $2::name::regrole "
+      + "AND t.typrelid = 0 AND t.typelem = 0 AND t.typtype IN ('b', 'c', 'd', 'e', 'm', 'r') "
+      + "AND NOT EXISTS (SELECT 1 FROM pg_depend extension_dependency "
+      + "WHERE extension_dependency.classid = 'pg_type'::regclass "
+      + "AND extension_dependency.objid = t.oid AND extension_dependency.deptype = 'e') LIMIT 1",
+    [resource.schemas, policyOwner.name],
+  );
+  if (
+    unsafeSchemaCreators.length > 0
+    || foreignOwnedObjects.length > 0
+    || foreignOwnedRoutines.length > 0
+    || foreignOwnedTypes.length > 0
+  ) {
     throw new NeonBoundaryError(
-      "Neon managed access requires the database owner to exclusively create "
+      "Neon managed access requires the verified policy owner to exclusively create "
         + "and own objects in every managed schema",
     );
   }
@@ -294,7 +524,7 @@ async function assertNeonManagedBoundary(
     );
   }
 
-  const disallowedPublicTablePrivileges = accessMode === "write"
+  const disallowedPublicTablePrivileges = accessMode !== "read"
     ? ["TRUNCATE", "REFERENCES", "TRIGGER", "MAINTAIN"]
     : [
       "INSERT",
@@ -410,14 +640,26 @@ async function assertNeonRolePrivileges(
   role: string,
   resource: NeonResource,
   accessMode: ManagedAccessMode,
+  expectedOwner: string,
 ) {
+  const policyOwner = await neonPolicyOwner(
+    sql,
+    resource,
+    expectedOwner,
+    accessMode === "schema" ? role : undefined,
+  );
+  if (accessMode === "schema" && !policyOwner.active) {
+    throw new NeonBoundaryError("Neon schema policy owner is unavailable");
+  }
+  const schemaLease = accessMode === "schema";
+  const expiryMinutes = schemaLease ? 10 : 20;
   const roleRows = await sql.query(
     "SELECT r.rolcanlogin AS can_login, r.rolsuper AS superuser, "
       + "r.rolinherit AS inherits, r.rolcreaterole AS create_role, "
       + "r.rolcreatedb AS create_database, r.rolreplication AS replication, "
       + "r.rolbypassrls AS bypass_rls, r.rolconnlimit AS connection_limit, "
       + "r.rolvaliduntil > now() AND "
-      + "r.rolvaliduntil <= now() + interval '20 minutes' AS bounded_expiry, "
+      + `r.rolvaliduntil <= now() + interval '${expiryMinutes} minutes' AS bounded_expiry, `
       + "NOT EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.member = r.oid) "
       + "AS no_memberships, "
       + "NOT EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.roleid = r.oid) "
@@ -436,10 +678,102 @@ async function assertNeonRolePrivileges(
     || roleRow?.bypass_rls !== false
     || roleRow?.connection_limit !== NEON_ROLE_CONNECTION_LIMIT
     || roleRow?.bounded_expiry !== true
-    || roleRow?.no_memberships !== true
-    || roleRow?.no_members !== true
+    || roleRow?.no_memberships !== !schemaLease
+    || roleRow?.no_members !== !schemaLease
   ) {
     throw new NeonBoundaryError("Neon role safety attributes are invalid");
+  }
+  const settingRows = await sql.query(
+    "SELECT settings.setdatabase AS database_id, settings.setconfig AS settings "
+      + "FROM pg_db_role_setting settings JOIN pg_roles role "
+      + "ON role.oid = settings.setrole WHERE role.rolname = $1",
+    [role],
+  );
+  const expectedSettings = [
+    "idle_in_transaction_session_timeout=1min",
+    "idle_session_timeout=5min",
+    "statement_timeout=5min",
+    ...(schemaLease ? [`role=${policyOwner.name}`] : []),
+    ...(accessMode === "read" ? ["default_transaction_read_only=on"] : []),
+  ].sort();
+  const actualSettings = settingRows[0]?.settings;
+  if (
+    settingRows.length !== 1
+    || Number(settingRows[0]?.database_id) !== 0
+    || !Array.isArray(actualSettings)
+    || actualSettings.some((setting) => typeof setting !== "string")
+    || [...actualSettings].sort().join("\n") !== expectedSettings.join("\n")
+  ) {
+    throw new NeonBoundaryError("Neon role session settings are invalid");
+  }
+  if (schemaLease) {
+    const memberships = await sql.query(
+      "SELECT "
+        + "(SELECT count(*)::integer FROM pg_auth_members m "
+        + "WHERE m.member = lease.oid) AS membership_count, "
+        + "(SELECT count(DISTINCT m.member)::integer FROM pg_auth_members m "
+        + "WHERE m.roleid = lease.oid) AS member_count, "
+        + "EXISTS (SELECT 1 FROM pg_auth_members m "
+        + "JOIN pg_roles granted ON granted.oid = m.roleid "
+        + "WHERE m.member = lease.oid AND granted.rolname = $2 "
+        + "AND m.admin_option = FALSE AND m.inherit_option = FALSE "
+        + "AND m.set_option = TRUE) AS exact_policy_membership, "
+        + "(SELECT COALESCE(bool_or(m.admin_option), FALSE) "
+        + "AND COALESCE(bool_or(m.inherit_option), FALSE) "
+        + "AND COALESCE(bool_or(m.set_option), FALSE) FROM pg_auth_members m "
+        + "JOIN pg_roles member_role ON member_role.oid = m.member "
+        + "WHERE m.roleid = lease.oid AND member_role.rolname = current_user "
+        + ") AS exact_cleanup_member "
+        + "FROM pg_roles lease WHERE lease.rolname = $1",
+      [role, policyOwner.name],
+    );
+    const membership = memberships[0];
+    const boundary = await sql.query(
+      "SELECT "
+        + "NOT has_database_privilege($1::name, current_database(), 'CREATE') "
+        + "AND NOT has_database_privilege($3::name, current_database(), 'CREATE') AS no_database_create, "
+        + "NOT has_database_privilege($1::name, current_database(), 'CONNECT WITH GRANT OPTION') "
+        + "AND NOT has_database_privilege($3::name, current_database(), 'CONNECT WITH GRANT OPTION') AS no_connect_grant, "
+        + "NOT has_database_privilege($1::name, current_database(), 'TEMPORARY') "
+        + "AND NOT has_database_privilege($3::name, current_database(), 'TEMPORARY') AS no_temporary, "
+        + "NOT EXISTS (SELECT 1 FROM pg_namespace n "
+        + "WHERE n.nspname <> 'information_schema' AND n.nspname !~ '^pg_' "
+        + "AND (has_schema_privilege($1::name, n.oid, 'USAGE') "
+        + "OR has_schema_privilege($1::name, n.oid, 'CREATE'))) AS no_direct_schema, "
+        + "NOT EXISTS (SELECT 1 FROM pg_namespace n "
+        + "WHERE n.nspname = ANY($2::text[]) "
+        + "AND (NOT has_schema_privilege($3::name, n.oid, 'USAGE') "
+        + "OR NOT has_schema_privilege($3::name, n.oid, 'CREATE'))) AS exact_allowed_schemas, "
+        + "NOT EXISTS (SELECT 1 FROM pg_namespace n "
+        + "WHERE n.nspname <> 'information_schema' AND n.nspname !~ '^pg_' "
+        + "AND NOT (n.nspname = ANY($2::text[])) "
+        + "AND (has_schema_privilege($3::name, n.oid, 'USAGE') "
+        + "OR has_schema_privilege($3::name, n.oid, 'CREATE'))) AS no_other_schemas, "
+        + "NOT EXISTS (SELECT 1 FROM pg_default_acl d "
+        + "CROSS JOIN LATERAL aclexplode(d.defaclacl) acl "
+        + "WHERE d.defaclrole = $3::name::regrole AND d.defaclobjtype = 'f' "
+        + "AND acl.grantee = 0 AND acl.privilege_type = 'EXECUTE') AS no_public_function_default",
+      [role, resource.schemas, policyOwner.name],
+    );
+    const exact = boundary[0];
+    if (
+      !membership
+      || membership.membership_count !== 1
+      || membership.member_count !== 1
+      || membership.exact_policy_membership !== true
+      || membership.exact_cleanup_member !== true
+      || !exact
+      || exact.no_database_create !== true
+      || exact.no_connect_grant !== true
+      || exact.no_temporary !== true
+      || exact.no_direct_schema !== true
+      || exact.exact_allowed_schemas !== true
+      || exact.no_other_schemas !== true
+      || exact.no_public_function_default !== true
+    ) {
+      throw new NeonBoundaryError("Neon schema role privilege verification failed");
+    }
+    return;
   }
   const rows = await sql.query(
     "SELECT "
@@ -480,11 +814,11 @@ async function assertNeonRolePrivileges(
       + "JOIN pg_namespace n ON n.oid = d.defaclnamespace "
       + "CROSS JOIN LATERAL aclexplode(d.defaclacl) acl "
       + "JOIN pg_roles grantee ON grantee.oid = acl.grantee "
-      + "WHERE d.defaclrole = current_user::regrole "
+      + "WHERE d.defaclrole = $3::name::regrole "
       + "AND grantee.rolname = $1 AND n.nspname = ANY($2::text[]) "
       + "AND d.defaclobjtype IN ('r', 'S') "
       + "ORDER BY n.nspname, d.defaclobjtype, acl.privilege_type",
-    [role, resource.schemas],
+    [role, resource.schemas, policyOwner.name],
   );
   const expected = accessMode === "write"
     ? {
@@ -551,9 +885,53 @@ async function revokeNeonRoleWithClient(
       + "WHERE n.nspname = ANY($1::text[]) ORDER BY n.nspname",
     [resource.schemas],
   );
+  const policyOwner = await neonPolicyOwner(sql, resource, owner, role);
+  let schemaLease = false;
+  if (policyOwner.active) {
+    const memberships = await sql.query(
+      "SELECT "
+        + "(SELECT count(*)::integer FROM pg_auth_members m "
+        + "JOIN pg_roles lease ON lease.oid = m.member "
+        + "WHERE lease.rolname = $1) AS membership_count, "
+        + "EXISTS (SELECT 1 FROM pg_auth_members m "
+        + "JOIN pg_roles lease ON lease.oid = m.member "
+        + "JOIN pg_roles granted ON granted.oid = m.roleid "
+        + "WHERE lease.rolname = $1 AND granted.rolname = $2 "
+        + "AND m.admin_option = FALSE AND m.inherit_option = FALSE "
+        + "AND m.set_option = TRUE) AS exact_policy_membership, "
+        + "(SELECT count(DISTINCT m.member)::integer FROM pg_auth_members m "
+        + "JOIN pg_roles lease ON lease.oid = m.roleid "
+        + "WHERE lease.rolname = $1) AS member_count, "
+        + "(SELECT COALESCE(bool_or(m.admin_option), FALSE) "
+        + "AND COALESCE(bool_or(m.inherit_option), FALSE) "
+        + "AND COALESCE(bool_or(m.set_option), FALSE) FROM pg_auth_members m "
+        + "JOIN pg_roles lease ON lease.oid = m.roleid "
+        + "JOIN pg_roles member_role ON member_role.oid = m.member "
+        + "WHERE lease.rolname = $1 AND member_role.rolname = $3 "
+        + ") AS exact_cleanup_member",
+      [role, policyOwner.name, owner],
+    );
+    const membership = memberships[0];
+    const count = Number(membership?.membership_count ?? 0);
+    const memberCount = Number(membership?.member_count ?? 0);
+    if (count > 0 || memberCount > 0) {
+      if (
+        count !== 1
+        || memberCount !== 1
+        || membership?.exact_policy_membership !== true
+        || membership?.exact_cleanup_member !== true
+      ) {
+        throw new NeonBoundaryError("Neon schema lease membership has drifted");
+      }
+      schemaLease = true;
+    }
+  }
   const statements = neonRoleRevokeStatements({
     role,
     owner,
+    policyOwner: policyOwner.name,
+    defaultPrivilegeOwners: [...new Set([owner, policyOwner.name])],
+    schemaLease,
     database: resource.database,
     schemas: schemaRows.map((row) => row.schema_name),
   });
@@ -659,8 +1037,17 @@ export async function validateNeonResource(
     );
   }
   try {
+    const sql = sqlClient(connection.connectionUri);
+    const policyOwner = await neonPolicyOwner(
+      sql,
+      liveResource,
+      connection.owner,
+    );
+    if (accessMode === "schema" || policyOwner.active) {
+      await ensureNeonSchemaPolicy(sql, liveResource, connection.owner);
+    }
     await assertNeonManagedBoundary(
-      sqlClient(connection.connectionUri),
+      sql,
       liveResource,
       accessMode,
       connection.owner,
@@ -690,7 +1077,10 @@ export async function issueNeonLease(input: {
 }): Promise<ManagedProviderLease> {
   const password = randomBytes(32).toString("base64url");
   const passwordVerifier = createNeonScramVerifier(password);
-  const expiresAt = new Date(Date.now() + NEON_LEASE_SECONDS * 1_000).toISOString();
+  const leaseSeconds = input.accessMode === "schema"
+    ? NEON_SCHEMA_LEASE_SECONDS
+    : NEON_LEASE_SECONDS;
+  const expiresAt = new Date(Date.now() + leaseSeconds * 1_000).toISOString();
   const {
     branch,
     connection,
@@ -709,15 +1099,29 @@ export async function issueNeonLease(input: {
   const sql = sqlClient(connection.connectionUri);
   let roleCreated = false;
   try {
+    const currentPolicyOwner = await neonPolicyOwner(
+      sql,
+      resource,
+      connection.owner,
+    );
+    if (input.accessMode === "schema" || currentPolicyOwner.active) {
+      await ensureNeonSchemaPolicy(sql, resource, connection.owner);
+    }
     await assertNeonManagedBoundary(
       sql,
       resource,
       input.accessMode,
       connection.owner,
     );
+    const policyOwner = await neonPolicyOwner(
+      sql,
+      resource,
+      connection.owner,
+    );
     const statements = neonRoleStatements({
       role: input.role,
       owner: connection.owner,
+      policyOwner: policyOwner.name,
       passwordVerifier,
       expiresAt,
       accessMode: input.accessMode,
@@ -733,6 +1137,7 @@ export async function issueNeonLease(input: {
       input.role,
       resource,
       input.accessMode,
+      connection.owner,
     );
   } catch (error) {
     if (roleCreated) {

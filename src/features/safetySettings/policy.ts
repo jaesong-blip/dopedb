@@ -4,13 +4,13 @@ import type { SafetySettings } from "../../ipc/types";
 export type ConnectionWriteAuthority = Pick<
   ConnectionProfile,
   "allowWrites" | "credentialMode" | "workspaceAccess"
->;
+> & Partial<Pick<ConnectionProfile, "engine" | "provider">>;
 
 export type WriteBlockRecoveryKind =
   | "deviceSafety"
   | "localSafety"
   | "managedCredential"
-  | "managedDdl"
+  | "schemaSafety"
   | "workspaceGrant"
   | "workspacePolicy"
   | "workspacePolicyAndDevice";
@@ -28,10 +28,15 @@ function isDdlStatement(sql: string | undefined): boolean {
   );
 }
 
-function isManagedDdlError(error: WriteBlockError): boolean {
+function isSchemaAccessError(error: WriteBlockError): boolean {
   const message = error.message.toLocaleLowerCase();
   return (
-    message.includes("managed connections use dml-only short-lived credentials") ||
+    message.includes("schema changes are disabled") ||
+    message.includes("workspace role does not permit schema changes") ||
+    message.includes("managed schema access requires") ||
+    message.includes("managed schema access is not supported") ||
+    message.includes("schema access requires a separately verified") ||
+    message.includes("schema policy owner is unavailable") ||
     (isDdlStatement(error.sql) &&
       (message.includes("permission denied for schema") ||
         message.includes("must be owner of")))
@@ -53,13 +58,8 @@ export function writeBlockRecoveryKind(
   connection: ConnectionWriteAuthority,
   error: WriteBlockError,
 ): WriteBlockRecoveryKind | null {
-  if (
-    connection.credentialMode === "managed" &&
-    isManagedDdlError(error)
-  ) {
-    return "managedDdl";
-  }
-  if (!isWritesDisabledError(error)) return null;
+  const schemaAccessError = isSchemaAccessError(error);
+  if (!schemaAccessError && !isWritesDisabledError(error)) return null;
   if (connection.credentialMode === "memberLocal") {
     return "managedCredential";
   }
@@ -69,6 +69,7 @@ export function writeBlockRecoveryKind(
   ) {
     return "workspaceGrant";
   }
+  if (schemaAccessError) return "schemaSafety";
   if (!connection.allowWrites && connection.credentialMode === "managed") {
     return connection.workspaceAccess === "manage"
       ? "workspacePolicyAndDevice"
@@ -115,11 +116,33 @@ export function safetyWriteControlAvailable(
     connection.credentialMode === "local" &&
     connection.workspaceAccess === "local"
   ) {
-    return true;
+    return connection.engine !== "bigquery" && connection.engine !== "mongodb";
   }
   return (
     canManageWorkspaceWritePolicy(connection) ||
     connectionCanEnterWritePath(connection)
+  );
+}
+
+/**
+ * DDL is a separate, narrower device opt-in. Personal SQL connections can use
+ * their own credential; managed DDL currently requires an exact manage grant
+ * on a Neon PostgreSQL connection so the broker can issue a disposable role.
+ */
+export function safetySchemaControlAvailable(
+  connection: ConnectionWriteAuthority,
+): boolean {
+  if (
+    connection.credentialMode === "local" &&
+    connection.workspaceAccess === "local"
+  ) {
+    return connection.engine !== "bigquery" && connection.engine !== "mongodb";
+  }
+  return (
+    connection.credentialMode === "managed" &&
+    connection.workspaceAccess === "manage" &&
+    connection.provider === "neon" &&
+    connection.engine === "postgres"
   );
 }
 
@@ -132,18 +155,28 @@ export function requestedSafetySettings(
   connection: ConnectionWriteAuthority,
   settings: SafetySettings,
 ): SafetySettings {
-  if (safetyWriteControlAvailable(connection) || !settings.allowWrites) {
-    return settings;
-  }
-  return { ...settings, allowWrites: false };
+  const allowWrites = settings.allowWrites && safetyWriteControlAvailable(connection);
+  return {
+    ...settings,
+    allowWrites,
+    allowSchemaChanges:
+      allowWrites &&
+      settings.allowSchemaChanges &&
+      safetySchemaControlAvailable(connection),
+  };
 }
 
 export function effectiveSafetySettings(
   connection: ConnectionWriteAuthority,
   settings: SafetySettings,
 ): SafetySettings {
-  if (connectionCanEnterWritePath(connection) || !settings.allowWrites) {
-    return settings;
-  }
-  return { ...settings, allowWrites: false };
+  const allowWrites = settings.allowWrites && connectionCanEnterWritePath(connection);
+  return {
+    ...settings,
+    allowWrites,
+    allowSchemaChanges:
+      allowWrites &&
+      settings.allowSchemaChanges &&
+      safetySchemaControlAvailable(connection),
+  };
 }

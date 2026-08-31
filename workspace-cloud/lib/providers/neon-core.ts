@@ -18,6 +18,7 @@ export {
 } from "./neon-role-policy";
 
 export const NEON_LEASE_SECONDS = 15 * 60;
+export const NEON_SCHEMA_LEASE_SECONDS = 5 * 60;
 export const NEON_ROLE_CONNECTION_LIMIT = 4;
 export const NEON_PUBLIC_DATABASE_ESCAPE_SQL =
   "SELECT acl.privilege_type AS privilege_type FROM pg_database d "
@@ -141,6 +142,16 @@ export type NeonResource = {
   engine: "postgres";
   schemas: string[];
 };
+
+export function neonPolicyRoleIdentity(resource: NeonResource) {
+  const fingerprint = createHash("sha256")
+    .update(`${resource.project}\n${resource.branch}\n${resource.databaseId}`, "utf8")
+    .digest("hex");
+  return {
+    name: `dopedb_policy_${fingerprint.slice(0, 16)}`,
+    comment: `dopedb:neon-bootstrap:v1:${fingerprint}`,
+  };
+}
 
 export type NeonIdentitySubject = {
   kind: "user" | "organization";
@@ -298,6 +309,7 @@ export function neonLeaseRole(userId: string, leaseId: string) {
 export function neonRoleStatements(input: {
   role: string;
   owner: string;
+  policyOwner: string;
   passwordVerifier: string;
   expiresAt: string;
   accessMode: ManagedAccessMode;
@@ -307,6 +319,7 @@ export function neonRoleStatements(input: {
   if (
     !neonLeaseRoleName(input.role)
     || !neonOwnerRoleName(input.owner)
+    || !neonOwnerRoleName(input.policyOwner)
     || !/^SCRAM-SHA-256\$4096:[A-Za-z0-9+/]{22}==\$[A-Za-z0-9+/]{43}=:[A-Za-z0-9+/]{43}=$/
       .test(input.passwordVerifier)
   ) {
@@ -332,9 +345,16 @@ export function neonRoleStatements(input: {
   const validUntil = expiry.toISOString();
   const identifier = (value: string) => `"${value.replaceAll("\"", "\"\"")}"`;
   const owner = identifier(input.owner);
+  const policyOwner = identifier(input.policyOwner);
   const database = identifier(input.database);
   const scopedGrants = input.schemas.flatMap((schemaName) => {
     const schema = identifier(schemaName);
+    if (input.accessMode === "schema") {
+      return [
+        `ALTER DEFAULT PRIVILEGES FOR ROLE ${policyOwner} IN SCHEMA ${schema} `
+          + `REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`,
+      ];
+    }
     return input.accessMode === "write"
       ? [
         `GRANT USAGE ON SCHEMA ${schema} TO ${input.role}`,
@@ -342,18 +362,18 @@ export function neonRoleStatements(input: {
           + `TO ${input.role}`,
         `GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA ${schema} `
           + `TO ${input.role}`,
-        `ALTER DEFAULT PRIVILEGES FOR ROLE ${owner} IN SCHEMA ${schema} `
+        `ALTER DEFAULT PRIVILEGES FOR ROLE ${policyOwner} IN SCHEMA ${schema} `
           + `GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${input.role}`,
-        `ALTER DEFAULT PRIVILEGES FOR ROLE ${owner} IN SCHEMA ${schema} `
+        `ALTER DEFAULT PRIVILEGES FOR ROLE ${policyOwner} IN SCHEMA ${schema} `
           + `GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO ${input.role}`,
       ]
       : [
         `GRANT USAGE ON SCHEMA ${schema} TO ${input.role}`,
         `GRANT SELECT ON ALL TABLES IN SCHEMA ${schema} TO ${input.role}`,
         `GRANT SELECT ON ALL SEQUENCES IN SCHEMA ${schema} TO ${input.role}`,
-        `ALTER DEFAULT PRIVILEGES FOR ROLE ${owner} IN SCHEMA ${schema} `
+        `ALTER DEFAULT PRIVILEGES FOR ROLE ${policyOwner} IN SCHEMA ${schema} `
           + `GRANT SELECT ON TABLES TO ${input.role}`,
-        `ALTER DEFAULT PRIVILEGES FOR ROLE ${owner} IN SCHEMA ${schema} `
+        `ALTER DEFAULT PRIVILEGES FOR ROLE ${policyOwner} IN SCHEMA ${schema} `
           + `GRANT SELECT ON SEQUENCES TO ${input.role}`,
       ];
   });
@@ -361,6 +381,13 @@ export function neonRoleStatements(input: {
     `CREATE ROLE ${input.role} LOGIN PASSWORD '${input.passwordVerifier}' `
       + `VALID UNTIL '${validUntil}' CONNECTION LIMIT ${NEON_ROLE_CONNECTION_LIMIT}`,
     `GRANT CONNECT ON DATABASE ${database} TO ${input.role}`,
+    ...(input.accessMode === "schema"
+      ? [
+        `GRANT ${policyOwner} TO ${input.role} WITH INHERIT FALSE, SET TRUE, ADMIN FALSE`,
+        `GRANT ${input.role} TO ${owner} WITH INHERIT TRUE, SET TRUE`,
+        `ALTER ROLE ${input.role} SET role = '${input.policyOwner}'`,
+      ]
+      : []),
     ...scopedGrants,
     `ALTER ROLE ${input.role} SET statement_timeout = '5min'`,
     `ALTER ROLE ${input.role} SET idle_in_transaction_session_timeout = '1min'`,
@@ -374,12 +401,20 @@ export function neonRoleStatements(input: {
 export function neonRoleRevokeStatements(input: {
   role: string;
   owner: string;
+  policyOwner: string;
+  defaultPrivilegeOwners: string[];
+  schemaLease: boolean;
   database: string;
   schemas: string[];
 }) {
   if (
     !neonLeaseRoleName(input.role)
     || !neonOwnerRoleName(input.owner)
+    || !neonOwnerRoleName(input.policyOwner)
+    || input.defaultPrivilegeOwners.length === 0
+    || input.defaultPrivilegeOwners.length > 2
+    || input.defaultPrivilegeOwners.some((owner) => !neonOwnerRoleName(owner))
+    || new Set(input.defaultPrivilegeOwners).size !== input.defaultPrivilegeOwners.length
     || !neonDatabaseName(input.database)
     || input.schemas.length > 32
     || input.schemas.some((schema) => !neonSchemaName(schema))
@@ -389,14 +424,22 @@ export function neonRoleRevokeStatements(input: {
   }
   const identifier = (value: string) => `"${value.replaceAll("\"", "\"\"")}"`;
   const owner = identifier(input.owner);
+  const policyOwner = identifier(input.policyOwner);
   const database = identifier(input.database);
   const scopedRevokes = input.schemas.flatMap((schemaName) => {
     const schema = identifier(schemaName);
     return [
-      `ALTER DEFAULT PRIVILEGES FOR ROLE ${owner} IN SCHEMA ${schema} `
-        + `REVOKE ALL PRIVILEGES ON TABLES FROM ${input.role}`,
-      `ALTER DEFAULT PRIVILEGES FOR ROLE ${owner} IN SCHEMA ${schema} `
-        + `REVOKE ALL PRIVILEGES ON SEQUENCES FROM ${input.role}`,
+      ...(!input.schemaLease
+        ? input.defaultPrivilegeOwners.flatMap((defaultOwner) => {
+          const defaultOwnerIdentifier = identifier(defaultOwner);
+          return [
+            `ALTER DEFAULT PRIVILEGES FOR ROLE ${defaultOwnerIdentifier} IN SCHEMA ${schema} `
+              + `REVOKE ALL PRIVILEGES ON TABLES FROM ${input.role}`,
+            `ALTER DEFAULT PRIVILEGES FOR ROLE ${defaultOwnerIdentifier} IN SCHEMA ${schema} `
+              + `REVOKE ALL PRIVILEGES ON SEQUENCES FROM ${input.role}`,
+          ];
+        })
+        : []),
       `REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA ${schema} FROM ${input.role}`,
       `REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA ${schema} FROM ${input.role}`,
       `REVOKE ALL PRIVILEGES ON SCHEMA ${schema} FROM ${input.role}`,
@@ -405,6 +448,14 @@ export function neonRoleRevokeStatements(input: {
   return [
     `REVOKE ALL PRIVILEGES ON DATABASE ${database} FROM ${input.role}`,
     ...scopedRevokes,
+    ...(input.schemaLease
+      ? [
+        `REASSIGN OWNED BY ${input.role} TO ${policyOwner}`,
+        `DROP OWNED BY ${input.role}`,
+        `REVOKE ${policyOwner} FROM ${input.role}`,
+        `REVOKE ${input.role} FROM ${owner}`,
+      ]
+      : []),
     `DROP ROLE ${input.role}`,
   ];
 }

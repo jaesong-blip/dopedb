@@ -141,18 +141,20 @@ impl Drop for CacheEntry {
         let cloud_sql_proxy = self.take_cloud_sql_proxy();
         let managed_lease = self.take_managed_lease();
         if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-            if let Some(tunnel) = ssh_tunnel {
-                runtime.spawn(tunnel.close());
-            }
-            if let Some(live) = live {
-                runtime.spawn(async move { live.close().await });
-            }
-            if let Some(proxy) = cloud_sql_proxy {
-                runtime.spawn(proxy.close());
-            }
-            if let Some(managed_lease) = managed_lease {
-                runtime.spawn(release_managed_bounded(managed_lease));
-            }
+            runtime.spawn(async move {
+                if let Some(tunnel) = ssh_tunnel {
+                    tunnel.close().await;
+                }
+                if let Some(proxy) = cloud_sql_proxy {
+                    proxy.close().await;
+                }
+                if let Some(live) = live {
+                    live.close().await;
+                }
+                if let Some(managed_lease) = managed_lease {
+                    release_managed_bounded(managed_lease).await;
+                }
+            });
         }
     }
 }

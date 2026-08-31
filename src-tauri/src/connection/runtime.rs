@@ -118,6 +118,17 @@ fn resolve_target_database(
 pub(crate) enum ConnectionAccess {
     Read,
     Write,
+    Schema,
+}
+
+impl ConnectionAccess {
+    pub(crate) const fn is_mutation(self) -> bool {
+        matches!(self, Self::Write | Self::Schema)
+    }
+
+    pub(crate) const fn is_schema(self) -> bool {
+        matches!(self, Self::Schema)
+    }
 }
 
 #[derive(Clone)]

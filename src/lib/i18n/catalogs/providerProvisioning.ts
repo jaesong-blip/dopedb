@@ -2,9 +2,8 @@ import { defineCatalog } from "../types";
 
 export const providerProvisioningCatalog = defineCatalog(
   {
-    "managedAccess.access": "Database access",
-    "managedAccess.accessRead": "Read only",
-    "managedAccess.accessWrite": "Read and write",
+    "managedAccess.accessOwnedBySafety":
+      "Setup prepares dormant read and mutation identities. Members receive no mutation authority here; the single active access-level control is in Settings > Safety.",
     "managedAccess.action.bindProviderRole": "Bind the least-privilege provider role",
     "managedAccess.action.configureDatabaseAuthentication": "Configure database authentication",
     "managedAccess.action.createDatabasePrincipal": "Create a dedicated database principal",
@@ -67,9 +66,8 @@ export const providerProvisioningCatalog = defineCatalog(
     "managedAccess.verify": "Verify now",
   },
   {
-    "managedAccess.access": "DB 접근 범위",
-    "managedAccess.accessRead": "읽기 전용",
-    "managedAccess.accessWrite": "읽기 및 쓰기",
+    "managedAccess.accessOwnedBySafety":
+      "설정은 비활성 상태의 읽기·변경 ID를 준비합니다. 이 화면에서는 구성원에게 변경 권한을 부여하지 않으며, 실제 접근 단계는 설정 → 안전 한 곳에서만 제어합니다.",
     "managedAccess.action.bindProviderRole": "최소 권한 공급자 역할 연결",
     "managedAccess.action.configureDatabaseAuthentication": "DB 인증 구성",
     "managedAccess.action.createDatabasePrincipal": "전용 DB 주체 생성",

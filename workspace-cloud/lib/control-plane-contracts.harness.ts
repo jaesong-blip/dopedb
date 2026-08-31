@@ -45,6 +45,13 @@ import {
   verifyVaultCredential,
 } from "./providers/vault";
 import {
+  createNeonScramVerifier,
+  neonPolicyRoleIdentity,
+  neonRoleRevokeStatements,
+  neonRoleStatements,
+  type NeonResource,
+} from "./providers/neon-core";
+import {
   connectionLeaseRevocationScope,
   EXPECTED_REVISION_HEADER,
   parseExpectedRevision,
@@ -641,9 +648,64 @@ describe("Desktop control-plane contracts", () => {
     expect(fixture.managedLease.contractHeader).toBe(MANAGED_LEASE_CONTRACT_VERSION);
     expect(parseManagedLeaseRequest(fixture.managedLease.request))
       .toEqual(fixture.managedLease.request);
+    expect(parseManagedLeaseRequest({ accessMode: "schema" }))
+      .toEqual({ accessMode: "schema" });
     const lease = managedLeaseResponse(fixture.managedLease.response);
     expect(lease.lease.provider).toBe("gcpCloudSql");
     expect(lease.lease.connector?.kind).toBe("gcpCloudSqlAuthProxy");
+    expect(() => managedLeaseResponse({
+      lease: {
+        ...(fixture.managedLease.response as { lease: object }).lease,
+        accessMode: "schema",
+      },
+    })).toThrow("Invalid managed lease response contract");
+    const schemaResource: NeonResource = {
+      project: "project-1",
+      branch: "branch-1",
+      databaseId: "42",
+      database: "app",
+      engine: "postgres",
+      schemas: ["public"],
+    };
+    const policyOwner = neonPolicyRoleIdentity(schemaResource).name;
+    const schemaRole = "dopedb_12345678_11111111111111111111111111111111";
+    const schemaStatements = neonRoleStatements({
+      role: schemaRole,
+      owner: "app_owner",
+      policyOwner,
+      passwordVerifier: createNeonScramVerifier("a".repeat(43)),
+      expiresAt: new Date(Date.now() + 5 * 60 * 1_000).toISOString(),
+      accessMode: "schema",
+      database: schemaResource.database,
+      schemas: schemaResource.schemas,
+    });
+    expect(schemaStatements).toContain(
+      `GRANT "${policyOwner}" TO ${schemaRole} WITH INHERIT FALSE, SET TRUE, ADMIN FALSE`,
+    );
+    expect(schemaStatements).toContain(
+      `GRANT ${schemaRole} TO "app_owner" WITH INHERIT TRUE, SET TRUE`,
+    );
+    expect(schemaStatements).toContain(
+      `ALTER DEFAULT PRIVILEGES FOR ROLE "${policyOwner}" IN SCHEMA "public" REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC`,
+    );
+    expect(schemaStatements).toContain(
+      `ALTER ROLE ${schemaRole} SET role = '${policyOwner}'`,
+    );
+    expect(schemaStatements.some((statement) => statement.includes("GRANT CREATE")))
+      .toBe(false);
+    const schemaCleanup = neonRoleRevokeStatements({
+      role: schemaRole,
+      owner: "app_owner",
+      policyOwner,
+      defaultPrivilegeOwners: ["app_owner", policyOwner],
+      schemaLease: true,
+      database: schemaResource.database,
+      schemas: schemaResource.schemas,
+    });
+    expect(schemaCleanup).toContain(
+      `REASSIGN OWNED BY ${schemaRole} TO "${policyOwner}"`,
+    );
+    expect(schemaCleanup[schemaCleanup.length - 1]).toBe(`DROP ROLE ${schemaRole}`);
     const brokeredGeneric = structuredClone(
       fixture.managedLease.response,
     ) as { lease: Record<string, unknown> };

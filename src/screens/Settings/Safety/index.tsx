@@ -6,6 +6,7 @@ import { errMessage } from "../../../ipc/types";
 import InfoTip from "../../../components/InfoTip";
 import { useToast } from "../../../components/Toast";
 import { Button } from "../../../design-system/components/Button";
+import { SegmentedControl } from "../../../design-system/components/SegmentedControl";
 import {
   CheckboxField,
   TextInput,
@@ -17,9 +18,9 @@ import {
 } from "../../../design-system/components/Status";
 import {
   canManageWorkspaceWritePolicy,
-  connectionCanEnterWritePath,
   effectiveSafetySettings,
   requestedSafetySettings,
+  safetySchemaControlAvailable,
   safetyWriteControlAvailable,
 } from "../../../features/safetySettings/policy";
 import {
@@ -38,10 +39,17 @@ import {
 import { queryResultPhase } from "../../../lib/queryResultPhase";
 
 const TOGGLES: { key: keyof SafetySettings; label: I18nKey; hint: I18nKey }[] = [
-  { key: "allowWrites", label: "safety.allowWrites", hint: "safety.allowWritesHint" },
   { key: "autoRunReads", label: "safety.autoRunReads", hint: "safety.autoRunReadsHint" },
   { key: "explainPreview", label: "safety.explainPreview", hint: "safety.explainPreviewHint" },
 ];
+
+type DatabaseAccessLevel = "read" | "write" | "schema";
+
+function databaseAccessLevel(settings: SafetySettings): DatabaseAccessLevel {
+  if (settings.allowSchemaChanges) return "schema";
+  if (settings.allowWrites) return "write";
+  return "read";
+}
 
 const NUMBERS: { key: keyof SafetySettings; label: I18nKey; hint: I18nKey }[] = [
   { key: "maxRows", label: "safety.maxRows", hint: "safety.maxRowsHint" },
@@ -51,6 +59,7 @@ const NUMBERS: { key: keyof SafetySettings; label: I18nKey; hint: I18nKey }[] = 
 function sameSafetySettings(left: SafetySettings, right: SafetySettings) {
   return left.requireApproval === right.requireApproval
     && left.allowWrites === right.allowWrites
+    && left.allowSchemaChanges === right.allowSchemaChanges
     && left.wrapWritesInTx === right.wrapWritesInTx
     && left.explainPreview === right.explainPreview
     && left.autoRunReads === right.autoRunReads
@@ -71,8 +80,8 @@ export default function Safety({
   const connectionId = connection.id;
   const workspaceManaged = connection.credentialMode !== "local";
   const workspacePolicyEditable = canManageWorkspaceWritePolicy(connection);
-  const connectionWriteEnabled = connectionCanEnterWritePath(connection);
   const writeControlAvailable = safetyWriteControlAvailable(connection);
+  const schemaControlAvailable = safetySchemaControlAvailable(connection);
   const memberLocalReadOnly = connection.credentialMode === "memberLocal";
   const [settings, setSettings] = useState<SafetySettings | null>(null);
   const [busy, setBusy] = useState(false);
@@ -85,23 +94,10 @@ export default function Safety({
   useEffect(() => {
     setSettings(
       safetyQuery.data
-        ? effectiveSafetySettings(
-            {
-              allowWrites: connection.allowWrites,
-              credentialMode: connection.credentialMode,
-              workspaceAccess: connection.workspaceAccess,
-            },
-            safetyQuery.data,
-          )
+        ? effectiveSafetySettings(connection, safetyQuery.data)
         : null,
     );
-  }, [
-    connection.allowWrites,
-    connection.credentialMode,
-    connection.workspaceAccess,
-    connectionId,
-    safetyQuery.data,
-  ]);
+  }, [connection, safetyQuery.data]);
 
   if (!settings) {
     if (safetyPhase === "coldError" && safetyQuery.error) {
@@ -128,14 +124,7 @@ export default function Safety({
   }
 
   const persistedSettings = safetyQuery.data
-    ? effectiveSafetySettings(
-        {
-          allowWrites: connection.allowWrites,
-          credentialMode: connection.credentialMode,
-          workspaceAccess: connection.workspaceAccess,
-        },
-        safetyQuery.data,
-      )
+    ? effectiveSafetySettings(connection, safetyQuery.data)
     : null;
   const hasUnsavedChanges = persistedSettings !== null
     && !sameSafetySettings(settings, persistedSettings);
@@ -193,7 +182,11 @@ export default function Safety({
           staleTime: 0,
         }));
       } catch {
-        setSettings({ ...requested, allowWrites: false });
+        setSettings({
+          ...requested,
+          allowWrites: false,
+          allowSchemaChanges: false,
+        });
       }
       setSaveError(message);
       toast(message, "error");
@@ -204,6 +197,23 @@ export default function Safety({
 
   const effectiveAllowWrites =
     settings.allowWrites && writeControlAvailable;
+  const effectiveAllowSchemaChanges =
+    settings.allowSchemaChanges && effectiveAllowWrites && schemaControlAvailable;
+  const accessLevel = databaseAccessLevel({
+    ...settings,
+    allowWrites: effectiveAllowWrites,
+    allowSchemaChanges: effectiveAllowSchemaChanges,
+  });
+
+  const schemaUnavailableHint: I18nKey | null = schemaControlAvailable
+    ? null
+    : memberLocalReadOnly
+      ? "safety.memberLocalSchemaUnavailable"
+      : connection.credentialMode === "managed" && connection.workspaceAccess !== "manage"
+        ? "safety.schemaRequiresManage"
+        : connection.credentialMode === "managed"
+          ? "safety.schemaProviderUnavailable"
+          : "safety.mutationsEngineUnavailable";
 
   return (
     <div className="tw:flex tw:w-full tw:max-w-[880px] tw:flex-col tw:gap-4 tw:max-[640px]:max-w-none">
@@ -232,68 +242,83 @@ export default function Safety({
           <InfoTip label={t("safety.body")} />
         </div>
         <StatusBadge
-          tone={effectiveAllowWrites ? "warning" : "success"}
+          tone={effectiveAllowSchemaChanges ? "danger" : effectiveAllowWrites ? "warning" : "success"}
         >
-          {workspaceManaged
-            ? effectiveAllowWrites
-              ? t("safety.modeWorkspaceWrites")
-              : t("safety.modeSharedReadOnly")
-            : effectiveAllowWrites
-              ? t("safety.modeWrites")
-              : t("safety.modeReadOnly")}
+          {effectiveAllowSchemaChanges
+            ? t("safety.modeSchemaChanges")
+            : workspaceManaged
+              ? effectiveAllowWrites
+                ? t("safety.modeWorkspaceWrites")
+                : t("safety.modeSharedReadOnly")
+              : effectiveAllowWrites
+                ? t("safety.modeWrites")
+                : t("safety.modeReadOnly")}
         </StatusBadge>
       </div>
 
       <div className="tw:grid tw:grid-cols-[minmax(0,1.2fr)_minmax(264px,0.8fr)] tw:gap-4 tw:max-[1180px]:grid-cols-2 tw:max-[860px]:grid-cols-1">
         <SettingsGroup title={t("safety.guardrails")}>
+          <div className="tw:grid tw:gap-2 tw:pb-3">
+            <div className="tw:flex tw:items-center tw:gap-2">
+              <strong className="tw:text-sm">{t("safety.accessLevel")}</strong>
+              <InfoTip label={t("safety.accessLevelHint")} />
+            </div>
+            <SegmentedControl
+              value={accessLevel}
+              label={t("safety.accessLevel")}
+              disabled={busy}
+              options={[
+                { value: "read", label: t("safety.accessRead") },
+                {
+                  value: "write",
+                  label: t("safety.accessWrite"),
+                  disabled: !writeControlAvailable,
+                },
+                {
+                  value: "schema",
+                  label: t("safety.accessSchema"),
+                  disabled: !schemaControlAvailable,
+                },
+              ]}
+              onChange={(level) => {
+                setSettings((current) => current ? {
+                  ...current,
+                  allowWrites: level !== "read",
+                  allowSchemaChanges: level === "schema",
+                } : current);
+              }}
+            />
+            <p className="tw:m-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
+              {t(
+                memberLocalReadOnly
+                  ? "safety.memberLocalReadOnlyHint"
+                  : workspacePolicyEditable
+                    ? "safety.sharedWritesManagerHint"
+                    : workspaceManaged
+                      ? "safety.sharedWritesHint"
+                      : "safety.accessLevelHint",
+              )}
+            </p>
+            {schemaUnavailableHint ? (
+              <InlineNotice tone="warning" icon="info" role="status">
+                {t(schemaUnavailableHint)}
+              </InlineNotice>
+            ) : null}
+          </div>
           {TOGGLES.map((item) => (
             <div
               key={item.key}
               className="tw:grid tw:min-h-control-lg tw:grid-cols-[minmax(0,1fr)_20px] tw:items-center tw:gap-2 tw:border-t tw:border-border-subtle tw:py-2 tw:first-of-type:border-t-0"
             >
               <CheckboxField
-                checked={
-                  item.key === "allowWrites"
-                    ? effectiveAllowWrites
-                    : (settings[item.key] as boolean)
-                }
-                disabled={
-                  busy || (
-                    item.key === "allowWrites" &&
-                    !writeControlAvailable
-                  )
-                }
+                checked={settings[item.key] as boolean}
+                disabled={busy}
                 onChange={(e) => set(item.key, e.target.checked as never)}
                 label={<strong>{t(item.label)}</strong>}
               />
-              <InfoTip
-                label={t(
-                  item.key !== "allowWrites"
-                    ? item.hint
-                    : memberLocalReadOnly
-                      ? "safety.memberLocalReadOnlyHint"
-                      : workspacePolicyEditable
-                        ? "safety.sharedWritesManagerHint"
-                        : workspaceManaged && !connectionWriteEnabled
-                        ? "safety.sharedWritesHint"
-                        : item.hint,
-                )}
-              />
+              <InfoTip label={t(item.hint)} />
             </div>
           ))}
-          {memberLocalReadOnly ? (
-            <p className="tw:m-0 tw:border-t tw:border-border-subtle tw:pt-2 tw:text-sm tw:leading-body tw:text-muted-foreground">
-              {t("safety.memberLocalReadOnlyHint")}
-            </p>
-          ) : workspaceManaged ? (
-            <p className="tw:m-0 tw:border-t tw:border-border-subtle tw:pt-2 tw:text-sm tw:leading-body tw:text-muted-foreground">
-              {t(
-                workspacePolicyEditable
-                  ? "safety.sharedWritesManagerHint"
-                  : "safety.sharedWritesHint",
-              )}
-            </p>
-          ) : null}
         </SettingsGroup>
 
         <SettingsGroup title={t("safety.limits")}>

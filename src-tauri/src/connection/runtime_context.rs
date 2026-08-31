@@ -339,14 +339,21 @@ impl ConnectionContext {
                     cloud_sql_proxy: StdMutex::new(cloud_sql_proxy),
                     closed: AtomicBool::new(false),
                 });
-                state.entry = Some(Arc::clone(&entry));
-                drop(state);
-                if let Some(retire_at) = retire_at {
-                    schedule_expiry(
-                        slot,
-                        generation,
-                        retire_at.saturating_duration_since(Instant::now()),
-                    );
+                if self.access == ConnectionAccess::Schema {
+                    // Keep elevated schema authority operation-scoped. Dropping
+                    // the returned lease closes the pool and releases the provider
+                    // role instead of leaving a reusable DDL session in the cache.
+                    drop(state);
+                } else {
+                    state.entry = Some(Arc::clone(&entry));
+                    drop(state);
+                    if let Some(retire_at) = retire_at {
+                        schedule_expiry(
+                            slot,
+                            generation,
+                            retire_at.saturating_duration_since(Instant::now()),
+                        );
+                    }
                 }
                 return Ok(ConnectionLease {
                     pin: self.pin,
@@ -425,7 +432,7 @@ impl ConnectionContext {
         }
         let result = async {
             opened.live.test().await?;
-            if self.access == ConnectionAccess::Write {
+            if self.access.is_mutation() {
                 let live = opened.live.sql()?;
                 if !live.has_writable_pool {
                     return Err(AppError::Blocked {

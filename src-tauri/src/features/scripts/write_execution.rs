@@ -19,10 +19,17 @@ impl ScriptPlatformAdapter {
             history_origin,
         } = prepared;
         let operation_id = operation.record().id;
-        if !operation_pin.profile.workspace_access.can_write() {
+        let has_ddl = kinds.iter().any(|kind| matches!(kind, QueryKind::Ddl));
+        if (has_ddl && !operation_pin.profile.workspace_access.can_manage())
+            || (!has_ddl && !operation_pin.profile.workspace_access.can_write())
+        {
             return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
                 error: AppError::Blocked {
-                    reason: "your workspace role grants read-only database access".into(),
+                    reason: if has_ddl {
+                        "your workspace role does not permit schema changes".into()
+                    } else {
+                        "your workspace role grants read-only database access".into()
+                    },
                 },
                 _scope: Box::new(operation_scope),
             }));
@@ -50,7 +57,6 @@ impl ScriptPlatformAdapter {
                 _scope: Box::new(operation_scope),
             }));
         }
-        let has_ddl = kinds.iter().any(|kind| matches!(kind, QueryKind::Ddl));
         let script_kind = if has_ddl {
             QueryKind::Ddl
         } else if kinds
@@ -61,9 +67,8 @@ impl ScriptPlatformAdapter {
         } else {
             QueryKind::Write
         };
-        if let Some(reason) =
-            safety::managed_ddl_block_reason(operation_pin.profile.credential_mode, script_kind)
-        {
+        if has_ddl && !settings.allow_schema_changes {
+            let reason = "schema changes are disabled for this connection. Enable the Schema changes level in Settings → Safety to run this DDL script.";
             record_script_run(
                 &self.store,
                 &operation_pin,
@@ -82,7 +87,7 @@ impl ScriptPlatformAdapter {
                 .operation
                 .fail(
                     operation_id,
-                    &serde_json::json!({"reason": "managed_ddl_unsupported"}),
+                    &serde_json::json!({"reason": "schema_access_disabled"}),
                 )
                 .await;
             return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
@@ -126,7 +131,11 @@ impl ScriptPlatformAdapter {
         let lease = match operation_scope
             .connect_to_database(
                 operation_pin.clone(),
-                ConnectionAccess::Write,
+                if has_ddl {
+                    ConnectionAccess::Schema
+                } else {
+                    ConnectionAccess::Write
+                },
                 Some(payload.database.clone()),
             )
             .await

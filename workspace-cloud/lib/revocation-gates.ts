@@ -308,6 +308,13 @@ function integrationGateKey(input: ManagedLeaseAuthority) {
 }
 
 function capabilityPredicate(input: ManagedLeaseAuthority) {
+  if (input.accessMode === "schema") {
+    return sql`${member.role} IN ('admin', 'owner')
+        AND ${workspaceConnection.allowWrites} = TRUE
+        AND ${workspaceProviderIntegration.provider} = 'neon'
+        AND ${workspaceConnection.engine} = 'postgres'
+        AND ${workspaceProviderResource.capabilityManifest} -> 'write' = 'true'::jsonb`;
+  }
   return input.accessMode === "write"
     ? sql`${member.role} IN ('editor', 'admin', 'owner')
         AND ${workspaceConnection.allowWrites} = TRUE
@@ -318,11 +325,14 @@ function capabilityPredicate(input: ManagedLeaseAuthority) {
 }
 
 function connectionGrantPredicate(input: ManagedLeaseAuthority) {
+  const capability = input.accessMode === "schema"
+    ? sql`${workspaceConnectionGrant.capability} = 'manage'`
+    : sql`${workspaceConnectionGrant.capability} IN ('use', 'manage')`;
   return sql`
     ${workspaceConnectionGrant.organizationId} = ${input.organizationId}
     AND ${workspaceConnectionGrant.connectionId} = ${input.connectionId}::uuid
     AND ${workspaceConnectionGrant.memberId} = ${input.memberId}
-    AND ${workspaceConnectionGrant.capability} IN ('use', 'manage')
+    AND ${capability}
   `;
 }
 
@@ -376,6 +386,9 @@ function durableAuthorityStatement(input: ManagedLeaseAuthority) {
 }
 
 function authorityLockStatement(input: ManagedLeaseAuthority) {
+  const connectionLock = input.accessMode === "schema"
+    ? sql`pg_advisory_xact_lock(hashtextextended(${connectionGateKey(input)}, 0))`
+    : sql`pg_advisory_xact_lock_shared(hashtextextended(${connectionGateKey(input)}, 0))`;
   return sql`
     member_gate_lock AS MATERIALIZED (
       SELECT pg_advisory_xact_lock_shared(
@@ -383,9 +396,7 @@ function authorityLockStatement(input: ManagedLeaseAuthority) {
       )
     ),
     connection_gate_lock AS MATERIALIZED (
-      SELECT pg_advisory_xact_lock_shared(
-        hashtextextended(${connectionGateKey(input)}, 0)
-      )
+      SELECT ${connectionLock}
       FROM member_gate_lock
     ),
     integration_gate_lock AS MATERIALIZED (
@@ -406,9 +417,20 @@ export async function reserveManagedLeaseIfUnblocked(
     db.execute(sql`WITH ${authorityLockStatement(input)}`),
     db.execute<{ status: string }>(sql`
     WITH authority AS MATERIALIZED (${durableAuthorityStatement(input)}),
+    schema_authority AS MATERIALIZED (
+      SELECT * FROM authority
+      WHERE ${input.accessMode} <> 'schema'
+         OR NOT EXISTS (
+           SELECT 1 FROM ${workspaceCredentialLease} AS schema_lease
+           WHERE schema_lease."organization_id" = ${input.organizationId}
+             AND schema_lease."connection_id" = ${input.connectionId}::uuid
+             AND schema_lease."access_mode" = 'schema'
+             AND schema_lease."revoked_at" IS NULL
+         )
+    ),
     free_slots AS (
       SELECT slot."value" AS "value"
-      FROM authority
+      FROM schema_authority
       CROSS JOIN generate_series(1, 5) AS slot("value")
       WHERE NOT EXISTS (
         SELECT 1
@@ -438,12 +460,18 @@ export async function reserveManagedLeaseIfUnblocked(
     SELECT CASE
       WHEN EXISTS (SELECT 1 FROM inserted) THEN 'reserved'
       WHEN NOT EXISTS (SELECT 1 FROM authority) THEN 'blocked'
+      WHEN NOT EXISTS (SELECT 1 FROM schema_authority) THEN 'schema_busy'
       ELSE 'limit'
     END AS "status"
   `),
   ]);
   const status = result.rows[0]?.status;
-  if (status !== "reserved" && status !== "blocked" && status !== "limit") {
+  if (
+    status !== "reserved"
+    && status !== "blocked"
+    && status !== "schema_busy"
+    && status !== "limit"
+  ) {
     throw new Error("Invalid managed lease reservation result");
   }
   return status;

@@ -17,21 +17,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::{Classification, QueryKind, SafetySettings, WorkspaceCredentialMode};
-
-pub const MANAGED_DDL_BLOCK_REASON: &str =
-    "managed connections use DML-only short-lived credentials; schema DDL requires a separate database owner or migration credential";
-
-/// Managed provider leases deliberately stop at row-level DML. Granting schema
-/// CREATE to a disposable role would make it own durable objects and defeat the
-/// independently revocable least-privilege boundary.
-pub fn managed_ddl_block_reason(
-    credential_mode: WorkspaceCredentialMode,
-    kind: QueryKind,
-) -> Option<&'static str> {
-    (credential_mode == WorkspaceCredentialMode::Managed && kind == QueryKind::Ddl)
-        .then_some(MANAGED_DDL_BLOCK_REASON)
-}
+use crate::model::{Classification, QueryKind, SafetySettings};
 
 /// What the gate decided. Adjacently tagged so JS gets `{ decision, reason? }`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,7 +53,7 @@ pub fn decide(settings: &SafetySettings, c: &Classification) -> GateDecision {
             reason: "arbitrary privilege SQL is blocked; use a supported, narrowly scoped administrative action"
                 .into(),
         },
-        QueryKind::Write | QueryKind::Ddl => {
+        QueryKind::Write => {
             if !settings.allow_writes {
                 GateDecision::Block {
                     reason: format!(
@@ -79,6 +65,16 @@ pub fn decide(settings: &SafetySettings, c: &Classification) -> GateDecision {
             } else {
                 // Target mutations always become exact Operation proposals. The
                 // legacy persisted setting must never turn a write into auto-run.
+                GateDecision::RequireApproval
+            }
+        }
+        QueryKind::Ddl => {
+            if !settings.allow_writes || !settings.allow_schema_changes {
+                GateDecision::Block {
+                    reason: "schema changes are disabled for this connection. Enable the Schema changes level in Settings → Safety to propose this DDL."
+                        .into(),
+                }
+            } else {
                 GateDecision::RequireApproval
             }
         }
@@ -143,9 +139,18 @@ mod tests {
 
     #[test]
     fn target_mutations_require_approval_when_legacy_setting_is_off() {
+        let dml_only = SafetySettings {
+            allow_writes: true,
+            ..SafetySettings::default()
+        };
+        assert!(matches!(
+            decide(&dml_only, &cls(QueryKind::Ddl, 1)),
+            GateDecision::Block { .. }
+        ));
         for kind in [QueryKind::Write, QueryKind::Ddl] {
             let s = SafetySettings {
                 allow_writes: true,
+                allow_schema_changes: true,
                 require_approval: false,
                 ..SafetySettings::default()
             };
@@ -154,18 +159,6 @@ mod tests {
                 "{kind:?} must never auto-run"
             );
         }
-        assert_eq!(
-            managed_ddl_block_reason(WorkspaceCredentialMode::Managed, QueryKind::Ddl),
-            Some(MANAGED_DDL_BLOCK_REASON)
-        );
-        assert_eq!(
-            managed_ddl_block_reason(WorkspaceCredentialMode::Managed, QueryKind::Write),
-            None
-        );
-        assert_eq!(
-            managed_ddl_block_reason(WorkspaceCredentialMode::Local, QueryKind::Ddl),
-            None
-        );
     }
 
     #[test]

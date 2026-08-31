@@ -45,6 +45,7 @@ const TableData = lazy(() => import("../../screens/Tables"));
 const BLOCKED_SAFETY_SETTINGS: SafetySettings = {
   requireApproval: true,
   allowWrites: false,
+  allowSchemaChanges: false,
   wrapWritesInTx: true,
   explainPreview: true,
   autoRunReads: false,

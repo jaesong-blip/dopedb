@@ -110,11 +110,18 @@ export async function issueManagedLease(input: {
   engine: "postgres" | "mysql";
   production: boolean;
   safeMigrations: boolean | null;
-  accessMode: "read" | "write";
+  accessMode: "read" | "write" | "schema";
   integration: ActiveProviderIntegration;
   resource: ManagedProviderResource;
   oidcToken?: string | null;
 }): Promise<ManagedProviderLease & { leaseId: string; providerAuditId: string }> {
+  if (input.accessMode === "schema" && input.integration.provider !== "neon") {
+    throw new ProviderRequestError(
+      input.integration.provider,
+      "This managed provider does not support short-lived schema access",
+      409,
+    );
+  }
   const leaseId = crypto.randomUUID();
   const label = `dopedb-${input.userId.replace(/-/g, "").slice(0, 8)}-${
     leaseId.replace(/-/g, "").slice(0, 8)
@@ -145,14 +152,30 @@ export async function issueManagedLease(input: {
       projectId: resource.project,
       branchId: resource.branch,
     });
+    // A schema credential temporarily assumes the stable policy owner. Sweep
+    // expired roles before reserving the connection-wide single schema slot so
+    // a crashed Desktop cannot overlap two schema authorities.
+    const cleanup = await cleanupExpiredManagedLeases({
+      integrationId: input.integration.id,
+      limit: input.accessMode === "schema" ? 20 : 2,
+    });
+    if (cleanup.deferred > 0) {
+      throw new ProviderRequestError(
+        "neon",
+        "Expired Neon database access could not be cleaned up",
+        503,
+      );
+    }
   }
   const reservation = await reserveManagedLeaseIfUnblocked(authority);
   if (reservation !== "reserved") {
     throw new ProviderRequestError(
       input.integration.provider,
-      reservation === "limit"
-        ? "Too many active database sessions. Retry after leases expire."
-        : "Workspace database authority is changing. Retry shortly.",
+      reservation === "schema_busy"
+        ? "Another managed schema change session is active for this connection"
+        : reservation === "limit"
+          ? "Too many active database sessions. Retry after leases expire."
+          : "Workspace database authority is changing. Retry shortly.",
       reservation === "limit" ? 429 : 409,
     );
   }
@@ -161,23 +184,16 @@ export async function issueManagedLease(input: {
   let providerAuditId: string | null = null;
   let lease: ManagedProviderLease;
   try {
-    if (input.integration.provider === "neon") {
-      // Sweep a small bounded batch synchronously so a delayed scheduler cannot allow
-      // dormant roles to grow monotonically without adding long lease-request latency.
-      const cleanup = await cleanupExpiredManagedLeases({
-        integrationId: input.integration.id,
-        limit: 2,
-      });
-      if (cleanup.deferred > 0) {
-        throw new ProviderRequestError(
-          "neon",
-          "Expired Neon database access could not be cleaned up",
-          503,
-        );
-      }
-    }
     switch (input.integration.provider) {
-      case "planetScale":
+      case "planetScale": {
+        if (input.accessMode === "schema") {
+          throw new ProviderRequestError(
+            "planetScale",
+            "PlanetScale managed schema access is not supported",
+            409,
+          );
+        }
+        const accessMode = input.accessMode;
         lease = await issueAfterFreshProviderAuthority(
           "planetScale",
           async () => {
@@ -218,12 +234,13 @@ export async function issueManagedLease(input: {
             return issuePlanetScaleLease(
               proof.token,
               input.resource as PlanetScaleResource,
-              input.accessMode,
+              accessMode,
               label,
             );
           },
         );
         break;
+      }
       case "neon": {
         lease = await issueAfterFreshProviderAuthority(
           "neon",
@@ -257,6 +274,13 @@ export async function issueManagedLease(input: {
         break;
       }
       case "gcpCloudSql": {
+        if (input.accessMode === "schema") {
+          throw new ProviderRequestError(
+            "gcpCloudSql",
+            "Cloud SQL managed schema access is not supported",
+            409,
+          );
+        }
         const credential = gcpCredential(input.integration);
         const oidcToken = requiredOidcToken(input.oidcToken);
         lease = await issueAfterFreshProviderAuthority(
@@ -290,6 +314,13 @@ export async function issueManagedLease(input: {
         break;
       }
       case "vault": {
+        if (input.accessMode === "schema") {
+          throw new ProviderRequestError(
+            "vault",
+            "Vault schema access requires a separately verified dynamic role",
+            409,
+          );
+        }
         const credential = vaultCredential(input.integration);
         const issued = await issueVaultLease({
           credential,

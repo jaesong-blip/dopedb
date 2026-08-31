@@ -497,6 +497,11 @@ fn public_protocol_goldens_match_pinned_agent_and_control_plane_contracts() {
         serde_json::to_value(request).unwrap(),
         contracts.managed_lease.request
     );
+    let schema_request: ManagedLeaseRequest =
+        serde_json::from_value(json!({ "accessMode": "schema" }))
+            .expect("managed schema lease request must decode");
+    assert!(schema_request.validate());
+    assert_eq!(schema_request.access_mode, ManagedAccessMode::Schema);
     assert_eq!(
         contracts.managed_lease.contract_header,
         MANAGED_LEASE_CONTRACT_VERSION
@@ -515,6 +520,12 @@ fn public_protocol_goldens_match_pinned_agent_and_control_plane_contracts() {
         .expect("fixture connector")
         .access_token
         .is_empty());
+    let mut invalid_schema_provider = contracts.managed_lease.response.clone();
+    invalid_schema_provider["lease"]["accessMode"] = json!("schema");
+    let invalid_schema_provider: ManagedLeaseResponse =
+        serde_json::from_value(invalid_schema_provider)
+            .expect("known schema access mode must decode");
+    assert!(!invalid_schema_provider.validate());
     let mut brokered_generic = contracts.managed_lease.response.clone();
     brokered_generic["lease"]["provider"] = json!("generic");
     brokered_generic["lease"]

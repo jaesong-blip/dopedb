@@ -74,6 +74,7 @@ export function useSqlDraftAnalysis({
       engine,
       safety: {
         allowWrites: safety.allowWrites,
+        allowSchemaChanges: safety.allowSchemaChanges,
         maxRows: safety.maxRows,
       },
     };
@@ -88,7 +89,14 @@ export function useSqlDraftAnalysis({
       else setAnalysis(analyzeSqlDraft(request));
     }, ANALYSIS_IDLE_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [engine, safety.allowWrites, safety.maxRows, sql, version]);
+  }, [
+    engine,
+    safety.allowSchemaChanges,
+    safety.allowWrites,
+    safety.maxRows,
+    sql,
+    version,
+  ]);
 
   return analysis;
 }

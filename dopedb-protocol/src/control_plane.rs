@@ -14,7 +14,7 @@ use zeroize::Zeroizing;
 pub const CONTROL_PLANE_CONTRACTS_SCHEMA_VERSION: u32 = 1;
 /// Desktop and Workspace Cloud must agree on this header before a managed
 /// credential can cross the HTTPS boundary.
-pub const MANAGED_LEASE_CONTRACT_VERSION: &str = "access-v3";
+pub const MANAGED_LEASE_CONTRACT_VERSION: &str = "access-v4";
 const JAVASCRIPT_MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
 
 /// Workspace sync cursors cross a JavaScript number boundary in Cloud and must
@@ -31,6 +31,7 @@ pub const fn valid_workspace_sync_cursor(cursor: Option<i64>) -> bool {
 pub enum ManagedAccessMode {
     Read,
     Write,
+    Schema,
 }
 
 impl ManagedAccessMode {
@@ -38,6 +39,7 @@ impl ManagedAccessMode {
         match self {
             Self::Read => "read",
             Self::Write => "write",
+            Self::Schema => "schema",
         }
     }
 }
@@ -54,7 +56,7 @@ impl ManagedLeaseRequest {
     pub const fn validate(&self) -> bool {
         matches!(
             self.access_mode,
-            ManagedAccessMode::Read | ManagedAccessMode::Write
+            ManagedAccessMode::Read | ManagedAccessMode::Write | ManagedAccessMode::Schema
         )
     }
 }
@@ -141,6 +143,8 @@ impl ManagedLeasePayload {
             && (is_gcp == self.connector.is_some())
             && (!is_gcp || connector_is_valid)
             && (is_gcp || self.sslmode == "verify-full")
+            && (self.access_mode != ManagedAccessMode::Schema
+                || (self.provider == "neon" && self.engine == "postgres"))
             && valid_rfc3339_instant(&self.expires_at)
     }
 }

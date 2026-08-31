@@ -71,9 +71,18 @@ impl QueryPlatformAdapter {
         let classification = inspection.classification.clone();
         let is_write = !matches!(classification.kind, QueryKind::Read);
 
-        if is_write && !pin.profile.workspace_access.can_write() {
+        let access_allowed = match classification.kind {
+            QueryKind::Read => pin.profile.workspace_access.can_read(),
+            QueryKind::Ddl => pin.profile.workspace_access.can_manage(),
+            QueryKind::Write | QueryKind::Privilege => pin.profile.workspace_access.can_write(),
+        };
+        if !access_allowed {
             return Err(inspection.into_error(AppError::Blocked {
-                reason: "your workspace role grants read-only database access".into(),
+                reason: if classification.kind == QueryKind::Ddl {
+                    "your workspace role does not permit schema changes".into()
+                } else {
+                    "your workspace role grants read-only database access".into()
+                },
             }));
         }
         let settings = match inspection
@@ -89,14 +98,6 @@ impl QueryPlatformAdapter {
         if let safety::GateDecision::Block { reason } = safety::decide(&settings, &classification) {
             return Err(inspection.into_error(AppError::Blocked { reason }));
         }
-        if let Some(reason) =
-            safety::managed_ddl_block_reason(pin.profile.credential_mode, classification.kind)
-        {
-            return Err(inspection.into_error(AppError::Blocked {
-                reason: reason.into(),
-            }));
-        }
-
         let history_origin = request.origin.unwrap_or_else(|| "manual".into());
         let payload = match serde_json::to_value(StoredDesktopSqlPayload {
             sql: request.sql,

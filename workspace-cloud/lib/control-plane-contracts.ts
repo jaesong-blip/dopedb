@@ -4,9 +4,10 @@
 
 export const CONTROL_PLANE_CONTRACTS_SCHEMA_VERSION = 1 as const;
 export const LEGACY_MANAGED_LEASE_CONTRACT_VERSION = "access-v2" as const;
-export const MANAGED_LEASE_CONTRACT_VERSION = "access-v3" as const;
+export const PREVIOUS_MANAGED_LEASE_CONTRACT_VERSION = "access-v3" as const;
+export const MANAGED_LEASE_CONTRACT_VERSION = "access-v4" as const;
 
-export type ManagedAccessMode = "read" | "write";
+export type ManagedAccessMode = "read" | "write" | "schema";
 
 export type ManagedLeaseRequest = Readonly<{
   accessMode: ManagedAccessMode;
@@ -55,7 +56,7 @@ export type ManagedLeaseResponse = Readonly<{ lease: ManagedLease }>;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const RFC3339_INSTANT = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/u;
 const MANAGED_WHITESPACE = /[\s\u0085]/u;
-const MANAGED_ACCESS_MODES = ["read", "write"] as const;
+const MANAGED_ACCESS_MODES = ["read", "write", "schema"] as const;
 const MANAGED_LEASE_PROVIDERS = [
   "neon",
   "planetScale",
@@ -261,6 +262,9 @@ export function managedLeaseResponse(value: unknown): ManagedLeaseResponse {
     || !isStringLiteral(lease.sslmode, MANAGED_LEASE_SSL_MODES)
     || (lease.tlsServerCaPem !== undefined && typeof lease.tlsServerCaPem !== "string")
     || !isStringLiteral(lease.accessMode, MANAGED_ACCESS_MODES)
+    || (lease.accessMode === "schema" && (
+      lease.provider !== "neon" || lease.engine !== "postgres"
+    ))
     || !validRfc3339Instant(lease.expiresAt)
     || (lease.provider === "gcpCloudSql") !== Boolean(connector)
     || (lease.provider === "gcpCloudSql" && lease.tlsServerCaPem !== undefined)

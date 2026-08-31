@@ -23,7 +23,10 @@ export interface RunSignalAnalysis {
   title?: RunSignalMessage;
 }
 
-export type RunSignalSafety = Pick<SafetySettings, "allowWrites" | "maxRows">;
+export type RunSignalSafety = Pick<
+  SafetySettings,
+  "allowWrites" | "allowSchemaChanges" | "maxRows"
+>;
 
 type Translate = (
   key: I18nKey,
@@ -38,8 +41,14 @@ function compactSql(sql: string): string {
     .trim();
 }
 
+function likelyChangesSchema(sql: string): boolean {
+  const compact = compactSql(sql);
+  return /^(create|alter|drop|truncate|comment|reindex)\b/i.test(compact)
+    || /^select\b.*\binto\b/i.test(compact);
+}
+
 function likelyMutates(sql: string): boolean {
-  return /^(insert|update|delete|merge|replace|create|alter|drop|truncate|grant|revoke|vacuum|analyze|call|execute)\b/i.test(
+  return likelyChangesSchema(sql) || /^(insert|update|delete|merge|replace|grant|revoke|vacuum|analyze|call|execute)\b/i.test(
     compactSql(sql),
   );
 }
@@ -71,8 +80,17 @@ export function analyzeRunSignal(
   if (!sql.trim()) return null;
   const effectiveStatements = statements.length > 0 ? statements : [sql];
   const writes = effectiveStatements.some(likelyMutates);
+  const changesSchema = effectiveStatements.some(likelyChangesSchema);
 
   if (effectiveStatements.length > 1) {
+    if (changesSchema && !safety.allowSchemaChanges) {
+      return {
+        tone: "danger",
+        icon: "alert",
+        text: { key: "sql.signalSchemaDisabled" },
+        title: { key: "sql.schemaDisabledScript" },
+      };
+    }
     if (writes && !safety.allowWrites) {
       return {
         tone: "danger",
@@ -126,6 +144,13 @@ export function analyzeRunSignal(
     };
   }
   if (likelyMutates(statement)) {
+    if (likelyChangesSchema(statement) && !safety.allowSchemaChanges) {
+      return {
+        tone: "danger",
+        icon: "alert",
+        text: { key: "sql.signalSchemaDisabled" },
+      };
+    }
     if (!safety.allowWrites) {
       return {
         tone: "danger",

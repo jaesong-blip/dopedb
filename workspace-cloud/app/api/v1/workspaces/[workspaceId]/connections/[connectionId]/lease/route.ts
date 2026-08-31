@@ -5,6 +5,7 @@ import {
   LEGACY_MANAGED_LEASE_CONTRACT_VERSION,
   managedLeaseResponse,
   MANAGED_LEASE_CONTRACT_VERSION,
+  PREVIOUS_MANAGED_LEASE_CONTRACT_VERSION,
   parseManagedLeaseRequest,
 } from "../../../../../../../../lib/control-plane-contracts";
 import { db } from "../../../../../../../../lib/db";
@@ -32,7 +33,10 @@ import {
   workspaceProviderResource,
 } from "../../../../../../../../lib/schema";
 import { authorizeWorkspaceConnection } from "../../../../../../../../lib/workspace-authorization";
-import { providerResourceSupportsWrite } from "../../../../../../../../lib/workspace-connections";
+import {
+  providerResourceSupportsSchema,
+  providerResourceSupportsWrite,
+} from "../../../../../../../../lib/workspace-connections";
 import { hasWorkspaceCapability } from "../../../../../../../../lib/workspace-permissions";
 import { kickWorkspaceBackgroundTask } from "../../../../../../../../lib/workspace-background-scheduler";
 import { logManagedDatabaseAccessFailure } from "../../../../../../../../lib/workspace-server-log";
@@ -85,6 +89,7 @@ export async function POST(request: Request, context: RouteContext) {
   );
   if (
     managedLeaseContract !== MANAGED_LEASE_CONTRACT_VERSION
+    && managedLeaseContract !== PREVIOUS_MANAGED_LEASE_CONTRACT_VERSION
     && managedLeaseContract !== LEGACY_MANAGED_LEASE_CONTRACT_VERSION
   ) {
     return jsonError(
@@ -97,20 +102,26 @@ export async function POST(request: Request, context: RouteContext) {
     return jsonError(
       parsedBody.reason === "too_large"
         ? "Managed access request is too large"
-        : "Managed access mode must be read or write",
+        : "Managed access mode must be read, write, or schema",
       parsedBody.reason === "too_large" ? 413 : 400,
     );
   }
-  let requestedAccessMode: "read" | "write";
+  let requestedAccessMode: "read" | "write" | "schema";
   try {
     requestedAccessMode = parseManagedLeaseRequest(parsedBody.value).accessMode;
   } catch {
-    return jsonError("Managed access mode must be read or write", 400);
+    return jsonError("Managed access mode must be read, write, or schema", 400);
   }
   const authorization = await authorizeWorkspaceConnection(
     request, workspaceId, connectionId, "use",
   );
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
+  if (
+    requestedAccessMode === "schema"
+    && managedLeaseContract !== MANAGED_LEASE_CONTRACT_VERSION
+  ) {
+    return jsonError("Update DopeDB to use managed schema access safely", 426);
+  }
   const connection = await db.query.workspaceConnection.findFirst({
     where: and(
       eq(workspaceConnection.id, connectionId),
@@ -219,12 +230,26 @@ export async function POST(request: Request, context: RouteContext) {
   ) {
     return jsonError("Managed database policy is invalid", 409);
   }
-  if (requestedAccessMode === "write" && (
+  if (requestedAccessMode !== "read" && (
     !connection.allowWrites
     || !hasWorkspaceCapability(authorization.role, "write")
     || !providerResourceSupportsWrite(canonicalResource.capabilityManifest)
   )) {
     return jsonError("Managed write access is not allowed for this member and connection", 403);
+  }
+  if (requestedAccessMode === "schema" && (
+    authorization.connectionCapability !== "manage"
+    || !hasWorkspaceCapability(authorization.role, "manage")
+    || !providerResourceSupportsSchema({
+      provider: integration.provider,
+      engine: resource.engine,
+      capabilityManifest: canonicalResource.capabilityManifest,
+    })
+  )) {
+    return jsonError(
+      "Managed schema access requires connection manage permission and a supported provider",
+      403,
+    );
   }
   const [activeCount] = await db.select({ value: count() })
     .from(workspaceCredentialLease)

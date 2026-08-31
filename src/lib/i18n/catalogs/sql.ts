@@ -27,9 +27,11 @@ export const sqlCatalog = defineCatalog(
       "Managed write credential",
     "sql.writeBlock.guidanceManagedCredential":
       "{connection} uses a member-local credential, which is read-only. A workspace administrator must configure managed access and then enable its write policy in Settings > Safety.",
-    "sql.writeBlock.permissionManagedDdl": "Managed access (DML only)",
-    "sql.writeBlock.guidanceManagedDdl":
-      "{connection}'s short-lived managed credential intentionally allows INSERT, UPDATE, and DELETE, but not CREATE, ALTER, or DROP. Safety is already enabled; no checkbox can add this permission. Run the migration with a separate database owner/migration credential or your existing migration tool.",
+    "sql.writeBlock.permissionSchemaSafety": "Schema-change access",
+    "sql.writeBlock.guidanceSchemaSafety":
+      "Open Settings > Safety for {connection} and choose Schema changes. If that level is unavailable, the same screen shows the exact missing grant or provider capability.",
+    "sql.writeBlock.scriptGuidance":
+      "Review this connection's single access-level control. It covers read, data changes, and schema changes without a second permission request.",
     "sql.writeBlock.permissionWorkspaceGrant":
       "Workspace DB read/write or manage access",
     "sql.writeBlock.guidanceWorkspaceGrant":
@@ -118,9 +120,12 @@ export const sqlCatalog = defineCatalog(
     "sql.signalNoWhere": "No WHERE detected",
     "sql.signalReadCap": "Result cap: {count} rows",
     "sql.signalReadScript": "{count} reads run sequentially",
+    "sql.signalSchemaDisabled": "Schema changes are off",
     "sql.signalWriteScript": "Writes/DDL run in one transaction",
     "sql.signalWriteStatement": "Write/DDL requires approval",
     "sql.signalWritesDisabled": "Writes are off",
+    "sql.schemaDisabledScript":
+      "Schema changes are disabled for this connection. Choose Schema changes in Settings > Safety.",
     "sql.statementCount": "{count} statements",
     "sql.tx": "Tx:",
     "sql.txAuto": "Auto",
@@ -170,9 +175,11 @@ export const sqlCatalog = defineCatalog(
     "sql.writeBlock.permissionManagedCredential": "관리형 쓰기 자격 증명",
     "sql.writeBlock.guidanceManagedCredential":
       "{connection}은 읽기 전용인 구성원 로컬 자격 증명을 사용합니다. 워크스페이스 관리자가 관리형 접근을 구성한 뒤 설정 → 안전에서 쓰기 정책을 켜야 합니다.",
-    "sql.writeBlock.permissionManagedDdl": "관리형 접근 (DML 전용)",
-    "sql.writeBlock.guidanceManagedDdl":
-      "{connection}의 단기 관리형 자격 증명은 INSERT, UPDATE, DELETE만 허용하며 CREATE, ALTER, DROP은 의도적으로 허용하지 않습니다. 안전 설정은 이미 켜져 있어 체크박스로 추가할 수 있는 권한이 아닙니다. 별도의 DB owner/migration 자격 증명이나 기존 마이그레이션 도구로 실행하세요.",
+    "sql.writeBlock.permissionSchemaSafety": "스키마 변경 접근",
+    "sql.writeBlock.guidanceSchemaSafety":
+      "설정 → 안전 → {connection}에서 ‘스키마 변경’을 선택하세요. 선택할 수 없다면 같은 화면에서 부족한 권한이나 공급자 지원 여부를 바로 확인할 수 있습니다.",
+    "sql.writeBlock.scriptGuidance":
+      "이 연결의 단일 접근 단계 설정을 확인하세요. 두 번째 권한 요청 없이 읽기·데이터 변경·스키마 변경을 한 곳에서 제어합니다.",
     "sql.writeBlock.permissionWorkspaceGrant":
       "워크스페이스 DB 읽기/쓰기 또는 관리 권한",
     "sql.writeBlock.guidanceWorkspaceGrant":
@@ -261,9 +268,12 @@ export const sqlCatalog = defineCatalog(
     "sql.signalNoWhere": "WHERE 조건 없음",
     "sql.signalReadCap": "결과 제한: {count}행",
     "sql.signalReadScript": "{count}개 읽기를 순서대로 실행",
+    "sql.signalSchemaDisabled": "스키마 변경 비활성화됨",
     "sql.signalWriteScript": "쓰기/DDL은 하나의 트랜잭션으로 실행",
     "sql.signalWriteStatement": "쓰기/DDL 승인 필요",
     "sql.signalWritesDisabled": "쓰기 비활성화됨",
+    "sql.schemaDisabledScript":
+      "이 연결의 스키마 변경이 꺼져 있습니다. 설정 → 안전에서 ‘스키마 변경’을 선택하세요.",
     "sql.statementCount": "{count}개 문장",
     "sql.tx": "Tx:",
     "sql.txAuto": "자동",

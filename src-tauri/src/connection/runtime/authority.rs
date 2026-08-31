@@ -112,20 +112,25 @@ pub(super) async fn authorize_pin(
     pin: &PinnedConnection,
     access: ConnectionAccess,
 ) -> AppResult<ConnectionAuthorization> {
-    let write = access == ConnectionAccess::Write;
+    let mutation = access.is_mutation();
     if pin.requires_remote_rbac
         && pin.profile.credential_mode == WorkspaceCredentialMode::MemberLocal
-        && write
+        && mutation
     {
         return Err(AppError::Blocked {
             reason: "shared member-local connections are read-only".into(),
         });
     }
     if !pin.profile.workspace_access.can_read()
-        || (write && (!pin.profile.workspace_access.can_write() || !pin.profile.allow_writes))
+        || (mutation && (!pin.profile.workspace_access.can_write() || !pin.profile.allow_writes))
+        || (access.is_schema() && !pin.profile.workspace_access.can_manage())
     {
         return Err(AppError::Blocked {
-            reason: "your workspace role does not permit this database action".into(),
+            reason: if access.is_schema() {
+                "your workspace role does not permit schema changes".into()
+            } else {
+                "your workspace role does not permit this database action".into()
+            },
         });
     }
     if !pin.requires_remote_rbac {
@@ -146,7 +151,7 @@ pub(super) async fn authorize_pin(
             &account_id,
             pin.scope.workspace_id.into(),
             pin.connection_id.into(),
-            write,
+            access,
         )
         .await?;
     if authority.revision != pin.connection_revision {
@@ -277,12 +282,7 @@ pub(super) async fn connect_authorized(
             .ok_or_else(|| AppError::Config("active workspace account id is invalid".into()))?;
         let workspace_id = WorkspaceId::from(workspace_id);
         let lease = remote_authority
-            .issue_managed_lease(
-                &account_id,
-                workspace_id,
-                profile,
-                access == ConnectionAccess::Write,
-            )
+            .issue_managed_lease(&account_id, workspace_id, profile, access)
             .await?;
         let retire_at = Instant::now()
             + lease
