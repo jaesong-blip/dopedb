@@ -113,6 +113,11 @@ change that table first and the screen second.
 - [`docs/PRODUCT_UI_SCOPE.md`](docs/PRODUCT_UI_SCOPE.md) owns product UI
   structure, density, interaction, and per-feature scope. Third-party product
   screens, feature lists, terminology, code, and assets are not normative.
+- Treat product-comparison material as transient research input. Commit messages,
+  tracked implementation instructions, examples, fixtures, screenshots, and code
+  comments describe only DopeDB-owned requirements and must not retain the
+  comparison product or source name. Legal attribution, dependency notices, and
+  security evidence are the only exceptions.
 - Tailwind v4 and DopeDB semantic primitives are the implementation system.
   Repeated patterns become documented shared primitives rather than copied
   class lists or historical style layers.
@@ -149,6 +154,12 @@ change that table first and the screen second.
   branch or pull request. A GitHub Issue is optional.
 - Never force-push, delete `main`, hide failed checks, or expose repository
   secrets and signing keys.
+- Product identifiers, examples, fixtures, documentation, analytics, and logs
+  must use product-owned neutral namespaces. Never derive them from a
+  contributor's employer, email domain, legal name, personal account, or local
+  workstation context. Do not retain such values as compatibility aliases or
+  migration breadcrumbs; stop for an explicit privacy-safe migration decision
+  when continuity would require one.
 - Follow [`docs/commit.md`](docs/commit.md) when creating a commit.
 
 ## GitHub identity

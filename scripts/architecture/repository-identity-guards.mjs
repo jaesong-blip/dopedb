@@ -1,9 +1,44 @@
 // Keeps contributor authorship separate from the repository owner's one-shot
-// local commit/tag and GitHub actor wrappers.
+// wrappers and keeps product runtime identities inside a product-owned namespace.
 export function collectRepositoryIdentityDiagnostics({ exists, read, relative, walk }) {
   const diagnostics = [];
   const packageScripts = JSON.parse(read("package.json")).scripts ?? {};
   const expectedOwnerScript = "bash scripts/with-repository-owner-identity.sh";
+  const productionIdentifier = "dev.dopedb.desktop";
+
+  for (const [filePath, field, expected] of [
+    ["src-tauri/tauri.conf.json", "identifier", productionIdentifier],
+    ["src-tauri/tauri.dev.conf.json", "identifier", `${productionIdentifier}.dev`],
+    ["src-tauri/tauri.benchmark.conf.json", "identifier", `${productionIdentifier}.benchmark`],
+    [".release/macos-distribution.json", "bundleIdentifier", productionIdentifier],
+  ]) {
+    const value = JSON.parse(read(filePath))[field];
+    if (value !== expected) {
+      diagnostics.push(`${filePath}: ${field} must use the reviewed product-owned namespace`);
+    }
+  }
+
+  for (const [filePath, expectedIdentifiers] of [
+    [
+      "src-tauri/src/broker/discovery.rs",
+      [productionIdentifier, `${productionIdentifier}.dev`, `${productionIdentifier}.benchmark`],
+    ],
+    [
+      "src-tauri/src/connection/keychain.rs",
+      [productionIdentifier, `${productionIdentifier}.dev`],
+    ],
+    [
+      "src-tauri/src/features/providers/adapters/keychain_vault.rs",
+      [productionIdentifier, `${productionIdentifier}.dev`, `${productionIdentifier}.benchmark`],
+    ],
+  ]) {
+    const source = read(filePath);
+    for (const identifier of expectedIdentifiers) {
+      if (!source.includes(`"${identifier}"`)) {
+        diagnostics.push(`${filePath}: reviewed product identifier is missing (${identifier})`);
+      }
+    }
+  }
 
   if (Object.hasOwn(packageScripts, "repo:identity")) {
     diagnostics.push("package.json: generic repo:identity must not rewrite contributor authorship");

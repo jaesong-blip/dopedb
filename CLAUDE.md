@@ -16,6 +16,12 @@ Settings → Command line에서 사용자가 명시적으로 열 때만 표시�
 `docs/commit.md`를 따른다. 작업 전에는 `git status`를 확인하고 다른 변경을
 보존한다.
 
+제품 식별자, 예시, fixture, 문서, 분석 이벤트와 로그에는 제품이 소유한 중립
+namespace만 사용한다. 기여자의 직장, 이메일 도메인, 실명, 개인 계정이나 로컬
+컴퓨터 정보에서 값을 만들지 않으며, 그런 값을 호환성 alias나 migration 흔적으로
+남기지 않는다. 연속성을 위해 필요하다면 작업을 멈추고 개인정보를 보존하지 않는
+migration 결정을 명시적으로 받는다.
+
 커밋 작성자는 실제 기여자의 기존 Git identity를 보존한다. Agent는 저장소나 전역
 `user.name`·`user.email`을 바꾸거나 다른 작업자의 커밋을 `json-choi`로 기록하지
 않는다. 저장소 소유자가 명시적으로 요청한 direct-`main` 소유자 커밋에만
@@ -57,6 +63,11 @@ primitive로 `src/design-system/`에 적립한 뒤 README에 기록한다. 기�
 정적 Tailwind와 공용 React primitive가 소유하며 CSS 예외는 문서화된 vendor
 integration, reset, token, 정본 primitive뿐이다. 변경한 화면은 직접 실행해
 확인한다.
+
+제품 비교 자료는 작업 중 참고로만 사용한다. 커밋 메시지, 추적되는 구현 지침,
+예시, fixture, screenshot과 코드 주석에는 비교 제품이나 출처 이름을 남기지 않고
+DopeDB가 소유한 요구사항으로만 기록한다. 법적 저작자 표시, dependency notice와
+보안 근거만 예외다.
 
 ## 제품 방향
 

@@ -42,6 +42,12 @@ Project-resource grant와 process ancestry에만 묶인 runtime-only endpoint이
    wrapper를 사용하지 않는다. 저장소 소유자가 명시적으로 요청한 direct-`main`
    push만 `pnpm gh:owner -- git push origin main`을 사용한다.
 
+제품 식별자, 예시, fixture, 문서, 분석 이벤트와 로그에는 제품이 소유한 중립
+namespace만 사용한다. 기여자의 직장, 이메일 도메인, 실명, 개인 계정이나 로컬
+컴퓨터 정보에서 값을 만들지 않으며, 그런 값을 호환성 alias나 migration 흔적으로
+남기지 않는다. 연속성을 위해 필요하다면 작업을 멈추고 개인정보를 보존하지 않는
+migration 결정을 명시적으로 받는다.
+
 ## 이슈 실행 경계
 
 이슈 기반 작업은 immutable GitHub author ID가 `77596321` (`json-choi`) 또는
@@ -103,6 +109,11 @@ vendor/reset/token/primitive 경계에서만 허용한다. `pnpm build` 후 변�
 소유 경계를 갱신한다. 제3자 제품 화면이나 기능 목록을 구현 기준으로 삼지 않으며,
 DopeDB 자체 baseline은 내부 회귀 증거로만 사용한다. 아직 없는 기능은 동작하는
 control처럼 만들지 않는다.
+
+제품 비교 자료는 작업 중 참고로만 사용한다. 커밋 메시지, 추적되는 구현 지침,
+예시, fixture, screenshot과 코드 주석에는 비교 제품이나 출처 이름을 남기지 않고
+DopeDB가 소유한 요구사항으로만 기록한다. 법적 저작자 표시, dependency notice와
+보안 근거만 예외다.
 
 ## 정식 릴리스
 
