@@ -17,6 +17,7 @@ import {
   fallbackSchemaGroupName,
   type DropTarget,
 } from "./catalogDomain";
+import type { ProjectDatabasesDropTarget } from "./projectResources";
 
 type DragStart = {
   id: string;
@@ -33,6 +34,7 @@ type EnvironmentDropTarget = {
 
 type ConnectionDragOptions = {
   environmentTargets?: readonly EnvironmentDropTarget[];
+  projectDatabasesTargets?: readonly ProjectDatabasesDropTarget[];
   unassignedConnectionIds?: ReadonlySet<string>;
   onDropOnEnvironment?: (
     connection: ConnectionProfile,
@@ -63,6 +65,9 @@ export function useSchemaGroupDrag(
   );
   const environmentTargetById = new Map(
     (options.environmentTargets ?? []).map((target) => [target.id, target]),
+  );
+  const projectDatabasesTargetById = new Map(
+    (options.projectDatabasesTargets ?? []).map((target) => [target.id, target]),
   );
   const groupByConnectionId = useMemo(() => {
     const map = new Map<string, SchemaConnectionGroup>();
@@ -128,6 +133,18 @@ export function useSchemaGroupDrag(
       && typeof options.onDropOnEnvironment === "function";
   }
 
+  function canDropOnProjectDatabases(
+    dragId: string | null,
+    projectId: string,
+  ) {
+    const target = projectDatabasesTargetById.get(projectId);
+    return !!dragId
+      && !!target?.accepting
+      && options.unassignedConnectionIds?.has(dragId) === true
+      && !target.connectionIds.has(dragId)
+      && typeof options.onDropOnEnvironment === "function";
+  }
+
   async function saveGroup(ids: ConnectionId[], schemaGroup: string) {
     const originals = ids
       .map((id) => connectionById(id))
@@ -148,6 +165,11 @@ export function useSchemaGroupDrag(
   async function applyDrop(dragId: string, target: DropTarget) {
     const dragged = connectionById(dragId);
     if (!dragged) return;
+    if (target.kind === "projectDatabases") {
+      if (!canDropOnProjectDatabases(dragId, target.projectId)) return;
+      await options.onDropOnEnvironment?.(dragged, target.environmentId);
+      return;
+    }
     if (target.kind === "environment") {
       if (!canDropOnEnvironment(dragId, target.id)) return;
       await options.onDropOnEnvironment?.(dragged, target.id);
@@ -217,6 +239,22 @@ export function useSchemaGroupDrag(
   ): DropTarget | null {
     const element = document.elementFromPoint(x, y);
     if (!(element instanceof HTMLElement)) return null;
+    const targetProjectId = element.closest<HTMLElement>(
+      "[data-knowledge-project-databases-drop-id]",
+    )?.dataset.knowledgeProjectDatabasesDropId;
+    if (
+      targetProjectId &&
+      canDropOnProjectDatabases(dragId, targetProjectId)
+    ) {
+      const target = projectDatabasesTargetById.get(targetProjectId);
+      if (target) {
+        return {
+          kind: "projectDatabases",
+          projectId: target.id,
+          environmentId: target.environmentId,
+        };
+      }
+    }
     const targetEnvironmentId = element.closest<HTMLElement>(
       "[data-knowledge-environment-drop-id]",
     )?.dataset.knowledgeEnvironmentDropId;
@@ -356,6 +394,15 @@ function sameDropTarget(
   }
   if (left.kind === "environment") {
     return left.id === (right as { kind: "environment"; id: string }).id;
+  }
+  if (left.kind === "projectDatabases") {
+    const projectTarget = right as {
+      kind: "projectDatabases";
+      projectId: string;
+      environmentId: string;
+    };
+    return left.projectId === projectTarget.projectId
+      && left.environmentId === projectTarget.environmentId;
   }
   return left.key === (right as { kind: "group"; key: string }).key;
 }

@@ -22,6 +22,8 @@ import type {
   KnowledgeEnvironmentView,
 } from "../../features/knowledge/domain";
 import {
+  projectConnectionAssignment,
+  projectDatabasesDropTargets,
   projectResourceKey,
   toggledResourceKeys,
 } from "../../features/catalogExplorer/projectResources";
@@ -188,23 +190,13 @@ export function DatabaseExplorer({
   });
 
   const environmentBindingsReady = environmentConnections.isSuccess;
-  const boundConnectionIds = new Set(
-    environmentBindingsReady
-      ? [...environmentConnectionsById.values()].flatMap((bindings) =>
-          bindings.flatMap((binding) =>
-            binding.connectionId ? [binding.connectionId] : [],
-          ),
-        )
-      : [],
-  );
-  const unassignedConnections =
-    knowledgeProjects.isSuccess && environmentBindingsReady
-      ? connections.filter((connection) => !boundConnectionIds.has(connection.id))
-      : connections;
+  const { unassignedConnections, unassignedConnectionIds } =
+    projectConnectionAssignment(
+      connections,
+      knowledgeProjects.isSuccess && environmentBindingsReady,
+      environmentConnectionsById,
+    );
   const unassignedSections = buildConnectionSections(unassignedConnections);
-  const unassignedConnectionIds = new Set(
-    unassignedConnections.map((connection) => connection.id),
-  );
   const environmentDropTargets = projectEnvironmentIds.map(
     (environmentId) => ({
       id: environmentId,
@@ -215,6 +207,12 @@ export function DatabaseExplorer({
         ),
       ),
     }),
+  );
+  const projectDatabaseDropTargets = projectDatabasesDropTargets(
+    knowledgeProjects.data ?? [],
+    activeProjectEnvironmentId,
+    environmentConnections.isSuccess,
+    environmentConnectionsById,
   );
 
   function openProviderCredentials(provider: ProviderKind) {
@@ -327,6 +325,7 @@ export function DatabaseExplorer({
     pointerCancel: pointerCancelConnection,
   } = useSchemaGroupDrag(connections, onConnectionUpdated, {
     environmentTargets: environmentDropTargets,
+    projectDatabasesTargets: projectDatabaseDropTargets,
     unassignedConnectionIds,
     onDropOnEnvironment: bindDroppedConnection,
   });
@@ -693,6 +692,11 @@ export function DatabaseExplorer({
               unbindingBindingId={unbindingBindingId}
               dropTargetEnvironmentId={
                 dropTarget?.kind === "environment" ? dropTarget.id : null
+              }
+              dropTargetProjectId={
+                dropTarget?.kind === "projectDatabases"
+                  ? dropTarget.projectId
+                  : null
               }
               activeEnvironmentId={activeProjectEnvironmentId}
               activeView={activeProjectEnvironmentView}

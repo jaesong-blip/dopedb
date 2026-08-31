@@ -12,7 +12,12 @@ import type { IconName } from "../../components/Icon";
 export type DropTarget =
   | { kind: "connection"; id: string }
   | { kind: "group"; key: string }
-  | { kind: "environment"; id: string };
+  | { kind: "environment"; id: string }
+  | {
+      kind: "projectDatabases";
+      projectId: string;
+      environmentId: string;
+    };
 
 export type CatalogLoadIssue = Pick<AppErrorDetails, "kind" | "message">;
 

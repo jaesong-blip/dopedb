@@ -551,10 +551,12 @@ DopeDB의 실제 작업 흐름과 접근성, supported viewport를 위한 제품
   workspace에서는 설명만 표시하고 별도 생성 row를 누적하지 않으며, 생성 직후 새
   Project의 `Databases` folder와 기본 Environment binding 상세를 연다. resource
   folder와 `Unassigned` 행에는 연결 개수 badge를 붙이지 않는다. `Unassigned` 연결
-  행은 pointer drag로 원하는 Environment에 이미 묶인 DB row에 놓을 수 있고, 유효한
-  대상은 drag 중 semantic border와 surface로 표시한다. 대상 Environment에 DB가
-  아직 없거나 키보드를 사용하는 경우에는 기존 Environment database binding 화면을
-  사용한다. 이 shortcut은 기존 environment binding command를 재사용하며, 이미 묶인
+  행은 pointer drag로 원하는 Environment에 이미 묶인 DB row나 Project의
+  `Databases` folder에 놓을 수 있고, 유효한 대상은 drag 중 semantic border와
+  surface로 표시한다. folder drop은 현재 선택된 Environment를 우선하고 없으면 첫
+  Environment를 exact binding 대상으로 사용한다. Environment가 없거나 키보드를
+  사용하는 경우에는 기존 Environment database binding 화면을 사용한다. 이 shortcut은
+  기존 environment binding command를 재사용하며, 이미 묶인
   연결의 암묵적 이동이나 복제를 허용하지 않는다. 한 workspace에서 동일한 connection은
   하나의 Project Environment에만 active binding을 가질 수 있다. 배정된 DB 행의 메뉴는
   전역 connection 삭제 대신 `프로젝트에서 제거`를 제공하고 exact binding만 해제한다.

@@ -1,8 +1,10 @@
 import type {
+  EnvironmentConnection,
   KnowledgeEnvironment,
   KnowledgeEnvironmentView,
   KnowledgeProject,
 } from "../knowledge/domain";
+import type { ConnectionProfile } from "../connections/domain";
 
 export type ProjectEnvironmentResource<T> = {
   environment: KnowledgeEnvironment;
@@ -37,6 +39,77 @@ export function preferredProjectEnvironment(
     project.environments[0] ??
     null
   );
+}
+
+export function preferredProjectDatabaseDropTarget(
+  project: KnowledgeProject,
+  activeEnvironmentId: string | null,
+) {
+  const environment = preferredProjectEnvironment(project, activeEnvironmentId);
+  return environment
+    ? { projectId: project.id, environmentId: environment.id }
+    : null;
+}
+
+export type ProjectDatabasesDropTarget = {
+  id: string;
+  environmentId: string;
+  accepting: boolean;
+  connectionIds: ReadonlySet<string>;
+};
+
+export function projectDatabasesDropTargets(
+  projects: readonly KnowledgeProject[],
+  activeEnvironmentId: string | null,
+  accepting: boolean,
+  bindingsByEnvironment: ReadonlyMap<
+    string,
+    readonly Pick<EnvironmentConnection, "connectionId">[]
+  >,
+): ProjectDatabasesDropTarget[] {
+  return projects.flatMap((project) => {
+    const target = preferredProjectDatabaseDropTarget(
+      project,
+      activeEnvironmentId,
+    );
+    if (!target) return [];
+    const connectionIds = new Set(
+      (bindingsByEnvironment.get(target.environmentId) ?? []).flatMap(
+        (binding) => (binding.connectionId ? [binding.connectionId] : []),
+      ),
+    );
+    return [{ ...target, id: target.projectId, accepting, connectionIds }];
+  });
+}
+
+export function projectConnectionAssignment(
+  connections: readonly ConnectionProfile[],
+  bindingsReady: boolean,
+  bindingsByEnvironment: ReadonlyMap<
+    string,
+    readonly Pick<EnvironmentConnection, "connectionId">[]
+  >,
+) {
+  const boundConnectionIds = new Set(
+    bindingsReady
+      ? [...bindingsByEnvironment.values()].flatMap((bindings) =>
+          bindings.flatMap((binding) =>
+            binding.connectionId ? [binding.connectionId] : [],
+          ),
+        )
+      : [],
+  );
+  const unassignedConnections = bindingsReady
+    ? connections.filter(
+        (connection) => !boundConnectionIds.has(connection.id),
+      )
+    : [...connections];
+  return {
+    unassignedConnections,
+    unassignedConnectionIds: new Set(
+      unassignedConnections.map((connection) => connection.id),
+    ),
+  };
 }
 
 export function flattenProjectEnvironmentResources<T>(

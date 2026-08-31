@@ -28,10 +28,12 @@ DopeDB의 제품 축, 실제 사용자 작업, 접근성, 운영 안전성, 지�
   모든 환경 binding을 한 목록으로 투영하고 각 DB 행에만 exact Environment의
   dev/staging/prod marker를 표시한다. Data source와 Analysis Article 행은 같은
   Project folder에 모으되 선택 시 원래 Environment identity를 보존한다. 아직
-  Environment에 묶이지 않은 연결은 `Unassigned`에만 표시하고, 그 행을 원하는
-  Environment에 이미 묶인 DB 행으로 끌어 놓으면 기존 environment-connection
-  binding command로 이동한다. 대상 환경에 DB가 없으면 Environment database
-  binding 화면을 사용하며, 이미 묶인 연결을 암묵적으로 재배치하거나 복제하지
+  Environment에 묶이지 않은 연결은 `Unassigned`에만 표시한다. 그 행을 원하는
+  Environment에 이미 묶인 DB 행으로 끌어 놓거나 Project의 `Databases` folder에
+  놓으면 기존 environment-connection binding command로 이동한다. folder drop은
+  그 Project에서 현재 선택된 Environment를 우선하고 없으면 첫 Environment를
+  exact binding 대상으로 사용한다. Environment가 없는 Project는 database binding
+  화면을 사용하며, 이미 묶인 연결을 암묵적으로 재배치하거나 복제하지
   않는다. 한 workspace의 DB 연결은 동시에 한 Project Environment에만 배정되며,
   다른 Project로 옮기려면 DB 행의 명시적인 `프로젝트에서 제거` command로 기존
   binding을 먼저 해제한다. 이 command는 공유 연결이나 구성원 자격 증명을 삭제하지

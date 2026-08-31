@@ -76,6 +76,7 @@ interface KnowledgeProjectTreeProps {
   deleting: boolean;
   unbindingBindingId: string | null;
   dropTargetEnvironmentId: string | null;
+  dropTargetProjectId: string | null;
   activeEnvironmentId: string | null;
   activeView: KnowledgeEnvironmentView | null;
   activeResourceId: string | null;
@@ -234,6 +235,7 @@ function KnowledgeProjectResources({
   expandedResourceKeys,
   unbindingBindingId,
   dropTargetEnvironmentId,
+  dropTargetProjectId,
   activeEnvironmentId,
   activeView,
   activeResourceId,
@@ -331,37 +333,43 @@ function KnowledgeProjectResources({
 
   return (
     <div className="tw:grid">
-      <TreeSectionButton
-        expanded={databaseExpanded}
-        icon="database"
-        treeItem={{ key: databaseTreeKey, parentKey: projectTreeKey, level: 2 }}
-        selected={activeEnvironmentBelongsToProject && activeView === "databases"}
-        actions={(
-          <TreeRowActions>
-            <Button
-              iconOnly
-              size="xs"
-              variant="ghost"
-              title={t("connections.environmentAddDatabase")}
-              aria-label={t("connections.environmentAddDatabase")}
-              tabIndex={-1}
-              onClick={() => {
-                if (openProjectResource("databases") && preferredEnvironment) {
-                  onNewConnection(preferredEnvironment.id);
-                }
-              }}
-            >
-              <Icon name="plus" />
-            </Button>
-          </TreeRowActions>
-        )}
-        onToggle={() => {
-          onToggleResource(databaseKey);
-          openProjectResource("databases");
-        }}
+      <div
+        data-knowledge-project-databases-drop-id={project.id}
+        data-drop-target={dropTargetProjectId === project.id}
+        className="tw:rounded-xs tw:data-[drop-target=true]:bg-muted tw:data-[drop-target=true]:ring-2 tw:data-[drop-target=true]:ring-ring"
       >
-        {t("connections.environmentDatabases")}
-      </TreeSectionButton>
+        <TreeSectionButton
+          expanded={databaseExpanded}
+          icon="database"
+          treeItem={{ key: databaseTreeKey, parentKey: projectTreeKey, level: 2 }}
+          selected={activeEnvironmentBelongsToProject && activeView === "databases"}
+          actions={(
+            <TreeRowActions>
+              <Button
+                iconOnly
+                size="xs"
+                variant="ghost"
+                title={t("connections.environmentAddDatabase")}
+                aria-label={t("connections.environmentAddDatabase")}
+                tabIndex={-1}
+                onClick={() => {
+                  if (openProjectResource("databases") && preferredEnvironment) {
+                    onNewConnection(preferredEnvironment.id);
+                  }
+                }}
+              >
+                <Icon name="plus" />
+              </Button>
+            </TreeRowActions>
+          )}
+          onToggle={() => {
+            onToggleResource(databaseKey);
+            openProjectResource("databases");
+          }}
+        >
+          {t("connections.environmentDatabases")}
+        </TreeSectionButton>
+      </div>
       {databaseExpanded ? (
         <div className="tw:grid tw:border-l tw:border-border-subtle tw:pl-1">
           {environmentConnectionsPhase === "coldError" ||

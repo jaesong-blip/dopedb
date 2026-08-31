@@ -89,6 +89,9 @@ import {
 import {
   flattenProjectEnvironmentResources,
   preferredProjectEnvironment,
+  preferredProjectDatabaseDropTarget,
+  projectConnectionAssignment,
+  projectDatabasesDropTargets,
   projectResourceKey,
 } from "../catalogExplorer/projectResources";
 import { knowledgeEnvironmentBadge } from "../knowledge/presentation";
@@ -875,6 +878,52 @@ describe("workbench state ownership", () => {
         "environment-production",
       )?.id,
     ).toBe("environment-production");
+    expect(
+      preferredProjectDatabaseDropTarget(
+        explorerProject,
+        "environment-production",
+      ),
+    ).toEqual({
+      projectId: "project-commerce",
+      environmentId: "environment-production",
+    });
+    expect(
+      preferredProjectDatabaseDropTarget(explorerProject, "environment-other"),
+    ).toEqual({
+      projectId: "project-commerce",
+      environmentId: "environment-development",
+    });
+    expect(
+      projectDatabasesDropTargets(
+        [explorerProject],
+        "environment-production",
+        true,
+        new Map([
+          [
+            "environment-production",
+            [{ connectionId: "database-production" }],
+          ],
+        ]),
+      ),
+    ).toMatchObject([
+      {
+        id: "project-commerce",
+        environmentId: "environment-production",
+        accepting: true,
+        connectionIds: new Set(["database-production"]),
+      },
+    ]);
+    const explorerAssignment = projectConnectionAssignment(
+      [demo, bigQuery],
+      true,
+      new Map([
+        ["environment-development", [{ connectionId: demo.id }]],
+      ]),
+    );
+    expect(explorerAssignment.unassignedConnections).toEqual([bigQuery]);
+    expect(explorerAssignment.unassignedConnectionIds).toEqual(
+      new Set([bigQuery.id]),
+    );
     expect(
       selectGuidedDemoEnvironment([
         {
